@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Schichtwerk",
+    "slug": "schichtwerk",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "schichtwerk",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0D9488"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "de.schichtwerk.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0D9488"
+      },
+      "package": "de.schichtwerk.app"
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

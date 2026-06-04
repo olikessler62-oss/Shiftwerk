@@ -1,0 +1,34 @@
+{
+  "name": "schichtwerk",
+  "private": true,
+  "packageManager": "npm@11.12.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "dev:web": "npm run dev --workspace=@schichtwerk/web",
+    "dev:mobile": "npm run dev --workspace=@schichtwerk/mobile"
+  },
+  "dependencies": {
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "@types/react-dom": "~19.0.6",
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "next": "15.3.3"
+  }
+}

@@ -1,0 +1,7 @@
+# Optional: lokale Supabase-CLI
+# Install: npm i -g supabase
+# Link: supabase link --project-ref <ref>
+# Migrate: supabase db push
+
+[project]
+id = "schichtwerk"
