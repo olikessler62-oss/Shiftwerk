@@ -75,11 +75,14 @@ export function formatWeekRange(weekStartISO: string): string {
 }
 
 /** Datumszeile im Dashboard-Header (Skizze: „1. Juni – 7. Juni“, Jahr, KW). */
-export function getDashboardWeekHeaderParts(weekStartISO: string) {
+export function getDashboardWeekHeaderParts(
+  weekStartISO: string,
+  intlLocale = "de-DE"
+) {
   const start = parseISODate(weekStartISO);
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
-  const dayMonthFmt = new Intl.DateTimeFormat("de-DE", {
+  const dayMonthFmt = new Intl.DateTimeFormat(intlLocale, {
     day: "numeric",
     month: "long",
   });
@@ -90,10 +93,13 @@ export function getDashboardWeekHeaderParts(weekStartISO: string) {
   };
 }
 
-export function formatDayHeader(dateISO: string): { weekday: string; label: string } {
+export function formatDayHeader(
+  dateISO: string,
+  intlLocale = "de-DE"
+): { weekday: string; label: string } {
   const d = parseISODate(dateISO);
-  const weekday = new Intl.DateTimeFormat("de-DE", { weekday: "short" }).format(d);
-  const label = new Intl.DateTimeFormat("de-DE", {
+  const weekday = new Intl.DateTimeFormat(intlLocale, { weekday: "short" }).format(d);
+  const label = new Intl.DateTimeFormat(intlLocale, {
     day: "numeric",
     month: "short",
   }).format(d);

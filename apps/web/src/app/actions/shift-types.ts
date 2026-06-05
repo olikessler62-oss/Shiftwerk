@@ -113,30 +113,20 @@ export async function updateShiftType(input: {
   }
 }
 
+/** Aus Einstellungsliste entfernen; bestehende Schichten behalten die Schichtart für Historie. */
 export async function deleteShiftType(id: string): Promise<ShiftTypeActionResult> {
   try {
     const { organizationId } = await requireManager();
     const db = await getDatabase();
-
-    const count = await db.countShiftsUsingType(id, organizationId);
-
-    if (count > 0) {
-      return {
-        ok: false,
-        error:
-          "Diese Schichtart wird noch in Schichtplänen verwendet und kann nicht gelöscht werden.",
-      };
-    }
-
-    await db.deleteShiftType(id, organizationId);
-
+    await db.archiveShiftType(id, organizationId);
     revalidatePath("/einstellungen");
     revalidatePath("/dashboard");
+    revalidatePath("/planung");
     return { ok: true };
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "Löschen fehlgeschlagen",
+      error: e instanceof Error ? e.message : "Archivieren fehlgeschlagen",
     };
   }
 }

@@ -12,6 +12,7 @@
   "dependencies": {
     "@schichtwerk/api-client": "*",
     "@schichtwerk/database": "*",
+    "@schichtwerk/i18n": "*",
     "@schichtwerk/types": "*",
     "@schichtwerk/ui-tokens": "*",
     "@supabase/ssr": "^0.6.1",

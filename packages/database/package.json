@@ -6,8 +6,11 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./location-staffing": "./src/location-staffing.ts",
+    "./location-weekdays": "./src/location-weekdays.ts",
     "./schema.sql": "./schema.sql"
   },
+  "sideEffects": false,
   "scripts": {
     "lint": "tsc --noEmit"
   },

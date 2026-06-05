@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/dashboard/app-shell";
+import { LocaleProvider } from "@/i18n/locale-provider";
+import { getServerLocale } from "@/i18n/server";
 import { getDatabase } from "@/lib/db";
 
 export default async function ManagerLayout({
@@ -17,14 +19,17 @@ export default async function ManagerLayout({
   if (!profile || profile.role === "employee") redirect("/app-only");
 
   const orgName = await db.getOrganizationName(profile.organization_id);
+  const locale = await getServerLocale();
 
   return (
-    <AppShell
-      orgName={orgName ?? undefined}
-      userName={profile.full_name}
-      role={profile.role}
-    >
-      {children}
-    </AppShell>
+    <LocaleProvider initialLocale={locale}>
+      <AppShell
+        orgName={orgName ?? undefined}
+        userName={profile.full_name}
+        role={profile.role}
+      >
+        {children}
+      </AppShell>
+    </LocaleProvider>
   );
 }

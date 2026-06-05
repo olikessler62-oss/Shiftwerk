@@ -6,6 +6,7 @@ import {
   parseISODate,
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
+import { isPastWeek } from "@/lib/planning-readonly";
 import {
   ShiftPlanner,
   type ShiftWithType,
@@ -25,26 +26,30 @@ export default async function PlanungPage({
   const orgId = await db.getProfileOrganizationId(user.id);
   if (!orgId) redirect("/login");
 
-  let shiftTypes = await db.listShiftTypes(orgId);
-
-  if (!shiftTypes.length) {
-    await db.seedDefaultShiftTypes(orgId);
-    shiftTypes = await db.listShiftTypes(orgId);
-  }
-
   const weekStart = week
     ? toISODate(startOfWeek(parseISODate(week)))
     : toISODate(startOfWeek(new Date()));
   const dates = weekDates(weekStart);
   const from = dates[0];
   const to = dates[6];
+  const readOnlyWeek = isPastWeek(to);
 
-  const [employees, shifts, availability, orgName] = await Promise.all([
+  let shiftTypes = await db.listShiftTypesForPlanning(orgId, from, to);
+
+  if (!shiftTypes.length) {
+    await db.seedDefaultShiftTypes(orgId);
+    shiftTypes = await db.listShiftTypesForPlanning(orgId, from, to);
+  }
+
+  const [employees, shifts, availability, orgName, locations] = await Promise.all([
     db.listActiveEmployees(orgId),
     db.listShiftsForWeek(orgId, from, to),
     db.listAvailabilityForWeek(orgId, from, to),
     db.getOrganizationName(orgId),
+    db.listLocations(orgId),
   ]);
+
+  const defaultLocationId = locations[0]?.id ?? null;
 
   return (
     <ShiftPlanner
@@ -55,6 +60,8 @@ export default async function PlanungPage({
       shifts={shifts as ShiftWithType[]}
       availability={availability}
       orgName={orgName ?? "Standort"}
+      defaultLocationId={defaultLocationId}
+      readOnlyWeek={readOnlyWeek}
     />
   );
 }

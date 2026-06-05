@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ShiftTypeWithBreaks } from "@schichtwerk/types";
 import { ShiftTypesModal } from "./shift-types-modal";
-import { Button } from "@/components/ui";
+import { Button, ListIcon } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 const SETTINGS_OPTIONS = [
@@ -36,10 +36,11 @@ export function EinstellungenView({ shiftTypes }: Props) {
               variant="ghost"
               onClick={() => setActiveOption(option.id)}
               className={cn(
-                "h-auto w-full justify-start px-3 py-2 text-sm font-normal",
+                "h-auto w-full justify-start gap-2 px-3 py-2 text-sm font-normal",
                 activeOption === option.id && "bg-subtle font-medium"
               )}
             >
+              <ListIcon />
               {option.label}
             </Button>
           ))}

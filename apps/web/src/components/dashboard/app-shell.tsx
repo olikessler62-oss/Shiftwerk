@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { usePathname } from "next/navigation";
-import { signOut } from "@/app/actions/auth";
+import { signOut } from "@/app/actions/sign-out";
 import { Button, IconButton } from "@/components/ui";
+import { useTranslations } from "@/i18n/locale-provider";
 import { SidebarNav } from "./sidebar-nav";
 
 interface AppShellProps {
@@ -14,6 +15,7 @@ interface AppShellProps {
 }
 
 export function AppShell({ orgName, userName, role, children }: AppShellProps) {
+  const t = useTranslations();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -56,7 +58,7 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
             size="sm"
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
-            aria-label={open ? "Menü schließen" : "Menü öffnen"}
+            aria-label={open ? t("nav.closeMenu") : t("nav.openMenu")}
             className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
           >
             {open ? (
@@ -89,13 +91,18 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
 
         {open && (
           <div className="flex flex-col border-t border-border">
-            <Suspense fallback={<nav className="p-2 text-sm text-muted">Laden…</nav>}>
+            <Suspense
+              fallback={
+                <nav className="p-2 text-sm text-muted">{t("common.loading")}</nav>
+              }
+            >
               <SidebarNav onNavigate={() => setOpen(false)} />
             </Suspense>
 
             <div className="mt-auto border-t border-border p-2">
               <p className="px-3 py-1.5 text-xs text-muted">
-                {userName} · {role === "owner" ? "Inhaber" : "Manager"}
+                {userName} ·{" "}
+                {role === "owner" ? t("common.owner") : t("common.manager")}
               </p>
               <form action={signOut}>
                 <Button
@@ -103,7 +110,7 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
                   variant="ghost"
                   className="h-auto w-full justify-start px-3 py-2 text-sm font-normal"
                 >
-                  Abmelden
+                  {t("common.signOut")}
                 </Button>
               </form>
             </div>

@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { assignShift, removeShift } from "@/app/actions/shifts";
 import { toISODate, startOfWeek, parseISODate } from "@/lib/dates";
+import { isPastShiftDate } from "@/lib/planning-readonly";
+import { useTranslations } from "@/i18n/locale-provider";
 import {
   avatarColor,
   buildPlanningWarnings,
@@ -44,6 +46,8 @@ type Props = {
   shifts: ShiftWithType[];
   availability: AvailabilityRow[];
   orgName: string;
+  defaultLocationId: string | null;
+  readOnlyWeek?: boolean;
 };
 
 type Picker = { employeeId: string; date: string };
@@ -56,8 +60,11 @@ export function ShiftPlanner({
   shifts,
   availability,
   orgName,
+  defaultLocationId,
+  readOnlyWeek = false,
 }: Props) {
   const router = useRouter();
+  const t = useTranslations();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
@@ -111,22 +118,37 @@ export function ShiftPlanner({
     router.push(`/planung?week=${toISODate(d)}`);
   }
 
+  function isDayReadOnly(date: string) {
+    return readOnlyWeek || isPastShiftDate(date);
+  }
+
+  function shiftTypeDisplayName(type: ShiftType) {
+    if (!type.archived_at) return type.name;
+    return `${type.name} (${t("common.archived")})`;
+  }
+
   function openPicker(employeeId: string, date: string) {
+    const existing = shiftMap.get(`${employeeId}:${date}`);
+    if (isDayReadOnly(date) && !existing) return;
     setPicker({ employeeId, date });
     setError(null);
-    const existing = shiftMap.get(`${employeeId}:${date}`);
     if (existing) setSelectedTypeId(existing.shift_type_id);
     else if (shiftTypes[0]) setSelectedTypeId(shiftTypes[0].id);
   }
 
   function handleAssign() {
-    if (!picker || !selectedTypeId) return;
+    if (!picker || !selectedTypeId || isDayReadOnly(picker.date)) return;
+    if (!defaultLocationId) {
+      setError("Bitte zuerst einen Standort unter Einstellungen anlegen.");
+      return;
+    }
     setError(null);
     startTransition(async () => {
       const result = await assignShift(
         picker.employeeId,
         picker.date,
-        selectedTypeId
+        selectedTypeId,
+        defaultLocationId
       );
       if (!result.ok) setError(result.error);
       else {
@@ -138,6 +160,7 @@ export function ShiftPlanner({
   }
 
   function handleRemove(shiftId: string) {
+    if (picker && isDayReadOnly(picker.date)) return;
     setError(null);
     startTransition(async () => {
       const result = await removeShift(shiftId);
@@ -237,6 +260,12 @@ export function ShiftPlanner({
         </div>
       </header>
 
+      {readOnlyWeek && (
+        <Alert variant="info" className="mx-6 mt-4">
+          {t("planning.readOnlyWeek")}
+        </Alert>
+      )}
+
       {error && (
         <Alert variant="error" className="mx-6 mt-4">
           {error}
@@ -259,7 +288,9 @@ export function ShiftPlanner({
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{ backgroundColor: type.color }}
                     />
-                    <span className="text-sm font-medium">{type.name}</span>
+                    <span className="text-sm font-medium">
+                      {shiftTypeDisplayName(type)}
+                    </span>
                   </div>
                   <p className="mt-1 pl-4.5 text-xs text-muted">
                     {formatTimeRange(type.start_time, type.end_time)}
@@ -352,16 +383,17 @@ export function ShiftPlanner({
                         const avail = availabilityMap.get(key);
                         const isSelected =
                           picker?.employeeId === emp.id && picker?.date === date;
+                        const dayReadOnly = isDayReadOnly(date);
 
                         if (shift?.shift_types) {
                           const type = shiftTypes.find(
-                            (t) => t.id === shift.shift_type_id
+                            (st) => st.id === shift.shift_type_id
                           );
                           return (
                             <td key={date} className="p-1.5 align-top">
                               <button
                                 type="button"
-                                disabled={pending}
+                                disabled={pending || (dayReadOnly && !shift)}
                                 onClick={() => openPicker(emp.id, date)}
                                 className={`w-full rounded-lg px-2 py-2 text-left text-white transition hover:opacity-90 disabled:opacity-50 ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""}`}
                                 style={{
@@ -369,7 +401,9 @@ export function ShiftPlanner({
                                 }}
                               >
                                 <div className="text-xs font-semibold leading-tight">
-                                  {shift.shift_types.name}
+                                  {type
+                                    ? shiftTypeDisplayName(type)
+                                    : shift.shift_types.name}
                                 </div>
                                 {type && (
                                   <div className="mt-0.5 text-[10px] opacity-90">
@@ -405,7 +439,11 @@ export function ShiftPlanner({
                           <td key={date} className="p-1.5 align-top">
                             <button
                               type="button"
-                              disabled={pending || shiftTypes.length === 0}
+                              disabled={
+                                pending ||
+                                shiftTypes.length === 0 ||
+                                dayReadOnly
+                              }
                               onClick={() => openPicker(emp.id, date)}
                               className={`flex h-[52px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40 ${isSelected ? "border-primary bg-primary/5 text-primary" : ""}`}
                             >
@@ -454,6 +492,9 @@ export function ShiftPlanner({
 
           {picker && pickerEmployee ? (
             <div className="mt-4 space-y-4">
+              {isDayReadOnly(picker.date) && (
+                <p className="text-xs text-muted">{t("planning.readOnlyDay")}</p>
+              )}
               <div className="rounded-[var(--radius-control)] bg-subtle px-3 py-2 text-sm">
                 <span className="text-muted">Datum: </span>
                 <span className="font-medium">
@@ -469,10 +510,12 @@ export function ShiftPlanner({
                 <Select
                   value={selectedTypeId}
                   onChange={(e) => setSelectedTypeId(e.target.value)}
+                  disabled={isDayReadOnly(picker.date)}
                 >
-                  {shiftTypes.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({formatTimeRange(t.start_time, t.end_time)})
+                  {shiftTypes.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {shiftTypeDisplayName(st)} (
+                      {formatTimeRange(st.start_time, st.end_time)})
                     </option>
                   ))}
                 </Select>
@@ -502,20 +545,24 @@ export function ShiftPlanner({
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={2}
+                  disabled={isDayReadOnly(picker.date)}
                   placeholder="z. B. Einarbeitung, Vertretung …"
                 />
               </Field>
 
-              <Button
-                type="button"
-                className="w-full"
-                disabled={pending || !selectedTypeId}
-                onClick={handleAssign}
-              >
-                Schicht zuweisen
-              </Button>
+              {!isDayReadOnly(picker.date) && (
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={pending || !selectedTypeId}
+                  onClick={handleAssign}
+                >
+                  Schicht zuweisen
+                </Button>
+              )}
 
-              {shiftMap.get(`${picker.employeeId}:${picker.date}`) && (
+              {shiftMap.get(`${picker.employeeId}:${picker.date}`) &&
+                !isDayReadOnly(picker.date) && (
                 <Button
                   type="button"
                   variant="destructive"

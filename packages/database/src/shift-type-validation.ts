@@ -27,7 +27,7 @@ export function validateShiftTypeUniqueness(
   if (others.some((t) => normalizeNameKey(t.name) === nameKey)) {
     return {
       ok: false,
-      error: "Eine Schichtart mit diesem Namen existiert bereits.",
+      error: "Eine Schichtart mit dieser Bezeichnung existiert bereits.",
     };
   }
 

@@ -14,6 +14,10 @@ Der gesamte App-Code (Web, Mobile, Scripts) nutzt nur die TypeScript-Schnittstel
 
 Dashboard → SQL → Inhalt von `schema.sql` einfügen → Run
 
+**Bereits laufende Datenbank:** nur fehlende Änderungen aus `migrations/` ausführen (Reihenfolge: `20250604` … `20250609_archive_shift_types_qualifications.sql`).
+
+Fehler *„column locations.archived_at does not exist“*: im SQL Editor `scripts/apply-archive-columns.sql` ausführen (oder `20250608` + `20250609` einzeln).
+
 ## Nutzung in der Web-App
 
 ```ts

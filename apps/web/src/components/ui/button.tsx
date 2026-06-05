@@ -9,7 +9,7 @@ export type ButtonVariant =
   | "danger"
   | "destructive";
 
-export type ButtonSize = "sm" | "md" | "lg";
+export type ButtonSize = "sm" | "md" | "lg" | "header";
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
@@ -29,10 +29,11 @@ const sizeClasses: Record<ButtonSize, string> = {
   sm: "h-8 gap-1.5 px-3 text-xs",
   md: "h-10 gap-2 px-4 text-sm",
   lg: "h-11 gap-2 px-5 text-sm",
+  header: "h-9 min-h-9 gap-1 px-3 text-sm",
 };
 
 const base =
-  "inline-flex items-center justify-center rounded-[var(--radius-control)] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:pointer-events-none disabled:opacity-50";
+  "inline-flex cursor-pointer select-none items-center justify-center rounded-[var(--radius-control)] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:pointer-events-none disabled:opacity-50";
 
 export function Button({
   variant = "primary",

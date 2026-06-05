@@ -15,11 +15,14 @@ export function Input({
   return <input className={cn(controlBase, className)} {...props} />;
 }
 
+const selectBase =
+  "w-full rounded-[var(--radius-control)] border border-border bg-surface px-3 text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 h-9 min-h-9 leading-9";
+
 export function Select({
   className = "",
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={cn(controlBase, className)} {...props} />;
+  return <select className={cn(selectBase, className)} {...props} />;
 }
 
 export function Textarea({
@@ -48,16 +51,19 @@ export function TimeInput({
 /** Nur Anzeige (z. B. Datumsbereich, Standort) */
 export function ControlDisplay({
   className = "",
+  title,
   children,
 }: {
   className?: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <div
+      title={title}
       className={cn(
         controlBase,
-        "flex items-center bg-background py-2 font-medium",
+        "flex select-none items-center bg-background py-2 font-medium",
         className
       )}
     >

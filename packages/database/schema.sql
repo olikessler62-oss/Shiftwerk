@@ -44,10 +44,61 @@ create table public.shift_types (
   color text not null default '#0D9488',
   start_time time not null,
   end_time time not null,
-  sort_order int not null default 0
+  sort_order int not null default 0,
+  archived_at timestamptz
 );
 
 create index shift_types_organization_id_idx on public.shift_types (organization_id);
+
+-- Qualifikationen
+create table public.qualifications (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null,
+  sort_order int not null default 0,
+  archived_at timestamptz
+);
+
+create index qualifications_organization_id_idx on public.qualifications (organization_id);
+
+-- Standorte
+create table public.locations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null,
+  active_weekdays char(7) not null default '1111100',
+  on_holiday_open boolean not null default false,
+  sort_order int not null default 0,
+  archived_at timestamptz,
+  constraint locations_active_weekdays_check check (active_weekdays ~ '^[01]{7}$')
+);
+
+create index locations_organization_id_idx on public.locations (organization_id);
+
+-- Bereiche pro Standort (z. B. Restaurant, BAR, Küche)
+create table public.location_areas (
+  id uuid primary key default gen_random_uuid(),
+  location_id uuid not null references public.locations (id) on delete cascade,
+  name text not null,
+  sort_order int not null default 0,
+  archived_at timestamptz,
+  unique (location_id, name)
+);
+
+create index location_areas_location_id_idx on public.location_areas (location_id);
+
+-- Personalbedarf: Bereich × Schichtart × Wochentag (0=Mo … 6=So)
+create table public.location_area_staffing (
+  id uuid primary key default gen_random_uuid(),
+  location_area_id uuid not null references public.location_areas (id) on delete cascade,
+  shift_type_id uuid not null references public.shift_types (id) on delete cascade,
+  weekday smallint not null check (weekday >= 0 and weekday <= 6),
+  required_count int not null default 1 check (required_count >= 0),
+  unique (location_area_id, shift_type_id, weekday)
+);
+
+create index location_area_staffing_area_id_idx
+  on public.location_area_staffing (location_area_id);
 
 -- Pausen pro Schichtart
 create table public.shift_type_breaks (
@@ -67,6 +118,8 @@ create table public.shifts (
   organization_id uuid not null references public.organizations (id) on delete cascade,
   employee_id uuid not null references public.profiles (id) on delete cascade,
   shift_type_id uuid not null references public.shift_types (id) on delete restrict,
+  location_id uuid references public.locations (id) on delete restrict,
+  location_area_id uuid references public.location_areas (id) on delete restrict,
   shift_date date not null,
   starts_at timestamptz not null,
   ends_at timestamptz not null,
@@ -76,6 +129,8 @@ create table public.shifts (
 );
 
 create index shifts_org_date_idx on public.shifts (organization_id, shift_date);
+create index shifts_location_id_idx on public.shifts (location_id);
+create index shifts_location_area_id_idx on public.shifts (location_area_id);
 create index shifts_employee_date_idx on public.shifts (employee_id, shift_date);
 
 -- Availability
@@ -166,6 +221,10 @@ $$;
 alter table public.organizations enable row level security;
 alter table public.profiles enable row level security;
 alter table public.shift_types enable row level security;
+alter table public.qualifications enable row level security;
+alter table public.locations enable row level security;
+alter table public.location_areas enable row level security;
+alter table public.location_area_staffing enable row level security;
 alter table public.shift_type_breaks enable row level security;
 alter table public.shifts enable row level security;
 alter table public.availability enable row level security;
@@ -225,6 +284,115 @@ create policy "shift_types_select_org"
 
 create policy "shift_types_write_manager"
   on public.shift_types for all
+  using (
+    organization_id in (
+      select organization_id from public.current_profile()
+      where role in ('owner', 'manager')
+    )
+  )
+  with check (
+    organization_id in (
+      select organization_id from public.current_profile()
+      where role in ('owner', 'manager')
+    )
+  );
+
+-- Qualifications
+create policy "qualifications_select_org"
+  on public.qualifications for select
+  using (
+    organization_id in (select organization_id from public.current_profile())
+  );
+
+create policy "qualifications_write_manager"
+  on public.qualifications for all
+  using (
+    organization_id in (
+      select organization_id from public.current_profile()
+      where role in ('owner', 'manager')
+    )
+  )
+  with check (
+    organization_id in (
+      select organization_id from public.current_profile()
+      where role in ('owner', 'manager')
+    )
+  );
+
+-- Location areas
+create policy "location_areas_select_org"
+  on public.location_areas for select
+  using (
+    location_id in (
+      select id from public.locations
+      where organization_id in (select organization_id from public.current_profile())
+    )
+  );
+
+create policy "location_areas_write_manager"
+  on public.location_areas for all
+  using (
+    location_id in (
+      select l.id from public.locations l
+      where l.organization_id in (
+        select organization_id from public.current_profile()
+        where role in ('owner', 'manager')
+      )
+    )
+  )
+  with check (
+    location_id in (
+      select l.id from public.locations l
+      where l.organization_id in (
+        select organization_id from public.current_profile()
+        where role in ('owner', 'manager')
+      )
+    )
+  );
+
+-- Location area staffing
+create policy "location_area_staffing_select_org"
+  on public.location_area_staffing for select
+  using (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (select organization_id from public.current_profile())
+    )
+  );
+
+create policy "location_area_staffing_write_manager"
+  on public.location_area_staffing for all
+  using (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from public.current_profile()
+        where role in ('owner', 'manager')
+      )
+    )
+  )
+  with check (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from public.current_profile()
+        where role in ('owner', 'manager')
+      )
+    )
+  );
+
+-- Locations
+create policy "locations_select_org"
+  on public.locations for select
+  using (
+    organization_id in (select organization_id from public.current_profile())
+  );
+
+create policy "locations_write_manager"
+  on public.locations for all
   using (
     organization_id in (
       select organization_id from public.current_profile()

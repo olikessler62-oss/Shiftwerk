@@ -1,4 +1,5 @@
 export { DEFAULT_SHIFT_TYPES } from "./default-shift-types";
+export { DEFAULT_LOCATION_AREAS } from "./default-location-areas";
 
 export type UserRole = "owner" | "manager" | "employee";
 
@@ -36,6 +37,7 @@ export interface ShiftType {
   start_time: string;
   end_time: string;
   sort_order: number;
+  archived_at: string | null;
 }
 
 export interface ShiftTypeBreak {
@@ -50,11 +52,48 @@ export type ShiftTypeWithBreaks = ShiftType & {
   shift_type_breaks?: ShiftTypeBreak[];
 };
 
+export interface Qualification {
+  id: string;
+  organization_id: string;
+  name: string;
+  sort_order: number;
+  archived_at: string | null;
+}
+
+export interface Location {
+  id: string;
+  organization_id: string;
+  name: string;
+  active_weekdays: string;
+  on_holiday_open: boolean;
+  sort_order: number;
+  archived_at: string | null;
+}
+
+export interface LocationArea {
+  id: string;
+  location_id: string;
+  name: string;
+  sort_order: number;
+  archived_at: string | null;
+}
+
+/** Personalbedarf: Bereich × Schichtart × Wochentag (Mo=0 … So=6) */
+export interface LocationAreaStaffing {
+  id: string;
+  location_area_id: string;
+  shift_type_id: string;
+  weekday: number;
+  required_count: number;
+}
+
 export interface Shift {
   id: string;
   organization_id: string;
   employee_id: string;
   shift_type_id: string;
+  location_id: string | null;
+  location_area_id: string | null;
   shift_date: string;
   starts_at: string;
   ends_at: string;

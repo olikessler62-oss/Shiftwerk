@@ -19,13 +19,18 @@ import {
   formatDurationLabel,
   toTimeInputValue,
 } from "@/lib/shift-type-display";
+import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import type { ShiftTypeBreak, ShiftTypeWithBreaks } from "@schichtwerk/types";
 import {
   Alert,
   Button,
+  CheckIcon,
+  CloseIcon,
   IconButton,
   Input,
+  PlusIcon,
+  TrashIcon,
   LabelMuted,
   TimeInput,
 } from "@/components/ui";
@@ -65,6 +70,7 @@ export function ShiftTypeFormModal({
   onClose,
   onSaved,
 }: Props) {
+  const t = useTranslations();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState(shiftType?.name ?? "");
@@ -132,7 +138,7 @@ export function ShiftTypeFormModal({
   function handleSubmit() {
     setError(null);
     if (!name.trim()) {
-      setError("Bitte einen Namen eingeben.");
+      setError(t("shiftTypes.enterDesignation"));
       return;
     }
 
@@ -209,13 +215,13 @@ export function ShiftTypeFormModal({
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h3 id="shift-type-form-title" className="text-lg font-semibold text-foreground">
-            {mode === "create" ? "Schichtart anlegen" : "Schichtart bearbeiten"}
+            {mode === "create" ? t("shiftTypes.createTitle") : t("shiftTypes.editTitle")}
           </h3>
           <IconButton
             size="sm"
             onClick={onClose}
             disabled={pending}
-            aria-label="Schließen"
+            aria-label={t("common.close")}
             className="border-transparent bg-transparent hover:bg-subtle"
           >
             <CloseIcon />
@@ -226,7 +232,7 @@ export function ShiftTypeFormModal({
           {error && <Alert variant="error">{error}</Alert>}
 
           <div>
-            <LabelMuted>Name</LabelMuted>
+            <LabelMuted>{t("shiftTypes.designation")}</LabelMuted>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -236,11 +242,11 @@ export function ShiftTypeFormModal({
 
           <div className="flex flex-wrap items-end gap-4">
             <div className="min-w-[120px] flex-1">
-              <LabelMuted>Uhrzeit von</LabelMuted>
+              <LabelMuted>{t("shiftTypes.timeFrom")}</LabelMuted>
               <TimeInput value={startTime} onChange={(e) => setStartTime(e.target.value)} />
             </div>
             <div className="min-w-[120px] flex-1">
-              <LabelMuted>Uhrzeit bis</LabelMuted>
+              <LabelMuted>{t("shiftTypes.timeTo")}</LabelMuted>
               <TimeInput value={endTime} onChange={(e) => setEndTime(e.target.value)} />
             </div>
             <p className="pb-2 text-sm font-medium tabular-nums text-foreground">
@@ -251,22 +257,22 @@ export function ShiftTypeFormModal({
           <div>
             <p className="mb-2 text-xs text-muted">{pauseHint}</p>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <LabelMuted className="mb-0">Pausen</LabelMuted>
+              <LabelMuted className="mb-0">{t("shiftTypes.breaks")}</LabelMuted>
               <div className="flex gap-1">
                 <IconButton
                   size="sm"
-                  aria-label="Pause hinzufügen"
+                  aria-label={t("shiftTypes.addBreak")}
                   onClick={addBreak}
                   disabled={
                     pending ||
                     (breakRule.kind === "required" && breaks.length >= 1)
                   }
                 >
-                  +
+                  <PlusIcon />
                 </IconButton>
                 <IconButton
                   size="sm"
-                  aria-label="Pause entfernen"
+                  aria-label={t("shiftTypes.removeBreak")}
                   onClick={removeSelectedBreak}
                   disabled={pending || !selectedBreakKey}
                 >
@@ -279,10 +285,10 @@ export function ShiftTypeFormModal({
               <thead>
                 <tr className="border-b border-border">
                   <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                    Pause von
+                    {t("shiftTypes.breakFrom")}
                   </th>
                   <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                    Pause bis
+                    {t("shiftTypes.breakTo")}
                   </th>
                 </tr>
               </thead>
@@ -290,7 +296,7 @@ export function ShiftTypeFormModal({
                 {breaks.length === 0 ? (
                   <tr>
                     <td colSpan={2} className="py-4 text-center text-xs text-muted">
-                      Keine Pausen — mit + hinzufügen.
+                      {t("shiftTypes.noBreaksHint")}
                     </td>
                   </tr>
                 ) : (
@@ -344,29 +350,15 @@ export function ShiftTypeFormModal({
 
         <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
-            Abbrechen
+            <CloseIcon />
+            {t("common.cancel")}
           </Button>
           <Button type="button" variant="primary" onClick={handleSubmit} disabled={pending}>
-            OK
+            <CheckIcon />
+            {t("common.ok")}
           </Button>
         </div>
       </div>
     </div>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M18 6L6 18M6 6l12 12" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
-    </svg>
   );
 }
