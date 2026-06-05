@@ -1,5 +1,7 @@
 /** Reine Hilfsfunktionen für Client-Komponenten (kein @schichtwerk/database-Import). */
 
+export const STAFFING_HOLIDAY_WEEKDAY = 7;
+
 export function weekdayIndexFromDate(isoDate: string): number {
   const [y, m, d] = isoDate.split("-").map(Number);
   const day = new Date(y, m - 1, d).getDay();
@@ -16,6 +18,14 @@ export function isLocationOpenOnWeekday(
 ): boolean {
   if (!isValidActiveWeekdays(activeWeekdays)) return false;
   return activeWeekdays[weekdayIndex] === "1";
+}
+
+export function isStaffingDayEnabled(
+  location: { active_weekdays: string; on_holiday_open: boolean },
+  weekday: number
+): boolean {
+  if (weekday === STAFFING_HOLIDAY_WEEKDAY) return location.on_holiday_open;
+  return isLocationOpenOnWeekday(location.active_weekdays, weekday);
 }
 
 export type StaffingRule = {

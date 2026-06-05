@@ -13,7 +13,7 @@ export type ButtonSize = "sm" | "md" | "lg" | "header";
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "border border-transparent bg-primary text-primary-foreground hover:opacity-90",
+    "border border-transparent bg-primary text-primary-foreground shadow-sm hover:opacity-95 hover:shadow-md",
   secondary:
     "border border-border bg-surface text-foreground hover:bg-background",
   outline:

@@ -7,7 +7,6 @@ import {
   type ShiftTypeBreakInput,
 } from "@/app/actions/shift-types";
 import {
-  breakRuleHint,
   centeredBreakForShift,
   getBreakDurationRule,
   getSuggestedBreakMinutes,
@@ -22,6 +21,7 @@ import {
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import type { ShiftTypeBreak, ShiftTypeWithBreaks } from "@schichtwerk/types";
+import { SETTINGS_MODAL_TITLE_CLASS, settingsColumnHeaderClass } from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -91,11 +91,6 @@ export function ShiftTypeFormModal({
 
   const durationLabel = useMemo(
     () => formatDurationLabel(`${startTime}:00`, `${endTime}:00`),
-    [startTime, endTime]
-  );
-
-  const pauseHint = useMemo(
-    () => breakRuleHint(startTime, endTime),
     [startTime, endTime]
   );
 
@@ -214,7 +209,7 @@ export function ShiftTypeFormModal({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h3 id="shift-type-form-title" className="text-lg font-semibold text-foreground">
+          <h3 id="shift-type-form-title" className={SETTINGS_MODAL_TITLE_CLASS}>
             {mode === "create" ? t("shiftTypes.createTitle") : t("shiftTypes.editTitle")}
           </h3>
           <IconButton
@@ -255,7 +250,7 @@ export function ShiftTypeFormModal({
           </div>
 
           <div>
-            <p className="mb-2 text-xs text-muted">{pauseHint}</p>
+            <div className="mb-2 h-4" aria-hidden />
             <div className="mb-2 flex items-center justify-between gap-2">
               <LabelMuted className="mb-0">{t("shiftTypes.breaks")}</LabelMuted>
               <div className="flex gap-1">
@@ -284,12 +279,8 @@ export function ShiftTypeFormModal({
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                    {t("shiftTypes.breakFrom")}
-                  </th>
-                  <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                    {t("shiftTypes.breakTo")}
-                  </th>
+                  <th className={settingsColumnHeaderClass()}>{t("shiftTypes.breakFrom")}</th>
+                  <th className={settingsColumnHeaderClass()}>{t("shiftTypes.breakTo")}</th>
                 </tr>
               </thead>
               <tbody>

@@ -27,3 +27,16 @@ export function validateQualificationUniqueness(
 
   return { ok: true };
 }
+
+export function validateQualificationArchive(upcomingShiftCount: number):
+  | { ok: true }
+  | { ok: false; error: string } {
+  if (upcomingShiftCount > 0) {
+    return {
+      ok: false,
+      error:
+        "Mitarbeiter mit dieser Qualifikation sind noch in anstehenden Schichten eingeteilt. Weisen Sie diesen Mitarbeitern zuerst eine andere Qualifikation zu.",
+    };
+  }
+  return { ok: true };
+}

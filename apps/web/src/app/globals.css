@@ -16,6 +16,7 @@
   --color-danger-foreground: #b91c1c;
   --color-info: #f0fdfa;
   --color-info-foreground: #115e59;
+  --color-nav-active: color-mix(in srgb, var(--color-primary) 10%, transparent);
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --radius-control: 0.625rem;
 }

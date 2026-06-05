@@ -10,7 +10,21 @@ import {
   formatClock,
   shiftTypeDuration,
 } from "@/lib/shift-type-display";
+import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ShiftTypeFormModal } from "./shift-type-form-modal";
+import {
+  SETTINGS_LIST_SCROLL_CLASS,
+  SETTINGS_MODAL_TITLE_CLASS,
+  SettingsActionBar,
+  SettingsEmptyState,
+  SettingsIconActionButton,
+  SettingsPrimaryActionButton,
+  settingsColumnHeaderClass,
+  settingsDataCellClass,
+  settingsDataRowClass,
+  settingsIndicatorCellClass,
+  settingsPanelHeaderClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -40,10 +54,6 @@ const COLUMN_LABEL_KEYS = [
   "shiftTypes.duration",
   "shiftTypes.breaks",
 ] as const;
-
-/** Kopfzeile + max. 6 Datenzeilen; bei wenig Viewport-Höhe früher scrollen */
-const LIST_SCROLL_MAX_CLASS =
-  "max-h-[min(calc(1.75rem+12rem),calc(100dvh-18rem))] overflow-y-auto";
 
 function sortedBreaks(type: ShiftTypeWithBreaks) {
   return [...(type.shift_type_breaks ?? [])].sort(
@@ -136,10 +146,7 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
         if (e.target === e.currentTarget && !formMode && !confirmDelete) onClose();
       }}
     >
-      <div
-        className="relative w-full max-w-3xl"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+      <div className="relative w-full max-w-3xl" onMouseDown={(e) => e.stopPropagation()}>
         <div
           role="dialog"
           aria-modal="true"
@@ -151,10 +158,7 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
           )}
         >
           <div className="flex items-center justify-between border-b border-border px-6 py-4">
-            <h2
-              id="shift-types-modal-title"
-              className="text-lg font-semibold text-foreground"
-            >
+            <h2 id="shift-types-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("shiftTypes.title")}
             </h2>
             <IconButton
@@ -175,37 +179,34 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
 
           <div className="bg-background px-6 py-4">
             <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
-              <h3 className="shrink-0 border-b border-border bg-subtle px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-foreground">
-                {t("shiftTypes.title")}
-              </h3>
+              <h3 className={settingsPanelHeaderClass()}>{t("shiftTypes.title")}</h3>
 
-              <div className={cn("bg-background px-2 py-2", LIST_SCROLL_MAX_CLASS)}>
-                <div className="min-w-0 overflow-x-auto rounded-md border border-border bg-surface">
-                  <table className="w-full min-w-[36rem] border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-subtle text-center">
-                        {COLUMN_LABEL_KEYS.map((label) => (
-                          <th
-                            key={label}
-                            className="px-2 pb-1.5 font-semibold text-muted"
-                          >
-                            {t(label)}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className="py-8 text-center text-muted"
-                          >
-                            {t("shiftTypes.emptyList")}
-                          </td>
+              <div className={cn("bg-background px-2 py-2", SETTINGS_LIST_SCROLL_CLASS)}>
+                {list.length === 0 ? (
+                  <SettingsEmptyState
+                    message={t("shiftTypes.emptyList")}
+                    hint={t("common.emptyHintCreate")}
+                  />
+                ) : (
+                  <div className="min-w-0 overflow-x-auto rounded-md border border-border bg-surface">
+                    <table className="w-full min-w-[36rem] border-collapse">
+                      <thead>
+                        <tr className="border-b border-border bg-subtle">
+                          <th className="w-1 p-0" aria-hidden />
+                          {COLUMN_LABEL_KEYS.map((label, index) => (
+                            <th
+                              key={label}
+                              className={settingsColumnHeaderClass(
+                                index === 0 ? "left" : "center"
+                              )}
+                            >
+                              {t(label)}
+                            </th>
+                          ))}
                         </tr>
-                      ) : (
-                        list.map((type) => {
+                      </thead>
+                      <tbody>
+                        {list.map((type) => {
                           const isSelected = type.id === selectedId;
                           const breaks = sortedBreaks(type);
                           return (
@@ -221,133 +222,75 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
                                 window.getSelection()?.removeAllRanges();
                                 openEdit(type);
                               }}
-                              className={cn(
-                                "h-9 cursor-pointer select-none border-b border-border last:border-0",
-                                isSelected
-                                  ? "bg-subtle ring-1 ring-inset ring-border"
-                                  : "hover:bg-hover"
-                              )}
+                              className={settingsDataRowClass(isSelected)}
                             >
-                              <td
-                                className={cn(
-                                  "h-9 border-l-4 px-2 py-0 text-center font-medium text-foreground",
-                                  isSelected
-                                    ? "border-l-foreground"
-                                    : "border-l-transparent"
-                                )}
-                              >
+                              <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
+                              <td className={settingsDataCellClass(isSelected, { className: "font-medium" })}>
                                 {type.name}
                               </td>
-                              <td className="h-9 px-2 py-0 text-center tabular-nums text-foreground">
+                              <td className={settingsDataCellClass(isSelected, { align: "center" })}>
                                 {formatClock(type.start_time)}
                               </td>
-                              <td className="h-9 px-2 py-0 text-center tabular-nums text-foreground">
+                              <td className={settingsDataCellClass(isSelected, { align: "center" })}>
                                 {formatClock(type.end_time)}
                               </td>
-                              <td className="h-9 px-2 py-0 text-center tabular-nums text-foreground">
-                                {shiftTypeDuration(
-                                  type.start_time,
-                                  type.end_time
-                                )}
+                              <td className={settingsDataCellClass(isSelected, { align: "center" })}>
+                                {shiftTypeDuration(type.start_time, type.end_time)}
                               </td>
-                              <td className="h-9 px-2 py-0 text-center tabular-nums text-foreground">
-                                {breaks.length > 0
-                                  ? formatBreakTotal(breaks)
-                                  : "—"}
+                              <td className={settingsDataCellClass(isSelected, { align: "center" })}>
+                                {breaks.length > 0 ? formatBreakTotal(breaks) : "—"}
                               </td>
                             </tr>
                           );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {confirmDelete && selected && (
-                <div className="mx-2 mb-1 rounded-[var(--radius-control)] border border-border bg-subtle px-3 py-2 text-sm">
-                  <span className="block text-center">
-                    <strong>{selected.name}</strong>{" "}
-                    {t("shiftTypes.confirmDelete")}
-                  </span>
-                  <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                      disabled={pending}
-                      onClick={() => setConfirmDelete(false)}
-                    >
-                      <CloseIcon />
-                      {t("shiftTypes.no")}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                      disabled={pending}
-                      onClick={handleDelete}
-                    >
-                      <TrashIcon />
-                      {t("shiftTypes.yesDelete")}
-                    </Button>
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
-              )}
-
-              <div className="flex shrink-0 flex-wrap items-center justify-start gap-1.5 border-t border-border bg-subtle px-2 py-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 w-auto shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                  disabled={pending || atShiftTypeLimit}
-                  title={
-                    atShiftTypeLimit
-                      ? t("shiftTypes.maxTypes", {
-                          max: MAX_SHIFT_TYPES_PER_ORGANIZATION,
-                        })
-                      : undefined
-                  }
-                  onClick={() => {
-                    setFormMode({ type: "create" });
-                    setConfirmDelete(false);
-                  }}
-                >
-                  <PlusIcon />
-                  {t("shiftTypes.new")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 w-auto shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                  disabled={pending || !selected}
-                  onClick={() => {
-                    if (!selected) return;
-                    openEdit(selected);
-                  }}
-                >
-                  <PencilIcon />
-                  {t("shiftTypes.edit")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 w-auto shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                  disabled={pending || !selected}
-                  onClick={() => {
-                    setConfirmDelete(true);
-                    setErrorMessage(null);
-                  }}
-                >
-                  <TrashIcon />
-                  {t("shiftTypes.delete")}
-                </Button>
+                )}
               </div>
+
+              <SettingsActionBar
+                primary={
+                  <SettingsPrimaryActionButton
+                    label={t("shiftTypes.new")}
+                    icon={<PlusIcon />}
+                    disabled={pending || atShiftTypeLimit}
+                    title={
+                      atShiftTypeLimit
+                        ? t("shiftTypes.maxTypes", {
+                            max: MAX_SHIFT_TYPES_PER_ORGANIZATION,
+                          })
+                        : undefined
+                    }
+                    onClick={() => {
+                      setFormMode({ type: "create" });
+                      setConfirmDelete(false);
+                    }}
+                  />
+                }
+                secondary={
+                  <SettingsIconActionButton
+                    label={t("shiftTypes.edit")}
+                    icon={<PencilIcon />}
+                    disabled={pending || !selected}
+                    onClick={() => {
+                      if (!selected) return;
+                      openEdit(selected);
+                    }}
+                  />
+                }
+                destructive={
+                  <SettingsIconActionButton
+                    label={t("shiftTypes.delete")}
+                    icon={<TrashIcon />}
+                    disabled={pending || !selected}
+                    onClick={() => {
+                      setConfirmDelete(true);
+                      setErrorMessage(null);
+                    }}
+                  />
+                }
+              />
             </div>
           </div>
 
@@ -380,6 +323,14 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
             existingShiftTypes={list}
             onClose={() => setFormMode(null)}
             onSaved={refreshList}
+          />
+        )}
+        {confirmDelete && selected && (
+          <DeleteConfirmModal
+            name={selected.name}
+            pending={pending}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={handleDelete}
           />
         )}
       </div>

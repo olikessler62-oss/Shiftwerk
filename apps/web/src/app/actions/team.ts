@@ -63,7 +63,7 @@ export async function inviteEmployee(
       await admin.insertProfile({
         id: invited.user.id,
         organization_id: organizationId,
-        role: "employee",
+        role: "basic",
         full_name: fullName,
         email,
       });

@@ -8,6 +8,7 @@ import {
 import { validateQualificationUniqueness } from "@schichtwerk/database";
 import type { Qualification } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
+import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -87,7 +88,7 @@ export function QualificationFormModal({
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h3
             id="qualification-form-title"
-            className="text-lg font-semibold text-foreground"
+            className={SETTINGS_MODAL_TITLE_CLASS}
           >
             {mode === "create"
               ? t("qualifications.createTitle")

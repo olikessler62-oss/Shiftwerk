@@ -14,9 +14,13 @@ Der gesamte App-Code (Web, Mobile, Scripts) nutzt nur die TypeScript-Schnittstel
 
 Dashboard → SQL → Inhalt von `schema.sql` einfügen → Run
 
-**Bereits laufende Datenbank:** nur fehlende Änderungen aus `migrations/` ausführen (Reihenfolge: `20250604` … `20250609_archive_shift_types_qualifications.sql`).
+**Bereits laufende Datenbank:** nur fehlende Änderungen aus `migrations/` ausführen (Reihenfolge: `20250604` … `20250615_profile_schedulable.sql`).
 
 Fehler *„column locations.archived_at does not exist“*: im SQL Editor `scripts/apply-archive-columns.sql` ausführen (oder `20250608` + `20250609` einzeln).
+
+Fehler *„column profiles.color does not exist“* / *„column profiles.mobile_phone does not exist“*: im SQL Editor `scripts/apply-profile-columns.sql` ausführen (oder `20250614` + `20250615` einzeln).
+
+Weitere Profil-Migrationen (falls noch nicht ausgeführt): `20250611_profile_qualifications.sql`, `20250613_profile_hourly_rates.sql`, `20250616_profile_recurring_availability.sql`.
 
 ## Nutzung in der Web-App
 

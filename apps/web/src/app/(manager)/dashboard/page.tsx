@@ -24,6 +24,8 @@ export default async function DashboardPage({
     schichtarten?: string;
     qualifikationen?: string;
     standorte?: string;
+    profiles?: string;
+    rollen?: string;
     location?: string;
   }>;
 }) {
@@ -42,11 +44,22 @@ export default async function DashboardPage({
   const from = dates[0];
   const to = dates[6];
 
-  const [shiftTypes, qualifications, locations] = await Promise.all([
-    db.loadShiftTypesWithBreaks(orgId),
-    db.listQualifications(orgId),
-    db.listLocationsForDashboard(orgId, from, to),
-  ]);
+  const today = new Date().toISOString().slice(0, 10);
+
+  let [shiftTypes, qualifications, roles, profiles, profileHourlyRates, locations] =
+    await Promise.all([
+      db.loadShiftTypesWithBreaks(orgId),
+      db.listQualifications(orgId),
+      db.listRoles(orgId),
+      db.listOrganizationProfiles(orgId),
+      db.listCurrentOrganizationProfileHourlyRates(orgId, today),
+      db.listLocationsForDashboard(orgId, from, to),
+    ]);
+
+  if (!roles.length) {
+    await db.seedDefaultRoles(orgId);
+    roles = await db.listRoles(orgId);
+  }
 
   const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
   const selectedLocation =
@@ -89,6 +102,9 @@ export default async function DashboardPage({
         shifts={cards}
         shiftTypes={shiftTypes}
         qualifications={qualifications}
+        roles={roles}
+        profiles={profiles}
+        profileHourlyRates={profileHourlyRates}
         locations={locations}
       />
     </Suspense>

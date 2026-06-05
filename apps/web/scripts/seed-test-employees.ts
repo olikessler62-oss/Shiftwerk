@@ -155,7 +155,7 @@ async function main() {
     const { error: profileError } = await admin.from(T.profiles).insert({
       id: userData.user.id,
       organization_id: organizationId,
-      role: "employee",
+      role: "basic",
       full_name: fullName,
       email,
     });

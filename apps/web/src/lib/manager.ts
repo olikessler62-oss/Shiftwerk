@@ -1,7 +1,7 @@
 import { getDatabase } from "@/lib/db";
-import type { Profile, UserRole } from "@schichtwerk/types";
+import type { Profile, RolePermissionLevel } from "@schichtwerk/types";
 
-const MANAGER_ROLES: UserRole[] = ["owner", "manager"];
+const MANAGER_ROLES: RolePermissionLevel[] = ["admin", "manager"];
 
 export type ManagerContext = {
   userId: string;
@@ -23,7 +23,7 @@ export async function requireManager(): Promise<ManagerContext> {
     throw new Error("Profil nicht gefunden");
   }
 
-  if (!MANAGER_ROLES.includes(profile.role as UserRole)) {
+  if (!MANAGER_ROLES.includes(profile.role)) {
     throw new Error("Keine Berechtigung");
   }
 

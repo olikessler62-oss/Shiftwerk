@@ -11,7 +11,7 @@ export default async function HomePage() {
 
   const role = await db.getProfileRole(user.id);
 
-  if (role === "employee") {
+  if (role === "basic") {
     redirect("/app-only");
   }
 

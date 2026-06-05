@@ -16,7 +16,7 @@ export default function Index() {
       }
 
       const profile = await db.getCurrentUserProfile();
-      if (!profile || profile.role !== "employee") {
+      if (!profile || profile.role !== "basic") {
         await db.authSignOut();
         router.replace("/login");
         return;

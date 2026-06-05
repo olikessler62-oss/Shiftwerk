@@ -4,13 +4,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type {
   Location,
   LocationArea,
+  Profile,
+  ProfileHourlyRateSummary,
   Qualification,
+  Role,
   ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
 import type { StaffingRule } from "@/lib/location-staffing-client";
 import { ShiftTypesModal } from "@/components/settings/shift-types-modal";
 import { QualificationsModal } from "@/components/settings/qualifications-modal";
 import { LocationsModal } from "@/components/settings/locations-modal";
+import { RolesModal } from "@/components/settings/roles-modal";
+import { ProfilesModal } from "@/components/settings/profiles-modal";
 import { DashboardHeader } from "./dashboard-header";
 import {
   DashboardCalendar,
@@ -27,6 +32,9 @@ type Props = {
   shifts: DashboardShiftCard[];
   shiftTypes: ShiftTypeWithBreaks[];
   qualifications: Qualification[];
+  roles: Role[];
+  profiles: Profile[];
+  profileHourlyRates: ProfileHourlyRateSummary[];
   locations: Location[];
 };
 
@@ -40,16 +48,26 @@ export function DashboardView({
   shifts,
   shiftTypes,
   qualifications,
+  roles,
+  profiles,
+  profileHourlyRates,
   locations,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const showLocations = searchParams.get("standorte") === "1";
+  const showProfiles = searchParams.get("profiles") === "1";
+  const showRoles = searchParams.get("rollen") === "1";
   const showShiftTypes = searchParams.get("schichtarten") === "1";
   const showQualifications = searchParams.get("qualifikationen") === "1";
-  const showLocations = searchParams.get("standorte") === "1";
 
   function closeSettingsModal(
-    flag: "schichtarten" | "qualifikationen" | "standorte"
+    flag:
+      | "standorte"
+      | "profiles"
+      | "rollen"
+      | "schichtarten"
+      | "qualifikationen"
   ) {
     const params = new URLSearchParams(searchParams.toString());
     params.delete(flag);
@@ -70,6 +88,29 @@ export function DashboardView({
           staffingRules={staffingRules}
           shifts={shifts}
         />
+        {showLocations && (
+          <LocationsModal
+            locations={locations}
+            initialSelectedLocationId={selectedLocationId}
+            initialAreas={areas}
+            initialSelectedAreaId={areas[0]?.id ?? null}
+            onClose={() => closeSettingsModal("standorte")}
+          />
+        )}
+        {showProfiles && (
+          <ProfilesModal
+            profiles={profiles}
+            profileHourlyRates={profileHourlyRates}
+            shiftTypes={shiftTypes}
+            onClose={() => closeSettingsModal("profiles")}
+          />
+        )}
+        {showRoles && (
+          <RolesModal
+            roles={roles}
+            onClose={() => closeSettingsModal("rollen")}
+          />
+        )}
         {showShiftTypes && (
           <ShiftTypesModal
             shiftTypes={shiftTypes}
@@ -80,15 +121,6 @@ export function DashboardView({
           <QualificationsModal
             qualifications={qualifications}
             onClose={() => closeSettingsModal("qualifikationen")}
-          />
-        )}
-        {showLocations && (
-          <LocationsModal
-            locations={locations}
-            initialSelectedLocationId={selectedLocationId}
-            initialAreas={areas}
-            initialSelectedAreaId={areas[0]?.id ?? null}
-            onClose={() => closeSettingsModal("standorte")}
           />
         )}
       </section>

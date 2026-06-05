@@ -16,7 +16,7 @@ export default async function ManagerLayout({
 
   const profile = await db.getProfileById(user.id);
 
-  if (!profile || profile.role === "employee") redirect("/app-only");
+  if (!profile || profile.role === "basic") redirect("/app-only");
 
   const orgName = await db.getOrganizationName(profile.organization_id);
   const locale = await getServerLocale();

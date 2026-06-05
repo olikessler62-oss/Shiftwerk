@@ -49,10 +49,11 @@ export async function signUp(formData: FormData) {
   }
 
   try {
+    await admin.seedDefaultRoles(orgId);
     await admin.insertProfile({
       id: userId,
       organization_id: orgId,
-      role: "owner",
+      role: "admin",
       full_name: fullName,
       email,
     });

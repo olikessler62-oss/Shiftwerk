@@ -1,5 +1,8 @@
 import { isValidActiveWeekdays } from "./location-weekdays";
 
+/** Montag = 0 … Sonntag = 6, Feiertage = 7 */
+export const STAFFING_HOLIDAY_WEEKDAY = 7;
+
 /** Montag = 0 … Sonntag = 6 (ISO-Woche) */
 export function weekdayIndexFromDate(isoDate: string): number {
   const [y, m, d] = isoDate.split("-").map(Number);

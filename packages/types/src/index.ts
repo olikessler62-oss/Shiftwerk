@@ -1,7 +1,23 @@
 export { DEFAULT_SHIFT_TYPES } from "./default-shift-types";
 export { DEFAULT_LOCATION_AREAS } from "./default-location-areas";
+export { DEFAULT_ORG_ROLES } from "./default-roles";
 
-export type UserRole = "owner" | "manager" | "employee";
+/** Berechtigungsstufe (ehem. owner → admin, employee → basic) */
+export type RolePermissionLevel = "admin" | "manager" | "basic";
+
+/** @deprecated Alias — nutze RolePermissionLevel */
+export type UserRole = RolePermissionLevel;
+
+export interface Role {
+  id: string;
+  organization_id: string;
+  key: string;
+  name: string;
+  permission_level: RolePermissionLevel;
+  is_system: boolean;
+  sort_order: number;
+  archived_at: string | null;
+}
 
 export type AvailabilityStatus = "available" | "unavailable" | "preferred";
 
@@ -21,11 +37,46 @@ export interface Organization {
 export interface Profile {
   id: string;
   organization_id: string;
-  role: UserRole;
+  role_id: string;
+  /** Abgeleitet aus roles.permission_level */
+  role: RolePermissionLevel;
   full_name: string;
   email: string;
+  mobile_phone: string | null;
+  color: string | null;
   weekly_hours: number | null;
   is_active: boolean;
+  schedulable: boolean;
+  created_at: string;
+}
+
+export interface ProfileHourlyRate {
+  id: string;
+  organization_id: string;
+  profile_id: string;
+  amount: number;
+  currency: string;
+  valid_from: string;
+  valid_to: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface ProfileHourlyRateSummary {
+  profile_id: string;
+  amount: number;
+  currency: string;
+}
+
+export interface ProfileRecurringAvailability {
+  id: string;
+  organization_id: string;
+  profile_id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  shift_type_id: string | null;
+  shift_type_name: string | null;
   created_at: string;
 }
 
@@ -78,7 +129,7 @@ export interface LocationArea {
   archived_at: string | null;
 }
 
-/** Personalbedarf: Bereich × Schichtart × Wochentag (Mo=0 … So=6) */
+/** Personalbedarf: Bereich × Schichtart × Wochentag (Mo=0 … So=6, Feiertage=7) */
 export interface LocationAreaStaffing {
   id: string;
   location_area_id: string;

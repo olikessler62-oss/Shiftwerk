@@ -95,7 +95,11 @@ export function HamburgerNav({ orgName, userName, role }: HamburgerNavProps) {
                 <p className="px-3 py-1.5 text-xs text-muted">
                   {userName}
                   {" · "}
-                  {role === "owner" ? "Inhaber" : "Manager"}
+                  {role === "admin"
+                    ? "Administrator"
+                    : role === "manager"
+                      ? "Manager"
+                      : "Mitarbeiter"}
                 </p>
                 <form action={signOut}>
                   <Button

@@ -1,5 +1,9 @@
 import type { ShiftType, ShiftTypeWithBreaks } from "@schichtwerk/types";
-import { DEFAULT_LOCATION_AREAS, DEFAULT_SHIFT_TYPES } from "@schichtwerk/types";
+import {
+  DEFAULT_LOCATION_AREAS,
+  DEFAULT_ORG_ROLES,
+  DEFAULT_SHIFT_TYPES,
+} from "@schichtwerk/types";
 import type { ShiftTypeBreakInput } from "./interface";
 import { Schema } from "./schema";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -75,6 +79,32 @@ export async function seedDefaultShiftTypes(
   }));
 
   const { error } = await client.from(Schema.tables.shiftTypes).insert(rows);
+  if (error) throw new Error(error.message);
+}
+
+export async function seedDefaultRoles(
+  client: SupabaseClient,
+  organizationId: string
+): Promise<void> {
+  const { count, error: countError } = await client
+    .from(Schema.tables.roles)
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .is("archived_at", null);
+
+  if (countError) throw new Error(countError.message);
+  if (count && count > 0) return;
+
+  const rows = DEFAULT_ORG_ROLES.map((role) => ({
+    organization_id: organizationId,
+    key: role.key,
+    name: role.name,
+    permission_level: role.permission_level,
+    is_system: role.is_system,
+    sort_order: role.sort_order,
+  }));
+
+  const { error } = await client.from(Schema.tables.roles).insert(rows);
   if (error) throw new Error(error.message);
 }
 

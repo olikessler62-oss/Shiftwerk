@@ -1,8 +1,13 @@
 import type {
   AvailabilityStatus,
   Profile,
+  ProfileHourlyRate,
+  ProfileHourlyRateSummary,
+  ProfileRecurringAvailability,
   Shift,
   Qualification,
+  Role,
+  RolePermissionLevel,
   Location,
   LocationArea,
   LocationAreaStaffing,
@@ -77,6 +82,10 @@ export interface SchichtwerkDatabase {
     email: string,
     options: { full_name: string; redirectTo: string }
   ): Promise<{ data: InviteUserResult | null; error: string | null }>;
+  authAdminCreateUser(
+    email: string,
+    options: { full_name: string }
+  ): Promise<{ data: InviteUserResult | null; error: string | null }>;
   authDeleteUser(userId: string): Promise<void>;
 
   // —— Organizations ——
@@ -92,10 +101,36 @@ export interface SchichtwerkDatabase {
   insertProfile(row: {
     id: string;
     organization_id: string;
-    role: UserRole;
+    role_id?: string;
+    role?: RolePermissionLevel;
     full_name: string;
     email: string;
+    mobile_phone?: string | null;
+    color?: string | null;
+    is_active?: boolean;
+    schedulable?: boolean;
   }): Promise<void>;
+  updateOrganizationProfile(
+    id: string,
+    organizationId: string,
+    row: {
+      full_name: string;
+      is_active: boolean;
+      schedulable: boolean;
+      email: string;
+      mobile_phone: string | null;
+      color: string | null;
+    }
+  ): Promise<void>;
+  listAssignedProfileColors(
+    organizationId: string,
+    excludeProfileId?: string
+  ): Promise<string[]>;
+  getRoleIdByPermissionLevel(
+    organizationId: string,
+    permissionLevel: RolePermissionLevel
+  ): Promise<string | null>;
+  listOrganizationProfiles(organizationId: string): Promise<Profile[]>;
   listActiveEmployees(organizationId: string): Promise<Profile[]>;
   countActiveEmployees(organizationId: string): Promise<number>;
   findProfileByEmail(organizationId: string, email: string): Promise<{ id: string } | null>;
@@ -145,7 +180,108 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     row: { name: string }
   ): Promise<void>;
+  countUpcomingShiftsForQualificationProfiles(
+    organizationId: string,
+    qualificationId: string,
+    fromDate: string
+  ): Promise<number>;
   archiveQualification(id: string, organizationId: string): Promise<void>;
+
+  // —— Profile qualifications ——
+  listProfileQualifications(
+    organizationId: string,
+    profileId: string
+  ): Promise<Qualification[]>;
+  assignProfileQualification(
+    organizationId: string,
+    profileId: string,
+    qualificationId: string
+  ): Promise<void>;
+  removeProfileQualification(
+    organizationId: string,
+    profileId: string,
+    qualificationId: string
+  ): Promise<void>;
+
+  // —— Profile hourly rates ——
+  listProfileHourlyRates(
+    organizationId: string,
+    profileId: string,
+    limit?: number
+  ): Promise<ProfileHourlyRate[]>;
+  getProfileHourlyRateForDate(
+    organizationId: string,
+    profileId: string,
+    date: string
+  ): Promise<ProfileHourlyRate | null>;
+  listCurrentOrganizationProfileHourlyRates(
+    organizationId: string,
+    date: string
+  ): Promise<ProfileHourlyRateSummary[]>;
+  setProfileHourlyRate(
+    organizationId: string,
+    profileId: string,
+    input: {
+      amount: number;
+      valid_from: string;
+      created_by?: string;
+    }
+  ): Promise<ProfileHourlyRate>;
+
+  // —— Profile recurring availability ——
+  listProfileRecurringAvailability(
+    organizationId: string,
+    profileId: string
+  ): Promise<ProfileRecurringAvailability[]>;
+  insertProfileRecurringAvailability(
+    organizationId: string,
+    profileId: string,
+    input: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      shift_type_id?: string | null;
+    }
+  ): Promise<ProfileRecurringAvailability>;
+  updateProfileRecurringAvailability(
+    organizationId: string,
+    profileId: string,
+    availabilityId: string,
+    input: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      shift_type_id?: string | null;
+    }
+  ): Promise<ProfileRecurringAvailability>;
+  deleteProfileRecurringAvailability(
+    organizationId: string,
+    profileId: string,
+    availabilityId: string
+  ): Promise<void>;
+
+  // —— Roles ——
+  listRoles(organizationId: string): Promise<Role[]>;
+  seedDefaultRoles(organizationId: string): Promise<void>;
+  getNextRoleSortOrder(organizationId: string): Promise<number>;
+  insertRole(row: {
+    organization_id: string;
+    key: string;
+    name: string;
+    permission_level: RolePermissionLevel;
+    is_system?: boolean;
+    sort_order: number;
+  }): Promise<{ id: string }>;
+  updateRole(
+    id: string,
+    organizationId: string,
+    row: {
+      name: string;
+      permission_level: RolePermissionLevel;
+    }
+  ): Promise<void>;
+  archiveRole(id: string, organizationId: string): Promise<void>;
+  countProfilesUsingRole(roleId: string, organizationId: string): Promise<number>;
 
   // —— Locations (Standorte) ——
   listLocations(organizationId: string): Promise<Location[]>;
@@ -188,6 +324,17 @@ export interface SchichtwerkDatabase {
     locationAreaId: string,
     locationId: string,
     rules: { shift_type_id: string; weekday: number; required_count: number }[]
+  ): Promise<void>;
+  saveLocationAreaStaffingForShiftType(
+    locationAreaId: string,
+    locationId: string,
+    shiftTypeId: string,
+    rules: { weekday: number; required_count: number }[]
+  ): Promise<void>;
+  removeLocationAreaStaffingForShiftType(
+    locationAreaId: string,
+    locationId: string,
+    shiftTypeId: string
   ): Promise<void>;
   getNextLocationAreaSortOrder(locationId: string): Promise<number>;
   insertLocationArea(row: {

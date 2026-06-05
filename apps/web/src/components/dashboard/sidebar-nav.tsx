@@ -18,10 +18,18 @@ const SETTINGS_SECTION_ID = "einstellungen";
 
 const navItemClass = (active: boolean) =>
   cn(
-    "block w-full rounded-lg px-3 py-2 text-left text-sm transition-colors",
+    "block w-full rounded-lg border-l-2 py-2 pl-[calc(0.75rem-2px)] pr-3 text-left text-sm transition-colors",
     active
-      ? "bg-background font-medium text-foreground"
-      : "text-foreground hover:bg-background"
+      ? "border-l-primary bg-primary/5 font-medium text-foreground"
+      : "border-l-transparent text-foreground hover:bg-primary/5"
+  );
+
+const settingsSubLinkClass = (active: boolean) =>
+  cn(
+    "block rounded-lg border-l-2 py-2 pl-[calc(2rem-2px)] pr-3 text-sm transition-colors",
+    active
+      ? "border-l-primary bg-primary/5 font-medium text-foreground"
+      : "border-l-transparent text-muted hover:bg-primary/5 hover:text-foreground"
   );
 
 type Props = {
@@ -32,11 +40,17 @@ export function SidebarNav({ onNavigate }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const t = useTranslations();
+  const standorteOpen = searchParams.get("standorte") === "1";
+  const profilesOpen = searchParams.get("profiles") === "1";
+  const rollenOpen = searchParams.get("rollen") === "1";
   const schichtartenOpen = searchParams.get("schichtarten") === "1";
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
-  const standorteOpen = searchParams.get("standorte") === "1";
   const settingsModalOpen =
-    schichtartenOpen || qualifikationenOpen || standorteOpen;
+    standorteOpen ||
+    profilesOpen ||
+    rollenOpen ||
+    schichtartenOpen ||
+    qualifikationenOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
@@ -54,7 +68,12 @@ export function SidebarNav({ onNavigate }: Props) {
   }
 
   function buildSettingsModalUrl(
-    flag: "schichtarten" | "qualifikationen" | "standorte"
+    flag:
+      | "standorte"
+      | "profiles"
+      | "rollen"
+      | "schichtarten"
+      | "qualifikationen"
   ) {
     const params = new URLSearchParams({ [flag]: "1" });
     if (pathname === "/dashboard") {
@@ -65,6 +84,18 @@ export function SidebarNav({ onNavigate }: Props) {
     }
     return `/dashboard?${params.toString()}`;
   }
+
+  const settingsLinks = [
+    { flag: "schichtarten" as const, labelKey: "nav.shiftTypes", open: schichtartenOpen },
+    { flag: "standorte" as const, labelKey: "nav.locations", open: standorteOpen },
+    { flag: "profiles" as const, labelKey: "nav.profiles", open: profilesOpen },
+    { flag: "rollen" as const, labelKey: "nav.roles", open: rollenOpen },
+    {
+      flag: "qualifikationen" as const,
+      labelKey: "nav.qualifications",
+      open: qualifikationenOpen,
+    },
+  ];
 
   return (
     <nav className="flex flex-col gap-0.5 p-2">
@@ -100,42 +131,16 @@ export function SidebarNav({ onNavigate }: Props) {
           )}
         >
           <div className="overflow-hidden">
-            <Link
-              href={buildSettingsModalUrl("schichtarten")}
-              onClick={onNavigate}
-              className={cn(
-                "mt-0.5 block rounded-lg py-2 pl-8 pr-3 text-sm transition-colors",
-                schichtartenOpen
-                  ? "bg-subtle font-medium text-foreground"
-                  : "text-muted hover:bg-background hover:text-foreground"
-              )}
-            >
-              {t("nav.shiftTypes")}
-            </Link>
-            <Link
-              href={buildSettingsModalUrl("qualifikationen")}
-              onClick={onNavigate}
-              className={cn(
-                "block rounded-lg py-2 pl-8 pr-3 text-sm transition-colors",
-                qualifikationenOpen
-                  ? "bg-subtle font-medium text-foreground"
-                  : "text-muted hover:bg-background hover:text-foreground"
-              )}
-            >
-              {t("nav.qualifications")}
-            </Link>
-            <Link
-              href={buildSettingsModalUrl("standorte")}
-              onClick={onNavigate}
-              className={cn(
-                "block rounded-lg py-2 pl-8 pr-3 text-sm transition-colors",
-                standorteOpen
-                  ? "bg-subtle font-medium text-foreground"
-                  : "text-muted hover:bg-background hover:text-foreground"
-              )}
-            >
-              {t("nav.locations")}
-            </Link>
+            {settingsLinks.map((item, index) => (
+              <Link
+                key={item.flag}
+                href={buildSettingsModalUrl(item.flag)}
+                onClick={onNavigate}
+                className={cn(settingsSubLinkClass(item.open), index === 0 && "mt-0.5")}
+              >
+                {t(item.labelKey)}
+              </Link>
+            ))}
           </div>
         </div>
       </div>

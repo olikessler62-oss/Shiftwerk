@@ -4,7 +4,21 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteQualification } from "@/app/actions/qualifications";
 import type { Qualification } from "@schichtwerk/types";
+import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { QualificationFormModal } from "./qualification-form-modal";
+import {
+  SETTINGS_LIST_SCROLL_CLASS,
+  SETTINGS_MODAL_TITLE_CLASS,
+  SettingsActionBar,
+  SettingsEmptyState,
+  SettingsIconActionButton,
+  SettingsPrimaryActionButton,
+  settingsColumnHeaderClass,
+  settingsDataCellClass,
+  settingsDataRowClass,
+  settingsIndicatorCellClass,
+  settingsPanelHeaderClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -26,10 +40,6 @@ type FormMode =
   | null
   | { type: "create" }
   | { type: "edit"; qualification: Qualification };
-
-/** Kopfzeile + max. 6 Datenzeilen; bei wenig Viewport-Höhe früher scrollen */
-const LIST_SCROLL_MAX_CLASS =
-  "max-h-[min(calc(1.75rem+12rem),calc(100dvh-18rem))] overflow-y-auto";
 
 export function QualificationsModal({ qualifications, onClose }: Props) {
   const router = useRouter();
@@ -130,10 +140,7 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
           )}
         >
           <div className="flex items-center justify-between border-b border-border px-6 py-4">
-            <h2
-              id="qualifications-modal-title"
-              className="text-lg font-semibold text-foreground"
-            >
+            <h2 id="qualifications-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("qualifications.title")}
             </h2>
             <IconButton
@@ -154,145 +161,87 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
 
           <div className="bg-background px-6 py-4">
             <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
-              <h3 className="shrink-0 border-b border-border bg-subtle px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-foreground">
-                {t("qualifications.column")}
-              </h3>
+              <h3 className={settingsPanelHeaderClass()}>{t("qualifications.column")}</h3>
 
-              <div className={cn("bg-background px-2 py-2", LIST_SCROLL_MAX_CLASS)}>
-                <div className="min-w-0 rounded-md border border-border bg-surface">
-                  <table className="w-full border-collapse text-sm">
+              <div className={cn("space-y-1 bg-background px-2 py-2", SETTINGS_LIST_SCROLL_CLASS)}>
+                {list.length === 0 ? (
+                  <SettingsEmptyState
+                    message={t("qualifications.emptyList")}
+                    hint={t("common.emptyHintCreate")}
+                  />
+                ) : (
+                  <table className="w-full border-collapse">
                     <thead>
-                      <tr className="border-b border-border bg-subtle text-center">
-                        <th className="px-2 pb-2 text-xs font-semibold text-muted">
-                          {t("qualifications.designation")}
-                        </th>
+                      <tr className="border-b border-border bg-subtle">
+                        <th className="w-1 p-0" aria-hidden />
+                        <th className={settingsColumnHeaderClass()}>{t("qualifications.designation")}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {list.length === 0 ? (
-                        <tr>
-                          <td className="py-8 text-center text-muted">
-                            {t("qualifications.emptyList")}
-                          </td>
-                        </tr>
-                      ) : (
-                        list.map((item) => {
-                          const isSelected = item.id === selectedId;
-                          return (
-                            <tr
-                              key={item.id}
-                              onClick={() => {
-                                setSelectedId(item.id);
-                                setConfirmDelete(false);
-                                setErrorMessage(null);
-                              }}
-                              onDoubleClick={(e) => {
-                                e.preventDefault();
-                                window.getSelection()?.removeAllRanges();
-                                openEdit(item);
-                              }}
-                              className={cn(
-                                "h-9 cursor-pointer select-none border-b border-border last:border-0",
-                                isSelected
-                                  ? "bg-subtle ring-1 ring-inset ring-border"
-                                  : "hover:bg-hover"
-                              )}
-                            >
-                              <td
-                                className={cn(
-                                  "h-9 border-l-4 px-2 py-0 text-center font-medium text-foreground",
-                                  isSelected
-                                    ? "border-l-foreground"
-                                    : "border-l-transparent"
-                                )}
-                              >
-                                {item.name}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
+                      {list.map((item) => {
+                        const isSelected = item.id === selectedId;
+                        return (
+                          <tr
+                            key={item.id}
+                            onClick={() => {
+                              setSelectedId(item.id);
+                              setConfirmDelete(false);
+                              setErrorMessage(null);
+                            }}
+                            onDoubleClick={(e) => {
+                              e.preventDefault();
+                              window.getSelection()?.removeAllRanges();
+                              openEdit(item);
+                            }}
+                            className={settingsDataRowClass(isSelected)}
+                          >
+                            <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
+                            <td className={settingsDataCellClass(isSelected, { className: "font-medium" })}>
+                              {item.name}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                </div>
+                )}
               </div>
 
-              {confirmDelete && selected && (
-                <div className="mx-2 mb-1 rounded-[var(--radius-control)] border border-border bg-subtle px-3 py-2 text-sm">
-                  <span className="block text-center">
-                    <strong>{selected.name}</strong> {t("qualifications.confirmDelete")}
-                  </span>
-                  <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                      disabled={pending}
-                      onClick={() => setConfirmDelete(false)}
-                    >
-                      <CloseIcon />
-                      {t("qualifications.no")}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                      disabled={pending}
-                      onClick={handleDelete}
-                    >
-                      <TrashIcon />
-                      {t("qualifications.yesDelete")}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex shrink-0 flex-wrap items-center justify-start gap-1.5 border-t border-border bg-subtle px-2 py-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 w-auto shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                  disabled={pending}
-                  onClick={() => {
-                    setFormMode({ type: "create" });
-                    setConfirmDelete(false);
-                  }}
-                >
-                  <PlusIcon />
-                  {t("qualifications.new")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 w-auto shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                  disabled={pending || !selected}
-                  onClick={() => {
-                    if (!selected) return;
-                    openEdit(selected);
-                  }}
-                >
-                  <PencilIcon />
-                  {t("qualifications.edit")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 w-auto shrink-0 gap-1 whitespace-nowrap px-2 text-xs"
-                  disabled={pending || !selected}
-                  onClick={() => {
-                    setConfirmDelete(true);
-                    setErrorMessage(null);
-                  }}
-                >
-                  <TrashIcon />
-                  {t("qualifications.delete")}
-                </Button>
-              </div>
+              <SettingsActionBar
+                primary={
+                  <SettingsPrimaryActionButton
+                    label={t("qualifications.new")}
+                    icon={<PlusIcon />}
+                    disabled={pending}
+                    onClick={() => {
+                      setFormMode({ type: "create" });
+                      setConfirmDelete(false);
+                    }}
+                  />
+                }
+                secondary={
+                  <SettingsIconActionButton
+                    label={t("qualifications.edit")}
+                    icon={<PencilIcon />}
+                    disabled={pending || !selected}
+                    onClick={() => {
+                      if (!selected) return;
+                      openEdit(selected);
+                    }}
+                  />
+                }
+                destructive={
+                  <SettingsIconActionButton
+                    label={t("qualifications.delete")}
+                    icon={<TrashIcon />}
+                    disabled={pending || !selected}
+                    onClick={() => {
+                      setConfirmDelete(true);
+                      setErrorMessage(null);
+                    }}
+                  />
+                }
+              />
             </div>
           </div>
 
@@ -325,6 +274,14 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
             existingQualifications={list}
             onClose={() => setFormMode(null)}
             onSaved={refreshList}
+          />
+        )}
+        {confirmDelete && selected && (
+          <DeleteConfirmModal
+            name={selected.name}
+            pending={pending}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={handleDelete}
           />
         )}
       </div>

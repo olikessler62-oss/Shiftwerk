@@ -30,7 +30,7 @@ export default function LoginScreen() {
     }
 
     const profile = await db.getCurrentUserProfile();
-    if (!profile || profile.role !== "employee") {
+    if (!profile || profile.role !== "basic") {
       await db.authSignOut();
       Alert.alert(
         "Nur für Mitarbeiter",

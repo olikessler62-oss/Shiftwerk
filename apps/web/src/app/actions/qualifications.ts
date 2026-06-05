@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { validateQualificationUniqueness } from "@schichtwerk/database";
+import {
+  validateQualificationArchive,
+  validateQualificationUniqueness,
+} from "@schichtwerk/database";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 
@@ -72,6 +75,16 @@ export async function deleteQualification(id: string): Promise<QualificationActi
   try {
     const { organizationId } = await requireManager();
     const db = await getDatabase();
+    const today = new Date().toISOString().slice(0, 10);
+    const upcomingShiftCount =
+      await db.countUpcomingShiftsForQualificationProfiles(
+        organizationId,
+        id,
+        today
+      );
+    const archiveCheck = validateQualificationArchive(upcomingShiftCount);
+    if (!archiveCheck.ok) return archiveCheck;
+
     await db.archiveQualification(id, organizationId);
     revalidatePath("/dashboard");
     return { ok: true };

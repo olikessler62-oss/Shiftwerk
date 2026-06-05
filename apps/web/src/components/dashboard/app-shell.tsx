@@ -102,7 +102,11 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
             <div className="mt-auto border-t border-border p-2">
               <p className="px-3 py-1.5 text-xs text-muted">
                 {userName} ·{" "}
-                {role === "owner" ? t("common.owner") : t("common.manager")}
+                {role === "admin"
+                  ? t("common.admin")
+                  : role === "manager"
+                    ? t("common.manager")
+                    : t("common.basic")}
               </p>
               <form action={signOut}>
                 <Button

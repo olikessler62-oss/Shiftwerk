@@ -43,6 +43,24 @@ export function formatActiveWeekdaysLabel(
   return parts.length > 0 ? parts.join(",") : "—";
 }
 
+/** Arbeitstage-Anzeige; bei Feiertags-Flag wird holidaySuffix angehängt (z. B. „Mo, Di, Feiertage“). */
+export function formatLocationOpenDaysLabel(
+  mask: string,
+  onHolidayOpen: boolean,
+  holidaySuffix: string,
+  locale: WeekdayAbbrevLocale = "de"
+): string {
+  const parts: string[] = [];
+  if (isValidActiveWeekdays(mask)) {
+    const abbrevs = WEEKDAY_ABBREVS[locale];
+    for (let i = 0; i < ACTIVE_WEEKDAYS_LENGTH; i++) {
+      if (mask[i] === "1") parts.push(abbrevs[i]);
+    }
+  }
+  if (onHolidayOpen) parts.push(holidaySuffix);
+  return parts.length > 0 ? parts.join(", ") : "—";
+}
+
 export function validateActiveWeekdaysField(
   mask: string
 ): { ok: true; value: string } | { ok: false; error: string } {

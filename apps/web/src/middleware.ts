@@ -47,7 +47,7 @@ export async function middleware(request: NextRequest) {
 
   const role = await db.getProfileRole(user.id);
 
-  if (role === "employee") {
+  if (role === "basic") {
     const url = request.nextUrl.clone();
     url.pathname = "/app-only";
     return NextResponse.redirect(url);

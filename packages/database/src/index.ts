@@ -16,8 +16,16 @@ export {
 } from "./shift-type-validation";
 export {
   validateQualificationUniqueness,
+  validateQualificationArchive,
   type QualificationUniquenessInput,
 } from "./qualification-validation";
+export {
+  validateRoleUniqueness,
+  validateRoleArchive,
+  slugifyRoleKey,
+  isValidPermissionLevel,
+  type RoleUniquenessInput,
+} from "./role-validation";
 export {
   validateLocationUniqueness,
   validateLocationInput,
@@ -29,6 +37,7 @@ export {
   activeWeekdaysToBooleans,
   booleansToActiveWeekdays,
   formatActiveWeekdaysLabel,
+  formatLocationOpenDaysLabel,
   isValidActiveWeekdays,
   validateActiveWeekdaysField,
   type WeekdayAbbrevLocale,
@@ -38,6 +47,30 @@ export {
   validateLocationAreaName,
   type LocationAreaUniquenessInput,
 } from "./location-area-validation";
+export {
+  PROFILE_COLOR_PALETTE,
+  getProfileColorLabel,
+  isProfilePaletteColor,
+  validateProfileColorAssignment,
+  type ProfileColorOption,
+} from "./profile-colors";
+export {
+  validateProfileEmail,
+  validateProfileMobilePhone,
+} from "./profile-contact-validation";
+export {
+  dayBefore,
+  parseHourlyRateAmount,
+  parseValidFromDate,
+  validateNewHourlyRate,
+} from "./profile-hourly-rate-validation";
+export {
+  parseAvailabilityTimeRange,
+  parseAvailabilityWeekday,
+  timeRangesOverlap,
+  timeToMinutes,
+  validateNoOverlappingAvailability,
+} from "./profile-availability-validation";
 export {
   requiredStaffForAreaOnDate,
   weekdayIndexFromDate,

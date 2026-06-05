@@ -38,7 +38,7 @@ export async function assignShift(
     if (
       !profile ||
       profile.organization_id !== organizationId ||
-      profile.role !== "employee" ||
+      profile.role !== "basic" ||
       !profile.is_active
     ) {
       return { ok: false, error: "Mitarbeiter nicht gefunden" };

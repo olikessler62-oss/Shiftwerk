@@ -3,6 +3,8 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useTransition,
@@ -15,8 +17,14 @@ import {
   archiveLocationArea,
   fetchLocationAreas,
 } from "@/app/actions/location-areas";
-import { formatActiveWeekdaysLabel } from "@schichtwerk/database";
-import type { Location, LocationArea } from "@schichtwerk/types";
+import { deleteShiftTypeStaffing } from "@/app/actions/location-staffing";
+import { formatLocationOpenDaysLabel } from "@schichtwerk/database";
+import type {
+  Location,
+  LocationArea,
+  LocationAreaStaffing,
+  ShiftType,
+} from "@schichtwerk/types";
 import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
 import { LocationFormModal } from "./location-form-modal";
 import { LocationAreaFormModal } from "./location-area-form-modal";
@@ -24,6 +32,21 @@ import {
   LocationAreaStaffingMatrix,
   type LocationAreaStaffingMatrixHandle,
 } from "./location-area-staffing-matrix";
+import { DeleteConfirmModal } from "./delete-confirm-modal";
+import { LocationStaffingFormModal } from "./location-staffing-form-modal";
+import {
+  SETTINGS_LIST_SCROLL_COMPACT_CLASS,
+  SETTINGS_MODAL_TITLE_CLASS,
+  SettingsActionBar,
+  SettingsEmptyState,
+  SettingsIconActionButton,
+  SettingsPrimaryActionButton,
+  settingsColumnHeaderClass,
+  settingsDataCellClass,
+  settingsDataRowClass,
+  settingsIndicatorCellClass,
+  settingsPanelHeaderClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -54,14 +77,13 @@ type AreaFormMode =
   | { type: "create" }
   | { type: "edit"; area: LocationArea };
 
-/** Kopfzeile + max. 6 Datenzeilen; bei wenig Viewport-Höhe früher scrollen */
-const LIST_SCROLL_MAX_CLASS =
-  "max-h-[min(calc(1.75rem+12rem),calc(100dvh-18rem))] overflow-y-auto";
-const MAX_NAME_DISPLAY = 25;
-const MODAL_MAX_WIDTH = "calc(72rem + 140px)";
-const COLUMN_GAP_PX = 20;
-/** Bereiche −50px / Personalbedarf +80px relativ zu gleicher Spaltenbreite */
-const COL_LOCATIONS_CLASS = "min-w-0 flex-[1.05_1_0]";
+type StaffingFormMode =
+  | null
+  | { type: "create" }
+  | { type: "edit"; shiftTypeId: string };
+
+/** Bereiche −30px / Standorte +30px (basis); Personalbedarf +80px relativ zu gleicher Spaltenbreite */
+const COL_LOCATIONS_CLASS = "min-w-0 flex-[1.05_1_30px]";
 const COL_AREAS_CLASS = "min-w-0 flex-[0.82_1_0]";
 const COL_STAFFING_CLASS = "min-w-0 flex-[1.33_1_0]";
 
@@ -74,26 +96,42 @@ function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
   return `${name.slice(0, max - 1)}…`;
 }
 
+const MAX_NAME_DISPLAY = 25;
+const MODAL_MAX_WIDTH = "calc(72rem + 140px)";
+const COLUMN_GAP_PX = 20;
+
 function ColumnActionButton({
   className,
   variant = "outline",
-  children,
+  label,
+  icon,
+  title,
   ...props
-}: ComponentProps<typeof Button>) {
+}: Omit<ComponentProps<typeof Button>, "children"> & {
+  label: string;
+  icon: ReactNode;
+}) {
   return (
-    <Button
-      type="button"
+    <SettingsIconActionButton
+      label={label}
+      icon={icon}
+      title={title}
       variant={variant}
-      size="sm"
-      className={cn(
-        "h-7 w-auto shrink-0 gap-1 whitespace-nowrap px-2 text-xs",
-        className
-      )}
+      className={className}
       {...props}
-    >
-      {children}
-    </Button>
+    />
   );
+}
+
+function ColumnPrimaryButton({
+  label,
+  icon,
+  ...props
+}: Omit<ComponentProps<typeof Button>, "children"> & {
+  label: string;
+  icon: ReactNode;
+}) {
+  return <SettingsPrimaryActionButton label={label} icon={icon} {...props} />;
 }
 
 function ColumnShell({
@@ -102,7 +140,8 @@ function ColumnShell({
   actions,
   confirm,
   className,
-  listScrollClassName = LIST_SCROLL_MAX_CLASS,
+  listScrollClassName = SETTINGS_LIST_SCROLL_COMPACT_CLASS,
+  listPaddingClassName = "px-2 py-2",
 }: {
   title: string;
   children: ReactNode;
@@ -110,34 +149,34 @@ function ColumnShell({
   confirm?: ReactNode;
   className?: string;
   listScrollClassName?: string;
+  listPaddingClassName?: string;
 }) {
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60",
+        "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60",
         className
       )}
     >
-      <h3
-        className="shrink-0 truncate border-b border-border bg-subtle px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-foreground"
-        title={title}
-      >
+      <h3 className={settingsPanelHeaderClass()} title={title}>
         {title}
       </h3>
-      <div
-        className={cn(
-          "bg-background px-2 py-2",
-          listScrollClassName
-        )}
-      >
-        <div className="min-w-0 rounded-md border border-border bg-surface">
-          {children}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className={cn("min-h-0 bg-background", listPaddingClassName)}>
+          <div
+            className={cn(
+              "min-h-0 overflow-y-auto rounded-md border border-border bg-surface",
+              listScrollClassName
+            )}
+          >
+            {children}
+          </div>
         </div>
+        {confirm ? (
+          <div className="absolute inset-x-2 bottom-2 z-10">{confirm}</div>
+        ) : null}
       </div>
-      {confirm}
-      <div className="flex shrink-0 flex-wrap items-center justify-start gap-1.5 border-t border-border bg-subtle px-2 py-2">
-        {actions}
-      </div>
+      <div className="mt-auto shrink-0">{actions}</div>
     </div>
   );
 }
@@ -192,14 +231,44 @@ export function LocationsModal({
   const [areaFormMode, setAreaFormMode] = useState<AreaFormMode>(null);
   const [confirmDeleteLocation, setConfirmDeleteLocation] = useState(false);
   const [confirmDeleteArea, setConfirmDeleteArea] = useState(false);
-  const [confirmClearStaffing, setConfirmClearStaffing] = useState(false);
+  const [confirmDeleteStaffing, setConfirmDeleteStaffing] = useState(false);
+  const [staffingFormMode, setStaffingFormMode] = useState<StaffingFormMode>(null);
+  const [selectedStaffingShiftTypeId, setSelectedStaffingShiftTypeId] =
+    useState<string | null>(null);
+  const [staffingEditorData, setStaffingEditorData] = useState<{
+    shiftTypes: ShiftType[];
+    staffing: LocationAreaStaffing[];
+  } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [staffingLoading, setStaffingLoading] = useState(
+    () => hasPrefetchedAreas && !!resolveInitialAreaId(initialAreas, initialSelectedAreaId)
+  );
 
-  const overlayFormOpen = !!locationFormMode || !!areaFormMode;
+  const overlayFormOpen =
+    !!locationFormMode || !!areaFormMode || !!staffingFormMode;
+  const configuredStaffingShiftTypeIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const rule of staffingEditorData?.staffing ?? []) {
+      if (rule.required_count > 0) ids.add(rule.shift_type_id);
+    }
+    return ids;
+  }, [staffingEditorData]);
+  const hasUnassignedShiftTypes = (staffingEditorData?.shiftTypes ?? []).some(
+    (type) => !configuredStaffingShiftTypeIds.has(type.id)
+  );
   const abbrevLocale = weekdayLocale(locale);
   const selectedLocation = list.find((l) => l.id === selectedLocationId);
   const selectedArea = areas.find((a) => a.id === selectedAreaId);
   const staffingReady = !!selectedLocation && !!selectedArea && !areasLoading;
+  const listsLoading = areasLoading || staffingLoading;
+
+  useLayoutEffect(() => {
+    if (!staffingReady) {
+      setStaffingLoading(false);
+    } else {
+      setStaffingLoading(true);
+    }
+  }, [staffingReady, selectedAreaId]);
   const areasPanelTitle = selectedLocation
     ? t("locations.panelAreasOf", { location: selectedLocation.name })
     : t("locations.panelAreas");
@@ -210,6 +279,10 @@ export function LocationsModal({
           area: selectedArea.name,
         })
       : t("locations.panelStaffing");
+  const selectedStaffingShiftType =
+    staffingEditorData?.shiftTypes.find(
+      (type) => type.id === selectedStaffingShiftTypeId
+    ) ?? null;
 
   const loadAreas = useCallback((locationId: string) => {
     startTransition(async () => {
@@ -252,7 +325,9 @@ export function LocationsModal({
       return;
     }
     setConfirmDeleteArea(false);
-    setConfirmClearStaffing(false);
+    setConfirmDeleteStaffing(false);
+    setSelectedStaffingShiftTypeId(null);
+    setStaffingEditorData(null);
     setAreas([]);
     setSelectedAreaId(null);
     setAreasLoading(true);
@@ -278,8 +353,12 @@ export function LocationsModal({
         setConfirmDeleteArea(false);
         return;
       }
-      if (confirmClearStaffing) {
-        setConfirmClearStaffing(false);
+      if (staffingFormMode) {
+        setStaffingFormMode(null);
+        return;
+      }
+      if (confirmDeleteStaffing) {
+        setConfirmDeleteStaffing(false);
         return;
       }
       onClose();
@@ -288,10 +367,11 @@ export function LocationsModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [
     areaFormMode,
-    confirmClearStaffing,
+    confirmDeleteStaffing,
     confirmDeleteArea,
     confirmDeleteLocation,
     locationFormMode,
+    staffingFormMode,
     onClose,
   ]);
 
@@ -314,7 +394,9 @@ export function LocationsModal({
     setAreasLoading(true);
     setConfirmDeleteLocation(false);
     setConfirmDeleteArea(false);
-    setConfirmClearStaffing(false);
+    setConfirmDeleteStaffing(false);
+    setSelectedStaffingShiftTypeId(null);
+    setStaffingEditorData(null);
     setErrorMessage(null);
   }
 
@@ -370,27 +452,37 @@ export function LocationsModal({
     });
   }
 
-  function handleStaffingReload() {
+  function handleStaffingSaved() {
     staffingRef.current?.reload();
-    setConfirmClearStaffing(false);
+    refreshList();
   }
 
-  function handleStaffingSave() {
-    setErrorMessage(null);
-    void staffingRef.current?.save();
-  }
-
-  function handleStaffingClear() {
+  function handleDeleteStaffing() {
+    if (!selectedLocation || !selectedArea || !selectedStaffingShiftTypeId) return;
     setErrorMessage(null);
     startTransition(async () => {
-      const ok = await staffingRef.current?.clear();
-      if (ok) setConfirmClearStaffing(false);
+      const result = await deleteShiftTypeStaffing({
+        locationId: selectedLocation.id,
+        locationAreaId: selectedArea.id,
+        shiftTypeId: selectedStaffingShiftTypeId,
+      });
+      if (!result.ok) {
+        setErrorMessage(result.error);
+        setConfirmDeleteStaffing(false);
+        return;
+      }
+      setConfirmDeleteStaffing(false);
+      setSelectedStaffingShiftTypeId(null);
+      handleStaffingSaved();
     });
   }
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+      className={cn(
+        "absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4",
+        listsLoading && "cursor-wait"
+      )}
       role="presentation"
       onMouseDown={(e) => {
         if (
@@ -398,7 +490,7 @@ export function LocationsModal({
           !overlayFormOpen &&
           !confirmDeleteLocation &&
           !confirmDeleteArea &&
-          !confirmClearStaffing
+          !confirmDeleteStaffing
         ) {
           onClose();
         }
@@ -414,16 +506,15 @@ export function LocationsModal({
           aria-modal="true"
           aria-labelledby="locations-modal-title"
           aria-hidden={overlayFormOpen}
+          aria-busy={listsLoading}
           className={cn(
             "flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
-            overlayFormOpen ? "pointer-events-none" : ""
+            overlayFormOpen ? "pointer-events-none" : "",
+            listsLoading && "[&_*]:cursor-wait"
           )}
         >
           <div className="shrink-0 border-b border-border px-6 py-4">
-            <h2
-              id="locations-modal-title"
-              className="text-lg font-semibold text-foreground"
-            >
+            <h2 id="locations-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("locations.title")}
             </h2>
           </div>
@@ -435,98 +526,67 @@ export function LocationsModal({
           )}
 
           <div
-            className="flex shrink-0 bg-background px-4 py-3"
+            className="flex shrink-0 items-stretch bg-background px-4 py-3"
             style={{ gap: COLUMN_GAP_PX }}
           >
             {/* Spalte 1: Standorte */}
             <ColumnShell
               className={COL_LOCATIONS_CLASS}
               title={t("locations.panelLocations")}
-              confirm={
-                confirmDeleteLocation && selectedLocation ? (
-                  <div className="mx-2 mb-1 rounded-[var(--radius-control)] border border-border bg-subtle px-2 py-1.5 text-xs">
-                    <span className="block truncate" title={selectedLocation.name}>
-                      <strong>{truncateLabel(selectedLocation.name)}</strong>{" "}
-                      {t("locations.confirmDelete")}
-                    </span>
-                    <div className="mt-1.5 flex flex-wrap justify-start gap-1">
-                      <ColumnActionButton
-                        disabled={pending}
-                        onClick={() => setConfirmDeleteLocation(false)}
-                      >
-                        <CloseIcon />
-                        {t("locations.no")}
-                      </ColumnActionButton>
-                      <ColumnActionButton
-                        variant="danger"
-                        disabled={pending}
-                        onClick={handleDeleteLocation}
-                      >
-                      <TrashIcon />
-                      {t("locations.yesDelete")}
-                    </ColumnActionButton>
-                    </div>
-                  </div>
-                ) : null
-              }
               actions={
-                <>
-                  <ColumnActionButton
-                    disabled={pending}
-                    onClick={() => {
-                      setLocationFormMode({ type: "create" });
-                      setConfirmDeleteLocation(false);
-                    }}
-                  >
-                    <PlusIcon />
-                    {t("locations.new")}
-                  </ColumnActionButton>
-                  <ColumnActionButton
-                    disabled={pending || !selectedLocation}
-                    onClick={() => {
-                      if (!selectedLocation) return;
-                      openEditLocation(selectedLocation);
-                    }}
-                  >
-                    <PencilIcon />
-                    {t("locations.edit")}
-                  </ColumnActionButton>
-                  <ColumnActionButton
-                    disabled={pending || !selectedLocation}
-                    onClick={() => {
-                      setConfirmDeleteLocation(true);
-                      setErrorMessage(null);
-                    }}
-                  >
-                    <TrashIcon />
-                    {t("locations.delete")}
-                  </ColumnActionButton>
-                </>
+                <SettingsActionBar
+                  primary={
+                    <ColumnPrimaryButton
+                      label={t("locations.new")}
+                      icon={<PlusIcon />}
+                      disabled={pending}
+                      onClick={() => {
+                        setLocationFormMode({ type: "create" });
+                        setConfirmDeleteLocation(false);
+                      }}
+                    />
+                  }
+                  secondary={
+                    <ColumnActionButton
+                      label={t("locations.edit")}
+                      icon={<PencilIcon />}
+                      disabled={pending || !selectedLocation}
+                      onClick={() => {
+                        if (!selectedLocation) return;
+                        openEditLocation(selectedLocation);
+                      }}
+                    />
+                  }
+                  destructive={
+                    <ColumnActionButton
+                      label={t("locations.delete")}
+                      icon={<TrashIcon />}
+                      disabled={pending || !selectedLocation}
+                      onClick={() => {
+                        setConfirmDeleteLocation(true);
+                        setErrorMessage(null);
+                      }}
+                    />
+                  }
+                />
               }
             >
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-subtle text-center">
-                    <th className="px-1 pb-1.5 font-semibold text-muted">
-                      {t("locations.columnName")}
-                    </th>
-                    <th className="px-1 pb-1.5 font-semibold text-muted">
-                      {t("locations.columnWeekdays")}
-                    </th>
-                    <th className="px-1 pb-1.5 font-semibold text-muted">
-                      {t("locations.columnHolidayService")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.length === 0 ? (
-                    <tr>
-                      <td colSpan={3} className="py-4 text-center text-muted">
-                        {t("locations.emptyList")}
-                      </td>
+              {list.length === 0 ? (
+                <SettingsEmptyState
+                  message={t("locations.emptyList")}
+                  hint={t("common.emptyHintCreate")}
+                />
+              ) : (
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-border bg-subtle">
+                      <th className="w-1 p-0" aria-hidden />
+                      <th className={settingsColumnHeaderClass()}>{t("locations.columnName")}</th>
+                      <th className={settingsColumnHeaderClass("center")}>{t("locations.columnWeekdays")}</th>
                     </tr>
-                  ) : (
-                    list.map((item) => {
+                  </thead>
+                  <tbody>
+                    {list.map((item) => {
                       const isSelected = item.id === selectedLocationId;
                       return (
                         <tr
@@ -537,125 +597,102 @@ export function LocationsModal({
                             window.getSelection()?.removeAllRanges();
                             openEditLocation(item);
                           }}
-                            className={cn(
-                              "h-8 cursor-pointer select-none border-b border-border last:border-0",
-                              isSelected
-                                ? "bg-subtle ring-1 ring-inset ring-border"
-                                : "hover:bg-hover"
+                          className={settingsDataRowClass(isSelected)}
+                        >
+                          <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
+                          <td
+                            className={settingsDataCellClass(isSelected, {
+                              className: "max-w-[6.5rem] truncate font-medium",
+                            })}
+                            title={item.name}
+                          >
+                            {truncateLabel(item.name)}
+                          </td>
+                          <td
+                            className={settingsDataCellClass(isSelected, {
+                              align: "center",
+                              className: "max-w-[8rem] truncate",
+                            })}
+                            title={formatLocationOpenDaysLabel(
+                              item.active_weekdays,
+                              item.on_holiday_open,
+                              t("locations.weekdays.holiday"),
+                              abbrevLocale
                             )}
                           >
-                            <td
-                              className={cn(
-                                "h-8 max-w-[6.5rem] truncate border-l-4 px-1 py-0 text-center font-medium",
-                                isSelected
-                                  ? "border-l-foreground"
-                                  : "border-l-transparent"
-                              )}
-                              title={item.name}
-                            >
-                              {truncateLabel(item.name)}
-                            </td>
-                            <td
-                              className="h-8 max-w-[5.5rem] truncate px-0.5 py-0 text-center"
-                              title={formatActiveWeekdaysLabel(
-                                item.active_weekdays,
-                                abbrevLocale
-                              )}
-                            >
-                              {formatActiveWeekdaysLabel(
-                                item.active_weekdays,
-                                abbrevLocale
-                              )}
-                            </td>
-                            <td className="h-8 px-0.5 py-0 text-center">
-                            {item.on_holiday_open ? t("locations.yes") : t("locations.no")}
+                            {formatLocationOpenDaysLabel(
+                              item.active_weekdays,
+                              item.on_holiday_open,
+                              t("locations.weekdays.holiday"),
+                              abbrevLocale
+                            )}
                           </td>
                         </tr>
                       );
-                    })
-                  )}
-                </tbody>
-              </table>
+                    })}
+                  </tbody>
+                </table>
+              )}
             </ColumnShell>
 
             {/* Spalte 2: Bereiche */}
             <ColumnShell
               className={COL_AREAS_CLASS}
               title={areasPanelTitle}
-              confirm={
-                confirmDeleteArea && selectedArea ? (
-                  <div className="mx-2 mb-1 rounded-[var(--radius-control)] border border-border bg-subtle px-2 py-1.5 text-xs">
-                    <span className="block truncate" title={selectedArea.name}>
-                      <strong>{truncateLabel(selectedArea.name)}</strong>{" "}
-                      {t("locations.confirmDeleteArea")}
-                    </span>
-                    <div className="mt-1.5 flex flex-wrap justify-start gap-1">
-                      <ColumnActionButton
-                        disabled={pending}
-                        onClick={() => setConfirmDeleteArea(false)}
-                      >
-                        <CloseIcon />
-                        {t("locations.no")}
-                      </ColumnActionButton>
-                      <ColumnActionButton
-                        variant="danger"
-                        disabled={pending}
-                        onClick={handleDeleteArea}
-                      >
-                        <TrashIcon />
-                        {t("locations.yesDelete")}
-                      </ColumnActionButton>
-                    </div>
-                  </div>
-                ) : null
-              }
               actions={
-                <>
-                  <ColumnActionButton
-                    disabled={pending || !selectedLocationId}
-                    onClick={() => {
-                      if (!selectedLocationId) return;
-                      setAreaFormMode({ type: "create" });
-                      setConfirmDeleteArea(false);
-                    }}
-                  >
-                    <PlusIcon />
-                    {t("locations.areaNew")}
-                  </ColumnActionButton>
-                  <ColumnActionButton
-                    disabled={pending || !selectedArea}
-                    onClick={() => {
-                      if (!selectedArea) return;
-                      openEditArea(selectedArea);
-                    }}
-                  >
-                    <PencilIcon />
-                    {t("locations.areaEdit")}
-                  </ColumnActionButton>
-                  <ColumnActionButton
-                    disabled={pending || !selectedArea}
-                    onClick={() => {
-                      setConfirmDeleteArea(true);
-                      setErrorMessage(null);
-                    }}
-                  >
-                    <TrashIcon />
-                    {t("locations.areaDelete")}
-                  </ColumnActionButton>
-                </>
+                <SettingsActionBar
+                  primary={
+                    <ColumnPrimaryButton
+                      label={t("locations.areaNew")}
+                      icon={<PlusIcon />}
+                      disabled={pending || !selectedLocationId}
+                      onClick={() => {
+                        if (!selectedLocationId) return;
+                        setAreaFormMode({ type: "create" });
+                        setConfirmDeleteArea(false);
+                      }}
+                    />
+                  }
+                  secondary={
+                    <ColumnActionButton
+                      label={t("locations.areaEdit")}
+                      icon={<PencilIcon />}
+                      disabled={pending || !selectedArea}
+                      onClick={() => {
+                        if (!selectedArea) return;
+                        openEditArea(selectedArea);
+                      }}
+                    />
+                  }
+                  destructive={
+                    <ColumnActionButton
+                      label={t("locations.areaDelete")}
+                      icon={<TrashIcon />}
+                      disabled={pending || !selectedArea}
+                      onClick={() => {
+                        setConfirmDeleteArea(true);
+                        setErrorMessage(null);
+                      }}
+                    />
+                  }
+                />
               }
             >
               {!selectedLocationId ? (
-                <p className="py-4 text-center text-muted">{t("locations.areasNoLocation")}</p>
+                <SettingsEmptyState message={t("locations.areasNoLocation")} />
               ) : areasLoading ? (
-                <p className="py-4 text-center text-muted">{t("common.loading")}</p>
+                <SettingsEmptyState message={t("common.loading")} />
               ) : areas.length === 0 ? (
-                <p className="py-4 text-center text-muted">{t("locations.areasEmpty")}</p>
+                <SettingsEmptyState
+                  message={t("locations.areasEmpty")}
+                  hint={t("common.emptyHintCreate")}
+                />
               ) : (
-                <table className="w-full border-collapse text-xs">
+                <table className="w-full border-collapse">
                   <thead>
-                    <tr className="border-b border-border bg-subtle text-center">
-                      <th className="px-1 pb-1.5 font-semibold text-muted">
+                    <tr className="border-b border-border bg-subtle">
+                      <th className="w-1 p-0" aria-hidden />
+                      <th className={cn(settingsColumnHeaderClass(), "text-left")}>
                         {t("locations.areaName")}
                       </th>
                     </tr>
@@ -669,7 +706,9 @@ export function LocationsModal({
                           onClick={() => {
                             setSelectedAreaId(area.id);
                             setConfirmDeleteArea(false);
-                            setConfirmClearStaffing(false);
+                            setConfirmDeleteStaffing(false);
+                            setSelectedStaffingShiftTypeId(null);
+                            setStaffingEditorData(null);
                             setErrorMessage(null);
                           }}
                           onDoubleClick={(e) => {
@@ -677,20 +716,13 @@ export function LocationsModal({
                             window.getSelection()?.removeAllRanges();
                             openEditArea(area);
                           }}
-                          className={cn(
-                            "h-8 cursor-pointer select-none border-b border-border last:border-0",
-                            isSelected
-                              ? "bg-subtle ring-1 ring-inset ring-border"
-                              : "hover:bg-hover"
-                          )}
+                          className={settingsDataRowClass(isSelected)}
                         >
+                          <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
                           <td
-                            className={cn(
-                              "h-8 max-w-[8rem] truncate border-l-4 px-1 py-0 text-center font-medium",
-                              isSelected
-                                ? "border-l-foreground"
-                                : "border-l-transparent"
-                            )}
+                            className={settingsDataCellClass(isSelected, {
+                              className: "max-w-[8rem] truncate font-medium",
+                            })}
                             title={area.name}
                           >
                             {truncateLabel(area.name)}
@@ -707,74 +739,71 @@ export function LocationsModal({
             <ColumnShell
               className={COL_STAFFING_CLASS}
               title={staffingPanelTitle}
-              listScrollClassName="overflow-visible px-0 py-0"
-              confirm={
-                confirmClearStaffing && selectedArea ? (
-                  <div className="mx-2 mb-1 rounded-[var(--radius-control)] border border-border bg-subtle px-2 py-1.5 text-xs">
-                    {t("locations.confirmClearStaffing")}
-                    <div className="mt-1.5 flex flex-wrap justify-start gap-1">
-                      <ColumnActionButton
-                        disabled={pending}
-                        onClick={() => setConfirmClearStaffing(false)}
-                      >
-                        <CloseIcon />
-                        {t("locations.no")}
-                      </ColumnActionButton>
-                      <ColumnActionButton
-                        variant="danger"
-                        disabled={pending}
-                        onClick={handleStaffingClear}
-                      >
-                        <TrashIcon />
-                        {t("locations.yesDelete")}
-                      </ColumnActionButton>
-                    </div>
-                  </div>
-                ) : null
-              }
+              listPaddingClassName="px-0 py-0"
               actions={
-                <>
-                  <ColumnActionButton
-                    disabled={pending || !staffingReady}
-                    onClick={handleStaffingReload}
-                    title={t("locations.staffingHint")}
-                  >
-                    <PlusIcon />
-                    {t("locations.new")}
-                  </ColumnActionButton>
-                  <ColumnActionButton
-                    disabled={pending || !staffingReady}
-                    onClick={handleStaffingSave}
-                  >
-                    <PencilIcon />
-                    {t("locations.edit")}
-                  </ColumnActionButton>
-                  <ColumnActionButton
-                    disabled={pending || !staffingReady}
-                    onClick={() => setConfirmClearStaffing(true)}
-                  >
-                    <TrashIcon />
-                    {t("locations.delete")}
-                  </ColumnActionButton>
-                </>
+                <SettingsActionBar
+                  primary={
+                    <ColumnPrimaryButton
+                      label={t("locations.new")}
+                      icon={<PlusIcon />}
+                      disabled={pending || !staffingReady || !hasUnassignedShiftTypes}
+                      onClick={() => {
+                        setStaffingFormMode({ type: "create" });
+                        setConfirmDeleteStaffing(false);
+                        setErrorMessage(null);
+                      }}
+                    />
+                  }
+                  secondary={
+                    <ColumnActionButton
+                      label={t("locations.edit")}
+                      icon={<PencilIcon />}
+                      disabled={pending || !staffingReady || !selectedStaffingShiftTypeId}
+                      onClick={() => {
+                        if (!selectedStaffingShiftTypeId) return;
+                        setStaffingFormMode({
+                          type: "edit",
+                          shiftTypeId: selectedStaffingShiftTypeId,
+                        });
+                        setConfirmDeleteStaffing(false);
+                        setErrorMessage(null);
+                      }}
+                    />
+                  }
+                  destructive={
+                    <ColumnActionButton
+                      label={t("locations.delete")}
+                      icon={<TrashIcon />}
+                      disabled={pending || !staffingReady || !selectedStaffingShiftTypeId}
+                      onClick={() => {
+                        setConfirmDeleteStaffing(true);
+                        setErrorMessage(null);
+                      }}
+                    />
+                  }
+                />
               }
             >
               {!staffingReady ? (
-                <p className="py-4 text-center text-muted">
-                  {!selectedLocationId
-                    ? t("locations.areasNoLocation")
-                    : areasLoading
-                      ? t("common.loading")
-                      : t("locations.areasEmpty")}
-                </p>
+                <SettingsEmptyState
+                  message={
+                    !selectedLocationId
+                      ? t("locations.areasNoLocation")
+                      : areasLoading
+                        ? t("common.loading")
+                        : t("locations.areasEmpty")
+                  }
+                />
               ) : selectedLocation && selectedArea ? (
                 <LocationAreaStaffingMatrix
                   ref={staffingRef}
                   embedded
-                  listScrollClassName={LIST_SCROLL_MAX_CLASS}
                   location={selectedLocation}
                   area={selectedArea}
-                  disabled={pending || overlayFormOpen || confirmClearStaffing}
+                  selectedShiftTypeId={selectedStaffingShiftTypeId}
+                  onSelectShiftType={setSelectedStaffingShiftTypeId}
+                  onDataLoaded={setStaffingEditorData}
+                  onLoadingChange={setStaffingLoading}
                 />
               ) : null}
             </ColumnShell>
@@ -830,6 +859,49 @@ export function LocationsModal({
             onSaved={() => loadAreas(selectedLocationId)}
           />
         )}
+        {confirmDeleteLocation && selectedLocation && (
+          <DeleteConfirmModal
+            name={selectedLocation.name}
+            pending={pending}
+            onCancel={() => setConfirmDeleteLocation(false)}
+            onConfirm={handleDeleteLocation}
+          />
+        )}
+        {confirmDeleteArea && selectedArea && (
+          <DeleteConfirmModal
+            name={selectedArea.name}
+            pending={pending}
+            onCancel={() => setConfirmDeleteArea(false)}
+            onConfirm={handleDeleteArea}
+          />
+        )}
+        {confirmDeleteStaffing && selectedStaffingShiftType && (
+          <DeleteConfirmModal
+            name={selectedStaffingShiftType.name}
+            pending={pending}
+            onCancel={() => setConfirmDeleteStaffing(false)}
+            onConfirm={handleDeleteStaffing}
+          />
+        )}
+        {staffingFormMode &&
+          selectedLocation &&
+          selectedArea &&
+          staffingEditorData && (
+            <LocationStaffingFormModal
+              mode={staffingFormMode.type}
+              location={selectedLocation}
+              area={selectedArea}
+              shiftTypes={staffingEditorData.shiftTypes}
+              staffing={staffingEditorData.staffing}
+              initialShiftTypeId={
+                staffingFormMode.type === "edit"
+                  ? staffingFormMode.shiftTypeId
+                  : undefined
+              }
+              onClose={() => setStaffingFormMode(null)}
+              onSaved={handleStaffingSaved}
+            />
+          )}
       </div>
     </div>
   );

@@ -9,7 +9,8 @@ import {
   validateLocationUniqueness,
 } from "@schichtwerk/database";
 import type { Location } from "@schichtwerk/types";
-import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useTranslations } from "@/i18n/locale-provider";
+import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -19,7 +20,6 @@ import {
   Input,
   LabelMuted,
 } from "@/components/ui";
-import { cn } from "@/lib/cn";
 
 const WEEKDAY_KEYS = [
   "monday",
@@ -49,7 +49,6 @@ export function LocationFormModal({
   onSaved,
 }: Props) {
   const t = useTranslations();
-  const { locale } = useLocale();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState(location?.name ?? "");
@@ -118,11 +117,11 @@ export function LocationFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="location-form-title"
-        className="relative z-[71] flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className="relative z-[71] flex max-h-[min(90vh,720px)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h3 id="location-form-title" className="text-lg font-semibold text-foreground">
+          <h3 id="location-form-title" className={SETTINGS_MODAL_TITLE_CLASS}>
             {mode === "create"
               ? t("locations.createTitle")
               : t("locations.editTitle")}
@@ -151,39 +150,34 @@ export function LocationFormModal({
             />
           </div>
 
-          <div className="flex gap-[50px]">
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex w-full justify-center py-3">
+            <div className="grid grid-cols-[auto_auto] items-center gap-x-3 gap-y-2.5">
               {WEEKDAY_KEYS.map((key, index) => (
                 <label
                   key={key}
-                  className="flex cursor-pointer select-none items-center gap-2 text-sm text-foreground"
+                  className="contents cursor-pointer select-none text-sm text-foreground"
                 >
                   <input
                     type="checkbox"
                     checked={weekdays[index] ?? false}
                     disabled={pending}
                     onChange={(e) => setWeekday(index, e.target.checked)}
-                    className="h-4 w-4 shrink-0 rounded border-border text-primary focus-visible:ring-2 focus-visible:ring-primary/30"
+                    className="h-4 w-4 shrink-0 justify-self-center rounded border-border text-primary focus-visible:ring-2 focus-visible:ring-primary/30"
                   />
-                  {t(`locations.weekdays.${key}`)}
+                  <span>{t(`locations.weekdays.${key}`)}</span>
                 </label>
               ))}
+              <label className="contents cursor-pointer select-none text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={onHolidayOpen}
+                  disabled={pending}
+                  onChange={(e) => setOnHolidayOpen(e.target.checked)}
+                  className="h-4 w-4 shrink-0 justify-self-center rounded border-border text-primary focus-visible:ring-2 focus-visible:ring-primary/30"
+                />
+                <span>{t("locations.weekdays.holiday")}</span>
+              </label>
             </div>
-            <label
-              className={cn(
-                "flex shrink-0 cursor-pointer select-none items-center gap-2 self-start text-sm text-foreground",
-                locale === "en" ? "max-w-[140px]" : "max-w-[180px]"
-              )}
-            >
-              <input
-                type="checkbox"
-                checked={onHolidayOpen}
-                disabled={pending}
-                onChange={(e) => setOnHolidayOpen(e.target.checked)}
-                className="h-4 w-4 shrink-0 rounded border-border text-primary focus-visible:ring-2 focus-visible:ring-primary/30"
-              />
-              <span className="leading-snug">{t("locations.openOnHolidays")}</span>
-            </label>
           </div>
         </div>
 
