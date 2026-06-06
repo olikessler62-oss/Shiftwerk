@@ -1,5 +1,6 @@
 /**
  * Legt Test-Mitarbeiter per Admin-API an — ohne E-Mail-Versand.
+ * Nutzt ausschließlich SchichtwerkDatabase (keine direkten Tabellenzugriffe).
  *
  * Usage (from apps/web):
  *   npm run seed:employees
@@ -10,10 +11,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Schema } from "@schichtwerk/database";
+import { createDatabase } from "@schichtwerk/database";
 import { createClient } from "@supabase/supabase-js";
-
-const T = Schema.tables;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = resolve(__dirname, "../.env.local");
@@ -61,38 +60,26 @@ function parseArgs() {
 }
 
 async function resolveOrganizationId(
-  admin: ReturnType<typeof createClient>,
+  db: ReturnType<typeof createDatabase>,
   orgOwner?: string
 ) {
   if (orgOwner) {
-    const { data: ownerProfile, error } = await admin
-      .from(T.profiles)
-      .select("organization_id")
-      .eq("email", orgOwner)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!ownerProfile) {
+    const organizationId = await db.getOrganizationIdByProfileEmail(orgOwner);
+    if (!organizationId) {
       throw new Error(`Kein Profil für Inhaber-E-Mail gefunden: ${orgOwner}`);
     }
-    return ownerProfile.organization_id as string;
+    return organizationId;
   }
 
-  const { data: orgs, error } = await admin
-    .from(T.organizations)
-    .select("id, name")
-    .order("created_at", { ascending: true })
-    .limit(1);
-
-  if (error) throw error;
-  if (!orgs?.length) {
+  const org = await db.getFirstOrganization();
+  if (!org) {
     throw new Error(
       "Keine Organisation gefunden. Bitte zuerst einen Betrieb registrieren oder --org-owner angeben."
     );
   }
 
-  console.log(`Organisation: ${orgs[0].name} (${orgs[0].id})`);
-  return orgs[0].id as string;
+  console.log(`Organisation: ${org.name} (${org.id})`);
+  return org.id;
 }
 
 async function main() {
@@ -112,17 +99,14 @@ async function main() {
   const admin = createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  const db = createDatabase(admin);
 
-  const organizationId = await resolveOrganizationId(admin, orgOwner);
-
-  const { data: existingProfiles } = await admin
-    .from(T.profiles)
-    .select("email")
-    .eq("organization_id", organizationId)
-    .like("email", "test.mitarbeiter.%");
-
+  const organizationId = await resolveOrganizationId(db, orgOwner);
+  const profiles = await db.listOrganizationProfiles(organizationId);
   const existingEmails = new Set(
-    (existingProfiles ?? []).map((p) => p.email as string)
+    profiles
+      .map((profile) => profile.email)
+      .filter((email) => email.startsWith("test.mitarbeiter."))
   );
 
   let created = 0;
@@ -139,30 +123,30 @@ async function main() {
       continue;
     }
 
-    const { data: userData, error: userError } =
-      await admin.auth.admin.createUser({
-        email,
-        password: DEFAULT_PASSWORD,
-        email_confirm: true,
-        user_metadata: { full_name: fullName },
-      });
+    const { data: createdUser, error: userError } = await db.authAdminCreateUser(
+      email,
+      { full_name: fullName, password: DEFAULT_PASSWORD }
+    );
 
-    if (userError || !userData.user) {
-      console.error(`Fehler bei ${email}:`, userError?.message ?? "Unbekannt");
+    if (userError || !createdUser?.user) {
+      console.error(`Fehler bei ${email}:`, userError ?? "Unbekannt");
       continue;
     }
 
-    const { error: profileError } = await admin.from(T.profiles).insert({
-      id: userData.user.id,
-      organization_id: organizationId,
-      role: "basic",
-      full_name: fullName,
-      email,
-    });
-
-    if (profileError) {
-      await admin.auth.admin.deleteUser(userData.user.id);
-      console.error(`Profil-Fehler bei ${email}:`, profileError.message);
+    try {
+      await db.insertProfile({
+        id: createdUser.user.id,
+        organization_id: organizationId,
+        role: "basic",
+        full_name: fullName,
+        email,
+      });
+    } catch (e) {
+      await db.authDeleteUser(createdUser.user.id);
+      console.error(
+        `Profil-Fehler bei ${email}:`,
+        e instanceof Error ? e.message : "Unbekannt"
+      );
       continue;
     }
 

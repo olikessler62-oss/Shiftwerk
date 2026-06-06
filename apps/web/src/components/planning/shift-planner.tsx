@@ -177,8 +177,8 @@ export function ShiftPlanner({
       <div className="rounded-2xl border border-dashed border-border bg-surface p-12 text-center">
         <p className="text-muted">
           Noch keine Mitarbeiter. Lege unter{" "}
-          <a href="/team" className="font-medium text-primary">
-            Team
+          <a href="/dashboard?profiles=1" className="font-medium text-primary">
+            Profile
           </a>{" "}
           Mitarbeiter an, um den Schichtplan zu erstellen.
         </p>

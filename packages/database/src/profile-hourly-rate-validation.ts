@@ -50,3 +50,25 @@ export function validateNewHourlyRate(input: {
   }
   return { ok: true };
 }
+
+/** Entgelt ist änderbar/löschbar, wenn Gültig-ab >= Referenzdatum (serverseitig). */
+export function isMutableHourlyRate(
+  validFrom: string,
+  referenceDate: string
+): boolean {
+  return validFrom >= referenceDate;
+}
+
+export function validateMutableHourlyRateValidFrom(
+  valid_from: string,
+  referenceDate: string
+): { ok: true } | { ok: false; error: string } {
+  if (!isMutableHourlyRate(valid_from, referenceDate)) {
+    return {
+      ok: false,
+      error:
+        "Nur Entgelte mit Gültig-ab ab heute können geändert oder gelöscht werden.",
+    };
+  }
+  return { ok: true };
+}

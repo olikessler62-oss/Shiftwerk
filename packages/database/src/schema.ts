@@ -14,6 +14,7 @@ export const Schema = {
     locations: "locations",
     locationAreas: "location_areas",
     locationAreaStaffing: "location_area_staffing",
+    locationAreaServiceHours: "location_area_service_hours",
     shiftTypeBreaks: "shift_type_breaks",
     shifts: "shifts",
     availability: "availability",

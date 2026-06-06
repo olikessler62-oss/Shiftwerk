@@ -48,6 +48,7 @@ create table public.profiles (
   weekly_hours numeric(5, 2),
   is_active boolean not null default true,
   schedulable boolean not null default true,
+  sort_order int not null default 0,
   created_at timestamptz not null default now(),
   constraint profiles_email_length_check check (char_length(email) <= 60),
   constraint profiles_mobile_phone_check check (
@@ -61,6 +62,7 @@ create unique index profiles_organization_color_unique
   where color is not null;
 
 create index profiles_organization_id_idx on public.profiles (organization_id);
+create index profiles_organization_sort_order_idx on public.profiles (organization_id, sort_order);
 create index profiles_role_id_idx on public.profiles (role_id);
 
 -- Shift types
@@ -136,12 +138,16 @@ create table public.profile_recurring_availability (
   start_time time not null,
   end_time time not null,
   shift_type_id uuid references public.shift_types (id) on delete set null,
+  sort_order int not null default 0,
   created_at timestamptz not null default now(),
-  constraint profile_recurring_availability_time_check check (end_time > start_time)
+  constraint profile_recurring_availability_time_check check (start_time <> end_time)
 );
 
 create index profile_recurring_availability_profile_id_idx
   on public.profile_recurring_availability (profile_id);
+
+create index profile_recurring_availability_profile_sort_idx
+  on public.profile_recurring_availability (profile_id, sort_order);
 
 create index profile_recurring_availability_profile_weekday_idx
   on public.profile_recurring_availability (profile_id, weekday, start_time);
@@ -151,11 +157,8 @@ create table public.locations (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations (id) on delete cascade,
   name text not null,
-  active_weekdays char(7) not null default '1111100',
-  on_holiday_open boolean not null default false,
   sort_order int not null default 0,
-  archived_at timestamptz,
-  constraint locations_active_weekdays_check check (active_weekdays ~ '^[01]{7}$')
+  archived_at timestamptz
 );
 
 create index locations_organization_id_idx on public.locations (organization_id);
@@ -172,18 +175,36 @@ create table public.location_areas (
 
 create index location_areas_location_id_idx on public.location_areas (location_id);
 
--- Personalbedarf: Bereich × Schichtart × Wochentag (0=Mo … 6=So, 7=Feiertage)
+-- Service-Zeiten pro Bereich (0=Mo … 6=So, 7=Feiertage)
+create table public.location_area_service_hours (
+  id uuid primary key default gen_random_uuid(),
+  location_area_id uuid not null references public.location_areas (id) on delete cascade,
+  weekday smallint not null check (weekday >= 0 and weekday <= 7),
+  start_time time not null,
+  end_time time not null,
+  constraint location_area_service_hours_time_order check (end_time > start_time),
+  unique (location_area_id, weekday)
+);
+
+create index location_area_service_hours_area_id_idx
+  on public.location_area_service_hours (location_area_id);
+
+-- Personalbedarf: Bereich × Schichtart × Wochentag × Qualifikation (0=Mo … 6=So, 7=Feiertage)
 create table public.location_area_staffing (
   id uuid primary key default gen_random_uuid(),
   location_area_id uuid not null references public.location_areas (id) on delete cascade,
   shift_type_id uuid not null references public.shift_types (id) on delete cascade,
+  qualification_id uuid not null references public.qualifications (id) on delete restrict,
   weekday smallint not null check (weekday >= 0 and weekday <= 7),
   required_count int not null default 1 check (required_count >= 0),
-  unique (location_area_id, shift_type_id, weekday)
+  unique (location_area_id, shift_type_id, weekday, qualification_id)
 );
 
 create index location_area_staffing_area_id_idx
   on public.location_area_staffing (location_area_id);
+
+create index location_area_staffing_qualification_id_idx
+  on public.location_area_staffing (qualification_id);
 
 -- Pausen pro Schichtart
 create table public.shift_type_breaks (
@@ -265,6 +286,7 @@ create index swap_requests_org_idx on public.swap_requests (organization_id);
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at = now();
@@ -276,9 +298,26 @@ create trigger shifts_updated_at
   before update on public.shifts
   for each row execute function public.set_updated_at();
 
--- Helper: current user's org + permission level
-drop function if exists public.current_profile() cascade;
-create function public.current_profile()
+-- Referenzdatum für serverseitige Gültigkeitsprüfungen (nicht Client-Uhrzeit)
+create or replace function public.current_date_iso()
+returns text
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select to_char(current_date, 'YYYY-MM-DD');
+$$;
+
+grant execute on function public.current_date_iso() to authenticated;
+grant execute on function public.current_date_iso() to service_role;
+
+-- RLS helpers (private schema — not exposed via PostgREST RPC)
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to postgres, authenticated, service_role;
+
+create or replace function private.current_profile()
 returns table (organization_id uuid, permission_level text)
 language sql
 stable
@@ -291,7 +330,7 @@ as $$
   where p.id = auth.uid();
 $$;
 
-create or replace function public.is_manager_or_owner()
+create or replace function private.is_manager_or_owner()
 returns boolean
 language sql
 stable
@@ -299,10 +338,15 @@ security definer
 set search_path = public
 as $$
   select exists (
-    select 1 from public.current_profile() cp
+    select 1 from private.current_profile() cp
     where cp.permission_level in ('admin', 'manager')
   );
 $$;
+
+revoke all on function private.current_profile() from public;
+revoke all on function private.is_manager_or_owner() from public;
+grant execute on function private.current_profile() to authenticated, service_role;
+grant execute on function private.is_manager_or_owner() to authenticated, service_role;
 
 -- RLS
 alter table public.organizations enable row level security;
@@ -316,6 +360,7 @@ alter table public.roles enable row level security;
 alter table public.locations enable row level security;
 alter table public.location_areas enable row level security;
 alter table public.location_area_staffing enable row level security;
+alter table public.location_area_service_hours enable row level security;
 alter table public.shift_type_breaks enable row level security;
 alter table public.shifts enable row level security;
 alter table public.availability enable row level security;
@@ -326,7 +371,7 @@ alter table public.swap_requests enable row level security;
 create policy "org_select_member"
   on public.organizations for select
   using (
-    id in (select organization_id from public.current_profile())
+    id in (select organization_id from private.current_profile())
   );
 
 create policy "org_insert_owner_signup"
@@ -337,7 +382,7 @@ create policy "org_update_manager"
   on public.organizations for update
   using (
     id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -346,14 +391,14 @@ create policy "org_update_manager"
 create policy "profiles_select_org"
   on public.profiles for select
   using (
-    organization_id in (select organization_id from public.current_profile())
+    organization_id in (select organization_id from private.current_profile())
   );
 
 create policy "profiles_insert_self_or_manager"
   on public.profiles for insert
   with check (
     id = auth.uid()
-    or public.is_manager_or_owner()
+    or private.is_manager_or_owner()
   );
 
 create policy "profiles_update_manager_or_self"
@@ -361,8 +406,8 @@ create policy "profiles_update_manager_or_self"
   using (
     id = auth.uid()
     or (
-      organization_id in (select organization_id from public.current_profile())
-      and public.is_manager_or_owner()
+      organization_id in (select organization_id from private.current_profile())
+      and private.is_manager_or_owner()
     )
   );
 
@@ -370,20 +415,20 @@ create policy "profiles_update_manager_or_self"
 create policy "shift_types_select_org"
   on public.shift_types for select
   using (
-    organization_id in (select organization_id from public.current_profile())
+    organization_id in (select organization_id from private.current_profile())
   );
 
 create policy "shift_types_write_manager"
   on public.shift_types for all
   using (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   )
   with check (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -392,20 +437,20 @@ create policy "shift_types_write_manager"
 create policy "qualifications_select_org"
   on public.qualifications for select
   using (
-    organization_id in (select organization_id from public.current_profile())
+    organization_id in (select organization_id from private.current_profile())
   );
 
 create policy "qualifications_write_manager"
   on public.qualifications for all
   using (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   )
   with check (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -416,7 +461,7 @@ create policy "profile_qualifications_select_org"
   using (
     profile_id in (
       select id from public.profiles
-      where organization_id in (select organization_id from public.current_profile())
+      where organization_id in (select organization_id from private.current_profile())
     )
   );
 
@@ -426,7 +471,7 @@ create policy "profile_qualifications_write_manager"
     profile_id in (
       select p.id from public.profiles p
       where p.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -435,7 +480,7 @@ create policy "profile_qualifications_write_manager"
     profile_id in (
       select p.id from public.profiles p
       where p.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -447,7 +492,7 @@ create policy "profile_recurring_availability_select_org"
   using (
     profile_id in (
       select id from public.profiles
-      where organization_id in (select organization_id from public.current_profile())
+      where organization_id in (select organization_id from private.current_profile())
     )
   );
 
@@ -457,7 +502,7 @@ create policy "profile_recurring_availability_write_manager"
     profile_id in (
       select p.id from public.profiles p
       where p.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -466,7 +511,7 @@ create policy "profile_recurring_availability_write_manager"
     profile_id in (
       select p.id from public.profiles p
       where p.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -488,20 +533,20 @@ create policy "profile_recurring_availability_delete_own"
 create policy "profile_hourly_rates_select_org"
   on public.profile_hourly_rates for select
   using (
-    organization_id in (select organization_id from public.current_profile())
+    organization_id in (select organization_id from private.current_profile())
   );
 
 create policy "profile_hourly_rates_write_manager"
   on public.profile_hourly_rates for all
   using (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   )
   with check (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -512,7 +557,7 @@ create policy "location_areas_select_org"
   using (
     location_id in (
       select id from public.locations
-      where organization_id in (select organization_id from public.current_profile())
+      where organization_id in (select organization_id from private.current_profile())
     )
   );
 
@@ -522,7 +567,7 @@ create policy "location_areas_write_manager"
     location_id in (
       select l.id from public.locations l
       where l.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -531,7 +576,41 @@ create policy "location_areas_write_manager"
     location_id in (
       select l.id from public.locations l
       where l.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  );
+
+-- Location area service hours
+create policy "location_area_service_hours_select_org"
+  on public.location_area_service_hours for select
+  using (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (select organization_id from private.current_profile())
+    )
+  );
+
+create policy "location_area_service_hours_write_manager"
+  on public.location_area_service_hours for all
+  using (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  )
+  with check (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -544,7 +623,7 @@ create policy "location_area_staffing_select_org"
     location_area_id in (
       select la.id from public.location_areas la
       join public.locations l on l.id = la.location_id
-      where l.organization_id in (select organization_id from public.current_profile())
+      where l.organization_id in (select organization_id from private.current_profile())
     )
   );
 
@@ -555,7 +634,7 @@ create policy "location_area_staffing_write_manager"
       select la.id from public.location_areas la
       join public.locations l on l.id = la.location_id
       where l.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -565,7 +644,7 @@ create policy "location_area_staffing_write_manager"
       select la.id from public.location_areas la
       join public.locations l on l.id = la.location_id
       where l.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -575,20 +654,20 @@ create policy "location_area_staffing_write_manager"
 create policy "roles_select_org"
   on public.roles for select
   using (
-    organization_id in (select organization_id from public.current_profile())
+    organization_id in (select organization_id from private.current_profile())
   );
 
 create policy "roles_write_manager"
   on public.roles for all
   using (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   )
   with check (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -597,20 +676,20 @@ create policy "roles_write_manager"
 create policy "locations_select_org"
   on public.locations for select
   using (
-    organization_id in (select organization_id from public.current_profile())
+    organization_id in (select organization_id from private.current_profile())
   );
 
 create policy "locations_write_manager"
   on public.locations for all
   using (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   )
   with check (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -621,7 +700,7 @@ create policy "shift_type_breaks_select_org"
   using (
     shift_type_id in (
       select id from public.shift_types
-      where organization_id in (select organization_id from public.current_profile())
+      where organization_id in (select organization_id from private.current_profile())
     )
   );
 
@@ -632,7 +711,7 @@ create policy "shift_type_breaks_write_manager"
       select st.id
       from public.shift_types st
       where st.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -642,7 +721,7 @@ create policy "shift_type_breaks_write_manager"
       select st.id
       from public.shift_types st
       where st.organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -654,8 +733,8 @@ create policy "shifts_select"
   using (
     employee_id = auth.uid()
     or (
-      organization_id in (select organization_id from public.current_profile())
-      and public.is_manager_or_owner()
+      organization_id in (select organization_id from private.current_profile())
+      and private.is_manager_or_owner()
     )
   );
 
@@ -663,7 +742,7 @@ create policy "shifts_write_manager"
   on public.shifts for insert
   with check (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -672,7 +751,7 @@ create policy "shifts_update_manager"
   on public.shifts for update
   using (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -681,7 +760,7 @@ create policy "shifts_delete_manager"
   on public.shifts for delete
   using (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -692,8 +771,8 @@ create policy "availability_select"
   using (
     employee_id = auth.uid()
     or (
-      organization_id in (select organization_id from public.current_profile())
-      and public.is_manager_or_owner()
+      organization_id in (select organization_id from private.current_profile())
+      and private.is_manager_or_owner()
     )
   );
 
@@ -715,8 +794,8 @@ create policy "absence_select"
   using (
     employee_id = auth.uid()
     or (
-      organization_id in (select organization_id from public.current_profile())
-      and public.is_manager_or_owner()
+      organization_id in (select organization_id from private.current_profile())
+      and private.is_manager_or_owner()
     )
   );
 
@@ -728,7 +807,7 @@ create policy "absence_update_manager"
   on public.absence_requests for update
   using (
     organization_id in (
-      select organization_id from public.current_profile()
+      select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
   );
@@ -740,8 +819,8 @@ create policy "swap_select"
     requester_id = auth.uid()
     or target_employee_id = auth.uid()
     or (
-      organization_id in (select organization_id from public.current_profile())
-      and public.is_manager_or_owner()
+      organization_id in (select organization_id from private.current_profile())
+      and private.is_manager_or_owner()
     )
   );
 
@@ -755,7 +834,7 @@ create policy "swap_update_manager_or_requester"
     requester_id = auth.uid()
     or (
       organization_id in (
-        select organization_id from public.current_profile()
+        select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
     )
@@ -774,5 +853,5 @@ alter view public.coworkers set (security_invoker = true);
 create policy "coworkers_via_profiles"
   on public.profiles for select
   using (
-    organization_id in (select organization_id from public.current_profile())
+    organization_id in (select organization_id from private.current_profile())
   );

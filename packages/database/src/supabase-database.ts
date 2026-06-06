@@ -1,6 +1,7 @@
 import type {
   Location,
   LocationArea,
+  LocationAreaServiceHour,
   LocationAreaStaffing,
   Profile,
   ProfileHourlyRate,
@@ -25,7 +26,20 @@ import type {
   ShiftTypeBreakInput,
   ShiftWithTypeRow,
 } from "./interface";
-import { dayBefore } from "./profile-hourly-rate-validation";
+import { validateProfileEmail } from "./profile-contact-validation";
+import {
+  dayBefore,
+  isMutableHourlyRate,
+  validateMutableHourlyRateValidFrom,
+} from "./profile-hourly-rate-validation";
+import {
+  applySortOrderBatch,
+  validateReorderPermutation,
+} from "./reorder-sort-order";
+import {
+  isServiceHoursTableUnavailable,
+  SERVICE_HOURS_MIGRATION_HINT,
+} from "./location-service-hours";
 import {
   parseAvailabilityTimeRange,
   parseAvailabilityWeekday,
@@ -36,6 +50,7 @@ import {
   normalizeShiftTypesWithBreaks,
   normalizeTime,
   replaceShiftTypeBreaks,
+  seedDefaultAreaServiceHours,
   seedDefaultLocationAreas,
   seedDefaultRoles,
   seedDefaultShiftTypes,
@@ -43,6 +58,13 @@ import {
 
 const T = Schema.tables;
 const PROFILE_SELECT = "*, roles!inner(permission_level)";
+
+function throwServiceHoursDbError(message: string): never {
+  if (isServiceHoursTableUnavailable(message)) {
+    throw new Error(SERVICE_HOURS_MIGRATION_HINT);
+  }
+  throw new Error(message);
+}
 
 type ProfileRow = Omit<Profile, "role"> & {
   roles: { permission_level: RolePermissionLevel } | { permission_level: RolePermissionLevel }[];
@@ -57,6 +79,9 @@ function mapProfile(row: ProfileRow): Profile {
   };
 }
 
+const PROFILE_HOURLY_RATE_SELECT =
+  "*, creator:created_by(full_name)";
+
 type ProfileHourlyRateRow = {
   id: string;
   organization_id: string;
@@ -67,6 +92,7 @@ type ProfileHourlyRateRow = {
   valid_to: string | null;
   created_at: string;
   created_by: string | null;
+  creator?: { full_name: string } | { full_name: string }[] | null;
 };
 
 type ProfileRecurringAvailabilityRow = {
@@ -77,6 +103,7 @@ type ProfileRecurringAvailabilityRow = {
   start_time: string;
   end_time: string;
   shift_type_id: string | null;
+  sort_order: number;
   created_at: string;
   shift_types:
     | { name: string }
@@ -99,6 +126,7 @@ function mapProfileRecurringAvailability(
     end_time: row.end_time,
     shift_type_id: row.shift_type_id,
     shift_type_name: shiftRel?.name ?? null,
+    sort_order: row.sort_order,
     created_at: row.created_at,
   };
 }
@@ -106,6 +134,7 @@ function mapProfileRecurringAvailability(
 function mapProfileHourlyRate(row: ProfileHourlyRateRow): ProfileHourlyRate {
   const amount =
     typeof row.amount === "string" ? Number.parseFloat(row.amount) : row.amount;
+  const creatorRel = Array.isArray(row.creator) ? row.creator[0] : row.creator;
   return {
     id: row.id,
     organization_id: row.organization_id,
@@ -116,6 +145,7 @@ function mapProfileHourlyRate(row: ProfileHourlyRateRow): ProfileHourlyRate {
     valid_to: row.valid_to ? row.valid_to.slice(0, 10) : null,
     created_at: row.created_at,
     created_by: row.created_by,
+    created_by_name: creatorRel?.full_name ?? null,
   };
 }
 
@@ -159,6 +189,35 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     await this.client.auth.signOut();
   }
 
+  async authResetPasswordForEmail(email: string, redirectTo: string) {
+    const { error } = await this.client.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
+    return { error: error?.message ?? null };
+  }
+
+  async authUpdatePassword(password: string) {
+    const { error } = await this.client.auth.updateUser({ password });
+    return { error: error?.message ?? null };
+  }
+
+  async authUpdateEmail(email: string) {
+    const { error } = await this.client.auth.updateUser({ email });
+    return { error: error?.message ?? null };
+  }
+
+  async authAdminUpdateUserEmail(userId: string, email: string) {
+    const admin = this.client.auth.admin;
+    if (!admin?.updateUserById) {
+      return { error: "Admin-Auth nicht verfügbar" };
+    }
+    const { error } = await admin.updateUserById(userId, {
+      email,
+      email_confirm: true,
+    });
+    return { error: error?.message ?? null };
+  }
+
   async authExchangeCodeForSession(code: string) {
     const { error } = await this.client.auth.exchangeCodeForSession(code);
     return { error: error?.message ?? null };
@@ -183,7 +242,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
   async authAdminCreateUser(
     email: string,
-    options: { full_name: string }
+    options: { full_name: string; password?: string }
   ): Promise<{ data: InviteUserResult | null; error: string | null }> {
     const admin = this.client.auth.admin;
     if (!admin?.createUser) {
@@ -191,7 +250,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }
     const { data, error } = await admin.createUser({
       email,
-      password: crypto.randomUUID(),
+      password: options.password ?? crypto.randomUUID(),
       email_confirm: true,
       user_metadata: { full_name: options.full_name },
     });
@@ -229,10 +288,93 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data?.name as string) ?? null;
   }
 
+  async getOrganizationIdByProfileEmail(email: string) {
+    const { data, error } = await this.client
+      .from(T.profiles)
+      .select("organization_id")
+      .eq("email", email.trim().toLowerCase())
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data?.organization_id as string) ?? null;
+  }
+
+  async getFirstOrganization() {
+    const { data, error } = await this.client
+      .from(T.organizations)
+      .select("id, name")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return { id: data.id as string, name: data.name as string };
+  }
+
   async getCurrentUserProfile() {
     const user = await this.authGetUser();
     if (!user) return null;
     return this.getProfileById(user.id);
+  }
+
+  async updateCurrentUserProfileEmail(newEmail: string) {
+    const user = await this.authGetUser();
+    if (!user) {
+      return { ok: false as const, error: "Nicht angemeldet" };
+    }
+
+    const profile = await this.getProfileById(user.id);
+    if (!profile) {
+      return { ok: false as const, error: "Profil nicht gefunden" };
+    }
+
+    const parsed = validateProfileEmail(newEmail);
+    if (!parsed.ok) return parsed;
+
+    if (parsed.email === profile.email.trim().toLowerCase()) {
+      return {
+        ok: true as const,
+        profile,
+        confirmationRequired: false,
+      };
+    }
+
+    const duplicate = await this.findProfileByEmail(
+      profile.organization_id,
+      parsed.email
+    );
+    if (duplicate && duplicate.id !== profile.id) {
+      return { ok: false as const, error: "Diese E-Mail ist bereits im Team." };
+    }
+
+    const authResult = await this.authUpdateEmail(parsed.email);
+    if (authResult.error) {
+      return { ok: false as const, error: authResult.error };
+    }
+
+    const { error: profileError } = await this.client
+      .from(T.profiles)
+      .update({ email: parsed.email })
+      .eq("id", profile.id)
+      .eq("organization_id", profile.organization_id);
+    if (profileError) {
+      return { ok: false as const, error: profileError.message };
+    }
+
+    const updated = await this.getProfileById(profile.id);
+    if (!updated) {
+      return { ok: false as const, error: "Profil konnte nicht geladen werden" };
+    }
+
+    const refreshedUser = await this.authGetUser();
+    const confirmationRequired =
+      !!refreshedUser?.new_email &&
+      refreshedUser.new_email.toLowerCase() === parsed.email;
+
+    return {
+      ok: true as const,
+      profile: updated,
+      confirmationRequired,
+    };
   }
 
   async getProfileById(id: string) {
@@ -302,6 +444,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (!roleId) {
       throw new Error("Rolle nicht gefunden");
     }
+    const sortOrder = await this.getNextProfileSortOrder(row.organization_id);
     const { error } = await this.client.from(T.profiles).insert({
       id: row.id,
       organization_id: row.organization_id,
@@ -310,6 +453,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       email: row.email,
       mobile_phone: row.mobile_phone ?? null,
       color: row.color ?? null,
+      sort_order: sortOrder,
       ...(row.is_active !== undefined ? { is_active: row.is_active } : {}),
       ...(row.schedulable !== undefined ? { schedulable: row.schedulable } : {}),
     });
@@ -370,9 +514,38 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .from(T.profiles)
       .select(PROFILE_SELECT)
       .eq("organization_id", organizationId)
+      .order("sort_order")
       .order("full_name");
     if (error) throw new Error(error.message);
     return (data ?? []).map((row) => mapProfile(row as ProfileRow));
+  }
+
+  async getNextProfileSortOrder(organizationId: string) {
+    const { data } = await this.client
+      .from(T.profiles)
+      .select("sort_order")
+      .eq("organization_id", organizationId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return ((data?.sort_order as number) ?? -1) + 1;
+  }
+
+  async reorderProfiles(organizationId: string, orderedIds: string[]) {
+    const existing = await this.listOrganizationProfiles(organizationId);
+    validateReorderPermutation(
+      existing.map((entry) => entry.id),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.profiles)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("organization_id", organizationId)
+      )
+    );
   }
 
   async listActiveEmployees(organizationId: string) {
@@ -382,6 +555,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("organization_id", organizationId)
       .eq("is_active", true)
       .eq("roles.permission_level", "basic")
+      .order("sort_order")
       .order("full_name");
     return (data ?? []).map((row) => mapProfile(row as ProfileRow));
   }
@@ -582,6 +756,24 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (error) throw new Error(error.message);
   }
 
+  async reorderShiftTypes(organizationId: string, orderedIds: string[]) {
+    const existing = await this.listShiftTypes(organizationId);
+    validateReorderPermutation(
+      existing.map((entry) => entry.id),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.shiftTypes)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("organization_id", organizationId)
+          .is("archived_at", null)
+      )
+    );
+  }
+
   async listQualifications(organizationId: string) {
     const { data, error } = await this.client
       .from(T.qualifications)
@@ -687,7 +879,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       qual.organization_id !== organizationId ||
       qual.archived_at != null
     ) {
-      throw new Error("Qualifikation nicht gefunden");
+      throw new Error("Funktion nicht gefunden");
     }
 
     const { error } = await this.client.from(T.profileQualifications).insert({
@@ -727,12 +919,52 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .select("*, shift_types(name)")
       .eq("organization_id", organizationId)
       .eq("profile_id", profileId)
-      .order("weekday")
-      .order("start_time");
+      .order("sort_order");
     if (error) throw new Error(error.message);
 
     return (data ?? []).map((row) =>
       mapProfileRecurringAvailability(row as ProfileRecurringAvailabilityRow)
+    );
+  }
+
+  async getNextProfileRecurringAvailabilitySortOrder(profileId: string) {
+    const { data } = await this.client
+      .from(T.profileRecurringAvailability)
+      .select("sort_order")
+      .eq("profile_id", profileId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return ((data?.sort_order as number) ?? -1) + 1;
+  }
+
+  async reorderProfileRecurringAvailability(
+    organizationId: string,
+    profileId: string,
+    orderedIds: string[]
+  ) {
+    const profile = await this.getProfileById(profileId);
+    if (!profile || profile.organization_id !== organizationId) {
+      throw new Error("Profil nicht gefunden");
+    }
+
+    const existing = await this.listProfileRecurringAvailability(
+      organizationId,
+      profileId
+    );
+    validateReorderPermutation(
+      existing.map((entry) => entry.id),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.profileRecurringAvailability)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("profile_id", profileId)
+          .eq("organization_id", organizationId)
+      )
     );
   }
 
@@ -757,10 +989,15 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       if (error || !data || data.archived_at != null) {
         return { ok: false, error: "Schichtart nicht gefunden." };
       }
-      return {
-        ok: true,
+      const parsed = parseAvailabilityTimeRange({
         start_time: data.start_time as string,
         end_time: data.end_time as string,
+      });
+      if (!parsed.ok) return parsed;
+      return {
+        ok: true,
+        start_time: parsed.start_time,
+        end_time: parsed.end_time,
         shift_type_id: input.shift_type_id,
       };
     }
@@ -811,6 +1048,10 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     );
     if (!overlap.ok) throw new Error(overlap.error);
 
+    const sortOrder = await this.getNextProfileRecurringAvailabilitySortOrder(
+      profileId
+    );
+
     const { data, error } = await this.client
       .from(T.profileRecurringAvailability)
       .insert({
@@ -820,10 +1061,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         start_time: times.start_time,
         end_time: times.end_time,
         shift_type_id: times.shift_type_id,
+        sort_order: sortOrder,
       })
       .select("*, shift_types(name)")
       .single();
-    if (error || !data) throw new Error(error?.message ?? "Speichern fehlgeschlagen");
+    if (error || !data) {
+      throw new Error(error?.message ?? "Speichern fehlgeschlagen");
+    }
     return mapProfileRecurringAvailability(data as ProfileRecurringAvailabilityRow);
   }
 
@@ -898,6 +1142,66 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (error) throw new Error(error.message);
   }
 
+  async getServerDateIso() {
+    const { data, error } = await this.client.rpc("current_date_iso");
+    if (error) throw new Error(error.message);
+    if (typeof data !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+      throw new Error("Referenzdatum konnte nicht ermittelt werden.");
+    }
+    return data;
+  }
+
+  async getProfileHourlyRateById(
+    organizationId: string,
+    profileId: string,
+    rateId: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileHourlyRates)
+      .select(PROFILE_HOURLY_RATE_SELECT)
+      .eq("id", rateId)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return mapProfileHourlyRate(data as ProfileHourlyRateRow);
+  }
+
+  private async findPredecessorProfileHourlyRate(
+    organizationId: string,
+    profileId: string,
+    validFrom: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileHourlyRates)
+      .select("id, valid_from, valid_to")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .eq("valid_to", dayBefore(validFrom))
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data as { id: string; valid_from: string; valid_to: string | null } | null;
+  }
+
+  private async findSuccessorProfileHourlyRate(
+    organizationId: string,
+    profileId: string,
+    validFrom: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileHourlyRates)
+      .select("id, valid_from")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .gt("valid_from", validFrom)
+      .order("valid_from", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data as { id: string; valid_from: string } | null;
+  }
+
   async listProfileHourlyRates(
     organizationId: string,
     profileId: string,
@@ -908,7 +1212,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
     const { data, error } = await this.client
       .from(T.profileHourlyRates)
-      .select("*")
+      .select(PROFILE_HOURLY_RATE_SELECT)
       .eq("organization_id", organizationId)
       .eq("profile_id", profileId)
       .order("valid_from", { ascending: false })
@@ -929,7 +1233,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
     const { data, error } = await this.client
       .from(T.profileHourlyRates)
-      .select("*")
+      .select(PROFILE_HOURLY_RATE_SELECT)
       .eq("organization_id", organizationId)
       .eq("profile_id", profileId)
       .lte("valid_from", date)
@@ -978,12 +1282,21 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     input: {
       amount: number;
       valid_from: string;
-      created_by?: string;
+      created_by: string;
     }
   ) {
+    if (!input.created_by) {
+      throw new Error("Erfasser ist erforderlich.");
+    }
+
     const profile = await this.getProfileById(profileId);
     if (!profile || profile.organization_id !== organizationId) {
       throw new Error("Profil nicht gefunden");
+    }
+
+    const creator = await this.getProfileById(input.created_by);
+    if (!creator || creator.organization_id !== organizationId) {
+      throw new Error("Erfasser nicht gefunden");
     }
 
     const { data: openRate, error: openError } = await this.client
@@ -1017,14 +1330,140 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         currency: "EUR",
         valid_from: input.valid_from,
         valid_to: null,
-        created_by: input.created_by ?? null,
+        created_by: input.created_by,
       })
-      .select("*")
+      .select(PROFILE_HOURLY_RATE_SELECT)
       .single();
     if (insertError || !inserted) {
       throw new Error(insertError?.message ?? "Stundensatz konnte nicht gespeichert werden");
     }
     return mapProfileHourlyRate(inserted as ProfileHourlyRateRow);
+  }
+
+  async updateProfileHourlyRate(
+    organizationId: string,
+    profileId: string,
+    rateId: string,
+    input: {
+      amount: number;
+      valid_from: string;
+    },
+    referenceDate: string
+  ) {
+    const rate = await this.getProfileHourlyRateById(
+      organizationId,
+      profileId,
+      rateId
+    );
+    if (!rate) {
+      throw new Error("Stundensatz nicht gefunden");
+    }
+    if (!isMutableHourlyRate(rate.valid_from, referenceDate)) {
+      throw new Error(
+        "Nur Entgelte mit Gültig-ab ab heute können geändert oder gelöscht werden."
+      );
+    }
+
+    const validFromCheck = validateMutableHourlyRateValidFrom(
+      input.valid_from,
+      referenceDate
+    );
+    if (!validFromCheck.ok) throw new Error(validFromCheck.error);
+
+    const successor = await this.findSuccessorProfileHourlyRate(
+      organizationId,
+      profileId,
+      rate.valid_from
+    );
+    if (successor && input.valid_from >= successor.valid_from.slice(0, 10)) {
+      throw new Error("Das Gültig-ab-Datum muss vor dem nächsten Satz liegen.");
+    }
+
+    if (input.valid_from !== rate.valid_from) {
+      const predecessor = await this.findPredecessorProfileHourlyRate(
+        organizationId,
+        profileId,
+        rate.valid_from
+      );
+      if (predecessor) {
+        const { error: predError } = await this.client
+          .from(T.profileHourlyRates)
+          .update({ valid_to: dayBefore(input.valid_from) })
+          .eq("id", predecessor.id)
+          .eq("organization_id", organizationId);
+        if (predError) throw new Error(predError.message);
+      }
+    }
+
+    const { data: updated, error: updateError } = await this.client
+      .from(T.profileHourlyRates)
+      .update({
+        amount: input.amount,
+        valid_from: input.valid_from,
+      })
+      .eq("id", rateId)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .select(PROFILE_HOURLY_RATE_SELECT)
+      .single();
+    if (updateError || !updated) {
+      throw new Error(
+        updateError?.message ?? "Stundensatz konnte nicht aktualisiert werden"
+      );
+    }
+    return mapProfileHourlyRate(updated as ProfileHourlyRateRow);
+  }
+
+  async deleteProfileHourlyRate(
+    organizationId: string,
+    profileId: string,
+    rateId: string,
+    referenceDate: string
+  ) {
+    const rate = await this.getProfileHourlyRateById(
+      organizationId,
+      profileId,
+      rateId
+    );
+    if (!rate) {
+      throw new Error("Stundensatz nicht gefunden");
+    }
+    if (!isMutableHourlyRate(rate.valid_from, referenceDate)) {
+      throw new Error(
+        "Nur Entgelte mit Gültig-ab ab heute können geändert oder gelöscht werden."
+      );
+    }
+
+    const predecessor = await this.findPredecessorProfileHourlyRate(
+      organizationId,
+      profileId,
+      rate.valid_from
+    );
+    const successor = await this.findSuccessorProfileHourlyRate(
+      organizationId,
+      profileId,
+      rate.valid_from
+    );
+
+    const { error: deleteError } = await this.client
+      .from(T.profileHourlyRates)
+      .delete()
+      .eq("id", rateId)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId);
+    if (deleteError) throw new Error(deleteError.message);
+
+    if (predecessor) {
+      const nextValidTo = successor
+        ? dayBefore(successor.valid_from.slice(0, 10))
+        : null;
+      const { error: predError } = await this.client
+        .from(T.profileHourlyRates)
+        .update({ valid_to: nextValidTo })
+        .eq("id", predecessor.id)
+        .eq("organization_id", organizationId);
+      if (predError) throw new Error(predError.message);
+    }
   }
 
   async countUpcomingShiftsForQualificationProfiles(
@@ -1059,6 +1498,24 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("id", id)
       .eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
+  }
+
+  async reorderQualifications(organizationId: string, orderedIds: string[]) {
+    const existing = await this.listQualifications(organizationId);
+    validateReorderPermutation(
+      existing.map((entry) => entry.id),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.qualifications)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("organization_id", organizationId)
+          .is("archived_at", null)
+      )
+    );
   }
 
   async listRoles(organizationId: string) {
@@ -1150,6 +1607,24 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return count ?? 0;
   }
 
+  async reorderRoles(organizationId: string, orderedIds: string[]) {
+    const existing = await this.listRoles(organizationId);
+    validateReorderPermutation(
+      existing.map((entry) => entry.id),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.roles)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("organization_id", organizationId)
+          .is("archived_at", null)
+      )
+    );
+  }
+
   async listLocations(organizationId: string) {
     const { data, error } = await this.client
       .from(T.locations)
@@ -1213,8 +1688,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async insertLocation(row: {
     organization_id: string;
     name: string;
-    active_weekdays: string;
-    on_holiday_open: boolean;
     sort_order: number;
   }) {
     const { data, error } = await this.client
@@ -1222,8 +1695,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .insert({
         organization_id: row.organization_id,
         name: row.name,
-        active_weekdays: row.active_weekdays,
-        on_holiday_open: row.on_holiday_open,
         sort_order: row.sort_order,
       })
       .select("id")
@@ -1309,7 +1780,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .select("id")
       .single();
     if (error || !data) throw new Error(error?.message ?? "Speichern fehlgeschlagen");
-    return { id: data.id as string };
+    const areaId = data.id as string;
+    await seedDefaultAreaServiceHours(this.client, areaId);
+    return { id: areaId };
   }
 
   async updateLocationArea(
@@ -1326,6 +1799,24 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (error) throw new Error(error.message);
   }
 
+  async reorderLocationAreas(locationId: string, orderedIds: string[]) {
+    const existing = await this.listLocationAreas(locationId);
+    validateReorderPermutation(
+      existing.map((entry) => entry.id),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.locationAreas)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("location_id", locationId)
+          .is("archived_at", null)
+      )
+    );
+  }
+
   async archiveLocationArea(id: string, locationId: string) {
     const now = new Date().toISOString();
     const { error } = await this.client
@@ -1334,6 +1825,24 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("id", id)
       .eq("location_id", locationId);
     if (error) throw new Error(error.message);
+  }
+
+  async reorderLocations(organizationId: string, orderedIds: string[]) {
+    const existing = await this.listLocations(organizationId);
+    validateReorderPermutation(
+      existing.map((entry) => entry.id),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.locations)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("organization_id", organizationId)
+          .is("archived_at", null)
+      )
+    );
   }
 
   async archiveLocation(id: string, organizationId: string) {
@@ -1358,7 +1867,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const areaIds = areas.map((a) => a.id);
     const { data, error } = await this.client
       .from(T.locationAreaStaffing)
-      .select("id, location_area_id, shift_type_id, weekday, required_count")
+      .select(
+        "id, location_area_id, shift_type_id, qualification_id, weekday, required_count"
+      )
       .in("location_area_id", areaIds);
     if (error) throw new Error(error.message);
     return (data ?? []) as LocationAreaStaffing[];
@@ -1372,7 +1883,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (!areas.some((a) => a.id === locationAreaId)) return [];
     const { data, error } = await this.client
       .from(T.locationAreaStaffing)
-      .select("id, location_area_id, shift_type_id, weekday, required_count")
+      .select(
+        "id, location_area_id, shift_type_id, qualification_id, weekday, required_count"
+      )
       .eq("location_area_id", locationAreaId);
     if (error) throw new Error(error.message);
     return (data ?? []) as LocationAreaStaffing[];
@@ -1381,7 +1894,12 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async replaceLocationAreaStaffing(
     locationAreaId: string,
     locationId: string,
-    rules: { shift_type_id: string; weekday: number; required_count: number }[]
+    rules: {
+      shift_type_id: string;
+      weekday: number;
+      qualification_id: string;
+      required_count: number;
+    }[]
   ) {
     const areas = await this.listLocationAreas(locationId);
     if (!areas.some((a) => a.id === locationAreaId)) {
@@ -1401,6 +1919,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       toInsert.map((r) => ({
         location_area_id: locationAreaId,
         shift_type_id: r.shift_type_id,
+        qualification_id: r.qualification_id,
         weekday: r.weekday,
         required_count: r.required_count,
       }))
@@ -1412,7 +1931,11 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     locationAreaId: string,
     locationId: string,
     shiftTypeId: string,
-    rules: { weekday: number; required_count: number }[]
+    rules: {
+      weekday: number;
+      qualification_id: string;
+      required_count: number;
+    }[]
   ) {
     const areas = await this.listLocationAreas(locationId);
     if (!areas.some((a) => a.id === locationAreaId)) {
@@ -1433,6 +1956,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       toInsert.map((r) => ({
         location_area_id: locationAreaId,
         shift_type_id: shiftTypeId,
+        qualification_id: r.qualification_id,
         weekday: r.weekday,
         required_count: r.required_count,
       }))
@@ -1461,22 +1985,78 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async updateLocation(
     id: string,
     organizationId: string,
-    row: {
-      name: string;
-      active_weekdays: string;
-      on_holiday_open: boolean;
-    }
+    row: { name: string }
   ) {
     const { error } = await this.client
       .from(T.locations)
-      .update({
-        name: row.name,
-        active_weekdays: row.active_weekdays,
-        on_holiday_open: row.on_holiday_open,
-      })
+      .update({ name: row.name })
       .eq("id", id)
       .eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
+  }
+
+  async listLocationAreaServiceHours(locationId: string) {
+    const areas = await this.listLocationAreas(locationId);
+    if (!areas.length) return [];
+    const areaIds = areas.map((a) => a.id);
+    const { data, error } = await this.client
+      .from(T.locationAreaServiceHours)
+      .select("id, location_area_id, weekday, start_time, end_time")
+      .in("location_area_id", areaIds);
+    if (error) {
+      if (isServiceHoursTableUnavailable(error.message)) return [];
+      throw new Error(error.message);
+    }
+    return (data ?? []) as LocationAreaServiceHour[];
+  }
+
+  async listLocationAreaServiceHoursForArea(
+    locationAreaId: string,
+    locationId: string
+  ) {
+    const areas = await this.listLocationAreas(locationId);
+    if (!areas.some((a) => a.id === locationAreaId)) return [];
+    const { data, error } = await this.client
+      .from(T.locationAreaServiceHours)
+      .select("id, location_area_id, weekday, start_time, end_time")
+      .eq("location_area_id", locationAreaId)
+      .order("weekday");
+    if (error) {
+      if (isServiceHoursTableUnavailable(error.message)) return [];
+      throw new Error(error.message);
+    }
+    return (data ?? []) as LocationAreaServiceHour[];
+  }
+
+  async replaceLocationAreaServiceHours(
+    locationAreaId: string,
+    locationId: string,
+    rows: { weekday: number; start_time: string; end_time: string }[]
+  ) {
+    const areas = await this.listLocationAreas(locationId);
+    if (!areas.some((a) => a.id === locationAreaId)) {
+      throw new Error("Bereich nicht gefunden");
+    }
+
+    const { error: delError } = await this.client
+      .from(T.locationAreaServiceHours)
+      .delete()
+      .eq("location_area_id", locationAreaId);
+    if (delError) throwServiceHoursDbError(delError.message);
+
+    if (!rows.length) return;
+
+    const { error: insError } = await this.client
+      .from(T.locationAreaServiceHours)
+      .insert(
+        rows.map((r) => ({
+          location_area_id: locationAreaId,
+          weekday: r.weekday,
+          start_time: r.start_time,
+          end_time: r.end_time,
+        }))
+      );
+    if (insError) throwServiceHoursDbError(insError.message);
   }
 
   async listMyShifts(fromDate: string, toDate: string) {

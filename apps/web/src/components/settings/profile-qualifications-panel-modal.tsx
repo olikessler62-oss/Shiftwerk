@@ -17,6 +17,8 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  settingsListItemAttrs,
+  useScrollToSettingsListItem,
   settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
@@ -71,6 +73,7 @@ export function ProfileQualificationsPanelModal({
   >(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [formMode, setFormMode] = useState<QualificationFormMode>(null);
+  const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
   const [allQualifications, setAllQualifications] = useState<Qualification[]>(
     []
   );
@@ -160,9 +163,17 @@ export function ProfileQualificationsPanelModal({
 
   const anyFormOpen = !!formMode;
 
+  useScrollToSettingsListItem(
+    profileQualifications,
+    scrollToItemId,
+    () => setScrollToItemId(null)
+  );
+
   function handleSaved(list: Qualification[], assignedQualificationId: string) {
+    const wasCreate = formMode?.type === "create";
     applyList(list);
     setSelectedQualificationId(assignedQualificationId);
+    if (wasCreate) setScrollToItemId(assignedQualificationId);
   }
 
   function handleRemove() {
@@ -274,6 +285,7 @@ export function ProfileQualificationsPanelModal({
                     return (
                       <tr
                         key={item.id}
+                        {...settingsListItemAttrs(item.id)}
                         onClick={() => {
                           setSelectedQualificationId(item.id);
                           setConfirmRemove(false);

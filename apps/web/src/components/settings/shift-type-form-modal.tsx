@@ -46,7 +46,7 @@ type Props = {
   shiftType?: ShiftTypeWithBreaks;
   existingShiftTypes: ShiftTypeWithBreaks[];
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (createdId?: string) => void;
 };
 
 function breaksToDrafts(breaks: ShiftTypeBreak[]): BreakDraft[] {
@@ -188,7 +188,7 @@ export function ShiftTypeFormModal({
         setError(result.error);
         return;
       }
-      onSaved();
+      onSaved(mode === "create" ? result.id : undefined);
       onClose();
     });
   }

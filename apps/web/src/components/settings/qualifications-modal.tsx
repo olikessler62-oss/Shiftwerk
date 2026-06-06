@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteQualification } from "@/app/actions/qualifications";
+import {
+  deleteQualification,
+  reorderQualifications,
+} from "@/app/actions/qualifications";
 import type { Qualification } from "@schichtwerk/types";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { QualificationFormModal } from "./qualification-form-modal";
@@ -13,7 +16,10 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
-  settingsColumnHeaderClass,
+  SettingsReorderButtons,
+  applyCreatedListSelection,
+  settingsListItemAttrs,
+  useScrollToSettingsListItem,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -30,6 +36,7 @@ import {
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
   qualifications: Qualification[];
@@ -52,6 +59,7 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
 
   useEffect(() => {
     setList(qualifications);
@@ -85,10 +93,32 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
     };
   }, []);
 
-  const selected = list.find((q) => q.id === selectedId);
+  const {
+    sortedList,
+    canMoveUp,
+    canMoveDown,
+    handleMove,
+  } = useSettingsListReorder({
+    list,
+    setList,
+    selectedId,
+    pending,
+    startTransition,
+    reorder: reorderQualifications,
+    onError: setErrorMessage,
+    onSuccess: () => router.refresh(),
+  });
+  const selected = sortedList.find((q) => q.id === selectedId);
+  const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
+  useScrollToSettingsListItem(sortedList, scrollToItemId, clearScrollTarget);
 
   function refreshList() {
     router.refresh();
+  }
+
+  function handleFormSaved(createdId?: string) {
+    applyCreatedListSelection(createdId, setSelectedId, setScrollToItemId);
+    refreshList();
   }
 
   function openEdit(qualification: Qualification) {
@@ -171,18 +201,13 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                   />
                 ) : (
                   <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b border-border bg-subtle">
-                        <th className="w-1 p-0" aria-hidden />
-                        <th className={settingsColumnHeaderClass()}>{t("qualifications.designation")}</th>
-                      </tr>
-                    </thead>
                     <tbody>
-                      {list.map((item) => {
+                      {sortedList.map((item) => {
                         const isSelected = item.id === selectedId;
                         return (
                           <tr
                             key={item.id}
+                            {...settingsListItemAttrs(item.id)}
                             onClick={() => {
                               setSelectedId(item.id);
                               setConfirmDelete(false);
@@ -220,15 +245,32 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                   />
                 }
                 secondary={
-                  <SettingsIconActionButton
-                    label={t("qualifications.edit")}
-                    icon={<PencilIcon />}
-                    disabled={pending || !selected}
-                    onClick={() => {
-                      if (!selected) return;
-                      openEdit(selected);
-                    }}
-                  />
+                  <>
+                    <SettingsIconActionButton
+                      label={t("qualifications.edit")}
+                      icon={<PencilIcon />}
+                      disabled={pending || !selected}
+                      onClick={() => {
+                        if (!selected) return;
+                        openEdit(selected);
+                      }}
+                    />
+                    <SettingsReorderButtons
+                      moveUpLabel={t("common.moveUp")}
+                      moveDownLabel={t("common.moveDown")}
+                      disabled={pending}
+                      canMoveUp={canMoveUp}
+                      canMoveDown={canMoveDown}
+                      onMoveUp={() => {
+                        setErrorMessage(null);
+                        handleMove(-1);
+                      }}
+                      onMoveDown={() => {
+                        setErrorMessage(null);
+                        handleMove(1);
+                      }}
+                    />
+                  </>
                 }
                 destructive={
                   <SettingsIconActionButton
@@ -264,7 +306,7 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
             mode="create"
             existingQualifications={list}
             onClose={() => setFormMode(null)}
-            onSaved={refreshList}
+            onSaved={handleFormSaved}
           />
         )}
         {formMode?.type === "edit" && (
@@ -273,7 +315,7 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
             qualification={formMode.qualification}
             existingQualifications={list}
             onClose={() => setFormMode(null)}
-            onSaved={refreshList}
+            onSaved={handleFormSaved}
           />
         )}
         {confirmDelete && selected && (

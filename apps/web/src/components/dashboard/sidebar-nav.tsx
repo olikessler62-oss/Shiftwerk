@@ -9,7 +9,6 @@ import { cn } from "@/lib/cn";
 const NAV_LINKS = [
   { href: "/dashboard", labelKey: "nav.dashboard" },
   { href: "/planung", labelKey: "nav.planning" },
-  { href: "/team", labelKey: "nav.team" },
   { href: "/abwesenheiten", labelKey: "nav.absences" },
   { href: "/berichte", labelKey: "nav.reports" },
 ] as const;

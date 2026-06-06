@@ -1,8 +1,20 @@
 "use client";
 
 import type { ComponentProps, ReactNode } from "react";
-import { Button, ListIcon } from "@/components/ui";
+import {
+  Button,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ListIcon,
+} from "@/components/ui";
 import { cn } from "@/lib/cn";
+export {
+  SETTINGS_LIST_ITEM_ID_ATTR,
+  applyCreatedListSelection,
+  settingsListItemAttrs,
+  scrollSettingsListItemIntoView,
+  useScrollToSettingsListItem,
+} from "@/lib/settings-list-scroll";
 
 export const SETTINGS_MODAL_TITLE_CLASS = "text-xl font-semibold text-foreground";
 
@@ -16,7 +28,7 @@ export const SETTINGS_LIST_SCROLL_COMPACT_CLASS =
 export const SETTINGS_PROFILES_LIST_SCROLL_CLASS =
   "h-[calc(2.5rem+17.6rem)] min-h-[calc(2.5rem+17.6rem)] max-h-[calc(2.5rem+17.6rem)]";
 
-/** Halbe Listenhöhe — Qualifikationen / Verfügbarkeiten in der Profil-Spalte */
+/** Halbe Listenhöhe — Funktionen / Verfügbarkeiten in der Profil-Spalte */
 export const SETTINGS_PROFILES_HALF_LIST_SCROLL_CLASS =
   "h-[calc(2.5rem+8.8rem)] min-h-[calc(2.5rem+8.8rem)] max-h-[calc(2.5rem+8.8rem)]";
 
@@ -40,8 +52,56 @@ export function settingsColumnHeaderClass(
 export function settingsDataRowClass(isSelected: boolean) {
   return cn(
     "cursor-pointer select-none border-b border-border/70 transition-[background-color,box-shadow] last:border-0",
-    "min-h-[2.75rem] hover:bg-subtle hover:shadow-sm",
+    "min-h-[2.75rem] hover:cursor-pointer hover:bg-subtle hover:shadow-sm",
     isSelected && "bg-primary/5 shadow-sm ring-1 ring-inset ring-primary/20"
+  );
+}
+
+export function SettingsActionRow({
+  icon,
+  label,
+  hint,
+  disabled = false,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  hint: ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors",
+        disabled
+          ? "cursor-not-allowed opacity-45"
+          : "cursor-pointer hover:cursor-pointer hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background text-muted transition-colors",
+          !disabled &&
+            "group-hover:border-primary/25 group-hover:bg-primary/5 group-hover:text-primary"
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">
+          {label}
+        </span>
+        {typeof hint === "string" ? (
+          <span className="block truncate text-xs text-muted">{hint}</span>
+        ) : (
+          hint
+        )}
+      </span>
+    </button>
   );
 }
 
@@ -144,12 +204,50 @@ export function SettingsPrimaryActionButton({
       size="sm"
       aria-label={label}
       title={label}
-      className={cn("h-8 gap-1.5 px-2.5 text-sm", className)}
+      className={cn(
+        "h-8 cursor-pointer gap-1.5 px-2.5 text-sm hover:cursor-pointer",
+        className
+      )}
       {...props}
     >
       {icon}
       {label}
     </Button>
+  );
+}
+
+export function SettingsReorderButtons({
+  moveUpLabel,
+  moveDownLabel,
+  disabled,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+}: {
+  moveUpLabel: string;
+  moveDownLabel: string;
+  disabled?: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  return (
+    <>
+      <SettingsIconActionButton
+        label={moveUpLabel}
+        icon={<ChevronUpIcon />}
+        disabled={disabled || !canMoveUp}
+        onClick={onMoveUp}
+      />
+      <SettingsIconActionButton
+        label={moveDownLabel}
+        icon={<ChevronDownIcon />}
+        disabled={disabled || !canMoveDown}
+        onClick={onMoveDown}
+      />
+    </>
   );
 }
 
@@ -170,7 +268,10 @@ export function SettingsIconActionButton({
       size="sm"
       aria-label={label}
       title={label}
-      className={cn("h-8 w-8 shrink-0 gap-0 p-0 text-sm", className)}
+      className={cn(
+        "h-8 w-8 shrink-0 cursor-pointer gap-0 p-0 text-sm hover:cursor-pointer",
+        className
+      )}
       {...props}
     >
       {icon}

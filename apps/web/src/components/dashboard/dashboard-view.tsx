@@ -5,12 +5,14 @@ import type {
   Location,
   LocationArea,
   Profile,
-  ProfileHourlyRateSummary,
   Qualification,
   Role,
   ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
-import type { StaffingRule } from "@/lib/location-staffing-client";
+import type {
+  AreaServiceHourRef,
+  StaffingRule,
+} from "@/lib/location-staffing-client";
 import { ShiftTypesModal } from "@/components/settings/shift-types-modal";
 import { QualificationsModal } from "@/components/settings/qualifications-modal";
 import { LocationsModal } from "@/components/settings/locations-modal";
@@ -29,12 +31,12 @@ type Props = {
   selectedLocation: Location | null;
   areas: LocationArea[];
   staffingRules: StaffingRule[];
+  serviceHours: AreaServiceHourRef[];
   shifts: DashboardShiftCard[];
   shiftTypes: ShiftTypeWithBreaks[];
   qualifications: Qualification[];
   roles: Role[];
   profiles: Profile[];
-  profileHourlyRates: ProfileHourlyRateSummary[];
   locations: Location[];
 };
 
@@ -45,12 +47,12 @@ export function DashboardView({
   selectedLocation,
   areas,
   staffingRules,
+  serviceHours,
   shifts,
   shiftTypes,
   qualifications,
   roles,
   profiles,
-  profileHourlyRates,
   locations,
 }: Props) {
   const router = useRouter();
@@ -83,9 +85,9 @@ export function DashboardView({
           dates={dates}
           locations={locations}
           selectedLocationId={selectedLocationId}
-          selectedLocation={selectedLocation}
           areas={areas}
           staffingRules={staffingRules}
+          serviceHours={serviceHours}
           shifts={shifts}
         />
         {showLocations && (
@@ -100,7 +102,6 @@ export function DashboardView({
         {showProfiles && (
           <ProfilesModal
             profiles={profiles}
-            profileHourlyRates={profileHourlyRates}
             shiftTypes={shiftTypes}
             onClose={() => closeSettingsModal("profiles")}
           />

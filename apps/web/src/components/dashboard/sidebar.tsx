@@ -3,7 +3,6 @@ import Link from "next/link";
 const nav = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/planung", label: "Planung" },
-  { href: "/team", label: "Team" },
   { href: "/abwesenheiten", label: "Abwesenheiten" },
   { href: "/berichte", label: "Berichte" },
   { href: "/einstellungen", label: "Einstellungen" },

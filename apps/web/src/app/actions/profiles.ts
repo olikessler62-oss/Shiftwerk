@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   parseHourlyRateAmount,
   parseValidFromDate,
+  validateMutableHourlyRateValidFrom,
   validateNewHourlyRate,
   validateProfileColorAssignment,
   validateProfileEmail,
@@ -71,7 +72,7 @@ async function validateProfileContact(
 async function applyInitialHourlyRate(
   organizationId: string,
   profileId: string,
-  userId: string,
+  createdByProfileId: string,
   hourlyRate?: { amount: string; valid_from: string }
 ): Promise<ProfileActionResult | null> {
   if (!hourlyRate?.amount.trim()) return null;
@@ -83,6 +84,13 @@ async function applyInitialHourlyRate(
   const parsedDate = parseValidFromDate(hourlyRate.valid_from);
   if (!parsedDate.ok) return parsedDate;
 
+  const serverToday = await db.getServerDateIso();
+  const mutableFromCheck = validateMutableHourlyRateValidFrom(
+    parsedDate.valid_from,
+    serverToday
+  );
+  if (!mutableFromCheck.ok) return mutableFromCheck;
+
   const validated = validateNewHourlyRate({
     amount: parsedAmount.amount,
     valid_from: parsedDate.valid_from,
@@ -93,7 +101,7 @@ async function applyInitialHourlyRate(
   await db.setProfileHourlyRate(organizationId, profileId, {
     amount: parsedAmount.amount,
     valid_from: parsedDate.valid_from,
-    created_by: userId,
+    created_by: createdByProfileId,
   });
   return null;
 }
@@ -108,7 +116,7 @@ export async function createProfile(input: {
   hourly_rate?: { amount: string; valid_from: string };
 }): Promise<ProfileActionResult> {
   try {
-    const { organizationId, userId } = await requireManager();
+    const { organizationId, profile: managerProfile } = await requireManager();
     const fullName = input.full_name.trim();
     if (!fullName) {
       return { ok: false, error: "Bitte einen Namen eingeben." };
@@ -166,14 +174,13 @@ export async function createProfile(input: {
     const hourlyRateError = await applyInitialHourlyRate(
       organizationId,
       created.user.id,
-      userId,
+      managerProfile.id,
       input.hourly_rate
     );
     if (hourlyRateError && !hourlyRateError.ok) return hourlyRateError;
 
     const profile = await db.getProfileById(created.user.id);
     revalidatePath("/dashboard");
-    revalidatePath("/team");
     revalidatePath("/planung");
     return { ok: true, profile: profile ?? undefined };
   } catch (e) {
@@ -195,7 +202,7 @@ export async function updateProfile(input: {
   hourly_rate?: { amount: string; valid_from: string };
 }): Promise<ProfileActionResult> {
   try {
-    const { organizationId, userId } = await requireManager();
+    const { organizationId, profile: managerProfile } = await requireManager();
     const fullName = input.full_name.trim();
     if (!fullName) {
       return { ok: false, error: "Bitte einen Namen eingeben." };
@@ -232,6 +239,17 @@ export async function updateProfile(input: {
       }
     }
 
+    if (contact.email !== existing.email.trim().toLowerCase()) {
+      const admin = getAdminDatabase();
+      const authResult = await admin.authAdminUpdateUserEmail(
+        input.id,
+        contact.email
+      );
+      if (authResult.error) {
+        return { ok: false, error: authResult.error };
+      }
+    }
+
     await db.updateOrganizationProfile(input.id, organizationId, {
       full_name: fullName,
       is_active: input.is_active,
@@ -248,10 +266,17 @@ export async function updateProfile(input: {
       const parsedDate = parseValidFromDate(input.hourly_rate.valid_from);
       if (!parsedDate.ok) return parsedDate;
 
+      const serverToday = await db.getServerDateIso();
+      const mutableFromCheck = validateMutableHourlyRateValidFrom(
+        parsedDate.valid_from,
+        serverToday
+      );
+      if (!mutableFromCheck.ok) return mutableFromCheck;
+
       const openRate = await db.getProfileHourlyRateForDate(
         organizationId,
         input.id,
-        new Date().toISOString().slice(0, 10)
+        serverToday
       );
       const openValidFrom =
         openRate?.valid_to === null ? openRate.valid_from : null;
@@ -266,19 +291,39 @@ export async function updateProfile(input: {
       await db.setProfileHourlyRate(organizationId, input.id, {
         amount: parsedAmount.amount,
         valid_from: parsedDate.valid_from,
-        created_by: userId,
+        created_by: managerProfile.id,
       });
     }
 
     const profile = await db.getProfileById(input.id);
     revalidatePath("/dashboard");
-    revalidatePath("/team");
     revalidatePath("/planung");
     return { ok: true, profile: profile ?? undefined };
   } catch (e) {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Speichern fehlgeschlagen",
+    };
+  }
+}
+
+export async function reorderProfiles(
+  orderedIds: string[]
+): Promise<ProfileActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    await db.reorderProfiles(organizationId, orderedIds);
+    revalidatePath("/dashboard");
+    revalidatePath("/planung");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error
+          ? e.message
+          : "Reihenfolge konnte nicht gespeichert werden",
     };
   }
 }
@@ -296,7 +341,6 @@ export async function deleteProfile(id: string): Promise<ProfileActionResult> {
 
     const profile = await db.getProfileById(id);
     revalidatePath("/dashboard");
-    revalidatePath("/team");
     revalidatePath("/planung");
     return { ok: true, profile: profile ?? undefined };
   } catch (e) {

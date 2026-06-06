@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   createProfileRecurringAvailability,
   updateProfileRecurringAvailability,
 } from "@/app/actions/profile-availability";
-import { formatActiveWeekdaysLabel } from "@schichtwerk/database";
+import {
+  formatActiveWeekdaysLabel,
+  parseAvailabilityTimeRange,
+} from "@schichtwerk/database";
 import type {
   ProfileRecurringAvailability,
   ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
-import { formatTimeRange } from "@/lib/planning-utils";
+import { formatAvailabilityTimeRange } from "@/lib/profile-availability-label";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
 import {
@@ -30,13 +33,26 @@ type Props = {
   mode: "create" | "edit";
   profileId: string;
   currentAvailability?: ProfileRecurringAvailability;
+  /** Bestehende Verfügbarkeiten — für Tag-Vorschlag beim Anlegen */
+  existingAvailability?: ProfileRecurringAvailability[];
   shiftTypes: ShiftTypeWithBreaks[];
   onClose: () => void;
   onSaved: (
     availability: ProfileRecurringAvailability[],
-    selectedId: string
+    selectedId: string,
+    scrollToSelection?: boolean
   ) => void;
 };
+
+function firstUnassignedWeekday(
+  existing: readonly ProfileRecurringAvailability[]
+): number {
+  const assigned = new Set(existing.map((item) => item.weekday));
+  for (let weekday = 0; weekday < 7; weekday++) {
+    if (!assigned.has(weekday)) return weekday;
+  }
+  return 0;
+}
 
 function weekdayLabel(weekday: number, locale: "de" | "en"): string {
   const mask = Array.from({ length: 7 }, (_, i) => (i === weekday ? "1" : "0")).join(
@@ -49,6 +65,7 @@ export function ProfileAvailabilityFormModal({
   mode,
   profileId,
   currentAvailability,
+  existingAvailability = [],
   shiftTypes,
   onClose,
   onSaved,
@@ -56,12 +73,16 @@ export function ProfileAvailabilityFormModal({
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
-  const [pending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputMode, setInputMode] = useState<InputMode>(() =>
     currentAvailability?.shift_type_id ? "shift_type" : "times"
   );
-  const [weekday, setWeekday] = useState(currentAvailability?.weekday ?? 0);
+  const [weekday, setWeekday] = useState(() =>
+    mode === "create"
+      ? firstUnassignedWeekday(existingAvailability)
+      : (currentAvailability?.weekday ?? 0)
+  );
   const [startTime, setStartTime] = useState(
     () => currentAvailability?.start_time.slice(0, 5) ?? "08:00"
   );
@@ -84,22 +105,51 @@ export function ProfileAvailabilityFormModal({
     setEndTime(selectedShiftType.end_time.slice(0, 5));
   }, [inputMode, selectedShiftType]);
 
-  function handleSubmit() {
+  const previewTimes = useMemo(() => {
+    if (inputMode === "shift_type" && selectedShiftType) {
+      return {
+        start_time: selectedShiftType.start_time,
+        end_time: selectedShiftType.end_time,
+      };
+    }
+    return { start_time: startTime, end_time: endTime };
+  }, [endTime, inputMode, selectedShiftType, startTime]);
+
+  const overnightPreview = useMemo(() => {
+    const check = parseAvailabilityTimeRange(previewTimes);
+    return check.ok && check.overnight;
+  }, [previewTimes]);
+
+  async function handleSubmit() {
     setError(null);
     if (inputMode === "shift_type" && !shiftTypeId) {
       setError(t("profiles.selectShiftTypeRequired"));
       return;
     }
 
-    startTransition(async () => {
-      const payload = {
-        profileId,
-        weekday,
-        start_time: startTime,
-        end_time: endTime,
-        shift_type_id: inputMode === "shift_type" ? shiftTypeId : null,
-      };
+    const effectiveTimes =
+      inputMode === "shift_type" && selectedShiftType
+        ? {
+            start_time: selectedShiftType.start_time,
+            end_time: selectedShiftType.end_time,
+          }
+        : { start_time: startTime, end_time: endTime };
+    const timeCheck = parseAvailabilityTimeRange(effectiveTimes);
+    if (!timeCheck.ok) {
+      setError(timeCheck.error);
+      return;
+    }
 
+    const payload = {
+      profileId,
+      weekday,
+      start_time: timeCheck.start_time.slice(0, 5),
+      end_time: timeCheck.end_time.slice(0, 5),
+      shift_type_id: inputMode === "shift_type" ? shiftTypeId : null,
+    };
+
+    setSaving(true);
+    try {
       const result =
         mode === "create"
           ? await createProfileRecurringAvailability(payload)
@@ -114,18 +164,24 @@ export function ProfileAvailabilityFormModal({
       }
 
       const list = result.availability ?? [];
+      const savedStart = timeCheck.start_time.slice(0, 5);
+      const savedEnd = timeCheck.end_time.slice(0, 5);
       const selectedId =
         mode === "edit" && currentAvailability
           ? currentAvailability.id
           : list.find(
               (item) =>
                 item.weekday === weekday &&
-                item.start_time.slice(0, 5) === startTime &&
-                item.end_time.slice(0, 5) === endTime
+                item.start_time.slice(0, 5) === savedStart &&
+                item.end_time.slice(0, 5) === savedEnd
             )?.id ?? list[0]?.id ?? "";
-      onSaved(list, selectedId);
+      onSaved(list, selectedId, mode === "create");
       onClose();
-    });
+    } catch {
+      setError("Speichern fehlgeschlagen");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -133,7 +189,7 @@ export function ProfileAvailabilityFormModal({
       className="absolute inset-0 z-[70] flex items-center justify-center rounded-2xl bg-black/30 p-4"
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !pending) onClose();
+        if (e.target === e.currentTarget && !saving) onClose();
       }}
     >
       <div
@@ -155,7 +211,7 @@ export function ProfileAvailabilityFormModal({
           <IconButton
             size="sm"
             onClick={onClose}
-            disabled={pending}
+            disabled={saving}
             aria-label={t("common.close")}
             className="border-transparent bg-transparent hover:bg-subtle"
           >
@@ -171,7 +227,7 @@ export function ProfileAvailabilityFormModal({
             <Select
               className="mt-1"
               value={String(weekday)}
-              disabled={pending}
+              disabled={saving}
               onChange={(e) => setWeekday(Number(e.target.value))}
             >
               {Array.from({ length: 7 }, (_, i) => (
@@ -187,7 +243,7 @@ export function ProfileAvailabilityFormModal({
               type="button"
               size="sm"
               variant={inputMode === "times" ? "primary" : "outline"}
-              disabled={pending}
+              disabled={saving}
               onClick={() => setInputMode("times")}
             >
               {t("profiles.availabilityInputTimes")}
@@ -196,7 +252,7 @@ export function ProfileAvailabilityFormModal({
               type="button"
               size="sm"
               variant={inputMode === "shift_type" ? "primary" : "outline"}
-              disabled={pending || shiftTypes.length === 0}
+              disabled={saving || shiftTypes.length === 0}
               onClick={() => setInputMode("shift_type")}
             >
               {t("profiles.availabilityInputShiftType")}
@@ -209,20 +265,27 @@ export function ProfileAvailabilityFormModal({
               <Select
                 className="mt-1"
                 value={shiftTypeId}
-                disabled={pending || shiftTypes.length === 0}
+                disabled={saving || shiftTypes.length === 0}
                 onChange={(e) => setShiftTypeId(e.target.value)}
               >
                 {shiftTypes.map((st) => (
                   <option key={st.id} value={st.id}>
-                    {st.name} ({formatTimeRange(st.start_time, st.end_time)})
+                    {st.name} (
+                    {formatAvailabilityTimeRange(
+                      st.start_time,
+                      st.end_time,
+                      localeKey
+                    )}
+                    )
                   </option>
                 ))}
               </Select>
               {selectedShiftType ? (
                 <p className="mt-1 text-xs text-muted">
-                  {formatTimeRange(
+                  {formatAvailabilityTimeRange(
                     selectedShiftType.start_time,
-                    selectedShiftType.end_time
+                    selectedShiftType.end_time,
+                    localeKey
                   )}
                 </p>
               ) : null}
@@ -234,7 +297,7 @@ export function ProfileAvailabilityFormModal({
                 <TimeInput
                   className="mt-1"
                   value={startTime}
-                  disabled={pending}
+                  disabled={saving}
                   onChange={(e) => setStartTime(e.target.value)}
                 />
               </div>
@@ -243,20 +306,30 @@ export function ProfileAvailabilityFormModal({
                 <TimeInput
                   className="mt-1"
                   value={endTime}
-                  disabled={pending}
+                  disabled={saving}
                   onChange={(e) => setEndTime(e.target.value)}
                 />
               </div>
             </div>
           )}
+          {overnightPreview ? (
+            <p className="text-xs text-primary">
+              {t("profiles.availabilityOvernightHint")}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-          <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             <CloseIcon />
             {t("common.cancel")}
           </Button>
-          <Button type="button" variant="primary" onClick={handleSubmit} disabled={pending}>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => void handleSubmit()}
+            disabled={saving}
+          >
             <CheckIcon />
             {t("common.ok")}
           </Button>

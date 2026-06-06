@@ -22,7 +22,7 @@ type Props = {
   role?: Role;
   existingRoles: Role[];
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (createdId?: string) => void;
 };
 
 const PERMISSION_LEVELS: RolePermissionLevel[] = ["admin", "manager", "basic"];
@@ -83,7 +83,7 @@ export function RoleFormModal({
         setError(result.error);
         return;
       }
-      onSaved();
+      onSaved(mode === "create" ? result.id : undefined);
       onClose();
     });
   }

@@ -5,6 +5,7 @@ import {
   DEFAULT_SHIFT_TYPES,
 } from "@schichtwerk/types";
 import type { ShiftTypeBreakInput } from "./interface";
+import { isServiceHoursTableUnavailable } from "./location-service-hours";
 import { Schema } from "./schema";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -47,6 +48,31 @@ export function normalizeShiftTypesWithBreaks(rows: unknown[]): ShiftTypeWithBre
   });
 }
 
+const DEFAULT_SERVICE_WEEKDAYS = [0, 1, 2, 3, 4];
+const DEFAULT_SERVICE_START = "09:00:00";
+const DEFAULT_SERVICE_END = "18:00:00";
+
+export async function seedDefaultAreaServiceHours(
+  client: SupabaseClient,
+  locationAreaId: string,
+  weekdays: number[] = DEFAULT_SERVICE_WEEKDAYS
+): Promise<void> {
+  if (!weekdays.length) return;
+  const rows = weekdays.map((weekday) => ({
+    location_area_id: locationAreaId,
+    weekday,
+    start_time: DEFAULT_SERVICE_START,
+    end_time: DEFAULT_SERVICE_END,
+  }));
+  const { error } = await client
+    .from(Schema.tables.locationAreaServiceHours)
+    .insert(rows);
+  if (error) {
+    if (isServiceHoursTableUnavailable(error.message)) return;
+    throw new Error(error.message);
+  }
+}
+
 export async function seedDefaultLocationAreas(
   client: SupabaseClient,
   locationId: string
@@ -58,6 +84,17 @@ export async function seedDefaultLocationAreas(
   }));
   const { error } = await client.from(Schema.tables.locationAreas).insert(rows);
   if (error) throw new Error(error.message);
+
+  const { data: areas, error: listError } = await client
+    .from(Schema.tables.locationAreas)
+    .select("id")
+    .eq("location_id", locationId)
+    .is("archived_at", null);
+  if (listError) throw new Error(listError.message);
+
+  for (const area of areas ?? []) {
+    await seedDefaultAreaServiceHours(client, area.id as string);
+  }
 }
 
 export async function seedDefaultShiftTypes(

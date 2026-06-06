@@ -49,6 +49,12 @@ export default async function LoginPage({
           </Button>
         </form>
 
+        <p className="mt-4 text-center text-sm">
+          <Link href="/forgot-password" className="font-medium text-primary">
+            Passwort vergessen?
+          </Link>
+        </p>
+
         <p className="mt-6 text-center text-sm text-muted">
           Noch kein Konto?{" "}
           <Link href="/register" className="font-medium text-primary">

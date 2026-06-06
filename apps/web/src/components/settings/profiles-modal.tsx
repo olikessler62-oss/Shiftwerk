@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteProfile } from "@/app/actions/profiles";
+import { fetchProfileRecurringAvailability } from "@/app/actions/profile-availability";
+import { fetchProfileHourlyRates } from "@/app/actions/profile-hourly-rates";
+import { fetchProfileQualifications } from "@/app/actions/profile-qualifications";
+import { deleteProfile, reorderProfiles } from "@/app/actions/profiles";
 import type {
   Profile,
-  ProfileHourlyRateSummary,
   ProfileRecurringAvailability,
   Qualification,
   ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ProfileAvailabilityPanelModal } from "./profile-availability-panel-modal";
+import {
+  ProfileCompensationPanelModal,
+  type ProfileCompensationCacheEntry,
+} from "./profile-compensation-panel-modal";
 import { ProfileFormModal } from "./profile-form-modal";
+import { ProfileInvitePanelModal } from "./profile-invite-panel-modal";
+import { ProfileDetailActions } from "./profile-detail-actions";
 import { ProfileQualificationsPanelModal } from "./profile-qualifications-panel-modal";
 import {
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
@@ -21,6 +29,9 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  SettingsReorderButtons,
+  settingsListItemAttrs,
+  useScrollToSettingsListItem,
   StatusDot,
   settingsColumnHeaderClass,
   settingsDataCellClass,
@@ -36,12 +47,12 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@/components/ui";
-import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
   profiles: Profile[];
-  profileHourlyRates: ProfileHourlyRateSummary[];
   shiftTypes: ShiftTypeWithBreaks[];
   onClose: () => void;
   initialSelectedProfileId?: string | null;
@@ -52,7 +63,12 @@ type ProfileFormMode =
   | { type: "create" }
   | { type: "edit"; profile: Profile };
 
-type DetailPanel = null | "qualifications" | "availability";
+type DetailPanel =
+  | null
+  | "qualifications"
+  | "availability"
+  | "compensation"
+  | "invite";
 
 const MODAL_MAX_WIDTH = "calc(54rem + 120px)";
 const COLUMN_GAP_PX = 20;
@@ -61,16 +77,6 @@ const MAX_NAME_DISPLAY = 25;
 function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
   if (name.length <= max) return name;
   return `${name.slice(0, max - 1)}…`;
-}
-
-function formatHourlyRateLabel(
-  amount: number,
-  currency: string,
-  locale: string
-): string {
-  const fixed = amount.toFixed(2);
-  const amountStr = locale === "en" ? fixed : fixed.replace(".", ",");
-  return `${amountStr} ${currency}`;
 }
 
 function ProfileColorSwatch({ hex }: { hex: string | null }) {
@@ -129,13 +135,11 @@ function ColumnShell({
 
 export function ProfilesModal({
   profiles,
-  profileHourlyRates,
   onClose,
   initialSelectedProfileId,
   shiftTypes,
 }: Props) {
   const router = useRouter();
-  const { locale } = useLocale();
   const t = useTranslations();
   const [pending, startTransition] = useTransition();
   const [profileList, setProfileList] = useState(profiles);
@@ -152,17 +156,45 @@ export function ProfilesModal({
   const [availabilityCache, setAvailabilityCache] = useState<
     Record<string, ProfileRecurringAvailability[]>
   >({});
+  const [compensationCache, setCompensationCache] = useState<
+    Record<string, ProfileCompensationCacheEntry>
+  >({});
+  const [scrollToProfileId, setScrollToProfileId] = useState<string | null>(null);
+
+  const {
+    sortedList: sortedProfiles,
+    canMoveUp: canMoveProfileUp,
+    canMoveDown: canMoveProfileDown,
+    handleMove: handleMoveProfile,
+  } = useSettingsListReorder({
+    list: profileList,
+    setList: setProfileList,
+    selectedId: selectedProfileId,
+    pending,
+    startTransition,
+    reorder: reorderProfiles,
+    onError: setErrorMessage,
+    onSuccess: () => router.refresh(),
+  });
 
   const selectedProfile =
-    profileList.find((p) => p.id === selectedProfileId) ?? null;
+    sortedProfiles.find((p) => p.id === selectedProfileId) ?? null;
+  const clearProfileScrollTarget = useCallback(
+    () => setScrollToProfileId(null),
+    []
+  );
+  useScrollToSettingsListItem(
+    sortedProfiles,
+    scrollToProfileId,
+    clearProfileScrollTarget
+  );
 
-  const hourlyRateByProfileId = useMemo(() => {
-    const map = new Map<string, ProfileHourlyRateSummary>();
-    for (const rate of profileHourlyRates) {
-      map.set(rate.profile_id, rate);
-    }
-    return map;
-  }, [profileHourlyRates]);
+  const activeEmployeeCount = useMemo(
+    () =>
+      profileList.filter((profile) => profile.is_active && profile.role === "basic")
+        .length,
+    [profileList]
+  );
 
   useEffect(() => {
     setProfileList(profiles);
@@ -172,7 +204,74 @@ export function ProfilesModal({
     });
   }, [profiles, initialSelectedProfileId]);
 
+  const actionDetailsReady =
+    !selectedProfileId ||
+    (selectedProfileId in qualificationsCache &&
+      selectedProfileId in availabilityCache &&
+      selectedProfileId in compensationCache);
+  const actionDetailsLoading = !!selectedProfileId && !actionDetailsReady;
+
+  useEffect(() => {
+    const profileId = selectedProfileId;
+    if (!profileId) return;
+
+    const qualReady = profileId in qualificationsCache;
+    const availReady = profileId in availabilityCache;
+    const compReady = profileId in compensationCache;
+    if (qualReady && availReady && compReady) return;
+
+    let cancelled = false;
+
+    void Promise.all([
+      qualReady
+        ? Promise.resolve(null)
+        : fetchProfileQualifications(profileId),
+      availReady
+        ? Promise.resolve(null)
+        : fetchProfileRecurringAvailability(profileId),
+      compReady
+        ? Promise.resolve(null)
+        : fetchProfileHourlyRates(profileId),
+    ]).then(([qualResult, availResult, compResult]) => {
+      if (cancelled) return;
+      setQualificationsCache((prev) => {
+        if (profileId in prev) return prev;
+        const list =
+          qualResult?.ok === true ? (qualResult.qualifications ?? []) : [];
+        return { ...prev, [profileId]: list };
+      });
+      setAvailabilityCache((prev) => {
+        if (profileId in prev) return prev;
+        const list =
+          availResult?.ok === true ? (availResult.availability ?? []) : [];
+        return { ...prev, [profileId]: list };
+      });
+      setCompensationCache((prev) => {
+        if (profileId in prev) return prev;
+        if (compResult?.ok === true) {
+          return {
+            ...prev,
+            [profileId]: {
+              currentRate: compResult.currentRate ?? null,
+              rates: compResult.rates ?? [],
+              serverToday: compResult.serverToday ?? "",
+            },
+          };
+        }
+        return {
+          ...prev,
+          [profileId]: { currentRate: null, rates: [], serverToday: "" },
+        };
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProfileId, qualificationsCache, availabilityCache, compensationCache]);
+
   const anyOverlayOpen = !!profileFormMode || !!detailPanel;
+  const modalBusy = pending || actionDetailsLoading;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -216,19 +315,16 @@ export function ProfilesModal({
   }
 
   function handleProfileSaved(profile: Profile) {
+    const isNew = !profileList.some((p) => p.id === profile.id);
     setProfileList((prev) => {
       const index = prev.findIndex((p) => p.id === profile.id);
-      if (index === -1) {
-        const next = [...prev, profile].sort((a, b) =>
-          a.full_name.localeCompare(b.full_name, "de")
-        );
-        setSelectedProfileId(profile.id);
-        return next;
-      }
+      if (index === -1) return [...prev, profile];
       const next = [...prev];
       next[index] = profile;
-      return next.sort((a, b) => a.full_name.localeCompare(b.full_name, "de"));
+      return next;
     });
+    setSelectedProfileId(profile.id);
+    if (isNew) setScrollToProfileId(profile.id);
     refreshProfiles();
   }
 
@@ -256,28 +352,21 @@ export function ProfilesModal({
         delete next[selectedProfile.id];
         return next;
       });
+      setCompensationCache((prev) => {
+        const next = { ...prev };
+        delete next[selectedProfile.id];
+        return next;
+      });
       setConfirmDeleteProfile(false);
       refreshProfiles();
     });
   }
 
-  const qualificationsButtonLabel = selectedProfile
-    ? t("profiles.openQualificationsOf", {
-        name: truncateLabel(selectedProfile.full_name),
-      })
-    : t("profiles.panelQualifications");
-
-  const availabilityButtonLabel = selectedProfile
-    ? t("profiles.openAvailabilityOf", {
-        name: truncateLabel(selectedProfile.full_name),
-      })
-    : t("profiles.panelAvailability");
-
   return (
     <div
       className={cn(
         "absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4",
-        pending && "cursor-wait"
+        modalBusy && "cursor-wait"
       )}
       role="presentation"
       onMouseDown={(e) => {
@@ -299,11 +388,11 @@ export function ProfilesModal({
           role="dialog"
           aria-modal="true"
           aria-labelledby="profiles-modal-title"
-          aria-busy={pending}
+          aria-busy={modalBusy}
           aria-hidden={anyOverlayOpen}
           className={cn(
             "flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
-            pending && "[&_*]:cursor-wait",
+            modalBusy && "[&_*]:cursor-wait",
             anyOverlayOpen ? "pointer-events-none" : ""
           )}
         >
@@ -320,8 +409,12 @@ export function ProfilesModal({
           )}
 
           <div
-            className="grid shrink-0 grid-cols-[minmax(0,calc(50%-10px+40px))_minmax(0,calc(50%-10px-40px))] items-stretch bg-background px-4 py-3"
+            className={cn(
+              "grid shrink-0 grid-cols-[minmax(0,calc(50%-10px+40px))_minmax(0,calc(50%-10px-40px))] items-stretch bg-background px-4 py-3",
+              actionDetailsLoading && "pointer-events-none"
+            )}
             style={{ gap: COLUMN_GAP_PX }}
+            aria-busy={actionDetailsLoading}
           >
             <ColumnShell
               title={t("profiles.panelProfiles")}
@@ -341,15 +434,32 @@ export function ProfilesModal({
                     />
                   }
                   secondary={
-                    <SettingsIconActionButton
-                      label={t("profiles.edit")}
-                      icon={<PencilIcon />}
-                      disabled={pending || !selectedProfile}
-                      onClick={() => {
-                        if (!selectedProfile) return;
-                        openEditProfile(selectedProfile);
-                      }}
-                    />
+                    <>
+                      <SettingsIconActionButton
+                        label={t("profiles.edit")}
+                        icon={<PencilIcon />}
+                        disabled={pending || !selectedProfile}
+                        onClick={() => {
+                          if (!selectedProfile) return;
+                          openEditProfile(selectedProfile);
+                        }}
+                      />
+                      <SettingsReorderButtons
+                        moveUpLabel={t("common.moveUp")}
+                        moveDownLabel={t("common.moveDown")}
+                        disabled={pending}
+                        canMoveUp={canMoveProfileUp}
+                        canMoveDown={canMoveProfileDown}
+                        onMoveUp={() => {
+                          setErrorMessage(null);
+                          handleMoveProfile(-1);
+                        }}
+                        onMoveDown={() => {
+                          setErrorMessage(null);
+                          handleMoveProfile(1);
+                        }}
+                      />
+                    </>
                   }
                   destructive={
                     <SettingsIconActionButton
@@ -387,18 +497,15 @@ export function ProfilesModal({
                       <th className={settingsColumnHeaderClass()}>
                         {t("profiles.columnName")}
                       </th>
-                      <th className={cn(settingsColumnHeaderClass("right"), "w-28")}>
-                        {t("profiles.columnHourlyRate")}
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {profileList.map((item) => {
+                    {sortedProfiles.map((item) => {
                       const isSelected = item.id === selectedProfileId;
-                      const hourlyRate = hourlyRateByProfileId.get(item.id);
                       return (
                         <tr
                           key={item.id}
+                          {...settingsListItemAttrs(item.id)}
                           onClick={() => selectProfile(item.id)}
                           onDoubleClick={(e) => {
                             e.preventDefault();
@@ -429,20 +536,6 @@ export function ProfilesModal({
                           >
                             {truncateLabel(item.full_name)}
                           </td>
-                          <td
-                            className={settingsDataCellClass(isSelected, {
-                              align: "right",
-                              className: "whitespace-nowrap tabular-nums text-muted",
-                            })}
-                          >
-                            {hourlyRate
-                              ? formatHourlyRateLabel(
-                                  hourlyRate.amount,
-                                  hourlyRate.currency,
-                                  locale
-                                )
-                              : null}
-                          </td>
                         </tr>
                       );
                     })}
@@ -453,33 +546,37 @@ export function ProfilesModal({
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
               <h3 className={settingsPanelHeaderClass()}>
-                {t("profiles.panelDetails")}
+                {selectedProfile
+                  ? t("profiles.panelSelected")
+                  : t("profiles.panelDetails")}
               </h3>
-              <div className="flex min-h-0 flex-1 flex-col justify-center gap-3 px-4 py-6">
-                {!selectedProfile ? (
-                  <p className="text-center text-sm text-muted">
-                    {t("profiles.selectProfileHint")}
-                  </p>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-auto min-h-11 w-full justify-center whitespace-normal px-4 py-3 text-center text-sm"
-                  disabled={pending || !selectedProfile}
-                  onClick={() => setDetailPanel("qualifications")}
-                >
-                  {qualificationsButtonLabel}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-auto min-h-11 w-full justify-center whitespace-normal px-4 py-3 text-center text-sm"
-                  disabled={pending || !selectedProfile}
-                  onClick={() => setDetailPanel("availability")}
-                >
-                  {availabilityButtonLabel}
-                </Button>
-              </div>
+              {actionDetailsLoading ? (
+                <div
+                  className="min-h-0 flex-1 bg-background"
+                  aria-label={t("common.loading")}
+                />
+              ) : (
+                <ProfileDetailActions
+                  selectedProfile={selectedProfile}
+                  profileQualifications={
+                    selectedProfile
+                      ? qualificationsCache[selectedProfile.id]
+                      : undefined
+                  }
+                  profileAvailability={
+                    selectedProfile
+                      ? availabilityCache[selectedProfile.id]
+                      : undefined
+                  }
+                  profileCompensation={
+                    selectedProfile
+                      ? compensationCache[selectedProfile.id]
+                      : undefined
+                  }
+                  disabled={pending}
+                  onOpen={setDetailPanel}
+                />
+              )}
             </div>
           </div>
 
@@ -549,6 +646,27 @@ export function ProfilesModal({
             onCacheUpdate={(profileId, list) => {
               setAvailabilityCache((prev) => ({ ...prev, [profileId]: list }));
             }}
+          />
+        )}
+        {detailPanel === "compensation" && selectedProfile && (
+          <ProfileCompensationPanelModal
+            profile={selectedProfile}
+            cachedCompensation={
+              selectedProfile.id in compensationCache
+                ? compensationCache[selectedProfile.id]
+                : undefined
+            }
+            onClose={() => setDetailPanel(null)}
+            onCacheUpdate={(profileId, entry) => {
+              setCompensationCache((prev) => ({ ...prev, [profileId]: entry }));
+            }}
+          />
+        )}
+        {detailPanel === "invite" && (
+          <ProfileInvitePanelModal
+            employeeCount={activeEmployeeCount}
+            onClose={() => setDetailPanel(null)}
+            onInvited={refreshProfiles}
           />
         )}
       </div>

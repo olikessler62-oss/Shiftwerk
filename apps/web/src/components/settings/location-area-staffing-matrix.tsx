@@ -12,13 +12,20 @@ import {
   isStaffingDayEnabled,
   STAFFING_HOLIDAY_WEEKDAY,
 } from "@/lib/location-staffing-client";
-import type { Location, LocationArea, LocationAreaStaffing, ShiftType } from "@schichtwerk/types";
+import type {
+  LocationArea,
+  LocationAreaStaffing,
+  Qualification,
+  ShiftType,
+} from "@schichtwerk/types";
+import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import {
   SettingsEmptyState,
   settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
+  settingsListItemAttrs,
 } from "./settings-list-ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { Alert } from "@/components/ui";
@@ -42,12 +49,14 @@ export type LocationAreaStaffingMatrixHandle = {
 };
 
 type Props = {
-  location: Location;
+  locationId: string;
   area: LocationArea;
+  serviceHours: AreaServiceHourRef[];
   selectedShiftTypeId: string | null;
   onSelectShiftType: (shiftTypeId: string | null) => void;
   onDataLoaded?: (data: {
     shiftTypes: ShiftType[];
+    qualifications: Qualification[];
     staffing: LocationAreaStaffing[];
   }) => void;
   embedded?: boolean;
@@ -64,7 +73,8 @@ function buildCountsFromData(
 ): Record<string, number> {
   const next: Record<string, number> = {};
   for (const rule of staffing) {
-    next[staffingKey(rule.shift_type_id, rule.weekday)] = rule.required_count;
+    const key = staffingKey(rule.shift_type_id, rule.weekday);
+    next[key] = (next[key] ?? 0) + rule.required_count;
   }
   return next;
 }
@@ -74,8 +84,9 @@ export const LocationAreaStaffingMatrix = forwardRef<
   Props
 >(function LocationAreaStaffingMatrix(
   {
-    location,
+    locationId,
     area,
+    serviceHours,
     selectedShiftTypeId,
     onSelectShiftType,
     onDataLoaded,
@@ -114,26 +125,27 @@ export const LocationAreaStaffingMatrix = forwardRef<
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void fetchLocationStaffingEditor(location.id, area.id).then((result) => {
+    void fetchLocationStaffingEditor(locationId, area.id).then((result) => {
       if (cancelled) return;
       setLoading(false);
       if (!result.ok) {
         setError(result.error);
         setShiftTypes([]);
         setCounts({});
-        onDataLoaded?.({ shiftTypes: [], staffing: [] });
+        onDataLoaded?.({ shiftTypes: [], qualifications: [], staffing: [] });
         return;
       }
       const types = result.shiftTypes ?? [];
+      const qualifications = result.qualifications ?? [];
       const staffing = result.staffing ?? [];
       setShiftTypes(types);
       setCounts(buildCountsFromData(staffing));
-      onDataLoaded?.({ shiftTypes: types, staffing });
+      onDataLoaded?.({ shiftTypes: types, qualifications, staffing });
     });
     return () => {
       cancelled = true;
     };
-  }, [location.id, area.id, reloadToken, onDataLoaded]);
+  }, [locationId, area.id, reloadToken, onDataLoaded]);
 
   useEffect(() => {
     if (configuredShiftTypes.length === 0) {
@@ -211,7 +223,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
                 {t("locations.staffingShiftType")}
               </th>
               {WEEKDAY_KEYS.map((key, weekday) => {
-                const open = isStaffingDayEnabled(location, weekday);
+                const open = isStaffingDayEnabled(serviceHours, area.id, weekday);
                 return (
                   <th
                     key={key}
@@ -229,7 +241,11 @@ export const LocationAreaStaffingMatrix = forwardRef<
                 className={cn(
                   settingsColumnHeaderClass("center"),
                   "min-w-[36px]",
-                  !isStaffingDayEnabled(location, STAFFING_HOLIDAY_WEEKDAY) &&
+                  !isStaffingDayEnabled(
+                    serviceHours,
+                    area.id,
+                    STAFFING_HOLIDAY_WEEKDAY
+                  ) &&
                     "text-muted/40"
                 )}
               >
@@ -243,6 +259,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
               return (
                 <tr
                   key={type.id}
+                  {...settingsListItemAttrs(type.id)}
                   onClick={() => onSelectShiftType(type.id)}
                   className={settingsDataRowClass(isSelected)}
                 >
@@ -255,7 +272,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
                     {type.name}
                   </td>
                   {WEEKDAY_KEYS.map((_, weekday) => {
-                    const open = isStaffingDayEnabled(location, weekday);
+                    const open = isStaffingDayEnabled(serviceHours, area.id, weekday);
                     const count = counts[staffingKey(type.id, weekday)] ?? 0;
                     return (
                       <td
@@ -271,7 +288,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
                   })}
                   {(() => {
                     const weekday = STAFFING_HOLIDAY_WEEKDAY;
-                    const open = isStaffingDayEnabled(location, weekday);
+                    const open = isStaffingDayEnabled(serviceHours, area.id, weekday);
                     const count = counts[staffingKey(type.id, weekday)] ?? 0;
                     return (
                       <td

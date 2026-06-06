@@ -60,23 +60,44 @@ export {
 } from "./profile-contact-validation";
 export {
   dayBefore,
+  isMutableHourlyRate,
   parseHourlyRateAmount,
   parseValidFromDate,
+  validateMutableHourlyRateValidFrom,
   validateNewHourlyRate,
 } from "./profile-hourly-rate-validation";
 export {
+  isOvernightAvailability,
   parseAvailabilityTimeRange,
   parseAvailabilityWeekday,
+  PROFILE_AVAILABILITY_EQUAL_TIMES_ERROR,
   timeRangesOverlap,
   timeToMinutes,
+  toProfileAvailabilitySaveError,
   validateNoOverlappingAvailability,
 } from "./profile-availability-validation";
 export {
   requiredStaffForAreaOnDate,
   weekdayIndexFromDate,
-  isLocationOpenOnWeekday,
+  STAFFING_HOLIDAY_WEEKDAY,
   type StaffingRule,
 } from "./location-staffing";
+export {
+  isAreaOpenOnWeekday,
+  isStaffingDayEnabled,
+  isServiceHoursTableUnavailable,
+  SERVICE_HOLIDAY_WEEKDAY,
+  SERVICE_HOURS_MIGRATION_HINT,
+  type AreaServiceHourRef,
+} from "./location-service-hours";
+export {
+  validateServiceHoursInput,
+  type ServiceHourInput,
+} from "./location-service-hours-validation";
+export {
+  validateStaffingRulesInput,
+  type StaffingRuleInput,
+} from "./location-staffing-validation";
 export {
   MAX_SHIFT_TYPES_PER_ORGANIZATION,
   centeredBreakForShift,

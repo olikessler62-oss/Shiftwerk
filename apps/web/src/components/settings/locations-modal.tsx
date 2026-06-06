@@ -3,8 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   useTransition,
@@ -12,28 +10,20 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { deleteLocation } from "@/app/actions/locations";
+import { deleteLocation, reorderLocations } from "@/app/actions/locations";
 import {
   archiveLocationArea,
   fetchLocationAreas,
+  reorderLocationAreas,
 } from "@/app/actions/location-areas";
-import { deleteShiftTypeStaffing } from "@/app/actions/location-staffing";
-import { formatLocationOpenDaysLabel } from "@schichtwerk/database";
-import type {
-  Location,
-  LocationArea,
-  LocationAreaStaffing,
-  ShiftType,
-} from "@schichtwerk/types";
+import type { Location, LocationArea, LocationAreaServiceHour } from "@schichtwerk/types";
 import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
 import { LocationFormModal } from "./location-form-modal";
 import { LocationAreaFormModal } from "./location-area-form-modal";
-import {
-  LocationAreaStaffingMatrix,
-  type LocationAreaStaffingMatrixHandle,
-} from "./location-area-staffing-matrix";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
-import { LocationStaffingFormModal } from "./location-staffing-form-modal";
+import { LocationDetailActions } from "./location-detail-actions";
+import { LocationServiceHoursPanelModal } from "./location-service-hours-panel-modal";
+import { LocationStaffingPanelModal } from "./location-staffing-panel-modal";
 import {
   SETTINGS_LIST_SCROLL_COMPACT_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
@@ -41,6 +31,10 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  SettingsReorderButtons,
+  applyCreatedListSelection,
+  settingsListItemAttrs,
+  useScrollToSettingsListItem,
   settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
@@ -55,13 +49,13 @@ import {
   PlusIcon,
   TrashIcon,
 } from "@/components/ui";
-import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
   locations: Location[];
   onClose: () => void;
-  /** Gleiche Auswahl wie Dashboard — vermeidet Hydration-Mismatch mit dynamischen Panel-Titeln */
   initialSelectedLocationId?: string | null;
   initialAreas?: LocationArea[];
   initialSelectedAreaId?: string | null;
@@ -77,28 +71,16 @@ type AreaFormMode =
   | { type: "create" }
   | { type: "edit"; area: LocationArea };
 
-type StaffingFormMode =
-  | null
-  | { type: "create" }
-  | { type: "edit"; shiftTypeId: string };
+type DetailPanel = null | "serviceHours" | "staffing";
 
-/** Bereiche −30px / Standorte +30px (basis); Personalbedarf +80px relativ zu gleicher Spaltenbreite */
-const COL_LOCATIONS_CLASS = "min-w-0 flex-[1.05_1_30px]";
-const COL_AREAS_CLASS = "min-w-0 flex-[0.82_1_0]";
-const COL_STAFFING_CLASS = "min-w-0 flex-[1.33_1_0]";
-
-function weekdayLocale(locale: string): "de" | "en" {
-  return locale === "en" ? "en" : "de";
-}
+const MODAL_MAX_WIDTH = "calc(54rem + 120px)";
+const COLUMN_GAP_PX = 20;
+const MAX_NAME_DISPLAY = 25;
 
 function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
   if (name.length <= max) return name;
   return `${name.slice(0, max - 1)}…`;
 }
-
-const MAX_NAME_DISPLAY = 25;
-const MODAL_MAX_WIDTH = "calc(72rem + 140px)";
-const COLUMN_GAP_PX = 20;
 
 function ColumnActionButton({
   className,
@@ -139,30 +121,21 @@ function ColumnShell({
   children,
   actions,
   confirm,
-  className,
   listScrollClassName = SETTINGS_LIST_SCROLL_COMPACT_CLASS,
-  listPaddingClassName = "px-2 py-2",
 }: {
   title: string;
   children: ReactNode;
   actions: ReactNode;
   confirm?: ReactNode;
-  className?: string;
   listScrollClassName?: string;
-  listPaddingClassName?: string;
 }) {
   return (
-    <div
-      className={cn(
-        "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60",
-        className
-      )}
-    >
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
       <h3 className={settingsPanelHeaderClass()} title={title}>
         {title}
       </h3>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className={cn("min-h-0 bg-background", listPaddingClassName)}>
+        <div className="min-h-0 bg-background px-2 py-2">
           <div
             className={cn(
               "min-h-0 overflow-y-auto rounded-md border border-border bg-surface",
@@ -199,8 +172,6 @@ export function LocationsModal({
 }: Props) {
   const router = useRouter();
   const t = useTranslations();
-  const { locale } = useLocale();
-  const staffingRef = useRef<LocationAreaStaffingMatrixHandle>(null);
   const initialLocationId = resolveSelectedLocationId(
     locations,
     initialSelectedLocationId ?? undefined
@@ -226,63 +197,78 @@ export function LocationsModal({
       ? resolveInitialAreaId(initialAreas, initialSelectedAreaId)
       : null
   );
+  const [serviceHoursCache, setServiceHoursCache] = useState<
+    Record<string, LocationAreaServiceHour[]>
+  >({});
 
   const [locationFormMode, setLocationFormMode] = useState<LocationFormMode>(null);
   const [areaFormMode, setAreaFormMode] = useState<AreaFormMode>(null);
+  const [detailPanel, setDetailPanel] = useState<DetailPanel>(null);
   const [confirmDeleteLocation, setConfirmDeleteLocation] = useState(false);
   const [confirmDeleteArea, setConfirmDeleteArea] = useState(false);
-  const [confirmDeleteStaffing, setConfirmDeleteStaffing] = useState(false);
-  const [staffingFormMode, setStaffingFormMode] = useState<StaffingFormMode>(null);
-  const [selectedStaffingShiftTypeId, setSelectedStaffingShiftTypeId] =
-    useState<string | null>(null);
-  const [staffingEditorData, setStaffingEditorData] = useState<{
-    shiftTypes: ShiftType[];
-    staffing: LocationAreaStaffing[];
-  } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [staffingLoading, setStaffingLoading] = useState(
-    () => hasPrefetchedAreas && !!resolveInitialAreaId(initialAreas, initialSelectedAreaId)
-  );
+  const [scrollToLocationId, setScrollToLocationId] = useState<string | null>(null);
+  const [scrollToAreaId, setScrollToAreaId] = useState<string | null>(null);
 
   const overlayFormOpen =
-    !!locationFormMode || !!areaFormMode || !!staffingFormMode;
-  const configuredStaffingShiftTypeIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const rule of staffingEditorData?.staffing ?? []) {
-      if (rule.required_count > 0) ids.add(rule.shift_type_id);
-    }
-    return ids;
-  }, [staffingEditorData]);
-  const hasUnassignedShiftTypes = (staffingEditorData?.shiftTypes ?? []).some(
-    (type) => !configuredStaffingShiftTypeIds.has(type.id)
-  );
-  const abbrevLocale = weekdayLocale(locale);
-  const selectedLocation = list.find((l) => l.id === selectedLocationId);
-  const selectedArea = areas.find((a) => a.id === selectedAreaId);
-  const staffingReady = !!selectedLocation && !!selectedArea && !areasLoading;
-  const listsLoading = areasLoading || staffingLoading;
+    !!locationFormMode || !!areaFormMode || !!detailPanel;
 
-  useLayoutEffect(() => {
-    if (!staffingReady) {
-      setStaffingLoading(false);
-    } else {
-      setStaffingLoading(true);
-    }
-  }, [staffingReady, selectedAreaId]);
+  const {
+    sortedList: sortedLocations,
+    canMoveUp: canMoveLocationUp,
+    canMoveDown: canMoveLocationDown,
+    handleMove: handleMoveLocation,
+  } = useSettingsListReorder({
+    list,
+    setList,
+    selectedId: selectedLocationId,
+    pending,
+    startTransition,
+    reorder: reorderLocations,
+    onError: setErrorMessage,
+    onSuccess: () => router.refresh(),
+  });
+
+  const {
+    sortedList: sortedAreas,
+    canMoveUp: canMoveAreaUp,
+    canMoveDown: canMoveAreaDown,
+    handleMove: handleMoveArea,
+  } = useSettingsListReorder({
+    list: areas,
+    setList: setAreas,
+    selectedId: selectedAreaId,
+    pending,
+    startTransition,
+    reorder: async (orderedIds) => {
+      if (!selectedLocationId) {
+        return { ok: false, error: "Standort nicht gefunden" };
+      }
+      return reorderLocationAreas({
+        locationId: selectedLocationId,
+        orderedIds,
+      });
+    },
+    onError: setErrorMessage,
+    onSuccess: () => router.refresh(),
+  });
+
+  const selectedLocation = sortedLocations.find((l) => l.id === selectedLocationId);
+  const selectedArea = sortedAreas.find((a) => a.id === selectedAreaId);
+  const clearLocationScrollTarget = useCallback(
+    () => setScrollToLocationId(null),
+    []
+  );
+  const clearAreaScrollTarget = useCallback(() => setScrollToAreaId(null), []);
+  useScrollToSettingsListItem(
+    sortedLocations,
+    scrollToLocationId,
+    clearLocationScrollTarget
+  );
+  useScrollToSettingsListItem(sortedAreas, scrollToAreaId, clearAreaScrollTarget);
   const areasPanelTitle = selectedLocation
     ? t("locations.panelAreasOf", { location: selectedLocation.name })
     : t("locations.panelAreas");
-  const staffingPanelTitle =
-    selectedLocation && selectedArea
-      ? t("locations.panelStaffingOf", {
-          location: selectedLocation.name,
-          area: selectedArea.name,
-        })
-      : t("locations.panelStaffing");
-  const selectedStaffingShiftType =
-    staffingEditorData?.shiftTypes.find(
-      (type) => type.id === selectedStaffingShiftTypeId
-    ) ?? null;
 
   const loadAreas = useCallback((locationId: string) => {
     startTransition(async () => {
@@ -325,9 +311,7 @@ export function LocationsModal({
       return;
     }
     setConfirmDeleteArea(false);
-    setConfirmDeleteStaffing(false);
-    setSelectedStaffingShiftTypeId(null);
-    setStaffingEditorData(null);
+    setDetailPanel(null);
     setAreas([]);
     setSelectedAreaId(null);
     setAreasLoading(true);
@@ -337,6 +321,10 @@ export function LocationsModal({
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      if (detailPanel) {
+        setDetailPanel(null);
+        return;
+      }
       if (locationFormMode) {
         setLocationFormMode(null);
         return;
@@ -353,25 +341,16 @@ export function LocationsModal({
         setConfirmDeleteArea(false);
         return;
       }
-      if (staffingFormMode) {
-        setStaffingFormMode(null);
-        return;
-      }
-      if (confirmDeleteStaffing) {
-        setConfirmDeleteStaffing(false);
-        return;
-      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [
     areaFormMode,
-    confirmDeleteStaffing,
     confirmDeleteArea,
     confirmDeleteLocation,
+    detailPanel,
     locationFormMode,
-    staffingFormMode,
     onClose,
   ]);
 
@@ -386,6 +365,30 @@ export function LocationsModal({
     router.refresh();
   }
 
+  function handleLocationFormSaved(createdId?: string) {
+    applyCreatedListSelection(
+      createdId,
+      setSelectedLocationId,
+      setScrollToLocationId
+    );
+    refreshList();
+  }
+
+  function handleAreaFormSaved(createdId?: string) {
+    if (createdId) {
+      setSelectedAreaId(createdId);
+      setScrollToAreaId(createdId);
+    }
+    if (selectedLocationId) loadAreas(selectedLocationId);
+  }
+
+  const handleServiceHoursCacheUpdate = useCallback(
+    (areaId: string, hours: LocationAreaServiceHour[]) => {
+      setServiceHoursCache((prev) => ({ ...prev, [areaId]: hours }));
+    },
+    []
+  );
+
   function selectLocation(id: string) {
     if (id === selectedLocationId) return;
     setSelectedLocationId(id);
@@ -394,15 +397,21 @@ export function LocationsModal({
     setAreasLoading(true);
     setConfirmDeleteLocation(false);
     setConfirmDeleteArea(false);
-    setConfirmDeleteStaffing(false);
-    setSelectedStaffingShiftTypeId(null);
-    setStaffingEditorData(null);
+    setDetailPanel(null);
+    setErrorMessage(null);
+  }
+
+  function selectArea(id: string) {
+    setSelectedAreaId(id);
+    setConfirmDeleteArea(false);
+    setDetailPanel(null);
     setErrorMessage(null);
   }
 
   function openEditLocation(location: Location) {
     setLocationFormMode({ type: "edit", location });
     setConfirmDeleteLocation(false);
+    setDetailPanel(null);
     setErrorMessage(null);
   }
 
@@ -452,36 +461,11 @@ export function LocationsModal({
     });
   }
 
-  function handleStaffingSaved() {
-    staffingRef.current?.reload();
-    refreshList();
-  }
-
-  function handleDeleteStaffing() {
-    if (!selectedLocation || !selectedArea || !selectedStaffingShiftTypeId) return;
-    setErrorMessage(null);
-    startTransition(async () => {
-      const result = await deleteShiftTypeStaffing({
-        locationId: selectedLocation.id,
-        locationAreaId: selectedArea.id,
-        shiftTypeId: selectedStaffingShiftTypeId,
-      });
-      if (!result.ok) {
-        setErrorMessage(result.error);
-        setConfirmDeleteStaffing(false);
-        return;
-      }
-      setConfirmDeleteStaffing(false);
-      setSelectedStaffingShiftTypeId(null);
-      handleStaffingSaved();
-    });
-  }
-
   return (
     <div
       className={cn(
         "absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4",
-        listsLoading && "cursor-wait"
+        (pending || areasLoading) && "cursor-wait"
       )}
       role="presentation"
       onMouseDown={(e) => {
@@ -489,8 +473,7 @@ export function LocationsModal({
           e.target === e.currentTarget &&
           !overlayFormOpen &&
           !confirmDeleteLocation &&
-          !confirmDeleteArea &&
-          !confirmDeleteStaffing
+          !confirmDeleteArea
         ) {
           onClose();
         }
@@ -506,11 +489,11 @@ export function LocationsModal({
           aria-modal="true"
           aria-labelledby="locations-modal-title"
           aria-hidden={overlayFormOpen}
-          aria-busy={listsLoading}
+          aria-busy={pending || areasLoading}
           className={cn(
             "flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
             overlayFormOpen ? "pointer-events-none" : "",
-            listsLoading && "[&_*]:cursor-wait"
+            (pending || areasLoading) && "[&_*]:cursor-wait"
           )}
         >
           <div className="shrink-0 border-b border-border px-6 py-4">
@@ -526,287 +509,247 @@ export function LocationsModal({
           )}
 
           <div
-            className="flex shrink-0 items-stretch bg-background px-4 py-3"
+            className="grid shrink-0 grid-cols-[minmax(0,calc(66%-10px))_minmax(0,calc(34%-10px))] items-stretch bg-background px-4 py-3"
             style={{ gap: COLUMN_GAP_PX }}
           >
-            {/* Spalte 1: Standorte */}
-            <ColumnShell
-              className={COL_LOCATIONS_CLASS}
-              title={t("locations.panelLocations")}
-              actions={
-                <SettingsActionBar
-                  primary={
-                    <ColumnPrimaryButton
-                      label={t("locations.new")}
-                      icon={<PlusIcon />}
-                      disabled={pending}
-                      onClick={() => {
-                        setLocationFormMode({ type: "create" });
-                        setConfirmDeleteLocation(false);
-                      }}
-                    />
-                  }
-                  secondary={
-                    <ColumnActionButton
-                      label={t("locations.edit")}
-                      icon={<PencilIcon />}
-                      disabled={pending || !selectedLocation}
-                      onClick={() => {
-                        if (!selectedLocation) return;
-                        openEditLocation(selectedLocation);
-                      }}
-                    />
-                  }
-                  destructive={
-                    <ColumnActionButton
-                      label={t("locations.delete")}
-                      icon={<TrashIcon />}
-                      disabled={pending || !selectedLocation}
-                      onClick={() => {
-                        setConfirmDeleteLocation(true);
-                        setErrorMessage(null);
-                      }}
-                    />
-                  }
-                />
-              }
+            <div
+              className="grid min-h-0 min-w-0 grid-cols-2 items-stretch"
+              style={{ gap: COLUMN_GAP_PX }}
             >
-              {list.length === 0 ? (
-                <SettingsEmptyState
-                  message={t("locations.emptyList")}
-                  hint={t("common.emptyHintCreate")}
-                />
-              ) : (
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-border bg-subtle">
-                      <th className="w-1 p-0" aria-hidden />
-                      <th className={settingsColumnHeaderClass()}>{t("locations.columnName")}</th>
-                      <th className={settingsColumnHeaderClass("center")}>{t("locations.columnWeekdays")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.map((item) => {
-                      const isSelected = item.id === selectedLocationId;
-                      return (
-                        <tr
-                          key={item.id}
-                          onClick={() => selectLocation(item.id)}
-                          onDoubleClick={(e) => {
-                            e.preventDefault();
-                            window.getSelection()?.removeAllRanges();
-                            openEditLocation(item);
-                          }}
-                          className={settingsDataRowClass(isSelected)}
-                        >
-                          <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
-                          <td
-                            className={settingsDataCellClass(isSelected, {
-                              className: "max-w-[6.5rem] truncate font-medium",
-                            })}
-                            title={item.name}
-                          >
-                            {truncateLabel(item.name)}
-                          </td>
-                          <td
-                            className={settingsDataCellClass(isSelected, {
-                              align: "center",
-                              className: "max-w-[8rem] truncate",
-                            })}
-                            title={formatLocationOpenDaysLabel(
-                              item.active_weekdays,
-                              item.on_holiday_open,
-                              t("locations.weekdays.holiday"),
-                              abbrevLocale
-                            )}
-                          >
-                            {formatLocationOpenDaysLabel(
-                              item.active_weekdays,
-                              item.on_holiday_open,
-                              t("locations.weekdays.holiday"),
-                              abbrevLocale
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </ColumnShell>
-
-            {/* Spalte 2: Bereiche */}
-            <ColumnShell
-              className={COL_AREAS_CLASS}
-              title={areasPanelTitle}
-              actions={
-                <SettingsActionBar
-                  primary={
-                    <ColumnPrimaryButton
-                      label={t("locations.areaNew")}
-                      icon={<PlusIcon />}
-                      disabled={pending || !selectedLocationId}
-                      onClick={() => {
-                        if (!selectedLocationId) return;
-                        setAreaFormMode({ type: "create" });
-                        setConfirmDeleteArea(false);
-                      }}
-                    />
-                  }
-                  secondary={
-                    <ColumnActionButton
-                      label={t("locations.areaEdit")}
-                      icon={<PencilIcon />}
-                      disabled={pending || !selectedArea}
-                      onClick={() => {
-                        if (!selectedArea) return;
-                        openEditArea(selectedArea);
-                      }}
-                    />
-                  }
-                  destructive={
-                    <ColumnActionButton
-                      label={t("locations.areaDelete")}
-                      icon={<TrashIcon />}
-                      disabled={pending || !selectedArea}
-                      onClick={() => {
-                        setConfirmDeleteArea(true);
-                        setErrorMessage(null);
-                      }}
-                    />
-                  }
-                />
-              }
-            >
-              {!selectedLocationId ? (
-                <SettingsEmptyState message={t("locations.areasNoLocation")} />
-              ) : areasLoading ? (
-                <SettingsEmptyState message={t("common.loading")} />
-              ) : areas.length === 0 ? (
-                <SettingsEmptyState
-                  message={t("locations.areasEmpty")}
-                  hint={t("common.emptyHintCreate")}
-                />
-              ) : (
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-border bg-subtle">
-                      <th className="w-1 p-0" aria-hidden />
-                      <th className={cn(settingsColumnHeaderClass(), "text-left")}>
-                        {t("locations.areaName")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {areas.map((area) => {
-                      const isSelected = area.id === selectedAreaId;
-                      return (
-                        <tr
-                          key={area.id}
+              <ColumnShell
+                title={t("locations.panelLocations")}
+                actions={
+                  <SettingsActionBar
+                    primary={
+                      <ColumnPrimaryButton
+                        label={t("locations.new")}
+                        icon={<PlusIcon />}
+                        disabled={pending}
+                        onClick={() => {
+                          setLocationFormMode({ type: "create" });
+                          setConfirmDeleteLocation(false);
+                          setDetailPanel(null);
+                        }}
+                      />
+                    }
+                    secondary={
+                      <>
+                        <ColumnActionButton
+                          label={t("locations.edit")}
+                          icon={<PencilIcon />}
+                          disabled={pending || !selectedLocation}
                           onClick={() => {
-                            setSelectedAreaId(area.id);
-                            setConfirmDeleteArea(false);
-                            setConfirmDeleteStaffing(false);
-                            setSelectedStaffingShiftTypeId(null);
-                            setStaffingEditorData(null);
+                            if (!selectedLocation) return;
+                            openEditLocation(selectedLocation);
+                          }}
+                        />
+                        <SettingsReorderButtons
+                          moveUpLabel={t("common.moveUp")}
+                          moveDownLabel={t("common.moveDown")}
+                          disabled={pending}
+                          canMoveUp={canMoveLocationUp}
+                          canMoveDown={canMoveLocationDown}
+                          onMoveUp={() => {
                             setErrorMessage(null);
+                            handleMoveLocation(-1);
                           }}
-                          onDoubleClick={(e) => {
-                            e.preventDefault();
-                            window.getSelection()?.removeAllRanges();
-                            openEditArea(area);
+                          onMoveDown={() => {
+                            setErrorMessage(null);
+                            handleMoveLocation(1);
                           }}
-                          className={settingsDataRowClass(isSelected)}
-                        >
-                          <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
-                          <td
-                            className={settingsDataCellClass(isSelected, {
-                              className: "max-w-[8rem] truncate font-medium",
-                            })}
-                            title={area.name}
+                        />
+                      </>
+                    }
+                    destructive={
+                      <ColumnActionButton
+                        label={t("locations.delete")}
+                        icon={<TrashIcon />}
+                        disabled={pending || !selectedLocation}
+                        onClick={() => {
+                          setConfirmDeleteLocation(true);
+                          setErrorMessage(null);
+                        }}
+                      />
+                    }
+                  />
+                }
+              >
+                {list.length === 0 ? (
+                  <SettingsEmptyState
+                    message={t("locations.emptyList")}
+                    hint={t("common.emptyHintCreate")}
+                  />
+                ) : (
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-border bg-subtle">
+                        <th className="w-1 p-0" aria-hidden />
+                        <th className={settingsColumnHeaderClass()}>
+                          {t("locations.columnName")}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedLocations.map((item) => {
+                        const isSelected = item.id === selectedLocationId;
+                        return (
+                          <tr
+                            key={item.id}
+                            {...settingsListItemAttrs(item.id)}
+                            onClick={() => selectLocation(item.id)}
+                            onDoubleClick={(e) => {
+                              e.preventDefault();
+                              window.getSelection()?.removeAllRanges();
+                              openEditLocation(item);
+                            }}
+                            className={settingsDataRowClass(isSelected)}
                           >
-                            {truncateLabel(area.name)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </ColumnShell>
+                            <td
+                              className={settingsIndicatorCellClass(isSelected)}
+                              aria-hidden
+                            />
+                            <td
+                              className={settingsDataCellClass(isSelected, {
+                                className: "max-w-[8rem] truncate font-medium",
+                              })}
+                              title={item.name}
+                            >
+                              {truncateLabel(item.name)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </ColumnShell>
 
-            {/* Spalte 3: Personalbedarf */}
-            <ColumnShell
-              className={COL_STAFFING_CLASS}
-              title={staffingPanelTitle}
-              listPaddingClassName="px-0 py-0"
-              actions={
-                <SettingsActionBar
-                  primary={
-                    <ColumnPrimaryButton
-                      label={t("locations.new")}
-                      icon={<PlusIcon />}
-                      disabled={pending || !staffingReady || !hasUnassignedShiftTypes}
-                      onClick={() => {
-                        setStaffingFormMode({ type: "create" });
-                        setConfirmDeleteStaffing(false);
-                        setErrorMessage(null);
-                      }}
-                    />
-                  }
-                  secondary={
-                    <ColumnActionButton
-                      label={t("locations.edit")}
-                      icon={<PencilIcon />}
-                      disabled={pending || !staffingReady || !selectedStaffingShiftTypeId}
-                      onClick={() => {
-                        if (!selectedStaffingShiftTypeId) return;
-                        setStaffingFormMode({
-                          type: "edit",
-                          shiftTypeId: selectedStaffingShiftTypeId,
-                        });
-                        setConfirmDeleteStaffing(false);
-                        setErrorMessage(null);
-                      }}
-                    />
-                  }
-                  destructive={
-                    <ColumnActionButton
-                      label={t("locations.delete")}
-                      icon={<TrashIcon />}
-                      disabled={pending || !staffingReady || !selectedStaffingShiftTypeId}
-                      onClick={() => {
-                        setConfirmDeleteStaffing(true);
-                        setErrorMessage(null);
-                      }}
-                    />
-                  }
-                />
-              }
-            >
-              {!staffingReady ? (
-                <SettingsEmptyState
-                  message={
-                    !selectedLocationId
-                      ? t("locations.areasNoLocation")
-                      : areasLoading
-                        ? t("common.loading")
-                        : t("locations.areasEmpty")
-                  }
-                />
-              ) : selectedLocation && selectedArea ? (
-                <LocationAreaStaffingMatrix
-                  ref={staffingRef}
-                  embedded
-                  location={selectedLocation}
-                  area={selectedArea}
-                  selectedShiftTypeId={selectedStaffingShiftTypeId}
-                  onSelectShiftType={setSelectedStaffingShiftTypeId}
-                  onDataLoaded={setStaffingEditorData}
-                  onLoadingChange={setStaffingLoading}
-                />
-              ) : null}
-            </ColumnShell>
+              <ColumnShell
+                title={areasPanelTitle}
+                actions={
+                  <SettingsActionBar
+                    primary={
+                      <ColumnPrimaryButton
+                        label={t("locations.areaNew")}
+                        icon={<PlusIcon />}
+                        disabled={pending || !selectedLocationId}
+                        onClick={() => {
+                          if (!selectedLocationId) return;
+                          setAreaFormMode({ type: "create" });
+                          setConfirmDeleteArea(false);
+                        }}
+                      />
+                    }
+                    secondary={
+                      <>
+                        <ColumnActionButton
+                          label={t("locations.areaEdit")}
+                          icon={<PencilIcon />}
+                          disabled={pending || !selectedArea}
+                          onClick={() => {
+                            if (!selectedArea) return;
+                            openEditArea(selectedArea);
+                          }}
+                        />
+                        <SettingsReorderButtons
+                          moveUpLabel={t("common.moveUp")}
+                          moveDownLabel={t("common.moveDown")}
+                          disabled={pending || areasLoading || !selectedLocationId}
+                          canMoveUp={canMoveAreaUp}
+                          canMoveDown={canMoveAreaDown}
+                          onMoveUp={() => {
+                            setErrorMessage(null);
+                            handleMoveArea(-1);
+                          }}
+                          onMoveDown={() => {
+                            setErrorMessage(null);
+                            handleMoveArea(1);
+                          }}
+                        />
+                      </>
+                    }
+                    destructive={
+                      <ColumnActionButton
+                        label={t("locations.areaDelete")}
+                        icon={<TrashIcon />}
+                        disabled={pending || !selectedArea}
+                        onClick={() => {
+                          setConfirmDeleteArea(true);
+                          setErrorMessage(null);
+                        }}
+                      />
+                    }
+                  />
+                }
+              >
+                {!selectedLocationId ? (
+                  <SettingsEmptyState message={t("locations.areasNoLocation")} />
+                ) : areasLoading ? (
+                  <SettingsEmptyState message={t("common.loading")} />
+                ) : areas.length === 0 ? (
+                  <SettingsEmptyState
+                    message={t("locations.areasEmpty")}
+                    hint={t("common.emptyHintCreate")}
+                  />
+                ) : (
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-border bg-subtle">
+                        <th className="w-1 p-0" aria-hidden />
+                        <th className={cn(settingsColumnHeaderClass(), "text-left")}>
+                          {t("locations.areaName")}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedAreas.map((area) => {
+                        const isSelected = area.id === selectedAreaId;
+                        return (
+                          <tr
+                            key={area.id}
+                            {...settingsListItemAttrs(area.id)}
+                            onClick={() => selectArea(area.id)}
+                            onDoubleClick={(e) => {
+                              e.preventDefault();
+                              window.getSelection()?.removeAllRanges();
+                              openEditArea(area);
+                            }}
+                            className={settingsDataRowClass(isSelected)}
+                          >
+                            <td
+                              className={settingsIndicatorCellClass(isSelected)}
+                              aria-hidden
+                            />
+                            <td
+                              className={settingsDataCellClass(isSelected, {
+                                className: "max-w-[8rem] truncate font-medium",
+                              })}
+                              title={area.name}
+                            >
+                              {truncateLabel(area.name)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </ColumnShell>
+            </div>
+
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
+              <h3 className={settingsPanelHeaderClass()}>
+                {selectedArea
+                  ? t("locations.panelSelected")
+                  : t("locations.panelDetails")}
+              </h3>
+              <LocationDetailActions
+                selectedLocation={selectedLocation ?? null}
+                selectedArea={selectedArea ?? null}
+                disabled={pending || areasLoading}
+                onOpen={setDetailPanel}
+              />
+            </div>
           </div>
 
           <div className="flex shrink-0 justify-end border-t border-border px-6 py-3">
@@ -828,7 +771,7 @@ export function LocationsModal({
             mode="create"
             existingLocations={list}
             onClose={() => setLocationFormMode(null)}
-            onSaved={refreshList}
+            onSaved={handleLocationFormSaved}
           />
         )}
         {locationFormMode?.type === "edit" && (
@@ -837,7 +780,7 @@ export function LocationsModal({
             location={locationFormMode.location}
             existingLocations={list}
             onClose={() => setLocationFormMode(null)}
-            onSaved={refreshList}
+            onSaved={handleLocationFormSaved}
           />
         )}
         {areaFormMode?.type === "create" && selectedLocationId && (
@@ -846,7 +789,7 @@ export function LocationsModal({
             locationId={selectedLocationId}
             existingAreas={areas}
             onClose={() => setAreaFormMode(null)}
-            onSaved={() => loadAreas(selectedLocationId)}
+            onSaved={handleAreaFormSaved}
           />
         )}
         {areaFormMode?.type === "edit" && selectedLocationId && (
@@ -856,7 +799,7 @@ export function LocationsModal({
             area={areaFormMode.area}
             existingAreas={areas}
             onClose={() => setAreaFormMode(null)}
-            onSaved={() => loadAreas(selectedLocationId)}
+            onSaved={handleAreaFormSaved}
           />
         )}
         {confirmDeleteLocation && selectedLocation && (
@@ -875,33 +818,29 @@ export function LocationsModal({
             onConfirm={handleDeleteArea}
           />
         )}
-        {confirmDeleteStaffing && selectedStaffingShiftType && (
-          <DeleteConfirmModal
-            name={selectedStaffingShiftType.name}
-            pending={pending}
-            onCancel={() => setConfirmDeleteStaffing(false)}
-            onConfirm={handleDeleteStaffing}
+        {detailPanel === "serviceHours" && selectedLocation && selectedArea && (
+          <LocationServiceHoursPanelModal
+            location={selectedLocation}
+            area={selectedArea}
+            cachedHours={
+              selectedArea.id in serviceHoursCache
+                ? serviceHoursCache[selectedArea.id]
+                : undefined
+            }
+            onClose={() => {
+              setDetailPanel(null);
+              refreshList();
+            }}
+            onCacheUpdate={handleServiceHoursCacheUpdate}
           />
         )}
-        {staffingFormMode &&
-          selectedLocation &&
-          selectedArea &&
-          staffingEditorData && (
-            <LocationStaffingFormModal
-              mode={staffingFormMode.type}
-              location={selectedLocation}
-              area={selectedArea}
-              shiftTypes={staffingEditorData.shiftTypes}
-              staffing={staffingEditorData.staffing}
-              initialShiftTypeId={
-                staffingFormMode.type === "edit"
-                  ? staffingFormMode.shiftTypeId
-                  : undefined
-              }
-              onClose={() => setStaffingFormMode(null)}
-              onSaved={handleStaffingSaved}
-            />
-          )}
+        {detailPanel === "staffing" && selectedLocation && selectedArea && (
+          <LocationStaffingPanelModal
+            location={selectedLocation}
+            area={selectedArea}
+            onClose={() => setDetailPanel(null)}
+          />
+        )}
       </div>
     </div>
   );

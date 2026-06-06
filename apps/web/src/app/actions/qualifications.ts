@@ -71,6 +71,28 @@ export async function updateQualification(input: {
   }
 }
 
+export async function reorderQualifications(
+  orderedIds: string[]
+): Promise<QualificationActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    await db.reorderQualifications(organizationId, orderedIds);
+    revalidatePath("/einstellungen");
+    revalidatePath("/dashboard");
+    revalidatePath("/planung");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error
+          ? e.message
+          : "Reihenfolge konnte nicht gespeichert werden",
+    };
+  }
+}
+
 export async function deleteQualification(id: string): Promise<QualificationActionResult> {
   try {
     const { organizationId } = await requireManager();

@@ -1,5 +1,4 @@
 import type { Location } from "@schichtwerk/types";
-import { validateActiveWeekdaysField } from "./location-weekdays";
 
 export type LocationUniquenessInput = {
   name: string;
@@ -10,8 +9,6 @@ export const MAX_LOCATION_NAME_LENGTH = 25;
 
 export type LocationInput = {
   name: string;
-  active_weekdays: string;
-  on_holiday_open: boolean;
 };
 
 function normalizeNameKey(name: string): string {
@@ -51,15 +48,8 @@ export function validateLocationInput(
     };
   }
 
-  const weekdays = validateActiveWeekdaysField(input.active_weekdays);
-  if (!weekdays.ok) return weekdays;
-
   return {
     ok: true,
-    data: {
-      name,
-      active_weekdays: weekdays.value,
-      on_holiday_open: Boolean(input.on_holiday_open),
-    },
+    data: { name },
   };
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { toProfileAvailabilitySaveError } from "@schichtwerk/database";
 import type { ProfileRecurringAvailability } from "@schichtwerk/types";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
@@ -56,10 +57,7 @@ export async function createProfileRecurringAvailability(input: {
     revalidatePath("/planung");
     return { ok: true, availability };
   } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Speichern fehlgeschlagen",
-    };
+    return { ok: false, error: toProfileAvailabilitySaveError(e) };
   }
 }
 
@@ -93,9 +91,41 @@ export async function updateProfileRecurringAvailability(input: {
     revalidatePath("/planung");
     return { ok: true, availability };
   } catch (e) {
+    return { ok: false, error: toProfileAvailabilitySaveError(e) };
+  }
+}
+
+export async function reorderProfileRecurringAvailability(input: {
+  profileId: string;
+  orderedIds: string[];
+}): Promise<ProfileAvailabilityActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    const profile = await db.getProfileById(input.profileId);
+    if (!profile || profile.organization_id !== organizationId) {
+      return { ok: false, error: "Profil nicht gefunden" };
+    }
+
+    await db.reorderProfileRecurringAvailability(
+      organizationId,
+      input.profileId,
+      input.orderedIds
+    );
+    const availability = await db.listProfileRecurringAvailability(
+      organizationId,
+      input.profileId
+    );
+    revalidatePath("/dashboard");
+    revalidatePath("/planung");
+    return { ok: true, availability };
+  } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "Speichern fehlgeschlagen",
+      error:
+        e instanceof Error
+          ? e.message
+          : "Reihenfolge konnte nicht gespeichert werden",
     };
   }
 }

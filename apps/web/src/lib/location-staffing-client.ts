@@ -8,24 +8,27 @@ export function weekdayIndexFromDate(isoDate: string): number {
   return day === 0 ? 6 : day - 1;
 }
 
-function isValidActiveWeekdays(mask: string): boolean {
-  return mask.length === 7 && /^[01]{7}$/.test(mask);
-}
+export type AreaServiceHourRef = {
+  location_area_id: string;
+  weekday: number;
+};
 
-export function isLocationOpenOnWeekday(
-  activeWeekdays: string,
-  weekdayIndex: number
+export function isAreaOpenOnWeekday(
+  serviceHours: AreaServiceHourRef[],
+  areaId: string,
+  weekday: number
 ): boolean {
-  if (!isValidActiveWeekdays(activeWeekdays)) return false;
-  return activeWeekdays[weekdayIndex] === "1";
+  return serviceHours.some(
+    (h) => h.location_area_id === areaId && h.weekday === weekday
+  );
 }
 
 export function isStaffingDayEnabled(
-  location: { active_weekdays: string; on_holiday_open: boolean },
+  serviceHours: AreaServiceHourRef[],
+  areaId: string,
   weekday: number
 ): boolean {
-  if (weekday === STAFFING_HOLIDAY_WEEKDAY) return location.on_holiday_open;
-  return isLocationOpenOnWeekday(location.active_weekdays, weekday);
+  return isAreaOpenOnWeekday(serviceHours, areaId, weekday);
 }
 
 export type StaffingRule = {
@@ -39,10 +42,10 @@ export function requiredStaffForAreaOnDate(
   rules: StaffingRule[],
   areaId: string,
   dateISO: string,
-  locationActiveWeekdays: string
+  serviceHours: AreaServiceHourRef[]
 ): number {
   const weekday = weekdayIndexFromDate(dateISO);
-  if (!isLocationOpenOnWeekday(locationActiveWeekdays, weekday)) return 0;
+  if (!isAreaOpenOnWeekday(serviceHours, areaId, weekday)) return 0;
   return rules
     .filter((r) => r.location_area_id === areaId && r.weekday === weekday)
     .reduce((sum, r) => sum + r.required_count, 0);

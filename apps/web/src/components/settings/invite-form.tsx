@@ -1,21 +1,38 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import {
   inviteEmployee,
   type TeamActionResult,
 } from "@/app/actions/team";
 import { Alert, Button, Field, Input } from "@/components/ui";
+import { cn } from "@/lib/cn";
 
 const initial: TeamActionResult | null = null;
 
-export function InviteForm({ employeeCount }: { employeeCount: number }) {
+type Props = {
+  employeeCount: number;
+  embedded?: boolean;
+  onSuccess?: () => void;
+};
+
+export function InviteForm({ employeeCount, embedded = false, onSuccess }: Props) {
   const [state, formAction, pending] = useActionState(inviteEmployee, initial);
 
+  useEffect(() => {
+    if (state?.ok === true) onSuccess?.();
+  }, [onSuccess, state]);
+
   return (
-    <div className="rounded-2xl border border-border bg-surface p-6">
-      <h2 className="text-lg font-medium">Mitarbeiter einladen</h2>
-      <p className="mt-1 text-sm text-muted">
+    <div
+      className={cn(
+        embedded ? "p-0" : "rounded-2xl border border-border bg-surface p-6"
+      )}
+    >
+      {!embedded ? (
+        <h2 className="text-lg font-medium">Mitarbeiter einladen</h2>
+      ) : null}
+      <p className={cn("text-sm text-muted", embedded ? "" : "mt-1")}>
         {employeeCount}/20 aktiv · Einladung per E-Mail (App-Login)
       </p>
 

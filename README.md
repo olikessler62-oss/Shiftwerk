@@ -71,15 +71,18 @@ npm run dev
 
 1. **Web:** `/register` — Betrieb anlegen; es werden automatisch **Früh-, Spät- und Nachtschicht** angelegt
 2. Nach Login → **Dashboard** unter `/dashboard`
-3. **Team:** `/team` — Mitarbeiter per E-Mail einladen (benötigt `SUPABASE_SERVICE_ROLE_KEY` + E-Mail-Versand in Supabase)
+3. **Profile:** Dashboard → Einstellungen → Profile — Mitarbeiter anlegen oder per E-Mail einladen (benötigt `SUPABASE_SERVICE_ROLE_KEY` + E-Mail-Versand in Supabase)
 4. **Planung:** `/planung` — Wochenkalender: Zelle `+` → Schichttyp wählen; farbige Zelle entfernen
 5. **App:** Mitarbeiter melden sich mit Einladungs-E-Mail und gesetztem Passwort an
 
-### Supabase für Einladungen
+### Supabase für Einladungen & Passwort-Reset
 
 - **Project Settings → API** → `service_role` in `apps/web/.env.local`
 - **Authentication → Email** → SMTP konfigurieren oder Supabase-Mail nutzen
+- **Authentication → URL Configuration** → Redirect URLs um `…/auth/callback` ergänzen (für Einladungen und „Passwort vergessen“)
 - Einladungs-Link führt zunächst ins Web (`/auth/callback`); Mitarbeiter loggen sich danach in der **App** ein
+- **Passwort vergessen:** `/login` → Link → E-Mail mit Reset-Link → `/reset-password`
+- **Security Linter:** Migration `packages/database/migrations/20250617_security_linter_fixes.sql` in Supabase ausführen; unter **Authentication → Email** *Prevent use of leaked passwords* aktivieren
 
 Mitarbeiter mit Rolle `employee`, die sich am Web anmelden, werden nach `/app-only` umgeleitet.
 

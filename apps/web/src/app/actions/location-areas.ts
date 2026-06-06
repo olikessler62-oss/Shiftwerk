@@ -110,6 +110,35 @@ export async function updateLocationArea(input: {
   }
 }
 
+export async function reorderLocationAreas(input: {
+  locationId: string;
+  orderedIds: string[];
+}): Promise<LocationAreaActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    const locations = await db.listLocations(organizationId);
+    if (!locations.some((location) => location.id === input.locationId)) {
+      return { ok: false, error: "Standort nicht gefunden" };
+    }
+
+    await db.reorderLocationAreas(input.locationId, input.orderedIds);
+    revalidatePath("/einstellungen");
+    revalidatePath("/dashboard");
+    revalidatePath("/planung");
+    const areas = await db.listLocationAreas(input.locationId);
+    return { ok: true, areas };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error
+          ? e.message
+          : "Reihenfolge konnte nicht gespeichert werden",
+    };
+  }
+}
+
 /** Aus Liste entfernen; Daten bleiben für Schichten und spätere Kostenauswertung erhalten. */
 export async function archiveLocationArea(input: {
   id: string;

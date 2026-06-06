@@ -28,7 +28,7 @@ type Props = {
   area?: LocationArea;
   existingAreas: LocationArea[];
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (createdId?: string) => void;
 };
 
 export function LocationAreaFormModal({
@@ -75,7 +75,7 @@ export function LocationAreaFormModal({
         setError(result.error);
         return;
       }
-      onSaved();
+      onSaved(mode === "create" ? result.id : undefined);
       onClose();
     });
   }

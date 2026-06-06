@@ -14,8 +14,6 @@ export type LocationActionResult =
 
 export async function createLocation(input: {
   name: string;
-  active_weekdays: string;
-  on_holiday_open: boolean;
 }): Promise<LocationActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -34,8 +32,6 @@ export async function createLocation(input: {
     const created = await db.insertLocation({
       organization_id: organizationId,
       name: validated.data.name,
-      active_weekdays: validated.data.active_weekdays,
-      on_holiday_open: validated.data.on_holiday_open,
       sort_order: sortOrder,
     });
 
@@ -52,8 +48,6 @@ export async function createLocation(input: {
 export async function updateLocation(input: {
   id: string;
   name: string;
-  active_weekdays: string;
-  on_holiday_open: boolean;
 }): Promise<LocationActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -77,6 +71,28 @@ export async function updateLocation(input: {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Speichern fehlgeschlagen",
+    };
+  }
+}
+
+export async function reorderLocations(
+  orderedIds: string[]
+): Promise<LocationActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    await db.reorderLocations(organizationId, orderedIds);
+    revalidatePath("/einstellungen");
+    revalidatePath("/dashboard");
+    revalidatePath("/planung");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error
+          ? e.message
+          : "Reihenfolge konnte nicht gespeichert werden",
     };
   }
 }

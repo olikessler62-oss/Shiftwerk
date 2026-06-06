@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteRole } from "@/app/actions/roles";
+import { deleteRole, reorderRoles } from "@/app/actions/roles";
 import type { Role, RolePermissionLevel } from "@schichtwerk/types";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { RoleFormModal } from "./role-form-modal";
@@ -13,6 +13,10 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  SettingsReorderButtons,
+  applyCreatedListSelection,
+  settingsListItemAttrs,
+  useScrollToSettingsListItem,
   settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
@@ -30,6 +34,7 @@ import {
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
   roles: Role[];
@@ -56,6 +61,7 @@ export function RolesModal({ roles, onClose }: Props) {
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
 
   useEffect(() => {
     setList(roles);
@@ -89,10 +95,32 @@ export function RolesModal({ roles, onClose }: Props) {
     };
   }, []);
 
-  const selected = list.find((r) => r.id === selectedId);
+  const {
+    sortedList,
+    canMoveUp,
+    canMoveDown,
+    handleMove,
+  } = useSettingsListReorder({
+    list,
+    setList,
+    selectedId,
+    pending,
+    startTransition,
+    reorder: reorderRoles,
+    onError: setErrorMessage,
+    onSuccess: () => router.refresh(),
+  });
+  const selected = sortedList.find((r) => r.id === selectedId);
+  const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
+  useScrollToSettingsListItem(sortedList, scrollToItemId, clearScrollTarget);
 
   function refreshList() {
     router.refresh();
+  }
+
+  function handleFormSaved(createdId?: string) {
+    applyCreatedListSelection(createdId, setSelectedId, setScrollToItemId);
+    refreshList();
   }
 
   function openEdit(role: Role) {
@@ -182,11 +210,12 @@ export function RolesModal({ roles, onClose }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {list.map((item) => {
+                      {sortedList.map((item) => {
                         const isSelected = item.id === selectedId;
                         return (
                           <tr
                             key={item.id}
+                            {...settingsListItemAttrs(item.id)}
                             onClick={() => {
                               setSelectedId(item.id);
                               setConfirmDelete(false);
@@ -227,15 +256,32 @@ export function RolesModal({ roles, onClose }: Props) {
                   />
                 }
                 secondary={
-                  <SettingsIconActionButton
-                    label={t("roles.edit")}
-                    icon={<PencilIcon />}
-                    disabled={pending || !selected}
-                    onClick={() => {
-                      if (!selected) return;
-                      openEdit(selected);
-                    }}
-                  />
+                  <>
+                    <SettingsIconActionButton
+                      label={t("roles.edit")}
+                      icon={<PencilIcon />}
+                      disabled={pending || !selected}
+                      onClick={() => {
+                        if (!selected) return;
+                        openEdit(selected);
+                      }}
+                    />
+                    <SettingsReorderButtons
+                      moveUpLabel={t("common.moveUp")}
+                      moveDownLabel={t("common.moveDown")}
+                      disabled={pending}
+                      canMoveUp={canMoveUp}
+                      canMoveDown={canMoveDown}
+                      onMoveUp={() => {
+                        setErrorMessage(null);
+                        handleMove(-1);
+                      }}
+                      onMoveDown={() => {
+                        setErrorMessage(null);
+                        handleMove(1);
+                      }}
+                    />
+                  </>
                 }
                 destructive={
                   <SettingsIconActionButton
@@ -272,7 +318,7 @@ export function RolesModal({ roles, onClose }: Props) {
             mode="create"
             existingRoles={list}
             onClose={() => setFormMode(null)}
-            onSaved={refreshList}
+            onSaved={handleFormSaved}
           />
         )}
         {formMode?.type === "edit" && (
@@ -281,7 +327,7 @@ export function RolesModal({ roles, onClose }: Props) {
             role={formMode.role}
             existingRoles={list}
             onClose={() => setFormMode(null)}
-            onSaved={refreshList}
+            onSaved={handleFormSaved}
           />
         )}
         {confirmDelete && selected && !selected.is_system && (

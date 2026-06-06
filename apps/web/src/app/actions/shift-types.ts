@@ -113,6 +113,25 @@ export async function updateShiftType(input: {
   }
 }
 
+export async function reorderShiftTypes(
+  orderedIds: string[]
+): Promise<ShiftTypeActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    await db.reorderShiftTypes(organizationId, orderedIds);
+    revalidatePath("/einstellungen");
+    revalidatePath("/dashboard");
+    revalidatePath("/planung");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Reihenfolge konnte nicht gespeichert werden",
+    };
+  }
+}
+
 /** Aus Einstellungsliste entfernen; bestehende Schichten behalten die Schichtart für Historie. */
 export async function deleteShiftType(id: string): Promise<ShiftTypeActionResult> {
   try {

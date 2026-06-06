@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createProfile, updateProfile } from "@/app/actions/profiles";
-import { fetchProfileHourlyRates } from "@/app/actions/profile-hourly-rates";
 import {
   getProfileColorLabel,
   PROFILE_COLOR_PALETTE,
@@ -29,36 +28,6 @@ type Props = {
   onClose: () => void;
   onSaved: (profile: Profile) => void;
 };
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function dayAfter(isoDate: string): string {
-  const d = new Date(`${isoDate}T12:00:00`);
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
-}
-
-function minValidFromForRateChange(currentValidFrom: string | null): string {
-  const today = todayIso();
-  if (!currentValidFrom) return today;
-  const next = dayAfter(currentValidFrom);
-  return today > next ? today : next;
-}
-
-function formatAmountForInput(amount: number, locale: string): string {
-  const fixed = amount.toFixed(2);
-  return locale === "en" ? fixed : fixed.replace(".", ",");
-}
-
-function parseAmountInput(raw: string): number | null {
-  const normalized = raw.trim().replace(",", ".");
-  if (!normalized) return null;
-  const amount = Number(normalized);
-  if (!Number.isFinite(amount) || amount < 0) return null;
-  return Math.round(amount * 100) / 100;
-}
 
 function initialEmail(email?: string): string {
   if (!email) return "";
@@ -205,14 +174,6 @@ export function ProfileFormModal({
   const [email, setEmail] = useState(() => initialEmail(profile?.email));
   const [mobilePhone, setMobilePhone] = useState(profile?.mobile_phone ?? "");
   const [color, setColor] = useState(profile?.color ?? "");
-  const [hourlyRate, setHourlyRate] = useState("");
-  const [validFrom, setValidFrom] = useState(todayIso());
-  const [initialHourlyAmount, setInitialHourlyAmount] = useState<number | null>(
-    null
-  );
-  const [initialValidFrom, setInitialValidFrom] = useState<string | null>(null);
-  const [hourlyCurrency, setHourlyCurrency] = useState("EUR");
-  const [ratesLoading, setRatesLoading] = useState(mode === "edit");
 
   const usedColors = useMemo(() => {
     const set = new Set<string>();
@@ -239,37 +200,6 @@ export function ProfileFormModal({
     if (first) setColor(first);
   }, [availableColors, color]);
 
-  useEffect(() => {
-    if (mode !== "edit" || !profile?.id) {
-      setRatesLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setRatesLoading(true);
-    void fetchProfileHourlyRates(profile.id).then((result) => {
-      if (cancelled) return;
-      setRatesLoading(false);
-      if (!result.ok) return;
-      const current = result.currentRate ?? null;
-      if (current) {
-        setHourlyRate(formatAmountForInput(current.amount, locale));
-        setValidFrom(current.valid_from);
-        setInitialHourlyAmount(current.amount);
-        setInitialValidFrom(current.valid_from);
-        setHourlyCurrency(current.currency);
-      } else {
-        setInitialHourlyAmount(null);
-        setInitialValidFrom(null);
-        setHourlyCurrency("EUR");
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mode, profile?.id, locale]);
-
   function handleSubmit() {
     setError(null);
     if (!fullName.trim()) {
@@ -281,15 +211,6 @@ export function ProfileFormModal({
       return;
     }
 
-    const parsedAmount = parseAmountInput(hourlyRate);
-    const rateChanged =
-      parsedAmount !== null &&
-      (mode === "create" || parsedAmount !== initialHourlyAmount);
-    const hourlyPayload =
-      rateChanged && parsedAmount !== null
-        ? { amount: hourlyRate.trim(), valid_from: validFrom }
-        : undefined;
-
     startTransition(async () => {
       const payload = {
         full_name: fullName.trim(),
@@ -298,7 +219,6 @@ export function ProfileFormModal({
         email,
         mobile_phone: mobilePhone,
         color,
-        hourly_rate: hourlyPayload,
       };
 
       const result =
@@ -332,7 +252,7 @@ export function ProfileFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-form-title"
-        className="relative z-[71] flex w-full max-w-[calc(100%-80px)] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className="relative z-[71] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
@@ -359,153 +279,87 @@ export function ProfileFormModal({
             </div>
           )}
 
-          <div className="grid min-w-0 gap-6 md:grid-cols-[minmax(0,calc((100%-1.5rem)*4/9+70px))_minmax(0,calc((100%-1.5rem)*5/9-70px))] md:items-start">
-            <div className="min-w-0 space-y-4">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-border"
-                    checked={isActive}
-                    disabled={pending}
-                    onChange={(e) => setIsActive(e.target.checked)}
-                  />
-                  {t("profiles.columnActive")}
-                </label>
-
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-border"
-                    checked={schedulable}
-                    disabled={pending}
-                    onChange={(e) => setSchedulable(e.target.checked)}
-                  />
-                  {t("profiles.columnSchedulable")}
-                </label>
-              </div>
-
-              <div>
-                <LabelMuted>{t("profiles.columnName")}</LabelMuted>
-                <Input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder={t("profiles.namePlaceholder")}
+          <div className="min-w-0 space-y-4">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-border"
+                  checked={isActive}
                   disabled={pending}
+                  onChange={(e) => setIsActive(e.target.checked)}
                 />
-              </div>
+                {t("profiles.columnActive")}
+              </label>
 
-              <div>
-                <LabelMuted>{t("profiles.color")}</LabelMuted>
-                {availableColors.length === 0 ? (
-                  <p className="mt-1 text-sm text-muted">
-                    {t("profiles.noColorsAvailable")}
-                  </p>
-                ) : (
-                  <div className="mt-1">
-                    <ProfileColorCombobox
-                      value={color}
-                      options={availableColors}
-                      onChange={setColor}
-                      disabled={pending}
-                      localeKey={localeKey}
-                      placeholder={t("profiles.selectColor")}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <LabelMuted>{t("profiles.mobilePhone")}</LabelMuted>
-                <Input
-                  value={mobilePhone}
-                  maxLength={20}
-                  inputMode="numeric"
-                  onChange={(e) =>
-                    setMobilePhone(e.target.value.replace(/\D/g, "").slice(0, 20))
-                  }
-                  placeholder={t("profiles.mobilePhonePlaceholder")}
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-border"
+                  checked={schedulable}
                   disabled={pending}
-                  autoComplete="tel"
+                  onChange={(e) => setSchedulable(e.target.checked)}
                 />
-              </div>
-
-              <div>
-                <LabelMuted>{t("profiles.email")}</LabelMuted>
-                <Input
-                  type="email"
-                  value={email}
-                  maxLength={60}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t("profiles.emailPlaceholder")}
-                  disabled={pending}
-                  autoComplete="email"
-                />
-              </div>
+                {t("profiles.columnSchedulable")}
+              </label>
             </div>
 
-            <div className="min-w-0 space-y-4 md:border-l md:border-border md:pl-6">
-              <h4 className="text-sm font-medium text-foreground">
-                {t("profiles.compensationSection")}
-              </h4>
+            <div>
+              <LabelMuted>{t("profiles.columnName")}</LabelMuted>
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder={t("profiles.namePlaceholder")}
+                disabled={pending}
+              />
+            </div>
 
-              <div className="grid max-w-full grid-cols-[9.5rem_11rem] items-end gap-4">
-                <div>
-                  <LabelMuted>{t("profiles.currentHourlyRate")}</LabelMuted>
-                  <div
-                    className={cn(
-                      "mt-1 flex w-full overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
-                      (pending || ratesLoading) && "opacity-50"
-                    )}
-                  >
-                    <input
-                      value={ratesLoading ? "" : hourlyRate}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setHourlyRate(next);
-                        const parsed = parseAmountInput(next);
-                        if (
-                          parsed !== null &&
-                          mode === "edit" &&
-                          parsed !== initialHourlyAmount
-                        ) {
-                          setValidFrom(
-                            minValidFromForRateChange(initialValidFrom)
-                          );
-                        } else if (
-                          parsed !== null &&
-                          mode === "edit" &&
-                          parsed === initialHourlyAmount &&
-                          initialValidFrom
-                        ) {
-                          setValidFrom(initialValidFrom);
-                        }
-                      }}
-                      placeholder={t("profiles.hourlyRatePlaceholder")}
-                      disabled={pending || ratesLoading}
-                      inputMode="decimal"
-                      className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted disabled:cursor-not-allowed"
-                    />
-                    <span
-                      className="flex shrink-0 items-center border-l border-border bg-subtle px-2 text-sm font-medium text-muted"
-                      aria-hidden
-                    >
-                      {hourlyCurrency}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <LabelMuted>{t("profiles.validFrom")}</LabelMuted>
-                  <Input
-                    type="date"
-                    value={validFrom}
-                    onChange={(e) => setValidFrom(e.target.value)}
-                    disabled={pending || ratesLoading || !hourlyRate.trim()}
-                    className="min-w-0"
+            <div>
+              <LabelMuted>{t("profiles.color")}</LabelMuted>
+              {availableColors.length === 0 ? (
+                <p className="mt-1 text-sm text-muted">
+                  {t("profiles.noColorsAvailable")}
+                </p>
+              ) : (
+                <div className="mt-1">
+                  <ProfileColorCombobox
+                    value={color}
+                    options={availableColors}
+                    onChange={setColor}
+                    disabled={pending}
+                    localeKey={localeKey}
+                    placeholder={t("profiles.selectColor")}
                   />
                 </div>
-              </div>
+              )}
+            </div>
+
+            <div>
+              <LabelMuted>{t("profiles.mobilePhone")}</LabelMuted>
+              <Input
+                value={mobilePhone}
+                maxLength={20}
+                inputMode="numeric"
+                onChange={(e) =>
+                  setMobilePhone(e.target.value.replace(/\D/g, "").slice(0, 20))
+                }
+                placeholder={t("profiles.mobilePhonePlaceholder")}
+                disabled={pending}
+                autoComplete="tel"
+              />
+            </div>
+
+            <div>
+              <LabelMuted>{t("profiles.email")}</LabelMuted>
+              <Input
+                type="email"
+                value={email}
+                maxLength={60}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t("profiles.emailPlaceholder")}
+                disabled={pending}
+                autoComplete="email"
+              />
             </div>
           </div>
         </div>

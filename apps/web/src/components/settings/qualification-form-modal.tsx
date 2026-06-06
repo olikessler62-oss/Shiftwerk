@@ -24,7 +24,7 @@ type Props = {
   qualification?: Qualification;
   existingQualifications: Qualification[];
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (createdId?: string) => void;
 };
 
 export function QualificationFormModal({
@@ -65,7 +65,7 @@ export function QualificationFormModal({
         setError(result.error);
         return;
       }
-      onSaved();
+      onSaved(mode === "create" ? result.id : undefined);
       onClose();
     });
   }

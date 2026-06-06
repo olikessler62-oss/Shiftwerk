@@ -88,3 +88,70 @@ export async function signOut() {
   await db.authSignOut();
   redirect("/login");
 }
+
+function siteUrl(): string {
+  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+}
+
+function passwordResetRedirectTo(): string {
+  const next = encodeURIComponent("/reset-password");
+  return `${siteUrl()}/auth/callback?next=${next}`;
+}
+
+export async function requestPasswordReset(formData: FormData) {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+
+  if (!email) {
+    redirect(
+      `/forgot-password?error=${encodeURIComponent("Bitte eine E-Mail-Adresse eingeben.")}`
+    );
+  }
+
+  const db = await getDatabase();
+  await db.authResetPasswordForEmail(email, passwordResetRedirectTo());
+
+  redirect(
+    `/forgot-password?message=${encodeURIComponent(
+      "Falls ein Konto mit dieser E-Mail existiert, haben wir dir einen Link zum Zurücksetzen des Passworts gesendet."
+    )}`
+  );
+}
+
+export async function updatePassword(formData: FormData) {
+  const password = String(formData.get("password") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+
+  if (password.length < 8) {
+    redirect(
+      `/reset-password?error=${encodeURIComponent("Das Passwort muss mindestens 8 Zeichen haben.")}`
+    );
+  }
+
+  if (password !== confirmPassword) {
+    redirect(
+      `/reset-password?error=${encodeURIComponent("Die Passwörter stimmen nicht überein.")}`
+    );
+  }
+
+  const db = await getDatabase();
+  const user = await db.authGetUser();
+  if (!user) {
+    redirect(
+      `/forgot-password?error=${encodeURIComponent(
+        "Der Link ist ungültig oder abgelaufen. Bitte fordere einen neuen Link an."
+      )}`
+    );
+  }
+
+  const { error } = await db.authUpdatePassword(password);
+  if (error) {
+    redirect(`/reset-password?error=${encodeURIComponent(error)}`);
+  }
+
+  await db.authSignOut();
+  redirect(
+    `/login?message=${encodeURIComponent(
+      "Passwort wurde gesetzt. Du kannst dich jetzt anmelden."
+    )}`
+  );
+}

@@ -5,6 +5,8 @@ export { Field } from "./field";
 export { IconButton } from "./icon-button";
 export {
   CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   CloseIcon,
   ListIcon,
   PencilIcon,

@@ -47,6 +47,7 @@ export interface Profile {
   weekly_hours: number | null;
   is_active: boolean;
   schedulable: boolean;
+  sort_order: number;
   created_at: string;
 }
 
@@ -60,6 +61,7 @@ export interface ProfileHourlyRate {
   valid_to: string | null;
   created_at: string;
   created_by: string | null;
+  created_by_name: string | null;
 }
 
 export interface ProfileHourlyRateSummary {
@@ -77,6 +79,7 @@ export interface ProfileRecurringAvailability {
   end_time: string;
   shift_type_id: string | null;
   shift_type_name: string | null;
+  sort_order: number;
   created_at: string;
 }
 
@@ -115,10 +118,17 @@ export interface Location {
   id: string;
   organization_id: string;
   name: string;
-  active_weekdays: string;
-  on_holiday_open: boolean;
   sort_order: number;
   archived_at: string | null;
+}
+
+/** Service-Zeiten pro Bereich: weekday 0=Mo … 6=So, 7=Feiertage */
+export interface LocationAreaServiceHour {
+  id: string;
+  location_area_id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
 }
 
 export interface LocationArea {
@@ -129,11 +139,12 @@ export interface LocationArea {
   archived_at: string | null;
 }
 
-/** Personalbedarf: Bereich × Schichtart × Wochentag (Mo=0 … So=6, Feiertage=7) */
+/** Personalbedarf: Bereich × Schichtart × Wochentag × Qualifikation (Mo=0 … So=6, Feiertage=7) */
 export interface LocationAreaStaffing {
   id: string;
   location_area_id: string;
   shift_type_id: string;
+  qualification_id: string;
   weekday: number;
   required_count: number;
 }

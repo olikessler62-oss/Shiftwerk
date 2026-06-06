@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteShiftType } from "@/app/actions/shift-types";
+import { deleteShiftType, reorderShiftTypes } from "@/app/actions/shift-types";
 import { MAX_SHIFT_TYPES_PER_ORGANIZATION } from "@schichtwerk/database";
 import type { ShiftTypeWithBreaks } from "@schichtwerk/types";
 import {
@@ -19,6 +19,10 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  SettingsReorderButtons,
+  applyCreatedListSelection,
+  settingsListItemAttrs,
+  useScrollToSettingsListItem,
   settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
@@ -36,6 +40,7 @@ import {
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
   shiftTypes: ShiftTypeWithBreaks[];
@@ -72,6 +77,7 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
 
   useEffect(() => {
     setList(shiftTypes);
@@ -105,11 +111,33 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
     };
   }, []);
 
-  const selected = list.find((st) => st.id === selectedId);
+  const {
+    sortedList,
+    canMoveUp,
+    canMoveDown,
+    handleMove,
+  } = useSettingsListReorder({
+    list,
+    setList,
+    selectedId,
+    pending,
+    startTransition,
+    reorder: reorderShiftTypes,
+    onError: setErrorMessage,
+    onSuccess: () => router.refresh(),
+  });
+  const selected = sortedList.find((st) => st.id === selectedId);
   const atShiftTypeLimit = list.length >= MAX_SHIFT_TYPES_PER_ORGANIZATION;
+  const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
+  useScrollToSettingsListItem(sortedList, scrollToItemId, clearScrollTarget);
 
   function refreshList() {
     router.refresh();
+  }
+
+  function handleFormSaved(createdId?: string) {
+    applyCreatedListSelection(createdId, setSelectedId, setScrollToItemId);
+    refreshList();
   }
 
   function openEdit(shiftType: ShiftTypeWithBreaks) {
@@ -206,12 +234,13 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
                         </tr>
                       </thead>
                       <tbody>
-                        {list.map((type) => {
+                        {sortedList.map((type) => {
                           const isSelected = type.id === selectedId;
                           const breaks = sortedBreaks(type);
                           return (
                             <tr
                               key={type.id}
+                              {...settingsListItemAttrs(type.id)}
                               onClick={() => {
                                 setSelectedId(type.id);
                                 setConfirmDelete(false);
@@ -269,15 +298,32 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
                   />
                 }
                 secondary={
-                  <SettingsIconActionButton
-                    label={t("shiftTypes.edit")}
-                    icon={<PencilIcon />}
-                    disabled={pending || !selected}
-                    onClick={() => {
-                      if (!selected) return;
-                      openEdit(selected);
-                    }}
-                  />
+                  <>
+                    <SettingsIconActionButton
+                      label={t("shiftTypes.edit")}
+                      icon={<PencilIcon />}
+                      disabled={pending || !selected}
+                      onClick={() => {
+                        if (!selected) return;
+                        openEdit(selected);
+                      }}
+                    />
+                    <SettingsReorderButtons
+                      moveUpLabel={t("common.moveUp")}
+                      moveDownLabel={t("common.moveDown")}
+                      disabled={pending}
+                      canMoveUp={canMoveUp}
+                      canMoveDown={canMoveDown}
+                      onMoveUp={() => {
+                        setErrorMessage(null);
+                        handleMove(-1);
+                      }}
+                      onMoveDown={() => {
+                        setErrorMessage(null);
+                        handleMove(1);
+                      }}
+                    />
+                  </>
                 }
                 destructive={
                   <SettingsIconActionButton
@@ -313,7 +359,7 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
             mode="create"
             existingShiftTypes={list}
             onClose={() => setFormMode(null)}
-            onSaved={refreshList}
+            onSaved={handleFormSaved}
           />
         )}
         {formMode?.type === "edit" && (
@@ -322,7 +368,7 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
             shiftType={formMode.shiftType}
             existingShiftTypes={list}
             onClose={() => setFormMode(null)}
-            onSaved={refreshList}
+            onSaved={handleFormSaved}
           />
         )}
         {confirmDelete && selected && (

@@ -44,15 +44,12 @@ export default async function DashboardPage({
   const from = dates[0];
   const to = dates[6];
 
-  const today = new Date().toISOString().slice(0, 10);
-
-  let [shiftTypes, qualifications, roles, profiles, profileHourlyRates, locations] =
+  let [shiftTypes, qualifications, roles, profiles, locations] =
     await Promise.all([
       db.loadShiftTypesWithBreaks(orgId),
       db.listQualifications(orgId),
       db.listRoles(orgId),
       db.listOrganizationProfiles(orgId),
-      db.listCurrentOrganizationProfileHourlyRates(orgId, today),
       db.listLocationsForDashboard(orgId, from, to),
     ]);
 
@@ -65,13 +62,14 @@ export default async function DashboardPage({
   const selectedLocation =
     locations.find((l) => l.id === selectedLocationId) ?? null;
 
-  const [areas, staffingRules, shiftRows] = selectedLocationId
+  const [areas, staffingRules, serviceHours, shiftRows] = selectedLocationId
     ? await Promise.all([
         db.listLocationAreasForDashboard(selectedLocationId, from, to),
         db.listLocationAreaStaffing(selectedLocationId),
+        db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),
         db.listDashboardShifts(orgId, from, to, selectedLocationId),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
 
   const cards: DashboardShiftCard[] = [];
   for (const s of shiftRows) {
@@ -99,12 +97,12 @@ export default async function DashboardPage({
         selectedLocation={selectedLocation}
         areas={areas}
         staffingRules={staffingRules}
+        serviceHours={serviceHours}
         shifts={cards}
         shiftTypes={shiftTypes}
         qualifications={qualifications}
         roles={roles}
         profiles={profiles}
-        profileHourlyRates={profileHourlyRates}
         locations={locations}
       />
     </Suspense>

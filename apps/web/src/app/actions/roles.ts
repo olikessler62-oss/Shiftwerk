@@ -97,6 +97,27 @@ export async function updateRole(input: {
   }
 }
 
+export async function reorderRoles(
+  orderedIds: string[]
+): Promise<RoleActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    await db.reorderRoles(organizationId, orderedIds);
+    revalidatePath("/einstellungen");
+    revalidatePath("/dashboard");
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error
+          ? e.message
+          : "Reihenfolge konnte nicht gespeichert werden",
+    };
+  }
+}
+
 export async function deleteRole(id: string): Promise<RoleActionResult> {
   try {
     const { organizationId } = await requireManager();

@@ -75,7 +75,6 @@ export async function inviteEmployee(
       };
     }
 
-    revalidatePath("/team");
     revalidatePath("/planung");
     revalidatePath("/dashboard");
 
@@ -83,27 +82,6 @@ export async function inviteEmployee(
       ok: true,
       message: `Einladung an ${email} gesendet. Nachricht enthält Link zum Passwort setzen.`,
     };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Unbekannter Fehler",
-    };
-  }
-}
-
-export async function deactivateEmployee(
-  employeeId: string
-): Promise<TeamActionResult> {
-  try {
-    const { organizationId } = await requireManager();
-    const db = await getDatabase();
-
-    await db.deactivateEmployee(organizationId, employeeId);
-
-    revalidatePath("/team");
-    revalidatePath("/planung");
-
-    return { ok: true, message: "Mitarbeiter deaktiviert." };
   } catch (e) {
     return {
       ok: false,

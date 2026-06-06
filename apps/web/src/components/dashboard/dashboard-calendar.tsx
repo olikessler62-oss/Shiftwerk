@@ -6,6 +6,7 @@ import { toIntlLocale } from "@/i18n/intl-locale";
 import type { Location, LocationArea } from "@schichtwerk/types";
 import {
   requiredStaffForAreaOnDate,
+  type AreaServiceHourRef,
   type StaffingRule,
 } from "@/lib/location-staffing-client";
 import { LocationSelect } from "./location-select";
@@ -26,8 +27,8 @@ type Props = {
   dates: string[];
   locations: Location[];
   selectedLocationId: string | null;
-  selectedLocation: Location | null;
   areas: LocationArea[];
+  serviceHours: AreaServiceHourRef[];
   staffingRules: StaffingRule[];
   shifts: DashboardShiftCard[];
 };
@@ -36,15 +37,14 @@ export function DashboardCalendar({
   dates,
   locations,
   selectedLocationId,
-  selectedLocation,
   areas,
+  serviceHours,
   staffingRules,
   shifts,
 }: Props) {
   const { locale } = useLocale();
   const t = useTranslations();
   const intlLocale = toIntlLocale(locale);
-  const activeWeekdays = selectedLocation?.active_weekdays ?? "0000000";
 
   const byAreaDate = new Map<string, DashboardShiftCard[]>();
   for (const shift of shifts) {
@@ -116,7 +116,7 @@ export function DashboardCalendar({
                       staffingRules,
                       area.id,
                       date,
-                      activeWeekdays
+                      serviceHours
                     );
                     const understaffed = required > 0 && assigned < required;
 

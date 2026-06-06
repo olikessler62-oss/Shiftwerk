@@ -11,6 +11,7 @@ import type {
   Location,
   LocationArea,
   LocationAreaStaffing,
+  LocationAreaServiceHour,
   ShiftType,
   ShiftTypeWithBreaks,
   UserRole,
@@ -77,6 +78,16 @@ export interface SchichtwerkDatabase {
     metadata: { full_name: string }
   ): Promise<{ data: AuthSignUpResult | null; error: string | null }>;
   authSignOut(): Promise<void>;
+  authResetPasswordForEmail(
+    email: string,
+    redirectTo: string
+  ): Promise<{ error: string | null }>;
+  authUpdatePassword(password: string): Promise<{ error: string | null }>;
+  authUpdateEmail(email: string): Promise<{ error: string | null }>;
+  authAdminUpdateUserEmail(
+    userId: string,
+    email: string
+  ): Promise<{ error: string | null }>;
   authExchangeCodeForSession(code: string): Promise<{ error: string | null }>;
   authInviteUserByEmail(
     email: string,
@@ -84,7 +95,7 @@ export interface SchichtwerkDatabase {
   ): Promise<{ data: InviteUserResult | null; error: string | null }>;
   authAdminCreateUser(
     email: string,
-    options: { full_name: string }
+    options: { full_name: string; password?: string }
   ): Promise<{ data: InviteUserResult | null; error: string | null }>;
   authDeleteUser(userId: string): Promise<void>;
 
@@ -92,9 +103,17 @@ export interface SchichtwerkDatabase {
   createOrganization(name: string): Promise<{ id: string }>;
   deleteOrganization(id: string): Promise<void>;
   getOrganizationName(id: string): Promise<string | null>;
+  getOrganizationIdByProfileEmail(email: string): Promise<string | null>;
+  getFirstOrganization(): Promise<{ id: string; name: string } | null>;
 
   // —— Profiles ——
   getCurrentUserProfile(): Promise<Profile | null>;
+  updateCurrentUserProfileEmail(
+    newEmail: string
+  ): Promise<
+    | { ok: true; profile: Profile; confirmationRequired: boolean }
+    | { ok: false; error: string }
+  >;
   getProfileById(id: string): Promise<Profile | null>;
   getProfileRole(id: string): Promise<UserRole | null>;
   getProfileOrganizationId(userId: string): Promise<string | null>;
@@ -132,6 +151,8 @@ export interface SchichtwerkDatabase {
   ): Promise<string | null>;
   listOrganizationProfiles(organizationId: string): Promise<Profile[]>;
   listActiveEmployees(organizationId: string): Promise<Profile[]>;
+  getNextProfileSortOrder(organizationId: string): Promise<number>;
+  reorderProfiles(organizationId: string, orderedIds: string[]): Promise<void>;
   countActiveEmployees(organizationId: string): Promise<number>;
   findProfileByEmail(organizationId: string, email: string): Promise<{ id: string } | null>;
   deactivateEmployee(organizationId: string, employeeId: string): Promise<void>;
@@ -166,6 +187,7 @@ export interface SchichtwerkDatabase {
   replaceShiftTypeBreaks(shiftTypeId: string, breaks: ShiftTypeBreakInput[]): Promise<void>;
   countShiftsUsingType(shiftTypeId: string, organizationId: string): Promise<number>;
   archiveShiftType(id: string, organizationId: string): Promise<void>;
+  reorderShiftTypes(organizationId: string, orderedIds: string[]): Promise<void>;
 
   // —— Qualifications ——
   listQualifications(organizationId: string): Promise<Qualification[]>;
@@ -186,6 +208,7 @@ export interface SchichtwerkDatabase {
     fromDate: string
   ): Promise<number>;
   archiveQualification(id: string, organizationId: string): Promise<void>;
+  reorderQualifications(organizationId: string, orderedIds: string[]): Promise<void>;
 
   // —— Profile qualifications ——
   listProfileQualifications(
@@ -204,6 +227,12 @@ export interface SchichtwerkDatabase {
   ): Promise<void>;
 
   // —— Profile hourly rates ——
+  getServerDateIso(): Promise<string>;
+  getProfileHourlyRateById(
+    organizationId: string,
+    profileId: string,
+    rateId: string
+  ): Promise<ProfileHourlyRate | null>;
   listProfileHourlyRates(
     organizationId: string,
     profileId: string,
@@ -224,9 +253,25 @@ export interface SchichtwerkDatabase {
     input: {
       amount: number;
       valid_from: string;
-      created_by?: string;
+      created_by: string;
     }
   ): Promise<ProfileHourlyRate>;
+  updateProfileHourlyRate(
+    organizationId: string,
+    profileId: string,
+    rateId: string,
+    input: {
+      amount: number;
+      valid_from: string;
+    },
+    referenceDate: string
+  ): Promise<ProfileHourlyRate>;
+  deleteProfileHourlyRate(
+    organizationId: string,
+    profileId: string,
+    rateId: string,
+    referenceDate: string
+  ): Promise<void>;
 
   // —— Profile recurring availability ——
   listProfileRecurringAvailability(
@@ -259,6 +304,11 @@ export interface SchichtwerkDatabase {
     profileId: string,
     availabilityId: string
   ): Promise<void>;
+  reorderProfileRecurringAvailability(
+    organizationId: string,
+    profileId: string,
+    orderedIds: string[]
+  ): Promise<void>;
 
   // —— Roles ——
   listRoles(organizationId: string): Promise<Role[]>;
@@ -282,6 +332,7 @@ export interface SchichtwerkDatabase {
   ): Promise<void>;
   archiveRole(id: string, organizationId: string): Promise<void>;
   countProfilesUsingRole(roleId: string, organizationId: string): Promise<number>;
+  reorderRoles(organizationId: string, orderedIds: string[]): Promise<void>;
 
   // —— Locations (Standorte) ——
   listLocations(organizationId: string): Promise<Location[]>;
@@ -295,18 +346,24 @@ export interface SchichtwerkDatabase {
   insertLocation(row: {
     organization_id: string;
     name: string;
-    active_weekdays: string;
-    on_holiday_open: boolean;
     sort_order: number;
   }): Promise<{ id: string }>;
   updateLocation(
     id: string,
     organizationId: string,
-    row: {
-      name: string;
-      active_weekdays: string;
-      on_holiday_open: boolean;
-    }
+    row: { name: string }
+  ): Promise<void>;
+  listLocationAreaServiceHours(
+    locationId: string
+  ): Promise<LocationAreaServiceHour[]>;
+  listLocationAreaServiceHoursForArea(
+    locationAreaId: string,
+    locationId: string
+  ): Promise<LocationAreaServiceHour[]>;
+  replaceLocationAreaServiceHours(
+    locationAreaId: string,
+    locationId: string,
+    rows: { weekday: number; start_time: string; end_time: string }[]
   ): Promise<void>;
 
   listLocationAreas(locationId: string): Promise<LocationArea[]>;
@@ -323,13 +380,22 @@ export interface SchichtwerkDatabase {
   replaceLocationAreaStaffing(
     locationAreaId: string,
     locationId: string,
-    rules: { shift_type_id: string; weekday: number; required_count: number }[]
+    rules: {
+      shift_type_id: string;
+      weekday: number;
+      qualification_id: string;
+      required_count: number;
+    }[]
   ): Promise<void>;
   saveLocationAreaStaffingForShiftType(
     locationAreaId: string,
     locationId: string,
     shiftTypeId: string,
-    rules: { weekday: number; required_count: number }[]
+    rules: {
+      weekday: number;
+      qualification_id: string;
+      required_count: number;
+    }[]
   ): Promise<void>;
   removeLocationAreaStaffingForShiftType(
     locationAreaId: string,
@@ -348,6 +414,8 @@ export interface SchichtwerkDatabase {
     row: { name: string }
   ): Promise<void>;
   archiveLocationArea(id: string, locationId: string): Promise<void>;
+  reorderLocationAreas(locationId: string, orderedIds: string[]): Promise<void>;
+  reorderLocations(organizationId: string, orderedIds: string[]): Promise<void>;
   archiveLocation(id: string, organizationId: string): Promise<void>;
 
   // —— Shifts ——
