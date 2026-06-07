@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { isPastCalendarDate } from "@/lib/dates";
 import { buildHolidayNamesByDate, isGermanPublicHoliday } from "@/lib/german-public-holidays";
 import { formatDayHeader, formatTimeRange } from "@/lib/planning-utils";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
@@ -29,9 +30,21 @@ import {
   readManualAssignmentDays,
   removeManualAssignmentDay,
 } from "@/lib/dashboard-manual-assignment-days";
+import {
+  addExplicitDayOffDay,
+  readExplicitDayOffDays,
+  removeExplicitDayOffDay,
+} from "@/lib/dashboard-explicit-day-off-days";
 import { cn } from "@/lib/cn";
-import { Checkbox } from "@/components/ui/checkbox";
-import { TagAreaHeaderStaffingOverlay } from "@/components/dashboard/tag-area-header-staffing-overlay";
+import {
+  CalendarAreaCheckbox,
+  CalendarCornerCheckbox,
+} from "@/components/dashboard/calendar-corner-checkbox";
+import { TagAreaHeaderStrip } from "@/components/dashboard/tag-area-header-strip";
+import {
+  areaColumnGridTrack,
+  resolveAreaColumnWidthPx,
+} from "@/lib/area-column-width";
 
 export type DashboardShiftCard = {
   id: string;
@@ -56,7 +69,6 @@ type Props = {
 };
 
 const CALENDAR_HOUR_COUNT = 24;
-const AREA_COLUMN_WIDTH = "minmax(200px, 200px)";
 const OPEN_DAY_COLUMN_WIDTH = "minmax(120px, 1fr)";
 /** Nur Header-Datum lesbar; Spaltenbreite kommt aus dem gemeinsamen Grid (Header + Raster). */
 const CLOSED_DAY_COLUMN_WIDTH = "minmax(max-content, max-content)";
@@ -64,6 +76,7 @@ const CLOSED_DAY_COLUMN_WIDTH = "minmax(max-content, max-content)";
 const EQUAL_FILL_DAY_COLUMN_WIDTH = "minmax(0, 1fr)";
 
 function gridTemplateColumns(
+  areaColumnWidthPx: number,
   dayUsesWideColumn: boolean[],
   fillColumnsEqually: boolean
 ): string {
@@ -72,13 +85,16 @@ function gridTemplateColumns(
     : dayUsesWideColumn.map((wide) =>
         wide ? OPEN_DAY_COLUMN_WIDTH : CLOSED_DAY_COLUMN_WIDTH
       );
-  return [AREA_COLUMN_WIDTH, ...dayColumns].join(" ");
+  return [areaColumnGridTrack(areaColumnWidthPx), ...dayColumns].join(" ");
 }
 
-function calendarMinWidth(dayUsesWideColumn: boolean[]): number {
+function calendarMinWidth(
+  areaColumnWidthPx: number,
+  dayUsesWideColumn: boolean[]
+): number {
   const narrowDayEstimate = 56;
   return (
-    200 +
+    areaColumnWidthPx +
     dayUsesWideColumn.reduce(
       (sum, wide) => sum + (wide ? 120 : narrowDayEstimate),
       0
@@ -86,9 +102,31 @@ function calendarMinWidth(dayUsesWideColumn: boolean[]): number {
   );
 }
 
-const hourGridBackgroundStyle: React.CSSProperties = {
-  backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent calc(100% / ${CALENDAR_HOUR_COUNT} - 1px), color-mix(in srgb, var(--color-border) 35%, transparent) calc(100% / ${CALENDAR_HOUR_COUNT} - 1px), color-mix(in srgb, var(--color-border) 35%, transparent) calc(100% / ${CALENDAR_HOUR_COUNT}))`,
-};
+const HOUR_GRID_LINE_OPACITY = 35;
+/** Etwas dunkler als HOUR_GRID_LINE_OPACITY — auf Header-Overlay-Hintergrund gerade noch erkennbar. */
+const PAST_HOUR_GRID_LINE_OPACITY = 48;
+
+function createHourGridBackgroundStyle(
+  lineOpacityPercent: number
+): React.CSSProperties {
+  const lineColor = `color-mix(in srgb, var(--color-border) ${lineOpacityPercent}%, transparent)`;
+  return {
+    backgroundImage: `repeating-linear-gradient(to right, transparent 0, transparent calc(100% / ${CALENDAR_HOUR_COUNT} - 1px), ${lineColor} calc(100% / ${CALENDAR_HOUR_COUNT} - 1px), ${lineColor} calc(100% / ${CALENDAR_HOUR_COUNT}))`,
+  };
+}
+
+/** Vergangene Tag-Bereich-Zellen: gleiche Fläche wie Header-Overlay, dezent sichtbare Stundenlinien. */
+function createPastTagAreaDayBackgroundStyle(): React.CSSProperties {
+  return {
+    backgroundColor: "var(--color-background)",
+    ...createHourGridBackgroundStyle(PAST_HOUR_GRID_LINE_OPACITY),
+  };
+}
+
+const hourGridBackgroundStyle = createHourGridBackgroundStyle(
+  HOUR_GRID_LINE_OPACITY
+);
+const pastTagAreaDayBackgroundStyle = createPastTagAreaDayBackgroundStyle();
 
 /** Feste Header-Höhe (3 Zeilen inkl. Feiertag), damit Wochenwechsel nicht springt. */
 const CALENDAR_HEADER_ROW_HEIGHT = "3.5rem";
@@ -96,12 +134,11 @@ const CALENDAR_HEADER_ROW_HEIGHT = "3.5rem";
 /** Bereich mit Arbeitszeiten, aber ohne Personalbedarf und ohne Schichten. */
 const EMPTY_AREA_ROW_HEIGHT = "50px";
 
-/** Tag-Bereich-Header / -Footer: gemeinsame Höhe (Overlay, ändert keine Zeilenhöhe). */
-const TAG_AREA_STRIP_HEIGHT = "18px";
+/** Tag-Bereich-Header-Overlay-Höhe. */
+const TAG_AREA_HEADER_STRIP_HEIGHT = "20px";
 
-/** Tag-Bereich-Header — Streifen oben in Bereich × Tag (bei Arbeitszeit). */
-const TAG_AREA_HEADER_STRIP_CLASS =
-  "absolute inset-x-0 top-0 z-20 flex items-center justify-center overflow-hidden border-b border-border bg-background px-1";
+/** Tag-Bereich-Footer-Streifen-Höhe. */
+const TAG_AREA_FOOTER_STRIP_HEIGHT = "18px";
 
 /** Tag-Bereich-Footer — Streifen unten in Bereich × Tag (bei Arbeitszeit). */
 const TAG_AREA_FOOTER_STRIP_CLASS =
@@ -215,7 +252,7 @@ function dayHasScheduleActivityOnDate(
   );
 }
 
-/** Platzhalter-Schichtkarte in eingeklappten Bereichszeilen (Checkbox inaktiv). */
+/** Platzhalter-Schichtkarte in kompakten Zeilen (50px), z. B. Bereich-Checkbox inaktiv. */
 function InactiveAreaDummyShiftCard({
   shiftTypes,
 }: {
@@ -273,7 +310,13 @@ export function DashboardCalendar({
   const [manualAssignmentDates, setManualAssignmentDates] = useState<
     Set<string>
   >(() => new Set());
+  const [explicitDayOffDates, setExplicitDayOffDates] = useState<Set<string>>(
+    () => new Set()
+  );
   const [activeAreaIds, setActiveAreaIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(
     () => new Set()
   );
   const [contextMenu, setContextMenu] = useState<{
@@ -290,10 +333,12 @@ export function DashboardCalendar({
   useEffect(() => {
     if (!locationId) {
       setManualAssignmentDates(new Set());
+      setExplicitDayOffDates(new Set());
       setContextMenu(null);
       return;
     }
     setManualAssignmentDates(readManualAssignmentDays(locationId));
+    setExplicitDayOffDates(readExplicitDayOffDays(locationId));
     setContextMenu(null);
   }, [locationId]);
 
@@ -337,7 +382,14 @@ export function DashboardCalendar({
   const enableManualAssignment = useCallback(
     (date: string) => {
       if (!locationId) return;
+      removeExplicitDayOffDay(locationId, date);
       addManualAssignmentDay(locationId, date);
+      setExplicitDayOffDates((prev) => {
+        if (!prev.has(date)) return prev;
+        const next = new Set(prev);
+        next.delete(date);
+        return next;
+      });
       setManualAssignmentDates((prev) => {
         const next = new Set(prev);
         next.add(date);
@@ -351,7 +403,13 @@ export function DashboardCalendar({
   const disableManualAssignment = useCallback(
     (date: string) => {
       if (!locationId) return;
+      addExplicitDayOffDay(locationId, date);
       removeManualAssignmentDay(locationId, date);
+      setExplicitDayOffDates((prev) => {
+        const next = new Set(prev);
+        next.add(date);
+        return next;
+      });
       setManualAssignmentDates((prev) => {
         const next = new Set(prev);
         next.delete(date);
@@ -397,9 +455,31 @@ export function DashboardCalendar({
     [dates, serviceHours, areaIds, shiftsByDate, manualAssignmentDates]
   );
 
+  useEffect(() => {
+    setActiveDayDates(
+      new Set(dates.filter((date, dayIndex) => dayHasOpenArea[dayIndex]))
+    );
+  }, [dates, locationId, dayHasOpenArea]);
+
+  useEffect(() => {
+    setActiveDayDates((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
+        const date = dates[dayIndex];
+        if (dayHasOpenArea[dayIndex] && !next.has(date)) {
+          next.add(date);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [dates, dayHasOpenArea]);
+
   const dayUsesWideColumn = useMemo(
     () =>
       dates.map((date, dayIndex) => {
+        if (!activeDayDates.has(date)) return false;
         const hasShifts = (shiftsByDate.get(date)?.length ?? 0) > 0;
         const isManual = manualAssignmentDates.has(date);
         if (!dayHasOpenArea[dayIndex]) return false;
@@ -419,6 +499,7 @@ export function DashboardCalendar({
       serviceHours,
       shiftsByDate,
       manualAssignmentDates,
+      activeDayDates,
     ]
   );
 
@@ -428,15 +509,25 @@ export function DashboardCalendar({
     [dayUsesWideColumn]
   );
 
+  const areaColumnWidthPx = useMemo(
+    () => resolveAreaColumnWidthPx(areas.map((area) => area.name)),
+    [areas]
+  );
+
   const columnTemplate = useMemo(
-    () => gridTemplateColumns(dayUsesWideColumn, fillColumnsEqually),
-    [dayUsesWideColumn, fillColumnsEqually]
+    () =>
+      gridTemplateColumns(
+        areaColumnWidthPx,
+        dayUsesWideColumn,
+        fillColumnsEqually
+      ),
+    [areaColumnWidthPx, dayUsesWideColumn, fillColumnsEqually]
   );
 
   const minCalendarWidth = useMemo(() => {
     if (fillColumnsEqually) return undefined;
-    return calendarMinWidth(dayUsesWideColumn);
-  }, [dayUsesWideColumn, fillColumnsEqually]);
+    return calendarMinWidth(areaColumnWidthPx, dayUsesWideColumn);
+  }, [areaColumnWidthPx, dayUsesWideColumn, fillColumnsEqually]);
 
   const areaHasWeekContent = useMemo(
     () =>
@@ -513,6 +604,15 @@ export function DashboardCalendar({
     });
   }, []);
 
+  const toggleDayActive = useCallback((date: string, active: boolean) => {
+    setActiveDayDates((prev) => {
+      const next = new Set(prev);
+      if (active) next.add(date);
+      else next.delete(date);
+      return next;
+    });
+  }, []);
+
   const dayHasScheduleActivity = useMemo(
     () =>
       dates.map((date) =>
@@ -554,6 +654,7 @@ export function DashboardCalendar({
 
   const dayShowsHourGrid = (dayIndex: number) => {
     const date = dates[dayIndex];
+    if (!activeDayDates.has(date)) return false;
     if (manualAssignmentDates.has(date)) return true;
     return fillColumnsEqually
       ? dayHasOpenArea[dayIndex]
@@ -633,13 +734,22 @@ export function DashboardCalendar({
               <div
                 key={`header-${date}`}
                 className={cn(
-                  "flex min-h-0 flex-col items-center justify-center gap-px overflow-hidden px-2 py-1 text-center",
+                  "relative flex min-h-0 flex-col items-center justify-center gap-px overflow-hidden py-1 text-center",
                   HEADER_ROW_DIVIDER_CLASS,
                   mutedHeader ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
                   dayColumnDivider(dayIndex)
                 )}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
               >
+                {dayHasOpenArea[dayIndex] ? (
+                  <CalendarCornerCheckbox
+                    aria-label={`${weekday} ${label}`}
+                    checked={activeDayDates.has(date)}
+                    onChange={(event) =>
+                      toggleDayActive(date, event.target.checked)
+                    }
+                  />
+                ) : null}
                 <div className="shrink-0 whitespace-nowrap text-xs font-semibold leading-none text-muted">
                   {weekday}
                 </div>
@@ -680,7 +790,9 @@ export function DashboardCalendar({
                     gridColumn: dayIndex + 2,
                     gridRow: "2 / -1",
                     ...(dayShowsHourGrid(dayIndex)
-                      ? hourGridBackgroundStyle
+                      ? isPastCalendarDate(date)
+                        ? pastTagAreaDayBackgroundStyle
+                        : hourGridBackgroundStyle
                       : undefined),
                   }}
                 />
@@ -698,28 +810,31 @@ export function DashboardCalendar({
                   <Fragment key={area.id}>
                     <div
                       className={cn(
-                        "sticky left-0 z-20 flex min-h-0 items-center gap-2.5 px-4",
+                        "sticky left-0 z-20 h-full min-h-0 pt-[5px] pl-[2px] pr-2",
                         AREA_COLUMN_BG_CLASS,
-                        isCompactRow ? "py-1" : "py-3",
                         COLUMN_DIVIDER_CLASS,
                         !isLastRow && ROW_DIVIDER_CLASS
                       )}
                       style={{ gridColumn: 1, gridRow }}
                     >
-                      <Checkbox
-                        aria-label={area.name}
-                        checked={isAreaActive}
-                        onChange={(event) =>
-                          toggleAreaActive(area.id, event.target.checked)
-                        }
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold leading-snug">{area.name}</p>
+                      <div className="flex items-center gap-[10px]">
+                        <CalendarAreaCheckbox
+                          aria-label={area.name}
+                          checked={isAreaActive}
+                          onChange={(event) =>
+                            toggleAreaActive(area.id, event.target.checked)
+                          }
+                        />
+                        <div className="min-w-0 flex-1 text-left">
+                          <p className="truncate whitespace-nowrap text-sm font-semibold leading-[14px]">
+                          {area.name}
+                        </p>
                         {area.archived_at ? (
                           <span className="mt-0.5 block text-xs font-normal text-muted">
                             ({t("common.archived")})
                           </span>
                         ) : null}
+                        </div>
                       </div>
                     </div>
 
@@ -736,14 +851,24 @@ export function DashboardCalendar({
                           date,
                           dayShifts.length > 0
                         );
+                      const isDayActive = activeDayDates.has(date);
                       const showOpenDayCell =
                         isAreaActive &&
+                        isDayActive &&
                         isOpen &&
                         (!isCompactRow || isManualAssignmentDay);
                       const showInactivePreviewCell =
-                        !isAreaActive && dayHasScheduleActivity[dayIndex];
+                        (!isAreaActive || !isDayActive) &&
+                        dayHasScheduleActivity[dayIndex];
+                      const showInactivePreviewDummy =
+                        showInactivePreviewCell && isCompactRow;
                       const showDayCellContent =
                         showOpenDayCell || showInactivePreviewCell;
+                      const showDaytimesGradient =
+                        showOpenDayCell &&
+                        isOpen &&
+                        dayHasOpenArea[dayIndex] &&
+                        !explicitDayOffDates.has(date);
                       const headerStaffing = tagAreaHeaderStaffingEntriesInCalendar(
                         staffingRules,
                         area.id,
@@ -785,32 +910,29 @@ export function DashboardCalendar({
                         >
                           {showDayCellContent ? (
                             <>
-                              <div
-                                className={TAG_AREA_HEADER_STRIP_CLASS}
-                                style={{ height: TAG_AREA_STRIP_HEIGHT }}
-                              >
-                                <TagAreaHeaderStaffingOverlay
-                                  entries={headerStaffing}
-                                  shiftTypeNameById={shiftTypeNameById}
-                                />
-                              </div>
+                              <TagAreaHeaderStrip
+                                showDaytimesGradient={showDaytimesGradient}
+                                entries={headerStaffing}
+                                shiftTypeNameById={shiftTypeNameById}
+                                style={{ height: TAG_AREA_HEADER_STRIP_HEIGHT }}
+                              />
                               <div
                                 className={TAG_AREA_FOOTER_STRIP_CLASS}
-                                style={{ height: TAG_AREA_STRIP_HEIGHT }}
+                                style={{ height: TAG_AREA_FOOTER_STRIP_HEIGHT }}
                               />
                               <div
                                 className="flex h-full min-h-0 flex-col gap-1.5"
                                 style={{
-                                  paddingTop: TAG_AREA_STRIP_HEIGHT,
-                                  paddingBottom: TAG_AREA_STRIP_HEIGHT,
+                                  paddingTop: TAG_AREA_HEADER_STRIP_HEIGHT,
+                                  paddingBottom: TAG_AREA_FOOTER_STRIP_HEIGHT,
                                 }}
                               >
                                 <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
-                                  {showInactivePreviewCell ? (
+                                  {showInactivePreviewDummy ? (
                                     <InactiveAreaDummyShiftCard
                                       shiftTypes={shiftTypes}
                                     />
-                                  ) : (
+                                  ) : showOpenDayCell ? (
                                     dayShifts.map((shift) => (
                                       <div
                                         key={shift.id}
@@ -831,7 +953,7 @@ export function DashboardCalendar({
                                         </p>
                                       </div>
                                     ))
-                                  )}
+                                  ) : null}
                                 </div>
                               </div>
                             </>

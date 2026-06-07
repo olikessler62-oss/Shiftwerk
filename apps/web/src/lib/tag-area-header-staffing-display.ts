@@ -83,6 +83,24 @@ function joinSegments(
   return segments.map((segment) => segment.text).join(divider);
 }
 
+/** Flex-Layout misst Pipes + gap-1 separat — für segments-Modus. */
+const SEGMENT_FLEX_GAP_PX = 4;
+
+function measureRenderedSegments(
+  segments: StaffingHeaderSegment[],
+  measure: (text: string) => number
+): number {
+  if (segments.length === 0) return 0;
+  const textWidth = segments.reduce(
+    (sum, segment) => sum + measure(segment.text),
+    0
+  );
+  const pipeCount = segments.length - 1;
+  const pipeWidth = pipeCount * measure("|");
+  const gapCount = Math.max(0, segments.length + pipeCount - 1);
+  return textWidth + pipeWidth + gapCount * SEGMENT_FLEX_GAP_PX;
+}
+
 export function measureStaffingHeaderText(text: string): number {
   if (typeof document === "undefined") return text.length * 6;
   const canvas = document.createElement("canvas");
@@ -111,8 +129,7 @@ export function resolveStaffingHeaderDisplay(
       shiftTypeNameById.get(entry.shiftTypeId) ?? entry.label
     )
   );
-  const fullSchichtText = joinSegments(fullSchichtSegments, "pipe");
-  if (measure(fullSchichtText) <= width) {
+  if (measureRenderedSegments(fullSchichtSegments, measure) <= width) {
     return {
       mode: "segments",
       level: "full-schicht",
@@ -122,8 +139,7 @@ export function resolveStaffingHeaderDisplay(
   }
 
   const shortSegments = entries.map((entry) => segmentShort(entry));
-  const shortText = joinSegments(shortSegments, "pipe");
-  if (measure(shortText) <= width) {
+  if (measureRenderedSegments(shortSegments, measure) <= width) {
     return {
       mode: "segments",
       level: "short",

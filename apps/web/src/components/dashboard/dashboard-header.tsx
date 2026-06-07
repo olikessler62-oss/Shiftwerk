@@ -1,5 +1,7 @@
 "use client";
 
+// Responsive layout — see apps/web/RESPONSIVE_ROLLBACK.md to revert.
+
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useTransition } from "react";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
@@ -87,41 +89,42 @@ export function DashboardHeader({
   }, [pushDashboardQuery]);
 
   useEffect(() => {
-    const header = headerRef.current;
-    if (!header) return;
+    const headerEl = headerRef.current;
+    if (!headerEl) return;
+    const headerNode: HTMLElement = headerEl;
 
     function onKeyDown(e: KeyboardEvent) {
       if (pending || isSettingsModalOpen(searchParams)) return;
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      if (!header.contains(e.target)) return;
+      if (!(e.target instanceof Node) || !headerNode.contains(e.target)) return;
       if (isEditableTarget(e.target)) return;
 
       e.preventDefault();
       navigateWeek(e.key === "ArrowLeft" ? -1 : 1);
     }
 
-    header.addEventListener("keydown", onKeyDown);
-    return () => header.removeEventListener("keydown", onKeyDown);
+    headerNode.addEventListener("keydown", onKeyDown);
+    return () => headerNode.removeEventListener("keydown", onKeyDown);
   }, [navigateWeek, pending, searchParams]);
 
   return (
     <header
       ref={headerRef}
-      className="flex h-20 max-h-20 shrink-0 items-center justify-between gap-4 border-b border-border bg-surface px-6"
+      className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-3 md:h-20 md:max-h-20 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-0"
     >
-      <div className="flex min-w-0 select-none items-center gap-2">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center md:gap-2">
         <div
           role="group"
           aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
           tabIndex={0}
-          className="flex shrink-0 items-center gap-2 rounded-[var(--radius-control)] outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          className="flex w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] outline-none focus-visible:ring-2 focus-visible:ring-primary/30 sm:w-auto sm:gap-2"
         >
           <IconButton
             size="md"
             onClick={() => navigateWeek(-1)}
             disabled={pending}
             aria-label={t("common.prevWeek")}
-            className={cn(HEADER_CONTROL_H, "text-muted")}
+            className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
           >
             <ChevronIcon direction="left" />
           </IconButton>
@@ -129,11 +132,11 @@ export function DashboardHeader({
           <ControlDisplay
             className={cn(
               HEADER_CONTROL_H,
-              "!w-[340px] shrink-0 justify-center px-2 py-0"
+              "min-w-0 flex-1 justify-center px-2 py-0 sm:flex-none sm:!w-[min(340px,100%)] md:!w-[340px] md:shrink-0"
             )}
             title={weekLabelTitle}
           >
-            <span className="w-full text-center text-sm leading-none">
+            <span className="w-full truncate text-center text-sm leading-none">
               {weekHeader.rangeLabel}{" "}
               <span className="font-semibold">{weekHeader.year}</span>
               <span className="ml-1 text-xs font-normal text-muted">
@@ -147,7 +150,7 @@ export function DashboardHeader({
             onClick={() => navigateWeek(1)}
             disabled={pending}
             aria-label={t("common.nextWeek")}
-            className={cn(HEADER_CONTROL_H, "text-muted")}
+            className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
           >
             <ChevronIcon direction="right" />
           </IconButton>
@@ -158,25 +161,25 @@ export function DashboardHeader({
             size="header"
             onClick={goToToday}
             disabled={pending}
-            className="font-semibold"
+            className="shrink-0 font-semibold"
           >
             {t("common.today")}
           </Button>
         </div>
 
-        <div className="ml-5 flex shrink-0 items-center gap-3">
-          <span className="text-sm text-foreground">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3 md:ml-5">
+          <span className="hidden shrink-0 text-sm text-foreground sm:inline">
             {t("dashboard.location")}
           </span>
           <LocationSelect
             locations={locations}
             selectedLocationId={selectedLocationId}
-            className="!mt-0 w-[11rem] shrink-0 font-semibold"
+            className="!mt-0 min-w-0 flex-1 font-semibold sm:w-[11rem] sm:flex-none sm:shrink-0"
           />
         </div>
       </div>
 
-      <LanguageSelect className="shrink-0" />
+      <LanguageSelect className="shrink-0 self-end md:self-auto" />
     </header>
   );
 }

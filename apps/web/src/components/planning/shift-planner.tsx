@@ -187,9 +187,9 @@ export function ShiftPlanner({
   }
 
   return (
-    <div className="-m-6 flex min-h-[calc(100vh-4.5rem)] flex-col bg-subtle">
+    <div className="-m-4 flex min-h-[calc(100vh-4.5rem)] flex-col bg-subtle md:-m-6">
       {/* Header */}
-      <header className="border-b border-border bg-surface px-6 py-5">
+      <header className="border-b border-border bg-surface px-4 py-4 md:px-6 md:py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
@@ -261,21 +261,21 @@ export function ShiftPlanner({
       </header>
 
       {readOnlyWeek && (
-        <Alert variant="info" className="mx-6 mt-4">
+        <Alert variant="info" className="mx-4 mt-4 md:mx-6">
           {t("planning.readOnlyWeek")}
         </Alert>
       )}
 
       {error && (
-        <Alert variant="error" className="mx-6 mt-4">
+        <Alert variant="error" className="mx-4 mt-4 md:mx-6">
           {error}
         </Alert>
       )}
 
       {/* Main layout */}
-      <div className="flex flex-1 gap-0 overflow-hidden">
+      <div className="flex flex-1 flex-col gap-0 overflow-hidden xl:flex-row">
         {/* Left sidebar */}
-        <aside className="w-56 shrink-0 overflow-y-auto border-r border-border bg-surface p-4">
+        <aside className="hidden shrink-0 overflow-y-auto border-b border-border bg-surface p-4 xl:block xl:w-56 xl:border-b-0 xl:border-r">
           <SidebarSection title="Schichten">
             <ul className="space-y-2">
               {shiftTypes.map((type) => (
@@ -321,7 +321,7 @@ export function ShiftPlanner({
         </aside>
 
         {/* Grid */}
-        <main className="min-w-0 flex-1 overflow-auto p-4">
+        <main className="min-w-0 flex-1 overflow-auto p-3 md:p-4">
           <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-sm">
             <table className="w-full min-w-[900px] border-collapse text-sm">
               <thead>
@@ -487,7 +487,7 @@ export function ShiftPlanner({
         </main>
 
         {/* Right sidebar — assign panel */}
-        <aside className="w-72 shrink-0 overflow-y-auto border-l border-border bg-surface p-4">
+        <aside className="w-full shrink-0 overflow-y-auto border-t border-border bg-surface p-4 xl:w-72 xl:border-t-0 xl:border-l">
           <h2 className="text-sm font-semibold">Schicht zuweisen</h2>
 
           {picker && pickerEmployee ? (

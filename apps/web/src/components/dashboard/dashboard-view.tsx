@@ -78,13 +78,13 @@ export function DashboardView({
   }
 
   return (
-    <div className="-mx-6 -mt-6 -mb-6 flex h-[calc(100%+48px)] min-h-0 flex-col bg-background pb-[10px]">
+    <div className="-mx-4 -mt-4 -mb-4 flex h-[calc(100%+32px)] min-h-0 flex-col bg-background pb-[10px] md:-mx-6 md:-mt-6 md:-mb-6 md:h-[calc(100%+48px)]">
       <DashboardHeader
         weekStart={weekStart}
         locations={locations}
         selectedLocationId={selectedLocationId}
       />
-      <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-4">
+      <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-2 pt-2 md:px-4 md:pt-4">
         <DashboardCalendar
           dates={dates}
           locationId={selectedLocationId}
