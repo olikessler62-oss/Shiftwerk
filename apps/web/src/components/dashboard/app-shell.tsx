@@ -35,7 +35,7 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
   }, [open]);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-dvh min-h-0 overflow-hidden">
       <div
         ref={sidebarRef}
         className="relative flex w-56 shrink-0 flex-col border-r border-border bg-surface"
@@ -122,8 +122,10 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
         )}
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <main className="flex-1 p-6">{children}</main>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
+          {children}
+        </main>
       </div>
     </div>
   );

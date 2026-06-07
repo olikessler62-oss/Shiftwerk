@@ -879,7 +879,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       qual.organization_id !== organizationId ||
       qual.archived_at != null
     ) {
-      throw new Error("Funktion nicht gefunden");
+      throw new Error("Position nicht gefunden");
     }
 
     const { error } = await this.client.from(T.profileQualifications).insert({
@@ -1942,26 +1942,16 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error("Bereich nicht gefunden");
     }
 
-    const { error: delError } = await this.client
-      .from(T.locationAreaStaffing)
-      .delete()
-      .eq("location_area_id", locationAreaId)
-      .eq("shift_type_id", shiftTypeId);
-    if (delError) throw new Error(delError.message);
-
     const toInsert = rules.filter((r) => r.required_count > 0);
-    if (!toInsert.length) return;
-
-    const { error: insError } = await this.client.from(T.locationAreaStaffing).insert(
-      toInsert.map((r) => ({
-        location_area_id: locationAreaId,
-        shift_type_id: shiftTypeId,
-        qualification_id: r.qualification_id,
-        weekday: r.weekday,
-        required_count: r.required_count,
-      }))
+    const { error } = await this.client.rpc(
+      "replace_location_area_staffing_for_shift_type",
+      {
+        p_location_area_id: locationAreaId,
+        p_shift_type_id: shiftTypeId,
+        p_rules: toInsert,
+      }
     );
-    if (insError) throw new Error(insError.message);
+    if (error) throw new Error(error.message);
   }
 
   async removeLocationAreaStaffingForShiftType(
@@ -2090,7 +2080,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data } = await this.client
       .from(T.shifts)
       .select(
-        `id, employee_id, location_area_id, shift_date, shift_types(name, color, start_time, end_time), profiles!employee_id(full_name)`
+        `id, employee_id, location_area_id, shift_type_id, shift_date, shift_types(name, color, start_time, end_time), profiles!employee_id(full_name)`
       )
       .eq("organization_id", organizationId)
       .eq("location_id", locationId)

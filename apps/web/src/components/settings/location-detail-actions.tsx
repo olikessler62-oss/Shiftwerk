@@ -1,6 +1,11 @@
 "use client";
 
-import type { Location, LocationArea } from "@schichtwerk/types";
+import type {
+  Location,
+  LocationArea,
+  LocationAreaServiceHour,
+  LocationAreaStaffing,
+} from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
 import { SettingsActionRow } from "./settings-list-ui";
 
@@ -9,9 +14,21 @@ type DetailPanel = "serviceHours" | "staffing";
 type Props = {
   selectedLocation: Location | null;
   selectedArea: LocationArea | null;
+  /** Geladen: [] = keine Öffnungszeiten; undefined = noch nicht geladen */
+  serviceHours?: LocationAreaServiceHour[];
+  /** Geladen: [] = kein Personalbedarf; undefined = noch nicht geladen */
+  staffing?: LocationAreaStaffing[];
   disabled?: boolean;
   onOpen: (panel: DetailPanel) => void;
 };
+
+function configuredHint(text: string) {
+  return (
+    <span className="block truncate text-xs text-primary">
+      {text}
+    </span>
+  );
+}
 
 function ServiceHoursIcon({ className }: { className?: string }) {
   return (
@@ -74,11 +91,29 @@ function AreaSummary({
 export function LocationDetailActions({
   selectedLocation,
   selectedArea,
+  serviceHours,
+  staffing,
   disabled = false,
   onOpen,
 }: Props) {
   const t = useTranslations();
   const areaActionsDisabled = disabled || !selectedLocation || !selectedArea;
+  const serviceHoursLoaded = serviceHours !== undefined;
+  const staffingLoaded = staffing !== undefined;
+  const hasServiceHours = serviceHoursLoaded && serviceHours.length > 0;
+  const hasStaffing =
+    staffingLoaded &&
+    staffing.some((rule) => rule.required_count > 0);
+  const serviceHoursHint = !serviceHoursLoaded
+    ? null
+    : hasServiceHours
+      ? configuredHint(t("locations.actionServiceHoursConfigured"))
+      : t("locations.actionServiceHoursHint");
+  const staffingHint = !staffingLoaded
+    ? null
+    : hasStaffing
+      ? configuredHint(t("locations.actionStaffingHint"))
+      : t("locations.actionStaffingHint");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2">
@@ -94,7 +129,7 @@ export function LocationDetailActions({
         <SettingsActionRow
           icon={<ServiceHoursIcon />}
           label={t("locations.panelServiceHours")}
-          hint={t("locations.actionServiceHoursHint")}
+          hint={serviceHoursHint}
           disabled={areaActionsDisabled}
           onClick={() => onOpen("serviceHours")}
         />
@@ -102,7 +137,7 @@ export function LocationDetailActions({
         <SettingsActionRow
           icon={<StaffingIcon />}
           label={t("locations.panelStaffing")}
-          hint={t("locations.actionStaffingHint")}
+          hint={staffingHint}
           disabled={areaActionsDisabled}
           onClick={() => onOpen("staffing")}
         />

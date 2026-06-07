@@ -38,6 +38,7 @@ export type DashboardShiftRow = {
   id: string;
   employee_id: string;
   location_area_id: string | null;
+  shift_type_id: string;
   shift_date: string;
   shift_types: {
     name: string;

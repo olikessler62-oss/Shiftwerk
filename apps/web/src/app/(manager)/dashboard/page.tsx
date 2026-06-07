@@ -80,6 +80,7 @@ export default async function DashboardPage({
       id: s.id,
       shift_date: s.shift_date,
       locationAreaId: s.location_area_id,
+      shiftTypeId: s.shift_type_id,
       shiftName: type.name,
       color: type.color,
       startTime: type.start_time,

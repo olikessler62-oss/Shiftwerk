@@ -22,6 +22,14 @@ export function shortenShiftTypeDisplayName(name: string): string {
   return trimmed;
 }
 
+/** Anzeige mit angehängtem „schicht“, z. B. Früh → Frühschicht */
+export function shiftTypeNameWithSchicht(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return trimmed;
+  if (trimmed.toLowerCase().endsWith(SHIFT_SUFFIX)) return trimmed;
+  return `${shortenShiftTypeDisplayName(trimmed)}${SHIFT_SUFFIX}`;
+}
+
 function weekdayAbbrev(weekday: number, locale: "de" | "en"): string {
   if (weekday === PROFILE_AVAILABILITY_HOLIDAY_WEEKDAY) return HOLIDAY_ABBREV;
   return WEEKDAY_ABBREVS[locale][weekday] ?? "?";

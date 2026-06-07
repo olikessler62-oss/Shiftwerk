@@ -96,17 +96,30 @@ export async function saveShiftTypeStaffing(input: {
       validated.data
     );
 
-    revalidatePath("/dashboard");
     const staffing = await areaCheck.db.listLocationAreaStaffingForArea(
       input.locationAreaId,
       input.locationId
     );
+    try {
+      revalidatePath("/dashboard");
+    } catch {
+      /* Cache-Revalidierung darf Speichern nicht fehlschlagen lassen */
+    }
     return { ok: true, staffing };
   } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Speichern fehlgeschlagen",
-    };
+    const message = e instanceof Error ? e.message : "Speichern fehlgeschlagen";
+    if (
+      message.includes(
+        "location_area_staffing_location_area_id_shift_type_id_weekd"
+      )
+    ) {
+      return {
+        ok: false,
+        error:
+          "Der alte Datenbank-Constraint blockiert mehrere Positionen pro Tag. Bitte die Migration 20250624_drop_old_staffing_unique_truncated.sql in Supabase ausführen (behebt gekürzte Constraint-Namen).",
+      };
+    }
+    return { ok: false, error: message };
   }
 }
 

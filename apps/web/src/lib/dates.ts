@@ -29,6 +29,14 @@ export function weekDates(weekStartISO: string): string[] {
   });
 }
 
+/** Kalendertag liegt vor heute (lokal). */
+export function isPastCalendarDate(
+  dateISO: string,
+  todayISO = toISODate(new Date())
+): boolean {
+  return dateISO < todayISO;
+}
+
 /** Zeitstempel für Schicht (Europe/Berlin, Standardzeit +01:00) */
 export function buildShiftTimestamps(
   shiftDate: string,

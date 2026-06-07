@@ -28,7 +28,7 @@ export const SETTINGS_LIST_SCROLL_COMPACT_CLASS =
 export const SETTINGS_PROFILES_LIST_SCROLL_CLASS =
   "h-[calc(2.5rem+17.6rem)] min-h-[calc(2.5rem+17.6rem)] max-h-[calc(2.5rem+17.6rem)]";
 
-/** Halbe Listenhöhe — Funktionen / Verfügbarkeiten in der Profil-Spalte */
+/** Halbe Listenhöhe — Position / Verfügbarkeiten in der Profil-Spalte */
 export const SETTINGS_PROFILES_HALF_LIST_SCROLL_CLASS =
   "h-[calc(2.5rem+8.8rem)] min-h-[calc(2.5rem+8.8rem)] max-h-[calc(2.5rem+8.8rem)]";
 

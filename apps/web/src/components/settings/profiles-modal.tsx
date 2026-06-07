@@ -32,7 +32,6 @@ import {
   SettingsReorderButtons,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
-  StatusDot,
   settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
@@ -42,6 +41,7 @@ import {
 import {
   Alert,
   Button,
+  CheckIcon,
   CloseIcon,
   PencilIcon,
   PlusIcon,
@@ -160,6 +160,9 @@ export function ProfilesModal({
     Record<string, ProfileCompensationCacheEntry>
   >({});
   const [scrollToProfileId, setScrollToProfileId] = useState<string | null>(null);
+  const [pendingEditProfileId, setPendingEditProfileId] = useState<string | null>(
+    null
+  );
 
   const {
     sortedList: sortedProfiles,
@@ -270,6 +273,26 @@ export function ProfilesModal({
     };
   }, [selectedProfileId, qualificationsCache, availabilityCache, compensationCache]);
 
+  useEffect(() => {
+    if (!pendingEditProfileId) return;
+    if (selectedProfileId !== pendingEditProfileId) return;
+    if (actionDetailsLoading) return;
+
+    const profile = profileList.find((p) => p.id === pendingEditProfileId);
+    if (profile) {
+      setProfileFormMode({ type: "edit", profile });
+      setConfirmDeleteProfile(false);
+      setDetailPanel(null);
+      setErrorMessage(null);
+    }
+    setPendingEditProfileId(null);
+  }, [
+    actionDetailsLoading,
+    pendingEditProfileId,
+    profileList,
+    selectedProfileId,
+  ]);
+
   const anyOverlayOpen = !!profileFormMode || !!detailPanel;
   const modalBusy = pending || actionDetailsLoading;
 
@@ -300,6 +323,7 @@ export function ProfilesModal({
 
   function selectProfile(id: string) {
     if (id === selectedProfileId) return;
+    setPendingEditProfileId(null);
     setSelectedProfileId(id);
     setDetailPanel(null);
     setConfirmDeleteProfile(false);
@@ -312,6 +336,28 @@ export function ProfilesModal({
     setConfirmDeleteProfile(false);
     setDetailPanel(null);
     setErrorMessage(null);
+    setPendingEditProfileId(null);
+  }
+
+  function requestEditProfile(profile: Profile) {
+    const profileReady =
+      profile.id in qualificationsCache &&
+      profile.id in availabilityCache &&
+      profile.id in compensationCache;
+
+    if (profile.id !== selectedProfileId) {
+      setSelectedProfileId(profile.id);
+      setDetailPanel(null);
+      setConfirmDeleteProfile(false);
+      setProfileFormMode(null);
+      setErrorMessage(null);
+    }
+
+    if (profileReady) {
+      openEditProfile(profile);
+    } else {
+      setPendingEditProfileId(profile.id);
+    }
   }
 
   function handleProfileSaved(profile: Profile) {
@@ -409,10 +455,7 @@ export function ProfilesModal({
           )}
 
           <div
-            className={cn(
-              "grid shrink-0 grid-cols-[minmax(0,calc(50%-10px+40px))_minmax(0,calc(50%-10px-40px))] items-stretch bg-background px-4 py-3",
-              actionDetailsLoading && "pointer-events-none"
-            )}
+            className="grid shrink-0 grid-cols-[minmax(0,calc(50%-10px+40px))_minmax(0,calc(50%-10px-40px))] items-stretch bg-background px-4 py-3"
             style={{ gap: COLUMN_GAP_PX }}
             aria-busy={actionDetailsLoading}
           >
@@ -510,20 +553,29 @@ export function ProfilesModal({
                           onDoubleClick={(e) => {
                             e.preventDefault();
                             window.getSelection()?.removeAllRanges();
-                            openEditProfile(item);
+                            requestEditProfile(item);
                           }}
                           className={settingsDataRowClass(isSelected)}
                         >
                           <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
                           <td className={settingsDataCellClass(isSelected, { align: "center" })}>
-                            <StatusDot
-                              variant={item.is_active ? "success" : "inactive"}
-                              label={
-                                item.is_active
-                                  ? t("profiles.activeYes")
-                                  : t("profiles.activeNo")
-                              }
-                            />
+                            {item.is_active ? (
+                              <span
+                                className="inline-flex justify-center"
+                                title={t("profiles.activeYes")}
+                                aria-label={t("profiles.activeYes")}
+                              >
+                                <CheckIcon className="size-4 text-green-600" />
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex justify-center"
+                                title={t("profiles.activeNo")}
+                                aria-label={t("profiles.activeNo")}
+                              >
+                                <CloseIcon className="size-4 text-red-600" />
+                              </span>
+                            )}
                           </td>
                           <td className={settingsDataCellClass(isSelected, { align: "center" })}>
                             <ProfileColorSwatch hex={item.color} />
@@ -544,7 +596,12 @@ export function ProfilesModal({
               )}
             </ColumnShell>
 
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
+            <div
+              className={cn(
+                "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60",
+                actionDetailsLoading && "pointer-events-none"
+              )}
+            >
               <h3 className={settingsPanelHeaderClass()}>
                 {selectedProfile
                   ? t("profiles.panelSelected")

@@ -11,7 +11,6 @@ import type { Profile, ProfileRecurringAvailability } from "@schichtwerk/types";
 import type { ProfileCompensationCacheEntry } from "./profile-compensation-panel-modal";
 import { formatHourlyRateLabel } from "@/lib/profile-hourly-rate-display";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { formatProfileAvailabilitySummaryLabels } from "@/lib/profile-availability-label";
 import { SettingsActionRow } from "./settings-list-ui";
 import { cn } from "@/lib/cn";
 
@@ -21,7 +20,7 @@ type DetailPanel = "qualifications" | "availability" | "compensation" | "invite"
 
 type Props = {
   selectedProfile: Profile | null;
-  /** Geladen: [] = keine Funktionen; undefined = noch nicht geladen */
+  /** Geladen: [] = keine Position; undefined = noch nicht geladen */
   profileQualifications?: { name: string }[];
   /** Geladen: [] = keine Verfügbarkeiten; undefined = noch nicht geladen */
   profileAvailability?: ProfileRecurringAvailability[];
@@ -258,20 +257,20 @@ export function ProfileDetailActions({
     ) : (
       t("profiles.actionQualificationsHint")
     );
-  const availabilityLabels =
-    profileAvailability !== undefined
-      ? formatProfileAvailabilitySummaryLabels(profileAvailability, localeKey)
-      : [];
   const availabilityHint =
-    availabilityLabels.length > 0 ? (
-      <FittingCommaList items={availabilityLabels} className="text-primary" />
+    (profileAvailability?.length ?? 0) > 0 ? (
+      <span className="block truncate text-xs text-primary">
+        {t("profiles.actionAvailabilityConfigured")}
+      </span>
     ) : (
       t("profiles.actionAvailabilityHint")
     );
   const currentHourlyRate = profileCompensation?.currentRate ?? null;
   const compensationHint = currentHourlyRate ? (
     <span className="block truncate text-xs text-primary">
-      {formatHourlyRateLabel(currentHourlyRate, localeKey)}
+      {t("profiles.actionCompensationCurrent", {
+        rate: formatHourlyRateLabel(currentHourlyRate, localeKey),
+      })}
     </span>
   ) : (
     t("profiles.actionCompensationHint")

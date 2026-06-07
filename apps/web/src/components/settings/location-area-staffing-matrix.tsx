@@ -5,6 +5,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { fetchLocationStaffingEditor } from "@/app/actions/location-staffing";
@@ -46,19 +47,24 @@ const LIST_SCROLL_FALLBACK =
 
 export type LocationAreaStaffingMatrixHandle = {
   reload: () => void;
+  applyStaffing: (staffing: LocationAreaStaffing[]) => void;
+};
+
+export type StaffingEditorData = {
+  shiftTypes: ShiftType[];
+  qualifications: Qualification[];
+  staffing: LocationAreaStaffing[];
 };
 
 type Props = {
   locationId: string;
   area: LocationArea;
   serviceHours: AreaServiceHourRef[];
+  initialEditorData?: StaffingEditorData;
   selectedShiftTypeId: string | null;
   onSelectShiftType: (shiftTypeId: string | null) => void;
-  onDataLoaded?: (data: {
-    shiftTypes: ShiftType[];
-    qualifications: Qualification[];
-    staffing: LocationAreaStaffing[];
-  }) => void;
+  onEditShiftType?: (shiftTypeId: string) => void;
+  onDataLoaded?: (data: StaffingEditorData) => void;
   embedded?: boolean;
   listScrollClassName?: string;
   onLoadingChange?: (loading: boolean) => void;
@@ -87,8 +93,10 @@ export const LocationAreaStaffingMatrix = forwardRef<
     locationId,
     area,
     serviceHours,
+    initialEditorData,
     selectedShiftTypeId,
     onSelectShiftType,
+    onEditShiftType,
     onDataLoaded,
     embedded = false,
     listScrollClassName,
@@ -98,10 +106,34 @@ export const LocationAreaStaffingMatrix = forwardRef<
 ) {
   const t = useTranslations();
   const [error, setError] = useState<string | null>(null);
-  const [shiftTypes, setShiftTypes] = useState<ShiftType[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
+  const [shiftTypes, setShiftTypes] = useState<ShiftType[]>(
+    () => initialEditorData?.shiftTypes ?? []
+  );
+  const [counts, setCounts] = useState<Record<string, number>>(() =>
+    initialEditorData ? buildCountsFromData(initialEditorData.staffing) : {}
+  );
+  const [loading, setLoading] = useState(!initialEditorData);
+  const [hasDisplayData, setHasDisplayData] = useState(!!initialEditorData);
   const [reloadToken, setReloadToken] = useState(0);
+  const skipInitialFetchRef = useRef(!!initialEditorData);
+  const editorMetaRef = useRef({
+    shiftTypes: initialEditorData?.shiftTypes ?? [],
+    qualifications: initialEditorData?.qualifications ?? [],
+  });
+
+  useEffect(() => {
+    if (!initialEditorData || reloadToken !== 0) return;
+    skipInitialFetchRef.current = true;
+    editorMetaRef.current = {
+      shiftTypes: initialEditorData.shiftTypes,
+      qualifications: initialEditorData.qualifications,
+    };
+    setShiftTypes(initialEditorData.shiftTypes);
+    setCounts(buildCountsFromData(initialEditorData.staffing));
+    setHasDisplayData(true);
+    setLoading(false);
+    setError(null);
+  }, [initialEditorData, reloadToken]);
 
   const configuredShiftTypes = useMemo(() => {
     const ids = new Set<string>();
@@ -122,6 +154,10 @@ export const LocationAreaStaffingMatrix = forwardRef<
   }, [onLoadingChange]);
 
   useEffect(() => {
+    if (skipInitialFetchRef.current && reloadToken === 0) {
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -132,14 +168,17 @@ export const LocationAreaStaffingMatrix = forwardRef<
         setError(result.error);
         setShiftTypes([]);
         setCounts({});
+        setHasDisplayData(false);
         onDataLoaded?.({ shiftTypes: [], qualifications: [], staffing: [] });
         return;
       }
       const types = result.shiftTypes ?? [];
       const qualifications = result.qualifications ?? [];
       const staffing = result.staffing ?? [];
+      editorMetaRef.current = { shiftTypes: types, qualifications };
       setShiftTypes(types);
       setCounts(buildCountsFromData(staffing));
+      setHasDisplayData(true);
       onDataLoaded?.({ shiftTypes: types, qualifications, staffing });
     });
     return () => {
@@ -163,16 +202,30 @@ export const LocationAreaStaffingMatrix = forwardRef<
   useImperativeHandle(
     ref,
     () => ({
-      reload: () => setReloadToken((n) => n + 1),
+      reload: () => {
+        skipInitialFetchRef.current = false;
+        setReloadToken((n) => n + 1);
+      },
+      applyStaffing: (staffing: LocationAreaStaffing[]) => {
+        setCounts(buildCountsFromData(staffing));
+        setHasDisplayData(true);
+        setLoading(false);
+        setError(null);
+        onDataLoaded?.({
+          shiftTypes: editorMetaRef.current.shiftTypes,
+          qualifications: editorMetaRef.current.qualifications,
+          staffing,
+        });
+      },
     }),
-    []
+    [onDataLoaded]
   );
 
-  if (loading) {
+  if (loading && !hasDisplayData) {
     return (
       <SettingsEmptyState
         message={t("common.loading")}
-        className={embedded ? "min-h-[calc(2rem+11rem)]" : undefined}
+        className={embedded ? "min-h-full" : undefined}
       />
     );
   }
@@ -181,7 +234,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
     return (
       <SettingsEmptyState
         message={t("locations.staffingNoShiftTypes")}
-        className={embedded ? "min-h-[calc(2rem+11rem)]" : undefined}
+        className={embedded ? "min-h-full" : undefined}
       />
     );
   }
@@ -191,15 +244,17 @@ export const LocationAreaStaffingMatrix = forwardRef<
       <SettingsEmptyState
         message={t("locations.staffingEmpty")}
         hint={t("common.emptyHintCreate")}
-        className={embedded ? "min-h-[calc(2rem+11rem)]" : undefined}
+        className={embedded ? "min-h-full" : undefined}
       />
     );
   }
 
   return (
     <div
+      aria-busy={loading}
       className={cn(
-        embedded ? "flex min-h-full flex-col" : "border-t border-border bg-background/50 px-4 py-3"
+        embedded ? "flex min-h-full flex-col" : "border-t border-border bg-background/50 px-4 py-3",
+        loading && hasDisplayData && "pointer-events-none opacity-60"
       )}
     >
       {error && (
@@ -261,6 +316,12 @@ export const LocationAreaStaffingMatrix = forwardRef<
                   key={type.id}
                   {...settingsListItemAttrs(type.id)}
                   onClick={() => onSelectShiftType(type.id)}
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    window.getSelection()?.removeAllRanges();
+                    onSelectShiftType(type.id);
+                    onEditShiftType?.(type.id);
+                  }}
                   className={settingsDataRowClass(isSelected)}
                 >
                   <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />

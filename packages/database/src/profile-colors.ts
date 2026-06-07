@@ -48,6 +48,39 @@ export const PROFILE_COLOR_PALETTE: readonly ProfileColorOption[] = [
   { hex: "#CA8A04", nameDe: "Senf", nameEn: "Mustard" },
 ] as const;
 
+const PALETTE_SIZE = PROFILE_COLOR_PALETTE.length;
+const MIX_GROUP_COUNT = 8;
+const MIX_GROUP_SIZE = Math.ceil(PALETTE_SIZE / MIX_GROUP_COUNT);
+
+/** Indizes für gemischte Anzeige: pro Runde je eine Farbe aus jedem Farbbereich. */
+const PROFILE_COLOR_PALETTE_MIXED_INDICES: readonly number[] = (() => {
+  const order: number[] = [];
+  for (let round = 0; round < MIX_GROUP_SIZE; round++) {
+    for (let group = 0; group < MIX_GROUP_COUNT; group++) {
+      const index = group * MIX_GROUP_SIZE + round;
+      if (index < PALETTE_SIZE) order.push(index);
+    }
+  }
+  return order;
+})();
+
+/** Verfügbare Profilfarben in gemischter Reihenfolge (unterschiedliche Farbtöne nacheinander). */
+export function orderProfileColorsForDisplay(
+  options: readonly ProfileColorOption[]
+): ProfileColorOption[] {
+  const byHex = new Map(
+    options.map((option) => [option.hex.toUpperCase(), option] as const)
+  );
+  const ordered: ProfileColorOption[] = [];
+  for (const index of PROFILE_COLOR_PALETTE_MIXED_INDICES) {
+    const hex = PROFILE_COLOR_PALETTE[index]?.hex.toUpperCase();
+    if (!hex) continue;
+    const option = byHex.get(hex);
+    if (option) ordered.push(option);
+  }
+  return ordered;
+}
+
 const PALETTE_HEX = new Set(PROFILE_COLOR_PALETTE.map((c) => c.hex.toUpperCase()));
 
 export function getProfileColorLabel(

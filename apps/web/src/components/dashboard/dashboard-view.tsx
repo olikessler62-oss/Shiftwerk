@@ -78,17 +78,21 @@ export function DashboardView({
   }
 
   return (
-    <div className="-m-6 flex min-h-screen flex-col bg-background">
-      <DashboardHeader weekStart={weekStart} />
-      <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+    <div className="-mx-6 -mt-6 -mb-6 flex h-[calc(100%+48px)] min-h-0 flex-col bg-background pb-[10px]">
+      <DashboardHeader
+        weekStart={weekStart}
+        locations={locations}
+        selectedLocationId={selectedLocationId}
+      />
+      <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-4">
         <DashboardCalendar
           dates={dates}
-          locations={locations}
-          selectedLocationId={selectedLocationId}
+          locationId={selectedLocationId}
           areas={areas}
           staffingRules={staffingRules}
           serviceHours={serviceHours}
           shifts={shifts}
+          shiftTypes={shiftTypes}
         />
         {showLocations && (
           <LocationsModal

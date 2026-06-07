@@ -1,4 +1,6 @@
--- Personalbedarf pro Qualifikation (Bereich × Schichtart × Wochentag × Qualifikation)
+-- Personalbedarf: mehrere Personal-Einträge pro Tag (Qualifikation)
+-- Behebt alten Unique-Constraint (area × Schichtart × Wochentag) und speichert atomar.
+-- Idempotent — sicher mehrfach ausführbar.
 
 alter table public.location_area_staffing
   add column if not exists qualification_id uuid references public.qualifications (id) on delete restrict;
@@ -28,6 +30,7 @@ delete from public.location_area_staffing where qualification_id is null;
 alter table public.location_area_staffing
   alter column qualification_id set not null;
 
+-- PostgreSQL kürzt Constraint-Namen auf 63 Zeichen; DROP mit vollem Namen greift oft nicht.
 do $$
 declare
   con record;
@@ -80,3 +83,45 @@ alter table public.location_area_staffing
 
 create index if not exists location_area_staffing_qualification_id_idx
   on public.location_area_staffing (qualification_id);
+
+create or replace function public.replace_location_area_staffing_for_shift_type(
+  p_location_area_id uuid,
+  p_shift_type_id uuid,
+  p_rules jsonb default '[]'::jsonb
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  delete from public.location_area_staffing
+  where location_area_id = p_location_area_id
+    and shift_type_id = p_shift_type_id;
+
+  if p_rules is null or jsonb_array_length(p_rules) = 0 then
+    return;
+  end if;
+
+  insert into public.location_area_staffing (
+    location_area_id,
+    shift_type_id,
+    qualification_id,
+    weekday,
+    required_count
+  )
+  select
+    p_location_area_id,
+    p_shift_type_id,
+    (r->>'qualification_id')::uuid,
+    (r->>'weekday')::smallint,
+    (r->>'required_count')::int
+  from jsonb_array_elements(p_rules) as r
+  where coalesce((r->>'required_count')::int, 0) > 0;
+end;
+$$;
+
+grant execute on function public.replace_location_area_staffing_for_shift_type(uuid, uuid, jsonb)
+  to authenticated;
+grant execute on function public.replace_location_area_staffing_for_shift_type(uuid, uuid, jsonb)
+  to service_role;

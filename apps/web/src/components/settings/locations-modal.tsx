@@ -16,7 +16,14 @@ import {
   fetchLocationAreas,
   reorderLocationAreas,
 } from "@/app/actions/location-areas";
-import type { Location, LocationArea, LocationAreaServiceHour } from "@schichtwerk/types";
+import type {
+  Location,
+  LocationArea,
+  LocationAreaServiceHour,
+  LocationAreaStaffing,
+} from "@schichtwerk/types";
+import { fetchLocationStaffingEditor } from "@/app/actions/location-staffing";
+import { fetchLocationAreaServiceHours } from "@/app/actions/location-service-hours";
 import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
 import { LocationFormModal } from "./location-form-modal";
 import { LocationAreaFormModal } from "./location-area-form-modal";
@@ -35,7 +42,6 @@ import {
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
-  settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -200,6 +206,9 @@ export function LocationsModal({
   const [serviceHoursCache, setServiceHoursCache] = useState<
     Record<string, LocationAreaServiceHour[]>
   >({});
+  const [staffingCache, setStaffingCache] = useState<
+    Record<string, LocationAreaStaffing[]>
+  >({});
 
   const [locationFormMode, setLocationFormMode] = useState<LocationFormMode>(null);
   const [areaFormMode, setAreaFormMode] = useState<AreaFormMode>(null);
@@ -255,6 +264,10 @@ export function LocationsModal({
 
   const selectedLocation = sortedLocations.find((l) => l.id === selectedLocationId);
   const selectedArea = sortedAreas.find((a) => a.id === selectedAreaId);
+  const panelAreaReady =
+    !!selectedAreaId &&
+    selectedAreaId in serviceHoursCache &&
+    selectedAreaId in staffingCache;
   const clearLocationScrollTarget = useCallback(
     () => setScrollToLocationId(null),
     []
@@ -388,6 +401,66 @@ export function LocationsModal({
     },
     []
   );
+
+  const handleStaffingCacheUpdate = useCallback(
+    (areaId: string, staffing: LocationAreaStaffing[]) => {
+      setStaffingCache((prev) => ({ ...prev, [areaId]: staffing }));
+    },
+    []
+  );
+
+  const refreshStaffingCache = useCallback(
+    (locationId: string, areaId: string) => {
+      void fetchLocationStaffingEditor(locationId, areaId).then((result) => {
+        if (!result.ok) return;
+        handleStaffingCacheUpdate(areaId, result.staffing ?? []);
+      });
+    },
+    [handleStaffingCacheUpdate]
+  );
+
+  useEffect(() => {
+    if (!selectedLocationId || !selectedAreaId) return;
+
+    const areaId = selectedAreaId;
+    const hoursReady = areaId in serviceHoursCache;
+    const staffingReady = areaId in staffingCache;
+    if (hoursReady && staffingReady) return;
+
+    let cancelled = false;
+
+    void Promise.all([
+      hoursReady
+        ? Promise.resolve(null)
+        : fetchLocationAreaServiceHours(selectedLocationId, areaId),
+      staffingReady
+        ? Promise.resolve(null)
+        : fetchLocationStaffingEditor(selectedLocationId, areaId),
+    ]).then(([hoursResult, staffingResult]) => {
+      if (cancelled) return;
+      const hours =
+        hoursResult?.ok === true ? (hoursResult.hours ?? []) : [];
+      const staffing =
+        staffingResult?.ok === true ? (staffingResult.staffing ?? []) : [];
+      setServiceHoursCache((prev) => {
+        if (areaId in prev) return prev;
+        return { ...prev, [areaId]: hours };
+      });
+      setStaffingCache((prev) => {
+        if (areaId in prev) return prev;
+        return { ...prev, [areaId]: staffing };
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedLocationId,
+    selectedAreaId,
+    serviceHoursCache,
+    staffingCache,
+  ]);
 
   function selectLocation(id: string) {
     if (id === selectedLocationId) return;
@@ -581,14 +654,6 @@ export function LocationsModal({
                   />
                 ) : (
                   <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b border-border bg-subtle">
-                        <th className="w-1 p-0" aria-hidden />
-                        <th className={settingsColumnHeaderClass()}>
-                          {t("locations.columnName")}
-                        </th>
-                      </tr>
-                    </thead>
                     <tbody>
                       {sortedLocations.map((item) => {
                         const isSelected = item.id === selectedLocationId;
@@ -693,14 +758,6 @@ export function LocationsModal({
                   />
                 ) : (
                   <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b border-border bg-subtle">
-                        <th className="w-1 p-0" aria-hidden />
-                        <th className={cn(settingsColumnHeaderClass(), "text-left")}>
-                          {t("locations.areaName")}
-                        </th>
-                      </tr>
-                    </thead>
                     <tbody>
                       {sortedAreas.map((area) => {
                         const isSelected = area.id === selectedAreaId;
@@ -743,12 +800,29 @@ export function LocationsModal({
                   ? t("locations.panelSelected")
                   : t("locations.panelDetails")}
               </h3>
-              <LocationDetailActions
-                selectedLocation={selectedLocation ?? null}
-                selectedArea={selectedArea ?? null}
-                disabled={pending || areasLoading}
-                onOpen={setDetailPanel}
-              />
+              {panelAreaReady && selectedArea ? (
+                <LocationDetailActions
+                  selectedLocation={selectedLocation ?? null}
+                  selectedArea={selectedArea}
+                  serviceHours={serviceHoursCache[selectedArea.id]}
+                  staffing={staffingCache[selectedArea.id]}
+                  disabled={pending || areasLoading}
+                  onOpen={setDetailPanel}
+                />
+              ) : selectedAreaId ? (
+                <div
+                  className="min-h-0 flex-1"
+                  aria-busy="true"
+                  aria-label={t("common.loading")}
+                />
+              ) : (
+                <LocationDetailActions
+                  selectedLocation={selectedLocation ?? null}
+                  selectedArea={null}
+                  disabled={pending || areasLoading}
+                  onOpen={setDetailPanel}
+                />
+              )}
             </div>
           </div>
 
@@ -838,7 +912,10 @@ export function LocationsModal({
           <LocationStaffingPanelModal
             location={selectedLocation}
             area={selectedArea}
-            onClose={() => setDetailPanel(null)}
+            onClose={() => {
+              setDetailPanel(null);
+              refreshStaffingCache(selectedLocation.id, selectedArea.id);
+            }}
           />
         )}
       </div>

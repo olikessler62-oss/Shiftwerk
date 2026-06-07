@@ -312,6 +312,48 @@ $$;
 grant execute on function public.current_date_iso() to authenticated;
 grant execute on function public.current_date_iso() to service_role;
 
+create or replace function public.replace_location_area_staffing_for_shift_type(
+  p_location_area_id uuid,
+  p_shift_type_id uuid,
+  p_rules jsonb default '[]'::jsonb
+)
+returns void
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  delete from public.location_area_staffing
+  where location_area_id = p_location_area_id
+    and shift_type_id = p_shift_type_id;
+
+  if p_rules is null or jsonb_array_length(p_rules) = 0 then
+    return;
+  end if;
+
+  insert into public.location_area_staffing (
+    location_area_id,
+    shift_type_id,
+    qualification_id,
+    weekday,
+    required_count
+  )
+  select
+    p_location_area_id,
+    p_shift_type_id,
+    (r->>'qualification_id')::uuid,
+    (r->>'weekday')::smallint,
+    (r->>'required_count')::int
+  from jsonb_array_elements(p_rules) as r
+  where coalesce((r->>'required_count')::int, 0) > 0;
+end;
+$$;
+
+grant execute on function public.replace_location_area_staffing_for_shift_type(uuid, uuid, jsonb)
+  to authenticated;
+grant execute on function public.replace_location_area_staffing_for_shift_type(uuid, uuid, jsonb)
+  to service_role;
+
 -- RLS helpers (private schema — not exposed via PostgREST RPC)
 create schema if not exists private;
 revoke all on schema private from public;

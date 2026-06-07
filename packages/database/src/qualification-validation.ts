@@ -21,7 +21,7 @@ export function validateQualificationUniqueness(
   if (others.some((q) => normalizeNameKey(q.name) === nameKey)) {
     return {
       ok: false,
-      error: "Eine Funktion mit dieser Bezeichnung existiert bereits.",
+      error: "Position mit dieser Bezeichnung existiert bereits.",
     };
   }
 
@@ -35,7 +35,7 @@ export function validateQualificationArchive(upcomingShiftCount: number):
     return {
       ok: false,
       error:
-        "Mitarbeiter mit dieser Funktion sind noch in anstehenden Schichten eingeteilt. Weisen Sie diesen Mitarbeitern zuerst eine andere Funktion zu.",
+        "Mitarbeiter mit dieser Positionszuordnung sind noch in anstehenden Schichten eingeteilt. Weisen Sie diesen Mitarbeitern zuerst eine andere Positionszuordnung zu.",
     };
   }
   return { ok: true };

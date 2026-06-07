@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createProfile, updateProfile } from "@/app/actions/profiles";
 import {
   getProfileColorLabel,
+  orderProfileColorsForDisplay,
   PROFILE_COLOR_PALETTE,
   type ProfileColorOption,
 } from "@schichtwerk/database";
@@ -170,7 +171,11 @@ export function ProfileFormModal({
   const [error, setError] = useState<string | null>(null);
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
   const [isActive, setIsActive] = useState(profile?.is_active ?? true);
-  const [schedulable, setSchedulable] = useState(profile?.schedulable ?? true);
+  const [schedulable, setSchedulable] = useState(() => {
+    const active = profile?.is_active ?? true;
+    if (!active) return false;
+    return profile?.schedulable ?? true;
+  });
   const [email, setEmail] = useState(() => initialEmail(profile?.email));
   const [mobilePhone, setMobilePhone] = useState(profile?.mobile_phone ?? "");
   const [color, setColor] = useState(profile?.color ?? "");
@@ -184,15 +189,14 @@ export function ProfileFormModal({
     return set;
   }, [allProfiles, profile?.id]);
 
-  const availableColors = useMemo(
-    () =>
-      PROFILE_COLOR_PALETTE.filter(
-        (option) =>
-          !usedColors.has(option.hex.toUpperCase()) ||
-          option.hex.toUpperCase() === color.toUpperCase()
-      ),
-    [usedColors, color]
-  );
+  const availableColors = useMemo(() => {
+    const filtered = PROFILE_COLOR_PALETTE.filter(
+      (option) =>
+        !usedColors.has(option.hex.toUpperCase()) ||
+        option.hex.toUpperCase() === color.toUpperCase()
+    );
+    return orderProfileColorsForDisplay(filtered);
+  }, [usedColors, color]);
 
   useEffect(() => {
     if (color) return;
@@ -215,7 +219,7 @@ export function ProfileFormModal({
       const payload = {
         full_name: fullName.trim(),
         is_active: isActive,
-        schedulable,
+        schedulable: isActive ? schedulable : false,
         email,
         mobile_phone: mobilePhone,
         color,
@@ -287,17 +291,32 @@ export function ProfileFormModal({
                   className="h-4 w-4 rounded border-border"
                   checked={isActive}
                   disabled={pending}
-                  onChange={(e) => setIsActive(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsActive(checked);
+                    if (checked) {
+                      setSchedulable(true);
+                    } else {
+                      setSchedulable(false);
+                    }
+                  }}
                 />
                 {t("profiles.columnActive")}
               </label>
 
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <label
+                className={cn(
+                  "flex items-center gap-2 text-sm",
+                  isActive
+                    ? "cursor-pointer text-foreground"
+                    : "cursor-not-allowed text-muted opacity-60"
+                )}
+              >
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-border"
                   checked={schedulable}
-                  disabled={pending}
+                  disabled={pending || !isActive}
                   onChange={(e) => setSchedulable(e.target.checked)}
                 />
                 {t("profiles.columnSchedulable")}

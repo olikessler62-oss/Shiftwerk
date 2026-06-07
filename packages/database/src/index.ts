@@ -51,6 +51,7 @@ export {
   PROFILE_COLOR_PALETTE,
   getProfileColorLabel,
   isProfilePaletteColor,
+  orderProfileColorsForDisplay,
   validateProfileColorAssignment,
   type ProfileColorOption,
 } from "./profile-colors";

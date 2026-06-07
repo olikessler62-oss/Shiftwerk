@@ -23,7 +23,6 @@ import {
   CloseIcon,
   IconButton,
   Input,
-  LabelMuted,
   TrashIcon,
 } from "@/components/ui";
 const WEEKDAY_KEYS = [
@@ -96,6 +95,26 @@ function buildInitialBlocks(
   }));
 }
 
+function buildCreateDayBlocks(
+  serviceHours: AreaServiceHourRef[],
+  areaId: string,
+  qualifications: Qualification[]
+): DayBlock[] {
+  const defaultQual = qualifications[0];
+  return openWeekdays(serviceHours, areaId).map((weekday) => ({
+    weekday,
+    rows: defaultQual
+      ? [
+          {
+            key: nextRowKey(),
+            qualification_id: defaultQual.id,
+            count: "1",
+          },
+        ]
+      : [],
+  }));
+}
+
 function configuredShiftTypeIds(staffing: LocationAreaStaffing[]): Set<string> {
   const ids = new Set<string>();
   for (const rule of staffing) {
@@ -117,7 +136,10 @@ type Props = {
   staffing: LocationAreaStaffing[];
   initialShiftTypeId?: string;
   onClose: () => void;
-  onSaved: (createdShiftTypeId?: string) => void;
+  onSaved: (
+    createdShiftTypeId?: string,
+    staffing?: LocationAreaStaffing[]
+  ) => void;
 };
 
 export function LocationStaffingDetailPanelModal({
@@ -144,23 +166,30 @@ export function LocationStaffingDetailPanelModal({
     return shiftTypes.filter((type) => !configured.has(type.id));
   }, [mode, initialShiftTypeId, shiftTypes, staffing]);
 
-  const [shiftTypeId, setShiftTypeId] = useState(
-    () => initialShiftTypeId ?? availableShiftTypes[0]?.id ?? ""
-  );
+  const initialShiftType =
+    initialShiftTypeId ?? availableShiftTypes[0]?.id ?? "";
+
+  const [shiftTypeId, setShiftTypeId] = useState(() => initialShiftType);
   const [dayBlocks, setDayBlocks] = useState<DayBlock[]>(() =>
-    buildInitialBlocks(
-      initialShiftTypeId ?? availableShiftTypes[0]?.id ?? "",
-      staffing,
-      serviceHours,
-      area.id
-    )
+    mode === "create"
+      ? buildCreateDayBlocks(serviceHours, area.id, qualifications)
+      : buildInitialBlocks(
+          initialShiftType,
+          staffing,
+          serviceHours,
+          area.id
+        )
   );
 
   const selectedShiftType = shiftTypes.find((type) => type.id === shiftTypeId);
 
   function handleShiftTypeChange(nextId: string) {
     setShiftTypeId(nextId);
-    setDayBlocks(buildInitialBlocks(nextId, staffing, serviceHours, area.id));
+    setDayBlocks(
+      mode === "create"
+        ? buildCreateDayBlocks(serviceHours, area.id, qualifications)
+        : buildInitialBlocks(nextId, staffing, serviceHours, area.id)
+    );
     setError(null);
   }
 
@@ -254,6 +283,7 @@ export function LocationStaffingDetailPanelModal({
     }[] = [];
 
     for (const block of dayBlocks) {
+      const seenQualifications = new Set<string>();
       for (const row of block.rows) {
         const trimmed = row.count.trim();
         if (!trimmed) {
@@ -269,12 +299,22 @@ export function LocationStaffingDetailPanelModal({
           setError(t("locations.staffingSelectQualification"));
           return;
         }
+        if (seenQualifications.has(row.qualification_id)) {
+          setError(t("locations.staffingDuplicateQualificationPerDay"));
+          return;
+        }
+        seenQualifications.add(row.qualification_id);
         rules.push({
           weekday: block.weekday,
           qualification_id: row.qualification_id,
           required_count: count,
         });
       }
+    }
+
+    if (mode === "create" && rules.length === 0) {
+      setError(t("locations.staffingCreateRequiresRows"));
+      return;
     }
 
     setSaving(true);
@@ -289,8 +329,10 @@ export function LocationStaffingDetailPanelModal({
         setError(result.error);
         return;
       }
-      onSaved(mode === "create" ? shiftTypeId : undefined);
-      onClose();
+      onSaved(
+        mode === "create" ? shiftTypeId : undefined,
+        result.staffing
+      );
     } catch {
       setError("Speichern fehlgeschlagen");
     } finally {
@@ -325,7 +367,7 @@ export function LocationStaffingDetailPanelModal({
             <h3 id="location-staffing-detail-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {title}
             </h3>
-            <p className="mt-1 text-sm text-muted">
+            <p className="mt-1 text-base font-semibold text-info-foreground">
               {t("locations.staffingFormFor", {
                 location: location.name,
                 area: area.name,
@@ -348,9 +390,8 @@ export function LocationStaffingDetailPanelModal({
 
           {mode === "create" && (
             <div className="mb-4">
-              <LabelMuted>{t("locations.staffingShiftType")}</LabelMuted>
               <select
-                className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-semibold text-info-foreground"
                 value={shiftTypeId}
                 disabled={saving || availableShiftTypes.length === 0}
                 onChange={(e) => handleShiftTypeChange(e.target.value)}
@@ -379,11 +420,23 @@ export function LocationStaffingDetailPanelModal({
                 const canAdd = qualifications.some((q) => !usedIds.has(q.id));
                 return (
                   <section key={block.weekday}>
-                    <p className="mb-1.5 text-sm font-semibold text-foreground">
-                      {weekdayLabel(block.weekday, t)}
-                    </p>
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-foreground">
+                        {weekdayLabel(block.weekday, t)}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={saving || !canAdd}
+                        className="h-7 shrink-0 text-xs"
+                        onClick={() => addRow(block.weekday)}
+                      >
+                        {t("locations.staffingAddQualification")}
+                      </Button>
+                    </div>
                     {block.rows.length === 0 ? (
-                      <p className="mb-1 text-xs text-muted">
+                      <p className="text-xs text-muted">
                         {t("locations.staffingDayEmpty")}
                       </p>
                     ) : (
@@ -442,16 +495,6 @@ export function LocationStaffingDetailPanelModal({
                         ))}
                       </div>
                     )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={saving || !canAdd}
-                      className="mt-1.5 h-7 text-xs"
-                      onClick={() => addRow(block.weekday)}
-                    >
-                      {t("locations.staffingAddQualification")}
-                    </Button>
                   </section>
                 );
               })}
@@ -467,7 +510,7 @@ export function LocationStaffingDetailPanelModal({
           <Button
             type="button"
             variant="primary"
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
             disabled={
               saving ||
               !shiftTypeId ||

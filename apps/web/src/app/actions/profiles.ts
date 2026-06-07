@@ -131,6 +131,7 @@ export async function createProfile(input: {
 
     const db = await getDatabase();
     const admin = getAdminDatabase();
+    const schedulable = input.is_active ? input.schedulable : false;
 
     if (input.is_active) {
       const count = await db.countActiveEmployees(organizationId);
@@ -161,7 +162,7 @@ export async function createProfile(input: {
         mobile_phone: contact.mobile_phone,
         color: contact.color,
         is_active: input.is_active,
-        schedulable: input.schedulable,
+        schedulable,
       });
     } catch (e) {
       await admin.authDeleteUser(created.user.id);
@@ -225,6 +226,8 @@ export async function updateProfile(input: {
     );
     if (!contact.ok) return contact;
 
+    const schedulable = input.is_active ? input.schedulable : false;
+
     if (
       input.is_active &&
       !existing.is_active &&
@@ -253,7 +256,7 @@ export async function updateProfile(input: {
     await db.updateOrganizationProfile(input.id, organizationId, {
       full_name: fullName,
       is_active: input.is_active,
-      schedulable: input.schedulable,
+      schedulable,
       email: contact.email,
       mobile_phone: contact.mobile_phone,
       color: contact.color,
