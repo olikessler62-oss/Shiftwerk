@@ -13,11 +13,18 @@ export function timeToMinutes(raw: string): number {
 }
 
 export function normalizeTimeValue(raw: string): string {
-  const trimmed = raw.trim().slice(0, 5);
-  if (!TIME_RE.test(trimmed)) {
+  const trimmed = raw.trim();
+  const parts = trimmed.split(":");
+  if (parts.length < 2) {
     throw new Error("INVALID_TIME");
   }
-  return `${trimmed}:00`;
+  const h = parts[0]?.padStart(2, "0") ?? "00";
+  const m = (parts[1] ?? "00").padStart(2, "0").slice(0, 2);
+  const normalized = `${h}:${m}`;
+  if (!TIME_RE.test(normalized)) {
+    throw new Error("INVALID_TIME");
+  }
+  return `${normalized}:00`;
 }
 
 /** end <= start auf dem Kalendertag = Zeitfenster endet am Folgetag (wie Schichtarten). */

@@ -9,7 +9,6 @@ import { cn } from "@/lib/cn";
 const NAV_LINKS = [
   { href: "/dashboard", labelKey: "nav.dashboard" },
   { href: "/planung", labelKey: "nav.planning" },
-  { href: "/abwesenheiten", labelKey: "nav.absences" },
   { href: "/berichte", labelKey: "nav.reports" },
 ] as const;
 
@@ -44,12 +43,14 @@ export function SidebarNav({ onNavigate }: Props) {
   const rollenOpen = searchParams.get("rollen") === "1";
   const schichtartenOpen = searchParams.get("schichtarten") === "1";
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
+  const abwesenheitenOpen = searchParams.get("abwesenheiten") === "1";
   const settingsModalOpen =
     standorteOpen ||
     profilesOpen ||
     rollenOpen ||
     schichtartenOpen ||
-    qualifikationenOpen;
+    qualifikationenOpen ||
+    abwesenheitenOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
@@ -73,6 +74,7 @@ export function SidebarNav({ onNavigate }: Props) {
       | "rollen"
       | "schichtarten"
       | "qualifikationen"
+      | "abwesenheiten"
   ) {
     const params = new URLSearchParams({ [flag]: "1" });
     if (pathname === "/dashboard") {
@@ -93,6 +95,11 @@ export function SidebarNav({ onNavigate }: Props) {
       flag: "qualifikationen" as const,
       labelKey: "nav.qualifications",
       open: qualifikationenOpen,
+    },
+    {
+      flag: "abwesenheiten" as const,
+      labelKey: "nav.absences",
+      open: abwesenheitenOpen,
     },
   ];
 

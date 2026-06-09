@@ -1,0 +1,98 @@
+import { buildShiftTimestamps } from "@/lib/dates";
+
+/** Schicht-Intervalle [start, end): Randberührung = kein Overlap. */
+
+export function shiftsOverlapIso(
+  startA: string,
+  endA: string,
+  startB: string,
+  endB: string
+): boolean {
+  const a0 = new Date(startA).getTime();
+  const a1 = new Date(endA).getTime();
+  const b0 = new Date(startB).getTime();
+  const b1 = new Date(endB).getTime();
+  return a0 < b1 && b0 < a1;
+}
+
+export function dashboardShiftWindowsOverlap(
+  shiftDate: string,
+  startA: string,
+  endA: string,
+  startB: string,
+  endB: string
+): boolean {
+  const a = buildShiftTimestamps(shiftDate, startA, endA);
+  const b = buildShiftTimestamps(shiftDate, startB, endB);
+  return shiftsOverlapIso(a.starts_at, a.ends_at, b.starts_at, b.ends_at);
+}
+
+export type DashboardAssignmentTimeWindow = {
+  employeeId: string;
+  startTime: string;
+  endTime: string;
+};
+
+export function employeeHasOverlappingDashboardAssignment(
+  employeeId: string,
+  shiftDate: string,
+  windowStart: string,
+  windowEnd: string,
+  assignments: readonly DashboardAssignmentTimeWindow[]
+): boolean {
+  return assignments.some(
+    (assignment) =>
+      assignment.employeeId === employeeId &&
+      dashboardShiftWindowsOverlap(
+        shiftDate,
+        windowStart,
+        windowEnd,
+        assignment.startTime,
+        assignment.endTime
+      )
+  );
+}
+
+export function findEmployeeWithOverlappingDashboardAssignments(
+  shiftDate: string,
+  candidateRows: readonly DashboardAssignmentTimeWindow[],
+  existingAssignments: readonly DashboardAssignmentTimeWindow[],
+  employeeNameById: ReadonlyMap<string, string>
+): string | null {
+  for (let i = 0; i < candidateRows.length; i++) {
+    const row = candidateRows[i];
+
+    for (const existing of existingAssignments) {
+      if (existing.employeeId !== row.employeeId) continue;
+      if (
+        dashboardShiftWindowsOverlap(
+          shiftDate,
+          row.startTime,
+          row.endTime,
+          existing.startTime,
+          existing.endTime
+        )
+      ) {
+        return employeeNameById.get(row.employeeId) ?? row.employeeId;
+      }
+    }
+
+    for (let j = i + 1; j < candidateRows.length; j++) {
+      const other = candidateRows[j];
+      if (other.employeeId !== row.employeeId) continue;
+      if (
+        dashboardShiftWindowsOverlap(
+          shiftDate,
+          row.startTime,
+          row.endTime,
+          other.startTime,
+          other.endTime
+        )
+      ) {
+        return employeeNameById.get(row.employeeId) ?? row.employeeId;
+      }
+    }
+  }
+
+  return null;
+}

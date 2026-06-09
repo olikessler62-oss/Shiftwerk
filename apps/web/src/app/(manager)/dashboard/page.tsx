@@ -71,20 +71,34 @@ export default async function DashboardPage({
       ])
     : [[], [], [], []];
 
+  if (selectedLocationId) {
+    shiftTypes = await db.loadShiftTypesWithBreaksForDashboard(
+      orgId,
+      staffingRules
+    );
+  }
+
   const cards: DashboardShiftCard[] = [];
   for (const s of shiftRows) {
     const type = relation(s.shift_types);
-    if (!type) continue;
     const profile = relation(s.profiles);
+    const startFromTs = s.starts_at
+      ? s.starts_at.slice(11, 16)
+      : type?.start_time?.slice(0, 5) ?? "00:00";
+    const endFromTs = s.ends_at
+      ? s.ends_at.slice(11, 16)
+      : type?.end_time?.slice(0, 5) ?? "00:00";
+
     cards.push({
       id: s.id,
       shift_date: s.shift_date,
       locationAreaId: s.location_area_id,
       shiftTypeId: s.shift_type_id,
-      shiftName: type.name,
-      color: type.color,
-      startTime: type.start_time,
-      endTime: type.end_time,
+      employeeId: s.employee_id,
+      shiftName: type?.name ?? "",
+      color: type?.color ?? profile?.color ?? "#64748b",
+      startTime: startFromTs,
+      endTime: endFromTs,
       employeeName: profile?.full_name ?? "Unbekannt",
     });
   }
@@ -98,6 +112,7 @@ export default async function DashboardPage({
         selectedLocation={selectedLocation}
         areas={areas}
         staffingRules={staffingRules}
+        fullStaffingRules={staffingRules}
         serviceHours={serviceHours}
         shifts={cards}
         shiftTypes={shiftTypes}

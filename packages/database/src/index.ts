@@ -4,8 +4,16 @@ export type {
   ShiftTypeBreakInput,
   ShiftWithTypeRow,
   DashboardShiftRow,
+  EmployeeShiftRecord,
   AvailabilityRow,
 } from "./interface";
+export {
+  validateAbsenceDateOrder,
+  findOverlappingAbsence,
+  absenceRangesOverlap,
+  isDateWithinAbsenceRange,
+  type AbsenceRange,
+} from "./absence-validation";
 export {
   createDatabase,
   SupabaseSchichtwerkDatabase,

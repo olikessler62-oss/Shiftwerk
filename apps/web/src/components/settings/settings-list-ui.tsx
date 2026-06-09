@@ -24,6 +24,14 @@ export const SETTINGS_LIST_SCROLL_CLASS =
 export const SETTINGS_LIST_SCROLL_COMPACT_CLASS =
   "h-[calc(2rem+11rem)] min-h-[calc(2rem+11rem)] max-h-[calc(2rem+11rem)] overflow-y-auto";
 
+/** Tabellenkopf (~2.5rem) + 4 Datenzeilen à ~2.75rem — Abwesenheiten-Liste */
+export const SETTINGS_ABSENCES_LIST_SCROLL_CLASS =
+  "max-h-[calc(2.5rem+11rem)] overflow-y-auto";
+
+/** Tabellenkopf + max. 6 Zeilen — Bulk-Schichtzuweisung */
+export const BULK_SHIFT_LIST_SCROLL_CLASS =
+  "max-h-[calc(2.5rem+18rem)] overflow-y-auto";
+
 /** Tabellenkopf (~2.5rem) + 8 Datenzeilen à ~2.2rem — feste Höhe in beiden Profile-Spalten */
 export const SETTINGS_PROFILES_LIST_SCROLL_CLASS =
   "h-[calc(2.5rem+17.6rem)] min-h-[calc(2.5rem+17.6rem)] max-h-[calc(2.5rem+17.6rem)]";

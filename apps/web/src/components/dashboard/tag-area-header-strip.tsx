@@ -9,6 +9,8 @@ type Props = {
   showDaytimesGradient: boolean;
   entries: TagAreaHeaderStaffingEntry[];
   shiftTypeNameById: ReadonlyMap<string, string>;
+  overlayBackgroundColor?: string;
+  staffingTone?: "default" | "past" | "inactive";
   className?: string;
   style?: React.CSSProperties;
 };
@@ -18,16 +20,24 @@ export function TagAreaHeaderStrip({
   showDaytimesGradient,
   entries,
   shiftTypeNameById,
+  overlayBackgroundColor,
+  staffingTone = "default",
   className,
   style,
 }: Props) {
   return (
     <div
       className={cn(
-        "absolute inset-x-0 top-0 z-20 overflow-hidden border-b border-border bg-background",
+        "absolute inset-x-0 top-0 z-20 overflow-hidden border-b border-border",
+        overlayBackgroundColor ? undefined : "bg-background",
         className
       )}
-      style={style}
+      style={{
+        ...style,
+        ...(overlayBackgroundColor
+          ? { backgroundColor: overlayBackgroundColor }
+          : undefined),
+      }}
     >
       {showDaytimesGradient ? (
         <div
@@ -46,6 +56,7 @@ export function TagAreaHeaderStrip({
         <TagAreaHeaderStaffingOverlay
           entries={entries}
           shiftTypeNameById={shiftTypeNameById}
+          tone={staffingTone}
         />
       </div>
     </div>

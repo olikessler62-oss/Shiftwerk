@@ -30,7 +30,7 @@ export function shiftTypeNameWithSchicht(name: string): string {
   return `${shortenShiftTypeDisplayName(trimmed)}${SHIFT_SUFFIX}`;
 }
 
-function weekdayAbbrev(weekday: number, locale: "de" | "en"): string {
+export function weekdayAbbrev(weekday: number, locale: "de" | "en"): string {
   if (weekday === PROFILE_AVAILABILITY_HOLIDAY_WEEKDAY) return HOLIDAY_ABBREV;
   return WEEKDAY_ABBREVS[locale][weekday] ?? "?";
 }

@@ -4,7 +4,9 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { isPastCalendarDate } from "@/lib/dates";
@@ -14,28 +16,19 @@ import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type { LocationArea, ShiftTypeWithBreaks } from "@schichtwerk/types";
 import {
-  areaHasServiceHours,
-  areaHasStaffingRequirementInWeek,
+  areaHasStaffingRequirementOnDate,
   hasStaffingRequirementInCalendar,
   isAnyAreaOpenInCalendar,
   isAreaOpenInCalendar,
+  isAreaOpenOnDate,
+  isPastAreaWorkDayCell,
   tagAreaHeaderStaffingEntriesInCalendar,
   weekdayIndexFromDate,
   type AreaServiceHourRef,
   type StaffingRule,
 } from "@/lib/location-staffing-client";
-import {
-  addManualAssignmentDay,
-  clearManualAssignmentDaysWithShifts,
-  readManualAssignmentDays,
-  removeManualAssignmentDay,
-} from "@/lib/dashboard-manual-assignment-days";
-import {
-  addExplicitDayOffDay,
-  readExplicitDayOffDays,
-  removeExplicitDayOffDay,
-} from "@/lib/dashboard-explicit-day-off-days";
 import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui";
 import {
   CalendarAreaCheckbox,
   CalendarCornerCheckbox,
@@ -45,12 +38,27 @@ import {
   areaColumnGridTrack,
   resolveAreaColumnWidthPx,
 } from "@/lib/area-column-width";
+import {
+  narrowDayColumnGridTrack,
+  resolveNarrowDayColumnWidthsPx,
+} from "@/lib/day-column-width";
+import {
+  DashboardAddShiftModal,
+  type DashboardAddShiftDialogState,
+} from "@/components/dashboard/dashboard-add-shift-modal";
+import {
+  DashboardBulkShiftModal,
+  type DashboardBulkShiftDialogState,
+} from "@/components/dashboard/dashboard-bulk-shift-modal";
+import { undoLastShiftAssignBatch } from "@/app/actions/shifts";
+import type { LocationAreaStaffing, Profile, Qualification } from "@schichtwerk/types";
 
 export type DashboardShiftCard = {
   id: string;
   shift_date: string;
   locationAreaId: string | null;
-  shiftTypeId: string;
+  shiftTypeId: string | null;
+  employeeId: string;
   shiftName: string;
   color: string;
   startTime: string;
@@ -61,50 +69,54 @@ export type DashboardShiftCard = {
 type Props = {
   dates: string[];
   locationId: string | null;
+  locationName: string;
   areas: LocationArea[];
   serviceHours: AreaServiceHourRef[];
   staffingRules: StaffingRule[];
   shifts: DashboardShiftCard[];
   shiftTypes: ShiftTypeWithBreaks[];
+  qualifications: Qualification[];
+  profiles: Profile[];
+  fullStaffingRules: LocationAreaStaffing[];
 };
 
 const CALENDAR_HOUR_COUNT = 24;
 const OPEN_DAY_COLUMN_WIDTH = "minmax(120px, 1fr)";
-/** Nur Header-Datum lesbar; Spaltenbreite kommt aus dem gemeinsamen Grid (Header + Raster). */
-const CLOSED_DAY_COLUMN_WIDTH = "minmax(max-content, max-content)";
 /** Gleichverteilung, wenn die Woche keinen Spalten-Inhalt hat — füllt das Kalender-Div horizontal. */
 const EQUAL_FILL_DAY_COLUMN_WIDTH = "minmax(0, 1fr)";
 
 function gridTemplateColumns(
   areaColumnWidthPx: number,
   dayUsesWideColumn: boolean[],
+  narrowDayColumnWidthsPx: number[],
   fillColumnsEqually: boolean
 ): string {
   const dayColumns = fillColumnsEqually
     ? dayUsesWideColumn.map(() => EQUAL_FILL_DAY_COLUMN_WIDTH)
-    : dayUsesWideColumn.map((wide) =>
-        wide ? OPEN_DAY_COLUMN_WIDTH : CLOSED_DAY_COLUMN_WIDTH
+    : dayUsesWideColumn.map((wide, dayIndex) =>
+        wide
+          ? OPEN_DAY_COLUMN_WIDTH
+          : narrowDayColumnGridTrack(narrowDayColumnWidthsPx[dayIndex])
       );
   return [areaColumnGridTrack(areaColumnWidthPx), ...dayColumns].join(" ");
 }
 
 function calendarMinWidth(
   areaColumnWidthPx: number,
-  dayUsesWideColumn: boolean[]
+  dayUsesWideColumn: boolean[],
+  narrowDayColumnWidthsPx: number[]
 ): number {
-  const narrowDayEstimate = 56;
   return (
     areaColumnWidthPx +
     dayUsesWideColumn.reduce(
-      (sum, wide) => sum + (wide ? 120 : narrowDayEstimate),
+      (sum, wide, dayIndex) =>
+        sum + (wide ? 120 : narrowDayColumnWidthsPx[dayIndex]),
       0
     )
   );
 }
 
 const HOUR_GRID_LINE_OPACITY = 35;
-/** Etwas dunkler als HOUR_GRID_LINE_OPACITY — auf Header-Overlay-Hintergrund gerade noch erkennbar. */
-const PAST_HOUR_GRID_LINE_OPACITY = 48;
 
 function createHourGridBackgroundStyle(
   lineOpacityPercent: number
@@ -115,23 +127,35 @@ function createHourGridBackgroundStyle(
   };
 }
 
-/** Vergangene Tag-Bereich-Zellen: gleiche Fläche wie Header-Overlay, dezent sichtbare Stundenlinien. */
-function createPastTagAreaDayBackgroundStyle(): React.CSSProperties {
+/** Vergangene Tag-Bereich-Zellen (Arbeitstag). */
+const PAST_TAG_AREA_CELL_BG = "#f3f6f9";
+const PAST_TAG_AREA_OVERLAY_BG = "#eff3f7";
+const PAST_TAG_AREA_HOUR_LINE_COLOR = "#eef2f6";
+
+/** 23 Stunden-Trennlinien zwischen Header- und Footer-Overlay. */
+function createPastTagAreaHourGridStyle(): React.CSSProperties {
+  const lineColor = PAST_TAG_AREA_HOUR_LINE_COLOR;
+  const stops: string[] = ["transparent 0"];
+  for (let hour = 1; hour < CALENDAR_HOUR_COUNT; hour += 1) {
+    const pos = `calc(100% * ${hour} / ${CALENDAR_HOUR_COUNT})`;
+    stops.push(`transparent calc(${pos} - 1px)`);
+    stops.push(`${lineColor} calc(${pos} - 1px)`);
+    stops.push(`${lineColor} ${pos}`);
+  }
   return {
-    backgroundColor: "var(--color-background)",
-    ...createHourGridBackgroundStyle(PAST_HOUR_GRID_LINE_OPACITY),
+    backgroundImage: `linear-gradient(to right, ${stops.join(", ")})`,
   };
 }
 
 const hourGridBackgroundStyle = createHourGridBackgroundStyle(
   HOUR_GRID_LINE_OPACITY
 );
-const pastTagAreaDayBackgroundStyle = createPastTagAreaDayBackgroundStyle();
+const pastTagAreaHourGridStyle = createPastTagAreaHourGridStyle();
 
 /** Feste Header-Höhe (3 Zeilen inkl. Feiertag), damit Wochenwechsel nicht springt. */
 const CALENDAR_HEADER_ROW_HEIGHT = "3.5rem";
 
-/** Bereich mit Arbeitszeiten, aber ohne Personalbedarf und ohne Schichten. */
+/** Bereichszeile bei inaktiver Bereichs-Checkbox. */
 const EMPTY_AREA_ROW_HEIGHT = "50px";
 
 /** Tag-Bereich-Header-Overlay-Höhe. */
@@ -140,12 +164,8 @@ const TAG_AREA_HEADER_STRIP_HEIGHT = "20px";
 /** Tag-Bereich-Footer-Streifen-Höhe. */
 const TAG_AREA_FOOTER_STRIP_HEIGHT = "18px";
 
-/** Tag-Bereich-Footer — Streifen unten in Bereich × Tag (bei Arbeitszeit). */
-const TAG_AREA_FOOTER_STRIP_CLASS =
-  "absolute inset-x-0 bottom-0 z-20 flex items-center justify-center overflow-hidden border-t border-border bg-background px-1";
-
-/** Geschlossener Bereich × Tag (keine Arbeitszeit). */
-const CLOSED_AREA_DAY_CLASS = "bg-background";
+/** Geschlossener Bereich × Tag (kein Arbeitstag laut Arbeitszeit / Feiertag). */
+const CLOSED_AREA_DAY_BG = "#e6edf2";
 
 /** Header: nur Feiertage und Wochenende (Sa/So). */
 const MUTED_DAY_HEADER_CLASS = "bg-calendar-muted-header";
@@ -167,69 +187,8 @@ function dayHeaderUsesMutedBackground(
   return weekdayIndexFromDate(dateISO) >= 5;
 }
 
-/** Grau: kein Arbeitstag, kein Personalbedarf, keine Schichten, nicht manuell geöffnet. */
-function isDayFullyGray(
-  dateISO: string,
-  manualAssignmentDates: ReadonlySet<string>,
-  serviceHours: AreaServiceHourRef[],
-  areaIds: readonly string[],
-  staffingRules: StaffingRule[],
-  hasShiftsOnDate: boolean
-): boolean {
-  if (manualAssignmentDates.has(dateISO)) return false;
-  if (hasShiftsOnDate) return false;
-  if (
-    hasStaffingRequirementInCalendar(
-      staffingRules,
-      areaIds,
-      dateISO,
-      serviceHours
-    )
-  ) {
-    return false;
-  }
-  return !isAnyAreaOpenInCalendar(
-    serviceHours,
-    areaIds,
-    dateISO,
-    false
-  );
-}
-
-/** Manuell geöffnet, aber ohne Personalbedarf, Arbeitszeit und Schichten — wieder grau setzen. */
-function canSetDayOff(
-  dateISO: string,
-  manualAssignmentDates: ReadonlySet<string>,
-  serviceHours: AreaServiceHourRef[],
-  areaIds: readonly string[],
-  staffingRules: StaffingRule[],
-  hasShiftsOnDate: boolean
-): boolean {
-  if (!manualAssignmentDates.has(dateISO)) return false;
-  if (hasShiftsOnDate) return false;
-  if (
-    hasStaffingRequirementInCalendar(
-      staffingRules,
-      areaIds,
-      dateISO,
-      serviceHours
-    )
-  ) {
-    return false;
-  }
-  return !isAnyAreaOpenInCalendar(
-    serviceHours,
-    areaIds,
-    dateISO,
-    false
-  );
-}
-
-type DayContextMenuAction = "assign" | "dayOff";
-
 function dayHasScheduleActivityOnDate(
   dateISO: string,
-  manualAssignmentDates: ReadonlySet<string>,
   serviceHours: AreaServiceHourRef[],
   areaIds: readonly string[],
   staffingRules: StaffingRule[],
@@ -246,10 +205,7 @@ function dayHasScheduleActivityOnDate(
   ) {
     return true;
   }
-  return (
-    manualAssignmentDates.has(dateISO) ||
-    isAnyAreaOpenInCalendar(serviceHours, areaIds, dateISO, false)
-  );
+  return isAnyAreaOpenInCalendar(serviceHours, areaIds, dateISO, false);
 }
 
 /** Platzhalter-Schichtkarte in kompakten Zeilen (50px), z. B. Bereich-Checkbox inaktiv. */
@@ -291,141 +247,106 @@ const COLUMN_DIVIDER_CLASS = "border-r border-slate-300";
 /** Rahmen des Kalender-Divs — abschließende Kante rechts (statt Sonntags-Spaltenlinie). */
 const CALENDAR_FRAME_CLASS = "border border-slate-300";
 
-/** Horizontale Bereichs-Trennung – gleiche Intensität wie Spalten-Linien. */
+/** Horizontale Bereichs-Trennung — gleiche Intensität wie Spalten-Linien. */
 const ROW_DIVIDER_CLASS = "border-b border-slate-300";
+
+type AreaDayContextMenuState = {
+  x: number;
+  y: number;
+  areaId: string;
+  date: string;
+};
+
+const ASSIGN_SHIFT_CONTEXT_MENU_WIDTH_PX = 176;
+const ASSIGN_SHIFT_CONTEXT_MENU_HEIGHT_PX = 40;
+const CONTEXT_MENU_CLOSE_DISTANCE_PX = 20;
+
+function distanceFromPointToMenu(
+  clientX: number,
+  clientY: number,
+  menu: HTMLElement
+): number {
+  const rect = menu.getBoundingClientRect();
+  const closestX = Math.max(rect.left, Math.min(clientX, rect.right));
+  const closestY = Math.max(rect.top, Math.min(clientY, rect.bottom));
+  return Math.hypot(clientX - closestX, clientY - closestY);
+}
+
+/** Rechtsklick „Schicht zuweisen“: Arbeitstag laut Service-Zeiten, Checkboxen aktiv, heute/Zukunft. */
+export function canOpenAssignShiftContextMenu(
+  areaId: string,
+  dateISO: string,
+  isAreaActive: boolean,
+  isDayActive: boolean,
+  serviceHours: AreaServiceHourRef[]
+): boolean {
+  if (!isAreaActive || !isDayActive) return false;
+  if (isPastCalendarDate(dateISO)) return false;
+  return isAreaOpenOnDate(serviceHours, areaId, dateISO);
+}
+
+function clampContextMenuPosition(
+  clientX: number,
+  clientY: number,
+  menuWidth = ASSIGN_SHIFT_CONTEXT_MENU_WIDTH_PX,
+  menuHeight = ASSIGN_SHIFT_CONTEXT_MENU_HEIGHT_PX
+): { x: number; y: number } {
+  if (typeof window === "undefined") {
+    return { x: clientX, y: clientY };
+  }
+  const padding = 8;
+  const maxX = window.innerWidth - menuWidth - padding;
+  const maxY = window.innerHeight - menuHeight - padding;
+  return {
+    x: Math.max(padding, Math.min(clientX, maxX)),
+    y: Math.max(padding, Math.min(clientY, maxY)),
+  };
+}
+
+function createActiveAreaIds(areas: LocationArea[]): Set<string> {
+  return new Set(areas.map((area) => area.id));
+}
+
+function createActiveDayDates(
+  dates: readonly string[],
+  areaIds: readonly string[],
+  serviceHours: AreaServiceHourRef[],
+  shifts: DashboardShiftCard[]
+): Set<string> {
+  const shiftsByDate = new Map<string, number>();
+  for (const shift of shifts) {
+    if (!shift.locationAreaId) continue;
+    shiftsByDate.set(
+      shift.shift_date,
+      (shiftsByDate.get(shift.shift_date) ?? 0) + 1
+    );
+  }
+  return new Set(
+    dates.filter((date) => {
+      const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
+      return isAnyAreaOpenInCalendar(serviceHours, areaIds, date, hasShifts);
+    })
+  );
+}
 
 export function DashboardCalendar({
   dates,
   locationId,
+  locationName,
   areas,
   serviceHours,
   staffingRules,
   shifts,
   shiftTypes,
+  qualifications,
+  profiles,
+  fullStaffingRules,
 }: Props) {
   const { locale } = useLocale();
   const t = useTranslations();
   const intlLocale = toIntlLocale(locale);
 
-  const [manualAssignmentDates, setManualAssignmentDates] = useState<
-    Set<string>
-  >(() => new Set());
-  const [explicitDayOffDates, setExplicitDayOffDates] = useState<Set<string>>(
-    () => new Set()
-  );
-  const [activeAreaIds, setActiveAreaIds] = useState<Set<string>>(
-    () => new Set()
-  );
-  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(
-    () => new Set()
-  );
-  const [contextMenu, setContextMenu] = useState<{
-    date: string;
-    x: number;
-    y: number;
-    action: DayContextMenuAction;
-  } | null>(null);
-
-  useEffect(() => {
-    setActiveAreaIds(new Set(areas.map((area) => area.id)));
-  }, [areas]);
-
-  useEffect(() => {
-    if (!locationId) {
-      setManualAssignmentDates(new Set());
-      setExplicitDayOffDates(new Set());
-      setContextMenu(null);
-      return;
-    }
-    setManualAssignmentDates(readManualAssignmentDays(locationId));
-    setExplicitDayOffDates(readExplicitDayOffDays(locationId));
-    setContextMenu(null);
-  }, [locationId]);
-
-  const shiftDatesOnLocation = useMemo(() => {
-    const unique = new Set<string>();
-    for (const shift of shifts) {
-      if (shift.locationAreaId) unique.add(shift.shift_date);
-    }
-    return [...unique];
-  }, [shifts]);
-
-  useEffect(() => {
-    if (!locationId || shiftDatesOnLocation.length === 0) return;
-    clearManualAssignmentDaysWithShifts(locationId, shiftDatesOnLocation);
-    setManualAssignmentDates((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const date of shiftDatesOnLocation) {
-        if (next.delete(date)) changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [locationId, shiftDatesOnLocation]);
-
-  useEffect(() => {
-    setContextMenu(null);
-  }, [dates]);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    function closeMenu() {
-      setContextMenu(null);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") closeMenu();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [contextMenu]);
-
-  const enableManualAssignment = useCallback(
-    (date: string) => {
-      if (!locationId) return;
-      removeExplicitDayOffDay(locationId, date);
-      addManualAssignmentDay(locationId, date);
-      setExplicitDayOffDates((prev) => {
-        if (!prev.has(date)) return prev;
-        const next = new Set(prev);
-        next.delete(date);
-        return next;
-      });
-      setManualAssignmentDates((prev) => {
-        const next = new Set(prev);
-        next.add(date);
-        return next;
-      });
-      setContextMenu(null);
-    },
-    [locationId]
-  );
-
-  const disableManualAssignment = useCallback(
-    (date: string) => {
-      if (!locationId) return;
-      addExplicitDayOffDay(locationId, date);
-      removeManualAssignmentDay(locationId, date);
-      setExplicitDayOffDates((prev) => {
-        const next = new Set(prev);
-        next.add(date);
-        return next;
-      });
-      setManualAssignmentDates((prev) => {
-        const next = new Set(prev);
-        next.delete(date);
-        return next;
-      });
-      setContextMenu(null);
-    },
-    [locationId]
-  );
-
   const areaIds = useMemo(() => areas.map((area) => area.id), [areas]);
-
-  const shiftTypeNameById = useMemo(
-    () => new Map(shiftTypes.map((type) => [type.id, type.name])),
-    [shiftTypes]
-  );
 
   const shiftsByDate = useMemo(() => {
     const map = new Map<string, DashboardShiftCard[]>();
@@ -442,24 +363,41 @@ export function DashboardCalendar({
     () =>
       dates.map((date) => {
         const hasShifts = (shiftsByDate.get(date)?.length ?? 0) > 0;
-        return (
-          manualAssignmentDates.has(date) ||
-          isAnyAreaOpenInCalendar(
-            serviceHours,
-            areaIds,
-            date,
-            hasShifts
-          )
+        return isAnyAreaOpenInCalendar(
+          serviceHours,
+          areaIds,
+          date,
+          hasShifts
         );
       }),
-    [dates, serviceHours, areaIds, shiftsByDate, manualAssignmentDates]
+    [dates, serviceHours, areaIds, shiftsByDate]
   );
 
-  useEffect(() => {
-    setActiveDayDates(
-      new Set(dates.filter((date, dayIndex) => dayHasOpenArea[dayIndex]))
-    );
-  }, [dates, locationId, dayHasOpenArea]);
+  const [activeAreaIds, setActiveAreaIds] = useState<Set<string>>(() =>
+    createActiveAreaIds(areas)
+  );
+  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(() =>
+    createActiveDayDates(dates, areaIds, serviceHours, shifts)
+  );
+  const [isCalendarVisible, setIsCalendarVisible] = useState(false);
+  const [contextMenu, setContextMenu] = useState<AreaDayContextMenuState | null>(
+    null
+  );
+  const [addShiftDialog, setAddShiftDialog] =
+    useState<DashboardAddShiftDialogState | null>(null);
+  const [bulkShiftDialog, setBulkShiftDialog] =
+    useState<DashboardBulkShiftDialogState | null>(null);
+  const [undoVisible, setUndoVisible] = useState(false);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    setActiveAreaIds(createActiveAreaIds(areas));
+  }, [areas]);
+
+  useLayoutEffect(() => {
+    setActiveDayDates(createActiveDayDates(dates, areaIds, serviceHours, shifts));
+    setIsCalendarVisible(true);
+  }, [dates, areaIds, serviceHours, shifts]);
 
   useEffect(() => {
     setActiveDayDates((prev) => {
@@ -476,12 +414,52 @@ export function DashboardCalendar({
     });
   }, [dates, dayHasOpenArea]);
 
+  useEffect(() => {
+    if (!contextMenu) return;
+
+    function closeMenu() {
+      setContextMenu(null);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu();
+    }
+
+    function onMouseMove(event: MouseEvent) {
+      const menu = contextMenuRef.current;
+      if (!menu) return;
+      if (
+        distanceFromPointToMenu(event.clientX, event.clientY, menu) >
+        CONTEXT_MENU_CLOSE_DISTANCE_PX
+      ) {
+        closeMenu();
+      }
+    }
+
+    document.addEventListener("click", closeMenu);
+    document.addEventListener("contextmenu", closeMenu);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("scroll", closeMenu, true);
+    return () => {
+      document.removeEventListener("click", closeMenu);
+      document.removeEventListener("contextmenu", closeMenu);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [contextMenu]);
+
+  const shiftTypeNameById = useMemo(
+    () => new Map(shiftTypes.map((type) => [type.id, type.name])),
+    [shiftTypes]
+  );
+
   const dayUsesWideColumn = useMemo(
     () =>
       dates.map((date, dayIndex) => {
         if (!activeDayDates.has(date)) return false;
         const hasShifts = (shiftsByDate.get(date)?.length ?? 0) > 0;
-        const isManual = manualAssignmentDates.has(date);
         if (!dayHasOpenArea[dayIndex]) return false;
         const hasStaffing = hasStaffingRequirementInCalendar(
           staffingRules,
@@ -489,7 +467,7 @@ export function DashboardCalendar({
           date,
           serviceHours
         );
-        return hasStaffing || hasShifts || isManual;
+        return hasStaffing || hasShifts;
       }),
     [
       dates,
@@ -498,7 +476,6 @@ export function DashboardCalendar({
       areaIds,
       serviceHours,
       shiftsByDate,
-      manualAssignmentDates,
       activeDayDates,
     ]
   );
@@ -507,6 +484,17 @@ export function DashboardCalendar({
   const fillColumnsEqually = useMemo(
     () => !dayUsesWideColumn.some(Boolean),
     [dayUsesWideColumn]
+  );
+
+  const holidayNames = useMemo(
+    () => buildHolidayNamesByDate(dates, locale === "en" ? "en" : "de"),
+    [dates, locale]
+  );
+
+  const narrowDayColumnWidthsPx = useMemo(
+    () =>
+      resolveNarrowDayColumnWidthsPx(dates, holidayNames, intlLocale),
+    [dates, holidayNames, intlLocale]
   );
 
   const areaColumnWidthPx = useMemo(
@@ -519,81 +507,44 @@ export function DashboardCalendar({
       gridTemplateColumns(
         areaColumnWidthPx,
         dayUsesWideColumn,
+        narrowDayColumnWidthsPx,
         fillColumnsEqually
       ),
-    [areaColumnWidthPx, dayUsesWideColumn, fillColumnsEqually]
+    [
+      areaColumnWidthPx,
+      dayUsesWideColumn,
+      narrowDayColumnWidthsPx,
+      fillColumnsEqually,
+    ]
   );
 
   const minCalendarWidth = useMemo(() => {
     if (fillColumnsEqually) return undefined;
-    return calendarMinWidth(areaColumnWidthPx, dayUsesWideColumn);
-  }, [areaColumnWidthPx, dayUsesWideColumn, fillColumnsEqually]);
-
-  const areaHasWeekContent = useMemo(
-    () =>
-      areas.map((area) => {
-        if (shifts.some((shift) => shift.locationAreaId === area.id)) {
-          return true;
-        }
-        return areaHasStaffingRequirementInWeek(
-          staffingRules,
-          area.id,
-          dates,
-          serviceHours
-        );
-      }),
-    [areas, shifts, staffingRules, dates, serviceHours]
-  );
-
-  const areaHasManualAssignmentDisplay = useMemo(
-    () =>
-      areas.map((area) =>
-        [...manualAssignmentDates].some(
-          (date) =>
-            !isAreaOpenInCalendar(
-              serviceHours,
-              area.id,
-              date,
-              (shiftsByDate.get(date) ?? []).some(
-                (shift) => shift.locationAreaId === area.id
-              )
-            )
-        )
-      ),
-    [areas, manualAssignmentDates, serviceHours, shiftsByDate]
-  );
-
-  const areaUsesCompactRow = useMemo(
-    () =>
-      areas.map((area, index) => {
-        if (areaHasWeekContent[index]) return false;
-        if (areaHasManualAssignmentDisplay[index]) return false;
-        return areaHasServiceHours(serviceHours, area.id);
-      }),
-    [areas, areaHasWeekContent, areaHasManualAssignmentDisplay, serviceHours]
-  );
-
-  /** Kein Bereich hat Schichten/Personalbedarf — Zeilen gleich hoch statt 50px. */
-  const fillRowsEqually = useMemo(
-    () => areas.length > 0 && !areaHasWeekContent.some(Boolean),
-    [areas.length, areaHasWeekContent]
-  );
+    return calendarMinWidth(
+      areaColumnWidthPx,
+      dayUsesWideColumn,
+      narrowDayColumnWidthsPx
+    );
+  }, [
+    areaColumnWidthPx,
+    dayUsesWideColumn,
+    narrowDayColumnWidthsPx,
+    fillColumnsEqually,
+  ]);
 
   const rowTemplate = useMemo(() => {
     if (areas.length === 0) {
       return `${CALENDAR_HEADER_ROW_HEIGHT} minmax(0, 1fr)`;
     }
     const bodyRows = areas
-      .map((area, index) => {
-        if (!activeAreaIds.has(area.id)) return EMPTY_AREA_ROW_HEIGHT;
-        if (fillRowsEqually) return "minmax(0, 1fr)";
-        return areaUsesCompactRow[index]
-          ? EMPTY_AREA_ROW_HEIGHT
-          : "minmax(0, 1fr)";
-      })
+      .map((area) =>
+        activeAreaIds.has(area.id)
+          ? "minmax(0, 1fr)"
+          : EMPTY_AREA_ROW_HEIGHT
+      )
       .join(" ");
     return `${CALENDAR_HEADER_ROW_HEIGHT} ${bodyRows}`;
-  }, [areas, areaUsesCompactRow, fillRowsEqually, activeAreaIds]);
+  }, [areas, activeAreaIds]);
 
   const toggleAreaActive = useCallback((areaId: string, active: boolean) => {
     setActiveAreaIds((prev) => {
@@ -613,31 +564,81 @@ export function DashboardCalendar({
     });
   }, []);
 
+  const handleAreaDayContextMenu = useCallback(
+    (
+      event: React.MouseEvent<HTMLDivElement>,
+      areaId: string,
+      date: string,
+      isAreaActive: boolean,
+      isDayActive: boolean
+    ) => {
+      if (
+        !canOpenAssignShiftContextMenu(
+          areaId,
+          date,
+          isAreaActive,
+          isDayActive,
+          serviceHours
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const { x, y } = clampContextMenuPosition(event.clientX, event.clientY);
+      setContextMenu({ x, y, areaId, date });
+    },
+    [serviceHours]
+  );
+
+  const openAddShiftDialog = useCallback(() => {
+    if (!contextMenu) return;
+    setAddShiftDialog({
+      areaId: contextMenu.areaId,
+      date: contextMenu.date,
+    });
+    setContextMenu(null);
+  }, [contextMenu]);
+
+  const openBulkShiftDialog = useCallback(() => {
+    if (!contextMenu) return;
+    setBulkShiftDialog({
+      areaId: contextMenu.areaId,
+      date: contextMenu.date,
+    });
+    setContextMenu(null);
+  }, [contextMenu]);
+
+  const handleShiftSaved = useCallback(() => {
+    setUndoVisible(true);
+  }, []);
+
+  useEffect(() => {
+    if (!undoVisible) return;
+    const timer = window.setTimeout(() => setUndoVisible(false), 30_000);
+    return () => window.clearTimeout(timer);
+  }, [undoVisible]);
+
+  const handleUndo = useCallback(async () => {
+    const result = await undoLastShiftAssignBatch();
+    if (result.ok) {
+      setUndoVisible(false);
+      window.location.reload();
+    }
+  }, []);
+
   const dayHasScheduleActivity = useMemo(
     () =>
       dates.map((date) =>
         dayHasScheduleActivityOnDate(
           date,
-          manualAssignmentDates,
           serviceHours,
           areaIds,
           staffingRules,
           (shiftsByDate.get(date)?.length ?? 0) > 0
         )
       ),
-    [
-      dates,
-      manualAssignmentDates,
-      serviceHours,
-      areaIds,
-      staffingRules,
-      shiftsByDate,
-    ]
-  );
-
-  const holidayNames = useMemo(
-    () => buildHolidayNamesByDate(dates, locale === "en" ? "en" : "de"),
-    [dates, locale]
+    [dates, serviceHours, areaIds, staffingRules, shiftsByDate]
   );
 
   const byAreaDate = useMemo(() => {
@@ -655,34 +656,9 @@ export function DashboardCalendar({
   const dayShowsHourGrid = (dayIndex: number) => {
     const date = dates[dayIndex];
     if (!activeDayDates.has(date)) return false;
-    if (manualAssignmentDates.has(date)) return true;
     return fillColumnsEqually
       ? dayHasOpenArea[dayIndex]
       : dayUsesWideColumn[dayIndex];
-  };
-
-  const isFullyGrayDay = (date: string) => {
-    const hasShifts = (shiftsByDate.get(date)?.length ?? 0) > 0;
-    return isDayFullyGray(
-      date,
-      manualAssignmentDates,
-      serviceHours,
-      areaIds,
-      staffingRules,
-      hasShifts
-    );
-  };
-
-  const canSetDayOffForDate = (date: string) => {
-    const hasShifts = (shiftsByDate.get(date)?.length ?? 0) > 0;
-    return canSetDayOff(
-      date,
-      manualAssignmentDates,
-      serviceHours,
-      areaIds,
-      staffingRules,
-      hasShifts
-    );
   };
 
   const dayColumnDivider = (dayIndex: number) =>
@@ -692,7 +668,8 @@ export function DashboardCalendar({
     <div
       className={cn(
         "flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-sm",
-        CALENDAR_FRAME_CLASS
+        CALENDAR_FRAME_CLASS,
+        !isCalendarVisible && "invisible"
       )}
     >
       <div
@@ -783,16 +760,16 @@ export function DashboardCalendar({
                   aria-hidden
                   className={cn(
                     "pointer-events-none z-[1] min-h-0",
-                    !dayShowsHourGrid(dayIndex) && CLOSED_AREA_DAY_CLASS,
                     dayColumnDivider(dayIndex)
                   )}
                   style={{
                     gridColumn: dayIndex + 2,
                     gridRow: "2 / -1",
+                    ...(!dayShowsHourGrid(dayIndex)
+                      ? { backgroundColor: CLOSED_AREA_DAY_BG }
+                      : undefined),
                     ...(dayShowsHourGrid(dayIndex)
-                      ? isPastCalendarDate(date)
-                        ? pastTagAreaDayBackgroundStyle
-                        : hourGridBackgroundStyle
+                      ? hourGridBackgroundStyle
                       : undefined),
                   }}
                 />
@@ -802,9 +779,7 @@ export function DashboardCalendar({
                 const isLastRow = rowIndex === areas.length - 1;
                 const gridRow = rowIndex + 2;
                 const isAreaActive = activeAreaIds.has(area.id);
-                const isCompactRow =
-                  !isAreaActive ||
-                  (!fillRowsEqually && areaUsesCompactRow[rowIndex]);
+                const isCompactRow = !isAreaActive;
 
                 return (
                   <Fragment key={area.id}>
@@ -841,22 +816,21 @@ export function DashboardCalendar({
                     {dates.map((date, dayIndex) => {
                       const dayShifts =
                         byAreaDate.get(`${area.id}:${date}`) ?? [];
-                      const isManualAssignmentDay =
-                        manualAssignmentDates.has(date);
-                      const isOpen =
-                        isManualAssignmentDay ||
-                        isAreaOpenInCalendar(
-                          serviceHours,
-                          area.id,
-                          date,
-                          dayShifts.length > 0
-                        );
+                      const isPastAreaWorkDay = isPastAreaWorkDayCell(
+                        serviceHours,
+                        area.id,
+                        date,
+                        false
+                      );
+                      const isOpen = isAreaOpenInCalendar(
+                        serviceHours,
+                        area.id,
+                        date,
+                        dayShifts.length > 0
+                      );
                       const isDayActive = activeDayDates.has(date);
                       const showOpenDayCell =
-                        isAreaActive &&
-                        isDayActive &&
-                        isOpen &&
-                        (!isCompactRow || isManualAssignmentDay);
+                        isAreaActive && isDayActive && isOpen;
                       const showInactivePreviewCell =
                         (!isAreaActive || !isDayActive) &&
                         dayHasScheduleActivity[dayIndex];
@@ -864,49 +838,64 @@ export function DashboardCalendar({
                         showInactivePreviewCell && isCompactRow;
                       const showDayCellContent =
                         showOpenDayCell || showInactivePreviewCell;
-                      const showDaytimesGradient =
-                        showOpenDayCell &&
-                        isOpen &&
-                        dayHasOpenArea[dayIndex] &&
-                        !explicitDayOffDates.has(date);
+                      const isPastWorkDayCell =
+                        showDayCellContent && isPastAreaWorkDay;
+                      const hasPastStaffingDisplay =
+                        isPastWorkDayCell &&
+                        areaHasStaffingRequirementOnDate(
+                          staffingRules,
+                          area.id,
+                          date,
+                          serviceHours
+                        );
+                      const showDaytimesGradient = isPastWorkDayCell
+                        ? isOpen
+                        : showOpenDayCell &&
+                          isOpen &&
+                          dayHasOpenArea[dayIndex];
                       const headerStaffing = tagAreaHeaderStaffingEntriesInCalendar(
                         staffingRules,
                         area.id,
                         date,
                         serviceHours,
                         shiftTypes,
-                        dayShifts.map((shift) => ({
-                          shiftTypeId: shift.shiftTypeId,
-                        }))
+                        dayShifts
+                          .filter(
+                            (shift): shift is DashboardShiftCard & { shiftTypeId: string } =>
+                              shift.shiftTypeId != null
+                          )
+                          .map((shift) => ({
+                            shiftTypeId: shift.shiftTypeId,
+                          }))
                       );
-                      const fullyGray = isFullyGrayDay(date);
-                      const showDayOffMenu = canSetDayOffForDate(date);
-                      const hasContextMenu = fullyGray || showDayOffMenu;
 
                       return (
                         <div
                           key={date}
                           className={cn(
                             "relative z-10 flex min-h-0 flex-col overflow-hidden",
-                            showDayCellContent ? "p-2" : CLOSED_AREA_DAY_CLASS,
-                            hasContextMenu && "cursor-context-menu",
+                            showDayCellContent ? "p-2" : undefined,
                             dayColumnDivider(dayIndex),
                             !isLastRow && ROW_DIVIDER_CLASS
                           )}
-                          style={{ gridColumn: dayIndex + 2, gridRow }}
-                          onContextMenu={
-                            hasContextMenu
-                              ? (event) => {
-                                  event.preventDefault();
-                                  setContextMenu({
-                                    date,
-                                    x: event.clientX,
-                                    y: event.clientY,
-                                    action: fullyGray ? "assign" : "dayOff",
-                                  });
-                                }
-                              : undefined
+                          onContextMenu={(event) =>
+                            handleAreaDayContextMenu(
+                              event,
+                              area.id,
+                              date,
+                              isAreaActive,
+                              isDayActive
+                            )
                           }
+                          style={{
+                            gridColumn: dayIndex + 2,
+                            gridRow,
+                            ...(isPastWorkDayCell
+                              ? { backgroundColor: PAST_TAG_AREA_CELL_BG }
+                              : !showDayCellContent
+                                ? { backgroundColor: CLOSED_AREA_DAY_BG }
+                                : undefined),
+                          }}
                         >
                           {showDayCellContent ? (
                             <>
@@ -914,17 +903,43 @@ export function DashboardCalendar({
                                 showDaytimesGradient={showDaytimesGradient}
                                 entries={headerStaffing}
                                 shiftTypeNameById={shiftTypeNameById}
+                                overlayBackgroundColor={
+                                  isPastWorkDayCell
+                                    ? PAST_TAG_AREA_OVERLAY_BG
+                                    : undefined
+                                }
+                                staffingTone={
+                                  !isAreaActive || !isDayActive
+                                    ? "inactive"
+                                    : hasPastStaffingDisplay
+                                      ? "past"
+                                      : "default"
+                                }
                                 style={{ height: TAG_AREA_HEADER_STRIP_HEIGHT }}
                               />
                               <div
-                                className={TAG_AREA_FOOTER_STRIP_CLASS}
-                                style={{ height: TAG_AREA_FOOTER_STRIP_HEIGHT }}
+                                className={cn(
+                                  "absolute inset-x-0 bottom-0 z-20 flex items-center justify-center overflow-hidden border-t border-border px-1",
+                                  isPastWorkDayCell ? undefined : "bg-background"
+                                )}
+                                style={{
+                                  height: TAG_AREA_FOOTER_STRIP_HEIGHT,
+                                  ...(isPastWorkDayCell
+                                    ? { backgroundColor: PAST_TAG_AREA_OVERLAY_BG }
+                                    : undefined),
+                                }}
                               />
                               <div
                                 className="flex h-full min-h-0 flex-col gap-1.5"
                                 style={{
                                   paddingTop: TAG_AREA_HEADER_STRIP_HEIGHT,
                                   paddingBottom: TAG_AREA_FOOTER_STRIP_HEIGHT,
+                                  ...(isPastWorkDayCell
+                                    ? {
+                                        backgroundColor: PAST_TAG_AREA_CELL_BG,
+                                        ...pastTagAreaHourGridStyle,
+                                      }
+                                    : undefined),
                                 }}
                               >
                                 <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
@@ -942,11 +957,12 @@ export function DashboardCalendar({
                                         }}
                                       >
                                         <p className="text-xs font-semibold leading-tight">
-                                          {shift.shiftName}{" "}
-                                          {formatTimeRange(
-                                            shift.startTime,
-                                            shift.endTime
-                                          )}
+                                          {shift.shiftName
+                                            ? `${shift.shiftName} ${formatTimeRange(shift.startTime, shift.endTime)}`
+                                            : formatTimeRange(
+                                                shift.startTime,
+                                                shift.endTime
+                                              )}
                                         </p>
                                         <p className="mt-1 text-xs leading-tight opacity-95">
                                           {shift.employeeName}
@@ -970,34 +986,87 @@ export function DashboardCalendar({
       </div>
 
       {contextMenu ? (
-        <>
+        <div
+          ref={contextMenuRef}
+          className="fixed z-[100] min-w-[11rem] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+          aria-label={t("dashboard.assignShift")}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
           <button
             type="button"
-            aria-label={t("common.close")}
-            className="fixed inset-0 z-40 cursor-default border-0 bg-transparent p-0"
-            onClick={() => setContextMenu(null)}
-          />
-          <div
-            role="menu"
-            className="fixed z-50 min-w-[14rem] overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface py-1 shadow-lg"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
+            role="menuitem"
+            className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle"
+            onClick={openAddShiftDialog}
           >
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-subtle"
-              onClick={() =>
-                contextMenu.action === "assign"
-                  ? enableManualAssignment(contextMenu.date)
-                  : disableManualAssignment(contextMenu.date)
-              }
-            >
-              {contextMenu.action === "assign"
-                ? t("dashboard.assignEmployeeToDay")
-                : t("dashboard.setDayOffForAllAreas")}
-            </button>
-          </div>
-        </>
+            {t("dashboard.assignShift")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle"
+            onClick={openBulkShiftDialog}
+          >
+            {t("dashboard.assignMultipleShifts")}
+          </button>
+        </div>
+      ) : null}
+
+      {addShiftDialog && locationId ? (
+        <DashboardAddShiftModal
+          key={`single:${addShiftDialog.areaId}:${addShiftDialog.date}`}
+          dialog={addShiftDialog}
+          locationId={locationId}
+          areas={areas}
+          shiftTypes={shiftTypes}
+          onClose={() => setAddShiftDialog(null)}
+          onSaved={handleShiftSaved}
+        />
+      ) : null}
+
+      {bulkShiftDialog && locationId ? (
+        <DashboardBulkShiftModal
+          key={`bulk:${bulkShiftDialog.areaId}:${bulkShiftDialog.date}`}
+          dialog={bulkShiftDialog}
+          locationId={locationId}
+          locationName={locationName}
+          areas={areas}
+          shiftTypes={shiftTypes}
+          staffingRules={fullStaffingRules}
+          serviceHours={serviceHours}
+          qualifications={qualifications}
+          areaAssignedShifts={shifts
+            .filter(
+              (shift) =>
+                shift.locationAreaId === bulkShiftDialog.areaId &&
+                shift.shift_date === bulkShiftDialog.date &&
+                shift.shiftTypeId != null
+            )
+            .map((shift) => ({ shiftTypeId: shift.shiftTypeId as string }))}
+          areaExistingAssignments={shifts
+            .filter(
+              (shift) =>
+                shift.locationAreaId === bulkShiftDialog.areaId &&
+                shift.shift_date === bulkShiftDialog.date
+            )
+            .map((shift) => ({
+              employeeId: shift.employeeId,
+              startTime: shift.startTime,
+              endTime: shift.endTime,
+            }))}
+          onClose={() => setBulkShiftDialog(null)}
+          onSaved={handleShiftSaved}
+        />
+      ) : null}
+
+      {undoVisible ? (
+        <div className="fixed bottom-6 right-6 z-[120] flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 shadow-lg">
+          <span className="text-sm text-foreground">{t("dashboard.bulkShiftSaved")}</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void handleUndo()}>
+            {t("dashboard.bulkShiftUndo")}
+          </Button>
+        </div>
       ) : null}
     </div>
   );

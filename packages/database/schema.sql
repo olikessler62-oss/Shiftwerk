@@ -223,7 +223,7 @@ create table public.shifts (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations (id) on delete cascade,
   employee_id uuid not null references public.profiles (id) on delete cascade,
-  shift_type_id uuid not null references public.shift_types (id) on delete restrict,
+  shift_type_id uuid references public.shift_types (id) on delete restrict,
   location_id uuid references public.locations (id) on delete restrict,
   location_area_id uuid references public.location_areas (id) on delete restrict,
   shift_date date not null,
@@ -262,7 +262,8 @@ create table public.absence_requests (
   status public.request_status not null default 'pending',
   notes text,
   reviewed_by uuid references public.profiles (id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint absence_requests_date_range_check check (start_date <= end_date)
 );
 
 create index absence_requests_org_idx on public.absence_requests (organization_id);
@@ -845,6 +846,19 @@ create policy "absence_insert_own"
   on public.absence_requests for insert
   with check (employee_id = auth.uid());
 
+create policy "absence_insert_manager"
+  on public.absence_requests for insert
+  with check (
+    private.is_manager_or_owner()
+    and organization_id in (select organization_id from private.current_profile())
+    and exists (
+      select 1
+      from public.profiles p
+      where p.id = employee_id
+        and p.organization_id = absence_requests.organization_id
+    )
+  );
+
 create policy "absence_update_manager"
   on public.absence_requests for update
   using (
@@ -852,6 +866,13 @@ create policy "absence_update_manager"
       select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
     )
+  );
+
+create policy "absence_delete_manager"
+  on public.absence_requests for delete
+  using (
+    organization_id in (select organization_id from private.current_profile())
+    and private.is_manager_or_owner()
   );
 
 -- Swap requests

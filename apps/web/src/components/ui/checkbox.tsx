@@ -30,11 +30,13 @@ export function Checkbox({
       <span
         aria-hidden
         className={cn(
-          "flex items-center justify-center rounded-none transition-all duration-150 ease-out",
+          "flex items-center justify-center transition-all duration-150 ease-out",
           "peer-disabled:cursor-not-allowed peer-disabled:opacity-45",
           "peer-checked:[&>svg]:scale-100 peer-checked:[&>svg]:opacity-100",
           "[&>svg]:scale-75 [&>svg]:opacity-0 [&>svg]:transition-all [&>svg]:duration-150",
-          isArea ? "h-[14px] w-[14px]" : "h-[1.125rem] w-[1.125rem] rounded-[0.3rem]",
+          isArea
+            ? "h-[14px] w-[14px] rounded-[0.25rem]"
+            : "h-[1.125rem] w-[1.125rem] rounded-[0.3rem]",
           standardCheckboxClasses
         )}
       >

@@ -23,6 +23,7 @@ const SETTINGS_MODAL_PARAMS = [
   "rollen",
   "schichtarten",
   "qualifikationen",
+  "abwesenheiten",
 ] as const;
 
 function isSettingsModalOpen(params: URLSearchParams): boolean {

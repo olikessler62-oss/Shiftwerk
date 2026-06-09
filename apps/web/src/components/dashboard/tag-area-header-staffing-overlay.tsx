@@ -12,13 +12,28 @@ import { cn } from "@/lib/cn";
 type Props = {
   entries: TagAreaHeaderStaffingEntry[];
   shiftTypeNameById: ReadonlyMap<string, string>;
+  tone?: "default" | "past" | "inactive";
 };
 
 const EMPTY_DISPLAY: StaffingHeaderDisplay = { mode: "empty" };
 
+const PAST_STAFFING_TEXT_CLASS = "text-red-900";
+const INACTIVE_STAFFING_TEXT_CLASS = "text-muted";
+
+function staffingTextClass(
+  tone: "default" | "past" | "inactive",
+  variant: "default" | "understaffed" | "met"
+): string {
+  if (tone === "inactive") return INACTIVE_STAFFING_TEXT_CLASS;
+  if (tone === "past") return PAST_STAFFING_TEXT_CLASS;
+  if (variant === "understaffed") return "text-red-600";
+  return "text-green-600";
+}
+
 export function TagAreaHeaderStaffingOverlay({
   entries,
   shiftTypeNameById,
+  tone = "default",
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [display, setDisplay] = useState<StaffingHeaderDisplay>(() =>
@@ -43,11 +58,23 @@ export function TagAreaHeaderStaffingOverlay({
   );
 
   useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (!container || entries.length === 0) {
+    if (entries.length === 0) {
       setDisplay(EMPTY_DISPLAY);
       return;
     }
+
+    setDisplay(
+      resolveStaffingHeaderDisplay(
+        entries,
+        shiftTypeNameById,
+        Number.POSITIVE_INFINITY
+      )
+    );
+  }, [entries, entryKey, shiftTypeNameById]);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container || entries.length === 0) return;
 
     function updateDisplay() {
       if (!container) return;
@@ -68,7 +95,7 @@ export function TagAreaHeaderStaffingOverlay({
     return () => observer.disconnect();
   }, [entries, entryKey, shiftTypeNameById]);
 
-  if (entries.length === 0 || display.mode === "empty") return null;
+  if (entries.length === 0) return null;
 
   return (
     <div
@@ -79,7 +106,10 @@ export function TagAreaHeaderStaffingOverlay({
         <span
           className={cn(
             "shrink-0 text-[10px] font-bold leading-none",
-            display.allMet ? "text-green-600" : "text-red-600"
+            staffingTextClass(
+              tone,
+              display.allMet ? "met" : "understaffed"
+            )
           )}
           title="Personalbedarf"
         >
@@ -91,7 +121,10 @@ export function TagAreaHeaderStaffingOverlay({
         <span
           className={cn(
             "shrink-0 whitespace-nowrap text-[10px] font-medium leading-none tabular-nums",
-            display.understaffed ? "text-red-600" : "text-green-600"
+            staffingTextClass(
+              tone,
+              display.understaffed ? "understaffed" : "met"
+            )
           )}
         >
           {display.text}
@@ -104,7 +137,12 @@ export function TagAreaHeaderStaffingOverlay({
             <Fragment key={segment.shiftTypeId}>
               {segmentIndex > 0 ? (
                 <span
-                  className="shrink-0 text-[10px] leading-none text-muted"
+                  className={cn(
+                    "shrink-0 text-[10px] leading-none",
+                    tone === "inactive" || tone === "past"
+                      ? staffingTextClass(tone, "default")
+                      : "text-muted"
+                  )}
                   aria-hidden
                 >
                   |
@@ -113,7 +151,10 @@ export function TagAreaHeaderStaffingOverlay({
               <span
                 className={cn(
                   "shrink-0 whitespace-nowrap text-[10px] font-medium leading-none tabular-nums",
-                  segment.understaffed ? "text-red-600" : "text-green-600"
+                  staffingTextClass(
+                    tone,
+                    segment.understaffed ? "understaffed" : "met"
+                  )
                 )}
               >
                 {segment.text}

@@ -17,13 +17,26 @@ export type AreaServiceHourRef = {
   weekday: number;
 };
 
+function normalizeWeekday(value: number | string): number {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isInteger(parsed) ? parsed : -1;
+}
+
+function normalizeRequiredCount(value: number | string): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export function isAreaOpenOnWeekday(
   serviceHours: AreaServiceHourRef[],
   areaId: string,
   weekday: number
 ): boolean {
   return serviceHours.some(
-    (h) => h.location_area_id === areaId && h.weekday === weekday
+    (h) =>
+      h.location_area_id === areaId &&
+      normalizeWeekday(h.weekday) === weekday
   );
 }
 
@@ -83,7 +96,9 @@ export function areaHasStaffingRequirement(
   areaId: string
 ): boolean {
   return rules.some(
-    (rule) => rule.location_area_id === areaId && rule.required_count > 0
+    (rule) =>
+      rule.location_area_id === areaId &&
+      normalizeRequiredCount(rule.required_count) > 0
   );
 }
 
@@ -99,8 +114,8 @@ export function areaHasStaffingRequirementOnDate(
   return rules.some(
     (rule) =>
       rule.location_area_id === areaId &&
-      rule.weekday === weekday &&
-      rule.required_count > 0
+      normalizeWeekday(rule.weekday) === weekday &&
+      normalizeRequiredCount(rule.required_count) > 0
   );
 }
 
@@ -118,37 +133,56 @@ export function areaHasStaffingRequirementInWeek(
   );
 }
 
-/** Öffnungsstatus im Dashboard: Vergangenheit nur anhand geplanter Schichten. */
+/** Öffnungsstatus im Dashboard: Vergangenheit = Arbeitstag laut Arbeitszeit oder Schicht. */
 export function isAreaOpenInCalendar(
   serviceHours: AreaServiceHourRef[],
   areaId: string,
   dateISO: string,
   hasShiftsInAreaOnDate: boolean
 ): boolean {
-  if (isPastCalendarDate(dateISO)) return hasShiftsInAreaOnDate;
+  if (isPastCalendarDate(dateISO)) {
+    return (
+      hasShiftsInAreaOnDate ||
+      isAreaOpenOnDate(serviceHours, areaId, dateISO)
+    );
+  }
   return isAreaOpenOnDate(serviceHours, areaId, dateISO);
 }
 
-/** Mindestens ein Bereich geöffnet (Dashboard, ohne Rückwirkung). */
+/** Mindestens ein Bereich geöffnet (Dashboard). */
 export function isAnyAreaOpenInCalendar(
   serviceHours: AreaServiceHourRef[],
   areaIds: readonly string[],
   dateISO: string,
   hasShiftsOnDate: boolean
 ): boolean {
-  if (isPastCalendarDate(dateISO)) return hasShiftsOnDate;
+  if (isPastCalendarDate(dateISO)) {
+    return hasShiftsOnDate || isAnyAreaOpenOnDate(serviceHours, areaIds, dateISO);
+  }
   return isAnyAreaOpenOnDate(serviceHours, areaIds, dateISO);
 }
 
-/** Personalbedarf an geöffneten Bereichen (Dashboard, ohne Rückwirkung). */
+/** Personalbedarf an geöffneten Bereichen (Dashboard). */
 export function hasStaffingRequirementInCalendar(
   rules: StaffingRule[],
   areaIds: readonly string[],
   dateISO: string,
   serviceHours: AreaServiceHourRef[]
 ): boolean {
-  if (isPastCalendarDate(dateISO)) return false;
   return hasStaffingRequirementOnDate(rules, areaIds, dateISO, serviceHours);
+}
+
+/** Vergangener Arbeitstag (Mo–So oder Feiertag) für einen Bereich. */
+export function isPastAreaWorkDayCell(
+  serviceHours: AreaServiceHourRef[],
+  areaId: string,
+  dateISO: string,
+  isManualAssignmentDay: boolean
+): boolean {
+  if (!isPastCalendarDate(dateISO)) return false;
+  return (
+    isManualAssignmentDay || isAreaOpenOnDate(serviceHours, areaId, dateISO)
+  );
 }
 
 /** Personalbedarf und Einsatz je Schichtart für Tag-Bereich-Header (Dashboard). */
@@ -160,7 +194,6 @@ export function tagAreaHeaderStaffingEntriesInCalendar(
   shiftTypes: ShiftTypeStaffingRef[],
   assignedShifts: { shiftTypeId: string }[]
 ): TagAreaHeaderStaffingEntry[] {
-  if (isPastCalendarDate(dateISO)) return [];
   return tagAreaHeaderStaffingEntries(
     rules,
     areaId,
@@ -184,8 +217,8 @@ export function hasStaffingRequirementOnDate(
     const hasRule = rules.some(
       (rule) =>
         rule.location_area_id === areaId &&
-        rule.weekday === weekday &&
-        rule.required_count > 0
+        normalizeWeekday(rule.weekday) === weekday &&
+        normalizeRequiredCount(rule.required_count) > 0
     );
     if (hasRule) return true;
   }
@@ -201,8 +234,11 @@ export function requiredStaffForAreaOnDate(
   const weekday = serviceWeekdayForDate(dateISO);
   if (!isAreaOpenOnWeekday(serviceHours, areaId, weekday)) return 0;
   return rules
-    .filter((r) => r.location_area_id === areaId && r.weekday === weekday)
-    .reduce((sum, r) => sum + r.required_count, 0);
+    .filter(
+      (r) =>
+        r.location_area_id === areaId && normalizeWeekday(r.weekday) === weekday
+    )
+    .reduce((sum, r) => sum + normalizeRequiredCount(r.required_count), 0);
 }
 
 export type ShiftTypeStaffingRef = {
@@ -232,10 +268,17 @@ export function tagAreaHeaderStaffingEntries(
 
   const requiredByType = new Map<string, number>();
   for (const rule of rules) {
-    if (rule.location_area_id !== areaId || rule.weekday !== weekday) continue;
+    if (
+      rule.location_area_id !== areaId ||
+      normalizeWeekday(rule.weekday) !== weekday
+    ) {
+      continue;
+    }
+    const count = normalizeRequiredCount(rule.required_count);
+    if (count <= 0) continue;
     requiredByType.set(
       rule.shift_type_id,
-      (requiredByType.get(rule.shift_type_id) ?? 0) + rule.required_count
+      (requiredByType.get(rule.shift_type_id) ?? 0) + count
     );
   }
 
@@ -247,16 +290,26 @@ export function tagAreaHeaderStaffingEntries(
     );
   }
 
+  const shiftTypeById = new Map(shiftTypes.map((type) => [type.id, type]));
+  const sortIndex = new Map(shiftTypes.map((type, index) => [type.id, index]));
+
   const entries: TagAreaHeaderStaffingEntry[] = [];
-  for (const type of shiftTypes) {
-    const required = requiredByType.get(type.id) ?? 0;
+  for (const [shiftTypeId, required] of requiredByType) {
     if (required <= 0) continue;
+    const type = shiftTypeById.get(shiftTypeId);
     entries.push({
-      shiftTypeId: type.id,
-      label: shortenShiftTypeDisplayName(type.name),
-      assigned: assignedByType.get(type.id) ?? 0,
+      shiftTypeId,
+      label: shortenShiftTypeDisplayName(type?.name ?? "Schicht"),
+      assigned: assignedByType.get(shiftTypeId) ?? 0,
       required,
     });
   }
+
+  entries.sort((a, b) => {
+    const aIndex = sortIndex.get(a.shiftTypeId) ?? Number.MAX_SAFE_INTEGER;
+    const bIndex = sortIndex.get(b.shiftTypeId) ?? Number.MAX_SAFE_INTEGER;
+    return aIndex - bIndex;
+  });
+
   return entries;
 }

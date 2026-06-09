@@ -1,4 +1,6 @@
 import type {
+  AbsenceRequest,
+  AbsenceType,
   Location,
   LocationArea,
   LocationAreaServiceHour,
@@ -21,11 +23,15 @@ import type {
   AuthSignUpResult,
   AvailabilityRow,
   DashboardShiftRow,
+  EmployeeShiftRecord,
   InviteUserResult,
   SchichtwerkDatabase,
   ShiftTypeBreakInput,
   ShiftWithTypeRow,
 } from "./interface";
+import {
+  isDateWithinAbsenceRange,
+} from "./absence-validation";
 import { validateProfileEmail } from "./profile-contact-validation";
 import {
   dayBefore,
@@ -662,6 +668,36 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     );
   }
 
+  async loadShiftTypesWithBreaksForDashboard(
+    organizationId: string,
+    staffingRules: { shift_type_id: string; required_count: number }[]
+  ) {
+    const active = await this.loadShiftTypesWithBreaks(organizationId);
+    const known = new Set(active.map((type) => type.id));
+    const extraIds = [
+      ...new Set(
+        staffingRules
+          .filter((rule) => rule.required_count > 0)
+          .map((rule) => rule.shift_type_id)
+          .filter((id) => id && !known.has(id))
+      ),
+    ];
+    if (!extraIds.length) return active;
+
+    const { data, error } = await this.client
+      .from(T.shiftTypes)
+      .select(`*, ${T.shiftTypeBreaks}(*)`)
+      .eq("organization_id", organizationId)
+      .in("id", extraIds)
+      .order("sort_order");
+    if (error) throw new Error(error.message);
+
+    return [
+      ...active,
+      ...normalizeShiftTypesWithBreaks(data ?? []),
+    ];
+  }
+
   async seedDefaultShiftTypes(organizationId: string) {
     await seedDefaultShiftTypes(this.client, organizationId);
   }
@@ -925,6 +961,52 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []).map((row) =>
       mapProfileRecurringAvailability(row as ProfileRecurringAvailabilityRow)
     );
+  }
+
+  async listOrganizationRecurringAvailability(organizationId: string) {
+    const { data, error } = await this.client
+      .from(T.profileRecurringAvailability)
+      .select("*, shift_types(name)")
+      .eq("organization_id", organizationId)
+      .order("sort_order");
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((row) =>
+      mapProfileRecurringAvailability(row as ProfileRecurringAvailabilityRow)
+    );
+  }
+
+  async listEmployeeIdsWithShiftOnDate(organizationId: string, date: string) {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select("employee_id")
+      .eq("organization_id", organizationId)
+      .eq("shift_date", date);
+    if (error) throw new Error(error.message);
+
+    const ids = new Set<string>();
+    for (const row of data ?? []) {
+      if (row.employee_id) ids.add(row.employee_id as string);
+    }
+    return [...ids];
+  }
+
+  async listEmployeeLastShiftDates(organizationId: string) {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select("employee_id, shift_date")
+      .eq("organization_id", organizationId)
+      .not("employee_id", "is", null)
+      .order("shift_date", { ascending: false });
+    if (error) throw new Error(error.message);
+
+    const lastByEmployee: Record<string, string> = {};
+    for (const row of data ?? []) {
+      const employeeId = row.employee_id as string;
+      if (!employeeId || lastByEmployee[employeeId]) continue;
+      lastByEmployee[employeeId] = row.shift_date as string;
+    }
+    return lastByEmployee;
   }
 
   async getNextProfileRecurringAvailabilitySortOrder(profileId: string) {
@@ -2080,7 +2162,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data } = await this.client
       .from(T.shifts)
       .select(
-        `id, employee_id, location_area_id, shift_type_id, shift_date, shift_types(name, color, start_time, end_time), profiles!employee_id(full_name)`
+        `id, employee_id, location_area_id, shift_type_id, shift_date, starts_at, ends_at, shift_types(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
       )
       .eq("organization_id", organizationId)
       .eq("location_id", locationId)
@@ -2108,6 +2190,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .select("id, location_id")
       .eq("employee_id", employeeId)
       .eq("shift_date", shiftDate)
+      .limit(1)
       .maybeSingle();
     return data
       ? {
@@ -2117,25 +2200,85 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       : null;
   }
 
+  async listShiftsForEmployeeDate(employeeId: string, shiftDate: string) {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, employee_id, shift_type_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+      )
+      .eq("employee_id", employeeId)
+      .eq("shift_date", shiftDate)
+      .order("starts_at");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as EmployeeShiftRecord[];
+  }
+
+  async getShiftRecordById(id: string, organizationId: string) {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, employee_id, shift_type_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+      )
+      .eq("id", id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as EmployeeShiftRecord | null) ?? null;
+  }
+
+  async listProfileQualificationIdsByOrganization(organizationId: string) {
+    const { data: profiles, error: profileError } = await this.client
+      .from(T.profiles)
+      .select("id")
+      .eq("organization_id", organizationId);
+    if (profileError) throw new Error(profileError.message);
+
+    const profileIds = (profiles ?? []).map((row) => row.id as string);
+    if (!profileIds.length) return new Map<string, string[]>();
+
+    const { data: links, error: linkError } = await this.client
+      .from(T.profileQualifications)
+      .select("profile_id, qualification_id")
+      .in("profile_id", profileIds);
+    if (linkError) throw new Error(linkError.message);
+
+    const map = new Map<string, string[]>();
+    for (const row of links ?? []) {
+      const profileId = row.profile_id as string;
+      const qualificationId = row.qualification_id as string;
+      const list = map.get(profileId) ?? [];
+      list.push(qualificationId);
+      map.set(profileId, list);
+    }
+    return map;
+  }
+
   async insertShift(row: {
     organization_id: string;
     employee_id: string;
-    shift_type_id: string;
+    shift_type_id: string | null;
     location_id: string;
+    location_area_id?: string | null;
     shift_date: string;
     starts_at: string;
     ends_at: string;
     created_by: string;
   }) {
-    const { error } = await this.client.from(T.shifts).insert(row);
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .insert(row)
+      .select("id")
+      .single();
     if (error) throw new Error(error.message);
+    return { id: data.id as string };
   }
 
   async updateShift(
     id: string,
     row: {
-      shift_type_id: string;
+      shift_type_id: string | null;
       location_id: string;
+      location_area_id?: string | null;
       starts_at: string;
       ends_at: string;
       created_by: string;
@@ -2162,6 +2305,108 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .gte("available_date", from)
       .lte("available_date", to);
     return (data ?? []) as AvailabilityRow[];
+  }
+
+  async listOrganizationAbsences(
+    organizationId: string,
+    status: "approved" | "pending" | "rejected" | "cancelled" = "approved"
+  ) {
+    const { data, error } = await this.client
+      .from(T.absenceRequests)
+      .select(
+        "id, organization_id, employee_id, type, start_date, end_date, status, notes, reviewed_by"
+      )
+      .eq("organization_id", organizationId)
+      .eq("status", status)
+      .order("start_date", { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as AbsenceRequest[];
+  }
+
+  async insertAbsenceRequest(row: {
+    organization_id: string;
+    employee_id: string;
+    type: AbsenceType;
+    start_date: string;
+    end_date: string;
+    status: "approved";
+    notes: string | null;
+    reviewed_by: string;
+  }) {
+    const { data, error } = await this.client
+      .from(T.absenceRequests)
+      .insert(row)
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return data.id as string;
+  }
+
+  async updateAbsenceRequest(
+    id: string,
+    organizationId: string,
+    row: {
+      employee_id: string;
+      type: AbsenceType;
+      start_date: string;
+      end_date: string;
+      status: "approved";
+      notes: string | null;
+      reviewed_by: string;
+    }
+  ) {
+    const { error } = await this.client
+      .from(T.absenceRequests)
+      .update(row)
+      .eq("id", id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async deleteAbsenceRequest(id: string, organizationId: string) {
+    const { error } = await this.client
+      .from(T.absenceRequests)
+      .delete()
+      .eq("id", id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async countShiftsConflictingWithAbsenceRanges(
+    organizationId: string,
+    ranges: { employee_id: string; start_date: string; end_date: string }[]
+  ) {
+    if (!ranges.length) return 0;
+
+    const employeeIds = [...new Set(ranges.map((range) => range.employee_id))];
+    let minDate = ranges[0]!.start_date;
+    let maxDate = ranges[0]!.end_date;
+    for (const range of ranges) {
+      if (range.start_date < minDate) minDate = range.start_date;
+      if (range.end_date > maxDate) maxDate = range.end_date;
+    }
+
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select("employee_id, shift_date")
+      .eq("organization_id", organizationId)
+      .in("employee_id", employeeIds)
+      .gte("shift_date", minDate)
+      .lte("shift_date", maxDate);
+    if (error) throw new Error(error.message);
+
+    let count = 0;
+    for (const row of data ?? []) {
+      const employeeId = row.employee_id as string;
+      const shiftDate = row.shift_date as string;
+      const matches = ranges.some(
+        (range) =>
+          range.employee_id === employeeId &&
+          isDateWithinAbsenceRange(range, shiftDate)
+      );
+      if (matches) count += 1;
+    }
+    return count;
   }
 
   async getManagerProfile(userId: string) {

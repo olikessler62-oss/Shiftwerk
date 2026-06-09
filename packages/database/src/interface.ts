@@ -1,5 +1,7 @@
 import type {
   AvailabilityStatus,
+  AbsenceRequest,
+  AbsenceType,
   Profile,
   ProfileHourlyRate,
   ProfileHourlyRateSummary,
@@ -38,15 +40,29 @@ export type DashboardShiftRow = {
   id: string;
   employee_id: string;
   location_area_id: string | null;
-  shift_type_id: string;
+  shift_type_id: string | null;
   shift_date: string;
+  starts_at?: string;
+  ends_at?: string;
   shift_types: {
     name: string;
     color: string;
     start_time: string;
     end_time: string;
   } | null;
-  profiles: { full_name: string } | null;
+  profiles: { full_name: string; color?: string | null } | null;
+};
+
+export type EmployeeShiftRecord = {
+  id: string;
+  employee_id: string;
+  shift_type_id: string | null;
+  location_id: string | null;
+  location_area_id: string | null;
+  shift_date: string;
+  starts_at: string;
+  ends_at: string;
+  created_by: string | null;
 };
 
 export type AvailabilityRow = {
@@ -166,6 +182,10 @@ export interface SchichtwerkDatabase {
     to: string
   ): Promise<ShiftType[]>;
   loadShiftTypesWithBreaks(organizationId: string): Promise<ShiftTypeWithBreaks[]>;
+  loadShiftTypesWithBreaksForDashboard(
+    organizationId: string,
+    staffingRules: { shift_type_id: string; required_count: number }[]
+  ): Promise<ShiftTypeWithBreaks[]>;
   seedDefaultShiftTypes(organizationId: string): Promise<void>;
   getShiftTypeForAssign(
     shiftTypeId: string,
@@ -279,6 +299,16 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     profileId: string
   ): Promise<ProfileRecurringAvailability[]>;
+  listOrganizationRecurringAvailability(
+    organizationId: string
+  ): Promise<ProfileRecurringAvailability[]>;
+  listEmployeeIdsWithShiftOnDate(
+    organizationId: string,
+    date: string
+  ): Promise<string[]>;
+  listEmployeeLastShiftDates(
+    organizationId: string
+  ): Promise<Record<string, string>>;
   insertProfileRecurringAvailability(
     organizationId: string,
     profileId: string,
@@ -441,21 +471,34 @@ export interface SchichtwerkDatabase {
     employeeId: string,
     shiftDate: string
   ): Promise<{ id: string; location_id: string | null } | null>;
+  listShiftsForEmployeeDate(
+    employeeId: string,
+    shiftDate: string
+  ): Promise<EmployeeShiftRecord[]>;
+  getShiftRecordById(
+    id: string,
+    organizationId: string
+  ): Promise<EmployeeShiftRecord | null>;
+  listProfileQualificationIdsByOrganization(
+    organizationId: string
+  ): Promise<Map<string, string[]>>;
   insertShift(row: {
     organization_id: string;
     employee_id: string;
-    shift_type_id: string;
+    shift_type_id: string | null;
     location_id: string;
+    location_area_id?: string | null;
     shift_date: string;
     starts_at: string;
     ends_at: string;
     created_by: string;
-  }): Promise<void>;
+  }): Promise<{ id: string }>;
   updateShift(
     id: string,
     row: {
-      shift_type_id: string;
+      shift_type_id: string | null;
       location_id: string;
+      location_area_id?: string | null;
       starts_at: string;
       ends_at: string;
       created_by: string;
@@ -469,6 +512,44 @@ export interface SchichtwerkDatabase {
     from: string,
     to: string
   ): Promise<AvailabilityRow[]>;
+
+  // —— Absence requests ——
+  listOrganizationAbsences(
+    organizationId: string,
+    status?: "approved" | "pending" | "rejected" | "cancelled"
+  ): Promise<AbsenceRequest[]>;
+
+  insertAbsenceRequest(row: {
+    organization_id: string;
+    employee_id: string;
+    type: AbsenceType;
+    start_date: string;
+    end_date: string;
+    status: "approved";
+    notes: string | null;
+    reviewed_by: string;
+  }): Promise<string>;
+
+  updateAbsenceRequest(
+    id: string,
+    organizationId: string,
+    row: {
+      employee_id: string;
+      type: AbsenceType;
+      start_date: string;
+      end_date: string;
+      status: "approved";
+      notes: string | null;
+      reviewed_by: string;
+    }
+  ): Promise<void>;
+
+  deleteAbsenceRequest(id: string, organizationId: string): Promise<void>;
+
+  countShiftsConflictingWithAbsenceRanges(
+    organizationId: string,
+    ranges: { employee_id: string; start_date: string; end_date: string }[]
+  ): Promise<number>;
 
   // —— Manager layout ——
   getManagerProfile(userId: string): Promise<Profile | null>;

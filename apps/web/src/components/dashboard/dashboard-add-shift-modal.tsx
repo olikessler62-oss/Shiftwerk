@@ -1,0 +1,890 @@
+"use client";
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import {
+  fetchDashboardShiftAssignEmployees,
+  type DashboardEmployeeAvailabilityEntry,
+  type DashboardShiftAssignEmployee,
+} from "@/app/actions/dashboard-shift-assign";
+import { assignShiftWithTimes } from "@/app/actions/shifts";
+import { useRouter } from "next/navigation";
+import { SETTINGS_MODAL_TITLE_CLASS } from "@/components/settings/settings-list-ui";
+import {
+  Alert,
+  Button,
+  CheckIcon,
+  ChevronDownIcon,
+  CloseIcon,
+  IconButton,
+  LabelMuted,
+  TimeInput,
+} from "@/components/ui";
+import {
+  areDashboardShiftTimesComplete,
+  filterDashboardShiftAssignEmployeesByWindow,
+  pickEmployeeLongestWithoutShift,
+  profileAvailabilityWeekdayFromDashboardDate,
+  resolveShiftTypeIdFromTimes,
+} from "@/lib/available-employees-for-shift";
+import {
+  formatAvailabilityTimeRange,
+  weekdayAbbrev,
+} from "@/lib/profile-availability-label";
+import { formatDayHeader } from "@/lib/planning-utils";
+import { cn } from "@/lib/cn";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { toIntlLocale } from "@/i18n/intl-locale";
+import type { LocationArea, ShiftTypeWithBreaks } from "@schichtwerk/types";
+
+const EMPTY_EMPLOYEE_ID = "";
+export { EMPTY_EMPLOYEE_ID as DASHBOARD_EMPTY_EMPLOYEE_ID };
+const AVAILABILITY_MENU_VIEWPORT_PADDING_PX = 8;
+const AVAILABILITY_MENU_CLOSE_DISTANCE_PX = 30;
+const DASHBOARD_COMBOBOX_DROPDOWN_Z = 120;
+
+type DropdownPosition = {
+  top: number;
+  left: number;
+  width: number;
+};
+
+function useFloatingDropdownPosition(
+  open: boolean,
+  anchorRef: RefObject<HTMLElement | null>
+): DropdownPosition | null {
+  const [position, setPosition] = useState<DropdownPosition | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+
+    const update = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, anchorRef]);
+
+  return position;
+}
+
+function useCloseOnOutsideClick(
+  open: boolean,
+  onClose: () => void,
+  refs: RefObject<HTMLElement | null>[]
+) {
+  const refsRef = useRef(refs);
+  refsRef.current = refs;
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (refsRef.current.some((ref) => ref.current?.contains(target))) return;
+      onClose();
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [open, onClose]);
+}
+
+type MenuPosition = {
+  x: number;
+  y: number;
+};
+
+function distanceFromPointToMenu(
+  clientX: number,
+  clientY: number,
+  menu: HTMLElement
+): number {
+  const rect = menu.getBoundingClientRect();
+  const closestX = Math.max(rect.left, Math.min(clientX, rect.right));
+  const closestY = Math.max(rect.top, Math.min(clientY, rect.bottom));
+  return Math.hypot(clientX - closestX, clientY - closestY);
+}
+
+function isPointInsideElement(
+  clientX: number,
+  clientY: number,
+  element: HTMLElement
+): boolean {
+  const rect = element.getBoundingClientRect();
+  return (
+    clientX >= rect.left &&
+    clientX <= rect.right &&
+    clientY >= rect.top &&
+    clientY <= rect.bottom
+  );
+}
+
+function timeFieldValue(time: string): string {
+  return time.slice(0, 5);
+}
+
+function resolveAvailabilityMenuPosition(
+  trigger: HTMLElement,
+  menuWidth: number,
+  menuHeight: number
+): MenuPosition {
+  const triggerRect = trigger.getBoundingClientRect();
+  const padding = AVAILABILITY_MENU_VIEWPORT_PADDING_PX;
+  const maxLeft = window.innerWidth - menuWidth - padding;
+  const maxTop = window.innerHeight - menuHeight - padding;
+
+  return {
+    x: Math.max(padding, Math.min(triggerRect.left, maxLeft)),
+    y: Math.max(padding, Math.min(triggerRect.bottom, maxTop)),
+  };
+}
+
+function availabilityShiftLabel(
+  entry: DashboardEmployeeAvailabilityEntry,
+  timesOnlyLabel: string
+): string {
+  const name = entry.shift_type_name?.trim();
+  return name || timesOnlyLabel;
+}
+
+function availabilityTimeLabel(
+  entry: DashboardEmployeeAvailabilityEntry,
+  locale: "de" | "en"
+): string {
+  return formatAvailabilityTimeRange(
+    entry.start_time,
+    entry.end_time,
+    locale
+  ).replace(" – ", " - ");
+}
+
+function formatAvailabilityMenuLabel(
+  entry: DashboardEmployeeAvailabilityEntry,
+  locale: "de" | "en",
+  timesOnlyLabel: string
+): string {
+  return `${weekdayAbbrev(entry.weekday, locale)}: ${availabilityShiftLabel(entry, timesOnlyLabel)} ${availabilityTimeLabel(entry, locale)}`;
+}
+
+type EmployeeAvailabilityContextMenuProps = {
+  availabilities: DashboardEmployeeAvailabilityEntry[];
+  triggerRef: RefObject<HTMLElement | null>;
+  onSelect: (entry: DashboardEmployeeAvailabilityEntry) => void;
+  onClose: () => void;
+};
+
+function EmployeeAvailabilityContextMenu({
+  availabilities,
+  triggerRef,
+  onSelect,
+  onClose,
+}: EmployeeAvailabilityContextMenuProps) {
+  const { locale } = useLocale();
+  const localeKey = locale === "en" ? "en" : "de";
+  const t = useTranslations();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    const trigger = triggerRef.current;
+    if (!menu || !trigger) return;
+    const { width, height } = menu.getBoundingClientRect();
+    setPosition(resolveAvailabilityMenuPosition(trigger, width, height));
+  }, [availabilities, localeKey, triggerRef]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const handleMouseMove = (event: MouseEvent) => {
+      const menu = menuRef.current;
+      if (!menu) return;
+
+      const trigger = triggerRef.current;
+      if (trigger && isPointInsideElement(event.clientX, event.clientY, trigger)) {
+        return;
+      }
+      if (menu.contains(event.target as Node)) return;
+
+      if (
+        distanceFromPointToMenu(event.clientX, event.clientY, menu) >
+        AVAILABILITY_MENU_CLOSE_DISTANCE_PX
+      ) {
+        onClose();
+      }
+    };
+    const handleScroll = () => onClose();
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [onClose, triggerRef]);
+
+  const timesOnlyLabel = t("profiles.availabilityInputTimes");
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-[120] flex w-fit max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
+      style={{
+        top: position?.y ?? 0,
+        left: position?.x ?? 0,
+        visibility: position ? "visible" : "hidden",
+      }}
+      role="menu"
+      aria-label={t("profiles.panelAvailability")}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <p className="whitespace-nowrap px-3 py-1.5 text-xs font-semibold text-foreground">
+        {t("profiles.panelAvailability")}
+      </p>
+      <div className="border-t border-border">
+        {availabilities.length === 0 ? (
+          <p className="whitespace-nowrap px-3 py-2 text-xs text-muted">
+            {t("profiles.emptyAvailability")}
+          </p>
+        ) : (
+          availabilities.map((entry, index) => (
+            <button
+              key={`${entry.weekday}-${entry.shift_type_id ?? "times"}-${entry.start_time}-${entry.end_time}-${index}`}
+              type="button"
+              role="menuitem"
+              className="block cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground hover:bg-subtle"
+            onClick={() => {
+              onSelect(entry);
+              onClose();
+            }}
+          >
+            {formatAvailabilityMenuLabel(entry, localeKey, timesOnlyLabel)}
+          </button>
+        ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export type DashboardAddShiftDialogState = {
+  areaId: string;
+  date: string;
+};
+
+type Props = {
+  dialog: DashboardAddShiftDialogState;
+  locationId: string;
+  areas: LocationArea[];
+  shiftTypes: ShiftTypeWithBreaks[];
+  onClose: () => void;
+  onSaved?: () => void;
+};
+
+function EmployeeColorSwatch({ hex }: { hex: string | null }) {
+  if (!hex) {
+    return (
+      <span
+        className="inline-block h-[10px] w-[10px] shrink-0 rounded-sm border border-border/60 bg-transparent"
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <span
+      className="inline-block h-[10px] w-[10px] shrink-0 rounded-sm border border-border/60"
+      style={{ backgroundColor: hex }}
+      aria-hidden
+    />
+  );
+}
+
+type EmployeeComboboxProps = {
+  value: string;
+  onChange: (employeeId: string) => void;
+  employees: DashboardShiftAssignEmployee[];
+  selectedEmployee: DashboardShiftAssignEmployee | null;
+  dayAvailabilities: DashboardEmployeeAvailabilityEntry[];
+  emptyLabel: string;
+  disabled?: boolean;
+  onApplyAvailability: (entry: DashboardEmployeeAvailabilityEntry) => void;
+  triggerClassName?: string;
+  rootClassName?: string;
+};
+
+export function DashboardShiftEmployeeCombobox({
+  value,
+  onChange,
+  employees,
+  selectedEmployee,
+  dayAvailabilities,
+  emptyLabel,
+  disabled = false,
+  onApplyAvailability,
+  triggerClassName,
+  rootClassName,
+}: EmployeeComboboxProps) {
+  const [open, setOpen] = useState(false);
+  const [availabilityMenuOpen, setAvailabilityMenuOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
+  const closeDropdown = useCallback(() => setOpen(false), []);
+  useCloseOnOutsideClick(open, closeDropdown, [triggerRef, listRef]);
+  const selected =
+    value === EMPTY_EMPLOYEE_ID
+      ? null
+      : employees.find((employee) => employee.id === value) ?? selectedEmployee;
+
+  const canShowAvailabilityMenu =
+    !disabled &&
+    !open &&
+    selectedEmployee !== null &&
+    value !== EMPTY_EMPLOYEE_ID;
+
+  const openAvailabilityMenu = useCallback(() => {
+    if (!canShowAvailabilityMenu) return;
+    setAvailabilityMenuOpen(true);
+  }, [canShowAvailabilityMenu]);
+
+  const closeAvailabilityMenu = useCallback(() => {
+    setAvailabilityMenuOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (open) closeAvailabilityMenu();
+  }, [open, closeAvailabilityMenu]);
+
+  useEffect(() => {
+    if (!canShowAvailabilityMenu) closeAvailabilityMenu();
+  }, [canShowAvailabilityMenu, closeAvailabilityMenu]);
+
+  const options = useMemo(
+    () => [
+      ...employees,
+      {
+        id: EMPTY_EMPLOYEE_ID,
+        full_name: emptyLabel,
+        color: null,
+        last_shift_date: null,
+        availabilities: [],
+      } satisfies DashboardShiftAssignEmployee,
+    ],
+    [employees, emptyLabel]
+  );
+
+  return (
+    <div
+      ref={rootRef}
+      className={cn(
+        "relative",
+        rootClassName ? "h-9" : !triggerClassName && "mt-1",
+        rootClassName
+      )}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          "box-border flex w-full items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
+          rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
+          value === EMPTY_EMPLOYEE_ID ? "text-[silver]" : "text-black",
+          disabled && "cursor-not-allowed opacity-60",
+          triggerClassName
+        )}
+        onClick={() => {
+          if (!disabled) setOpen((prev) => !prev);
+        }}
+        onMouseEnter={() => {
+          openAvailabilityMenu();
+        }}
+        onContextMenu={(event) => {
+          if (!canShowAvailabilityMenu) return;
+          event.preventDefault();
+          event.stopPropagation();
+          openAvailabilityMenu();
+        }}
+      >
+        <EmployeeColorSwatch hex={selected?.color ?? null} />
+        <span className="min-w-0 flex-1 truncate">
+          {selected?.full_name ?? emptyLabel}
+        </span>
+        <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
+      </button>
+      {open && dropdownPosition
+        ? createPortal(
+            <ul
+              ref={listRef}
+              role="listbox"
+              className="fixed max-h-48 overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg"
+              style={{
+                top: dropdownPosition.top,
+                left: dropdownPosition.left,
+                width: dropdownPosition.width,
+                zIndex: DASHBOARD_COMBOBOX_DROPDOWN_Z,
+              }}
+            >
+              {options.map((employee) => (
+                <li key={employee.id || "empty"} role="option" aria-selected={value === employee.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-subtle"
+                    onClick={() => {
+                      onChange(employee.id);
+                      setOpen(false);
+                    }}
+                  >
+                    <EmployeeColorSwatch hex={employee.color} />
+                    <span className="min-w-0 flex-1 truncate">{employee.full_name}</span>
+                    {value === employee.id ? (
+                      <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>,
+            document.body
+          )
+        : null}
+      {availabilityMenuOpen ? (
+        <EmployeeAvailabilityContextMenu
+          availabilities={dayAvailabilities}
+          triggerRef={triggerRef}
+          onSelect={onApplyAvailability}
+          onClose={closeAvailabilityMenu}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+type ShiftTypeComboboxProps = {
+  value: string;
+  onChange: (shiftTypeId: string) => void;
+  shiftTypes: ShiftTypeWithBreaks[];
+  disabled?: boolean;
+  rootClassName?: string;
+};
+
+export function DashboardShiftTypeCombobox({
+  value,
+  onChange,
+  shiftTypes,
+  disabled = false,
+  rootClassName,
+}: ShiftTypeComboboxProps) {
+  const t = useTranslations();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
+  const closeDropdown = useCallback(() => setOpen(false), []);
+  useCloseOnOutsideClick(open, closeDropdown, [triggerRef, listRef]);
+  const placeholder = t("dashboard.selectShiftType");
+  const selectedType = shiftTypes.find((type) => type.id === value) ?? null;
+  const isPlaceholder = !value;
+  const displayText = selectedType?.name ?? placeholder;
+
+  return (
+    <div
+      className={cn(
+        "relative",
+        rootClassName ? "h-9" : "mt-1",
+        rootClassName
+      )}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          "box-border flex w-full items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
+          rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
+          isPlaceholder ? "text-[silver]" : "text-black",
+          disabled && "cursor-not-allowed opacity-60"
+        )}
+        onClick={() => {
+          if (!disabled) setOpen((prev) => !prev);
+        }}
+      >
+        <span className="min-w-0 flex-1 truncate">{displayText}</span>
+        <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
+      </button>
+      {open && dropdownPosition
+        ? createPortal(
+            <ul
+              ref={listRef}
+              role="listbox"
+              className="fixed max-h-48 overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg"
+              style={{
+                top: dropdownPosition.top,
+                left: dropdownPosition.left,
+                width: dropdownPosition.width,
+                zIndex: DASHBOARD_COMBOBOX_DROPDOWN_Z,
+              }}
+            >
+              <li role="option" aria-selected={isPlaceholder}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[silver] hover:bg-subtle"
+                  onClick={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                >
+                  <span className="min-w-0 flex-1 truncate">{placeholder}</span>
+                  {isPlaceholder ? (
+                    <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
+                  ) : null}
+                </button>
+              </li>
+              {shiftTypes.map((type) => (
+                <li key={type.id} role="option" aria-selected={value === type.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-black hover:bg-subtle"
+                    onClick={() => {
+                      onChange(type.id);
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{type.name}</span>
+                    {value === type.id ? (
+                      <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>,
+            document.body
+          )
+        : null}
+    </div>
+  );
+}
+
+export function DashboardAddShiftModal({
+  dialog,
+  locationId,
+  areas,
+  shiftTypes,
+  onClose,
+  onSaved,
+}: Props) {
+  const router = useRouter();
+  const { locale } = useLocale();
+  const t = useTranslations();
+  const intlLocale = toIntlLocale(locale);
+  const weekday = profileAvailabilityWeekdayFromDashboardDate(dialog.date);
+
+  const areaName =
+    areas.find((area) => area.id === dialog.areaId)?.name ?? "";
+  const dayHeader = formatDayHeader(dialog.date, intlLocale);
+
+  const [shiftTypeId, setShiftTypeId] = useState("");
+  const [startTime, setStartTime] = useState("00:00");
+  const [endTime, setEndTime] = useState("00:00");
+  const [employees, setEmployees] = useState<DashboardShiftAssignEmployee[]>([]);
+  const [employeeId, setEmployeeId] = useState(EMPTY_EMPLOYEE_ID);
+  const [employeeManuallySelected, setEmployeeManuallySelected] = useState(false);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const skipShiftTypeFromTimesSyncRef = useRef(false);
+
+  const timesComplete = areDashboardShiftTimesComplete(startTime, endTime);
+
+  const matchingEmployees = useMemo(
+    () =>
+      filterDashboardShiftAssignEmployeesByWindow(
+        employees,
+        weekday,
+        startTime,
+        endTime,
+        shiftTypes
+      ),
+    [employees, weekday, startTime, endTime, shiftTypes]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadEmployees() {
+      setLoadingEmployees(true);
+      setError(null);
+      const result = await fetchDashboardShiftAssignEmployees(dialog.date);
+      if (cancelled) return;
+      if (!result.ok) {
+        setError(result.error);
+        setEmployees([]);
+      } else {
+        setEmployees(result.employees);
+      }
+      setLoadingEmployees(false);
+    }
+
+    void loadEmployees();
+    return () => {
+      cancelled = true;
+    };
+  }, [dialog.date]);
+
+  useEffect(() => {
+    setEmployeeManuallySelected(false);
+  }, [startTime, endTime]);
+
+  useEffect(() => {
+    if (skipShiftTypeFromTimesSyncRef.current) {
+      skipShiftTypeFromTimesSyncRef.current = false;
+      return;
+    }
+    if (!timesComplete) {
+      setShiftTypeId((current) => (current ? "" : current));
+      return;
+    }
+    const matchedShiftTypeId =
+      resolveShiftTypeIdFromTimes(startTime, endTime, shiftTypes) ?? "";
+    setShiftTypeId((current) =>
+      current === matchedShiftTypeId ? current : matchedShiftTypeId
+    );
+  }, [startTime, endTime, shiftTypes, timesComplete]);
+
+  useEffect(() => {
+    if (employeeManuallySelected || loadingEmployees) return;
+
+    if (!timesComplete) {
+      setEmployeeId(EMPTY_EMPLOYEE_ID);
+      return;
+    }
+
+    const preferred = pickEmployeeLongestWithoutShift(matchingEmployees);
+    setEmployeeId(preferred?.id ?? EMPTY_EMPLOYEE_ID);
+  }, [
+    matchingEmployees,
+    timesComplete,
+    loadingEmployees,
+    employeeManuallySelected,
+  ]);
+
+  const handleEmployeeChange = useCallback((nextId: string) => {
+    setEmployeeManuallySelected(true);
+    setEmployeeId(nextId);
+  }, []);
+
+  const handleShiftTypeChange = useCallback(
+    (nextId: string) => {
+      setShiftTypeId(nextId);
+      const type = shiftTypes.find((item) => item.id === nextId);
+      if (type) {
+        skipShiftTypeFromTimesSyncRef.current = true;
+        setStartTime(timeFieldValue(type.start_time));
+        setEndTime(timeFieldValue(type.end_time));
+      }
+    },
+    [shiftTypes]
+  );
+
+  const handleApplyAvailability = useCallback(
+    (entry: DashboardEmployeeAvailabilityEntry) => {
+      const nextStart = timeFieldValue(entry.start_time);
+      const nextEnd = timeFieldValue(entry.end_time);
+      skipShiftTypeFromTimesSyncRef.current = true;
+      setStartTime(nextStart);
+      setEndTime(nextEnd);
+      setEmployeeManuallySelected(true);
+
+      if (entry.shift_type_id) {
+        setShiftTypeId(entry.shift_type_id);
+        return;
+      }
+
+      const matchedShiftTypeId = resolveShiftTypeIdFromTimes(
+        nextStart,
+        nextEnd,
+        shiftTypes
+      );
+      if (matchedShiftTypeId) {
+        setShiftTypeId(matchedShiftTypeId);
+      }
+    },
+    [shiftTypes]
+  );
+
+  const handleOk = useCallback(async () => {
+    if (
+      !employeeId ||
+      employeeId === EMPTY_EMPLOYEE_ID ||
+      !timesComplete
+    ) {
+      onClose();
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    const result = await assignShiftWithTimes({
+      employeeId,
+      shiftDate: dialog.date,
+      startTime,
+      endTime,
+      shiftTypeId: shiftTypeId || null,
+      locationId,
+      locationAreaId: dialog.areaId,
+    });
+    setSaving(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    onSaved?.();
+    router.refresh();
+    onClose();
+  }, [
+    employeeId,
+    timesComplete,
+    dialog.date,
+    dialog.areaId,
+    startTime,
+    endTime,
+    shiftTypeId,
+    locationId,
+    onClose,
+    onSaved,
+    router,
+  ]);
+
+  const selectedEmployee = useMemo(
+    () =>
+      employeeId === EMPTY_EMPLOYEE_ID
+        ? null
+        : employees.find((employee) => employee.id === employeeId) ?? null,
+    [employeeId, employees]
+  );
+
+  const selectedDayAvailabilities = useMemo(() => {
+    if (!selectedEmployee) return [];
+    return selectedEmployee.availabilities.filter(
+      (slot) => slot.weekday === weekday
+    );
+  }, [selectedEmployee, weekday]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dashboard-add-shift-title"
+        className="relative z-[111] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h3 id="dashboard-add-shift-title" className={SETTINGS_MODAL_TITLE_CLASS}>
+              {t("dashboard.addShiftTitle")}
+            </h3>
+            <p className="mt-0.5 text-sm text-muted">
+              {areaName} · {dayHeader.weekday}, {dayHeader.label}
+            </p>
+          </div>
+          <IconButton
+            size="sm"
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
+          >
+            <CloseIcon className="h-[18px] w-[18px]" />
+          </IconButton>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          {error ? <Alert variant="error">{error}</Alert> : null}
+
+          <div>
+            <LabelMuted>{t("shiftTypes.designation")}</LabelMuted>
+            <DashboardShiftTypeCombobox
+              value={shiftTypeId}
+              shiftTypes={shiftTypes}
+              disabled={shiftTypes.length === 0}
+              onChange={handleShiftTypeChange}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <LabelMuted>{t("shiftTypes.timeFrom")}</LabelMuted>
+              <TimeInput
+                className="mt-1"
+                value={startTime}
+                onChange={(event) => setStartTime(event.target.value)}
+              />
+            </div>
+            <div>
+              <LabelMuted>{t("shiftTypes.timeTo")}</LabelMuted>
+              <TimeInput
+                className="mt-1"
+                value={endTime}
+                onChange={(event) => setEndTime(event.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <LabelMuted>{t("common.basic")}</LabelMuted>
+            <DashboardShiftEmployeeCombobox
+              value={employeeId}
+              onChange={handleEmployeeChange}
+              employees={matchingEmployees}
+              selectedEmployee={selectedEmployee}
+              dayAvailabilities={selectedDayAvailabilities}
+              emptyLabel={t("dashboard.noEmployeeSelected")}
+              disabled={loadingEmployees}
+              onApplyAvailability={handleApplyAvailability}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+            {t("common.cancel")}
+          </Button>
+          <Button type="button" onClick={() => void handleOk()} disabled={saving}>
+            {t("common.ok")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
