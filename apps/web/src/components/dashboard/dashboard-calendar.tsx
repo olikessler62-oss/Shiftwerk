@@ -12,6 +12,7 @@ import {
 import { isPastCalendarDate } from "@/lib/dates";
 import { buildHolidayNamesByDate, isGermanPublicHoliday } from "@/lib/german-public-holidays";
 import { formatDayHeader, formatTimeRange } from "@/lib/planning-utils";
+import { shortenShiftTypeDisplayName } from "@/lib/profile-availability-label";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type { LocationArea, ShiftTypeWithBreaks } from "@schichtwerk/types";
@@ -64,6 +65,7 @@ export type DashboardShiftCard = {
   startTime: string;
   endTime: string;
   employeeName: string;
+  employeeColor: string | null;
 };
 
 type Props = {
@@ -164,6 +166,10 @@ const TAG_AREA_HEADER_STRIP_HEIGHT = "20px";
 /** Tag-Bereich-Footer-Streifen-Höhe. */
 const TAG_AREA_FOOTER_STRIP_HEIGHT = "18px";
 
+/** Kompakte Einzeilen-Schichtkarte (Name links, Schicht/Zeit rechts). */
+const DASHBOARD_SHIFT_CARD_CLASS =
+  "flex shrink-0 items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-white shadow-sm";
+
 /** Geschlossener Bereich × Tag (kein Arbeitstag laut Arbeitszeit / Feiertag). */
 const CLOSED_AREA_DAY_BG = "#e6edf2";
 
@@ -221,7 +227,7 @@ function InactiveAreaDummyShiftCard({
 
   return (
     <div
-      className="shrink-0 overflow-hidden rounded-lg border border-border/80 bg-surface px-2.5 py-2 shadow-sm"
+      className="flex shrink-0 items-center overflow-hidden rounded-lg border border-border/80 bg-surface px-2 py-1.5 shadow-sm"
       aria-hidden
     >
       <div className="flex flex-col gap-1.5">
@@ -237,6 +243,49 @@ function InactiveAreaDummyShiftCard({
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function ShiftCardEmployeeSwatch({ hex }: { hex: string | null }) {
+  if (!hex) {
+    return (
+      <span
+        className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm border border-white/40 bg-transparent"
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <span
+      className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm border border-white/40"
+      style={{ backgroundColor: hex }}
+      aria-hidden
+    />
+  );
+}
+
+function dashboardShiftCardTimeLabel(shift: DashboardShiftCard): string {
+  const times = formatTimeRange(shift.startTime, shift.endTime);
+  if (!shift.shiftName.trim()) return times;
+  return `${shortenShiftTypeDisplayName(shift.shiftName)} ${times}`;
+}
+
+function DashboardShiftCardView({ shift }: { shift: DashboardShiftCard }) {
+  return (
+    <div
+      className={DASHBOARD_SHIFT_CARD_CLASS}
+      style={{ backgroundColor: shift.color }}
+    >
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <ShiftCardEmployeeSwatch hex={shift.employeeColor} />
+        <span className="truncate font-medium leading-none">
+          {shift.employeeName}
+        </span>
+      </span>
+      <span className="shrink-0 whitespace-nowrap leading-none tabular-nums opacity-95">
+        {dashboardShiftCardTimeLabel(shift)}
+      </span>
     </div>
   );
 }
@@ -272,7 +321,7 @@ function distanceFromPointToMenu(
   return Math.hypot(clientX - closestX, clientY - closestY);
 }
 
-/** Rechtsklick „Schicht zuweisen“: Arbeitstag laut Service-Zeiten, Checkboxen aktiv, heute/Zukunft. */
+/** Rechtsklick „Schicht zuweisen“: Arbeitstag laut Servicezeiten, Checkboxen aktiv, heute/Zukunft. */
 export function canOpenAssignShiftContextMenu(
   areaId: string,
   dateISO: string,
@@ -942,32 +991,17 @@ export function DashboardCalendar({
                                     : undefined),
                                 }}
                               >
-                                <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden">
+                                <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-x-hidden overflow-y-auto">
                                   {showInactivePreviewDummy ? (
                                     <InactiveAreaDummyShiftCard
                                       shiftTypes={shiftTypes}
                                     />
                                   ) : showOpenDayCell ? (
                                     dayShifts.map((shift) => (
-                                      <div
+                                      <DashboardShiftCardView
                                         key={shift.id}
-                                        className="shrink-0 rounded-lg px-2.5 py-2 text-white shadow-sm"
-                                        style={{
-                                          backgroundColor: shift.color,
-                                        }}
-                                      >
-                                        <p className="text-xs font-semibold leading-tight">
-                                          {shift.shiftName
-                                            ? `${shift.shiftName} ${formatTimeRange(shift.startTime, shift.endTime)}`
-                                            : formatTimeRange(
-                                                shift.startTime,
-                                                shift.endTime
-                                              )}
-                                        </p>
-                                        <p className="mt-1 text-xs leading-tight opacity-95">
-                                          {shift.employeeName}
-                                        </p>
-                                      </div>
+                                        shift={shift}
+                                      />
                                     ))
                                   ) : null}
                                 </div>
@@ -1020,6 +1054,7 @@ export function DashboardCalendar({
           locationId={locationId}
           areas={areas}
           shiftTypes={shiftTypes}
+          serviceHours={serviceHours}
           onClose={() => setAddShiftDialog(null)}
           onSaved={handleShiftSaved}
         />

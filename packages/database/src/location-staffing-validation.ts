@@ -21,13 +21,13 @@ export function validateStaffingRulesInput(
     }
     const qualId = rule.qualification_id?.trim();
     if (!qualId || !validQualificationIds.has(qualId)) {
-      return { ok: false, error: "Bitte gültige Position auswählen." };
+      return { ok: false, error: "Bitte gültige Funktion auswählen." };
     }
     const key = `${rule.weekday}:${qualId}`;
     if (seen.has(key)) {
       return {
         ok: false,
-        error: "Jede Position darf pro Tag nur einmal vorkommen.",
+        error: "Jede Funktion darf pro Tag nur einmal vorkommen.",
       };
     }
     seen.add(key);

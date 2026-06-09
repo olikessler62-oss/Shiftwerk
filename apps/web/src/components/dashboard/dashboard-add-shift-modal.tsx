@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import {
   fetchDashboardShiftAssignEmployees,
   type DashboardEmployeeAvailabilityEntry,
   type DashboardShiftAssignEmployee,
 } from "@/app/actions/dashboard-shift-assign";
 import { assignShiftWithTimes } from "@/app/actions/shifts";
-import { useRouter } from "next/navigation";
-import { SETTINGS_MODAL_TITLE_CLASS } from "@/components/settings/settings-list-ui";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+} from "@/components/settings/settings-list-ui";
 import {
   Alert,
   Button,
@@ -27,20 +29,28 @@ import {
   profileAvailabilityWeekdayFromDashboardDate,
   resolveShiftTypeIdFromTimes,
 } from "@/lib/available-employees-for-shift";
+import { formatDayHeader } from "@/lib/planning-utils";
+import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
 import {
   formatAvailabilityTimeRange,
-  weekdayAbbrev,
+  weekdayLabel,
+  type WeekdayLabelStyle,
 } from "@/lib/profile-availability-label";
-import { formatDayHeader } from "@/lib/planning-utils";
+import {
+  COMBOBOX_TOOLTIP_CLOSE_DISTANCE_PX,
+  distanceFromPointToRect,
+  resolveComboboxAnchorTooltipPosition,
+  resolveMouseTooltipPosition,
+  type MousePoint,
+} from "@/lib/mouse-tooltip-position";
 import { cn } from "@/lib/cn";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
+import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationArea, ShiftTypeWithBreaks } from "@schichtwerk/types";
 
 const EMPTY_EMPLOYEE_ID = "";
 export { EMPTY_EMPLOYEE_ID as DASHBOARD_EMPTY_EMPLOYEE_ID };
-const AVAILABILITY_MENU_VIEWPORT_PADDING_PX = 8;
-const AVAILABILITY_MENU_CLOSE_DISTANCE_PX = 30;
 const DASHBOARD_COMBOBOX_DROPDOWN_Z = 120;
 
 type DropdownPosition = {
@@ -104,55 +114,7 @@ function useCloseOnOutsideClick(
   }, [open, onClose]);
 }
 
-type MenuPosition = {
-  x: number;
-  y: number;
-};
-
-function distanceFromPointToMenu(
-  clientX: number,
-  clientY: number,
-  menu: HTMLElement
-): number {
-  const rect = menu.getBoundingClientRect();
-  const closestX = Math.max(rect.left, Math.min(clientX, rect.right));
-  const closestY = Math.max(rect.top, Math.min(clientY, rect.bottom));
-  return Math.hypot(clientX - closestX, clientY - closestY);
-}
-
-function isPointInsideElement(
-  clientX: number,
-  clientY: number,
-  element: HTMLElement
-): boolean {
-  const rect = element.getBoundingClientRect();
-  return (
-    clientX >= rect.left &&
-    clientX <= rect.right &&
-    clientY >= rect.top &&
-    clientY <= rect.bottom
-  );
-}
-
-function timeFieldValue(time: string): string {
-  return time.slice(0, 5);
-}
-
-function resolveAvailabilityMenuPosition(
-  trigger: HTMLElement,
-  menuWidth: number,
-  menuHeight: number
-): MenuPosition {
-  const triggerRect = trigger.getBoundingClientRect();
-  const padding = AVAILABILITY_MENU_VIEWPORT_PADDING_PX;
-  const maxLeft = window.innerWidth - menuWidth - padding;
-  const maxTop = window.innerHeight - menuHeight - padding;
-
-  return {
-    x: Math.max(padding, Math.min(triggerRect.left, maxLeft)),
-    y: Math.max(padding, Math.min(triggerRect.bottom, maxTop)),
-  };
-}
+type MenuPosition = MousePoint;
 
 function availabilityShiftLabel(
   entry: DashboardEmployeeAvailabilityEntry,
@@ -176,82 +138,142 @@ function availabilityTimeLabel(
 function formatAvailabilityMenuLabel(
   entry: DashboardEmployeeAvailabilityEntry,
   locale: "de" | "en",
-  timesOnlyLabel: string
+  timesOnlyLabel: string,
+  weekdayStyle: WeekdayLabelStyle
 ): string {
-  return `${weekdayAbbrev(entry.weekday, locale)}: ${availabilityShiftLabel(entry, timesOnlyLabel)} ${availabilityTimeLabel(entry, locale)}`;
+  return `${weekdayLabel(entry.weekday, locale, weekdayStyle)}: ${availabilityShiftLabel(entry, timesOnlyLabel)} ${availabilityTimeLabel(entry, locale)}`;
+}
+
+type EmployeeAvailabilityHintProps = {
+  availabilities: DashboardEmployeeAvailabilityEntry[];
+  anchorRef: RefObject<HTMLElement | null>;
+  tooltipRef: RefObject<HTMLDivElement | null>;
+  weekdayLabelStyle: WeekdayLabelStyle;
+};
+
+function EmployeeAvailabilityHint({
+  availabilities,
+  anchorRef,
+  tooltipRef,
+  weekdayLabelStyle,
+}: EmployeeAvailabilityHintProps) {
+  const { locale } = useLocale();
+  const localeKey = locale === "en" ? "en" : "de";
+  const t = useTranslations();
+  const [position, setPosition] = useState<MenuPosition>({ x: 0, y: 0 });
+
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const node = tooltipRef.current;
+    if (!anchor || !node) return;
+    const anchorRect = anchor.getBoundingClientRect();
+    const { width, height } = node.getBoundingClientRect();
+    setPosition(
+      resolveComboboxAnchorTooltipPosition(anchorRect, width, height)
+    );
+  }, [anchorRef, tooltipRef, availabilities, localeKey, t]);
+
+  const timesOnlyLabel = t("profiles.availabilityInputTimes");
+
+  return createPortal(
+    <div
+      ref={tooltipRef}
+      className="fixed z-[120] w-max max-w-[calc(100vw-1rem)] rounded-lg border border-border bg-surface px-3 py-2 shadow-lg"
+      style={{ top: position.y, left: position.x }}
+      role="tooltip"
+    >
+      <p className="mb-1.5 text-xs font-semibold text-foreground">
+        {t("profiles.panelAvailability")}
+      </p>
+      {availabilities.length === 0 ? (
+        <p className="text-xs text-muted">{t("profiles.emptyAvailability")}</p>
+      ) : (
+        <ul
+          className="grid grid-cols-[auto_auto_auto] items-baseline gap-x-3 gap-y-1 text-xs"
+          role="list"
+        >
+          {availabilities.map((entry, index) => (
+            <li
+              key={`${entry.weekday}-${entry.shift_type_id ?? "times"}-${entry.start_time}-${entry.end_time}-${index}`}
+              className="contents"
+            >
+              <span className="font-medium text-muted">
+                {weekdayLabel(entry.weekday, localeKey, weekdayLabelStyle)}
+              </span>
+              <span className="whitespace-nowrap text-left text-foreground">
+                {availabilityShiftLabel(entry, timesOnlyLabel)}:
+              </span>
+              <span className="whitespace-nowrap text-left tabular-nums text-muted">
+                {availabilityTimeLabel(entry, localeKey)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>,
+    document.body
+  );
 }
 
 type EmployeeAvailabilityContextMenuProps = {
   availabilities: DashboardEmployeeAvailabilityEntry[];
-  triggerRef: RefObject<HTMLElement | null>;
+  anchor: MousePoint;
   onSelect: (entry: DashboardEmployeeAvailabilityEntry) => void;
   onClose: () => void;
+  weekdayLabelStyle: WeekdayLabelStyle;
 };
 
 function EmployeeAvailabilityContextMenu({
   availabilities,
-  triggerRef,
+  anchor,
   onSelect,
   onClose,
+  weekdayLabelStyle,
 }: EmployeeAvailabilityContextMenuProps) {
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
   const menuRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<MenuPosition | null>(null);
+  const [position, setPosition] = useState<MenuPosition>(anchor);
 
   useLayoutEffect(() => {
     const menu = menuRef.current;
-    const trigger = triggerRef.current;
-    if (!menu || !trigger) return;
+    if (!menu) return;
     const { width, height } = menu.getBoundingClientRect();
-    setPosition(resolveAvailabilityMenuPosition(trigger, width, height));
-  }, [availabilities, localeKey, triggerRef]);
+    setPosition(
+      resolveMouseTooltipPosition(anchor.x, anchor.y, width, height)
+    );
+  }, [anchor, availabilities, localeKey]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
-    const handleMouseMove = (event: MouseEvent) => {
-      const menu = menuRef.current;
-      if (!menu) return;
-
-      const trigger = triggerRef.current;
-      if (trigger && isPointInsideElement(event.clientX, event.clientY, trigger)) {
-        return;
-      }
-      if (menu.contains(event.target as Node)) return;
-
-      if (
-        distanceFromPointToMenu(event.clientX, event.clientY, menu) >
-        AVAILABILITY_MENU_CLOSE_DISTANCE_PX
-      ) {
-        onClose();
-      }
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
     };
     const handleScroll = () => onClose();
 
     document.addEventListener("keydown", handleKeyDown);
-    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mousedown", handlePointerDown);
     window.addEventListener("scroll", handleScroll, true);
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("scroll", handleScroll, true);
     };
-  }, [onClose, triggerRef]);
+  }, [onClose]);
 
   const timesOnlyLabel = t("profiles.availabilityInputTimes");
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[120] flex w-fit max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
+      className="fixed z-[120] flex w-fit min-w-[13.75rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
       style={{
-        top: position?.y ?? 0,
-        left: position?.x ?? 0,
-        visibility: position ? "visible" : "hidden",
+        top: position.y,
+        left: position.x,
       }}
       role="menu"
       aria-label={t("profiles.panelAvailability")}
@@ -271,33 +293,30 @@ function EmployeeAvailabilityContextMenu({
               key={`${entry.weekday}-${entry.shift_type_id ?? "times"}-${entry.start_time}-${entry.end_time}-${index}`}
               type="button"
               role="menuitem"
-              className="block cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground hover:bg-subtle"
-            onClick={() => {
-              onSelect(entry);
-              onClose();
-            }}
-          >
-            {formatAvailabilityMenuLabel(entry, localeKey, timesOnlyLabel)}
-          </button>
-        ))
+              className="block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground hover:bg-subtle"
+              onClick={() => {
+                onSelect(entry);
+                onClose();
+              }}
+            >
+              {formatAvailabilityMenuLabel(
+                entry,
+                localeKey,
+                timesOnlyLabel,
+                weekdayLabelStyle
+              )}
+            </button>
+          ))
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
 export type DashboardAddShiftDialogState = {
   areaId: string;
   date: string;
-};
-
-type Props = {
-  dialog: DashboardAddShiftDialogState;
-  locationId: string;
-  areas: LocationArea[];
-  shiftTypes: ShiftTypeWithBreaks[];
-  onClose: () => void;
-  onSaved?: () => void;
 };
 
 function EmployeeColorSwatch({ hex }: { hex: string | null }) {
@@ -323,31 +342,47 @@ type EmployeeComboboxProps = {
   onChange: (employeeId: string) => void;
   employees: DashboardShiftAssignEmployee[];
   selectedEmployee: DashboardShiftAssignEmployee | null;
+  weekday: number;
   dayAvailabilities: DashboardEmployeeAvailabilityEntry[];
   emptyLabel: string;
   disabled?: boolean;
   onApplyAvailability: (entry: DashboardEmployeeAvailabilityEntry) => void;
   triggerClassName?: string;
   rootClassName?: string;
+  weekdayLabelStyle?: WeekdayLabelStyle;
 };
+
+function availabilitiesForWeekday(
+  employee: DashboardShiftAssignEmployee,
+  weekday: number
+): DashboardEmployeeAvailabilityEntry[] {
+  return employee.availabilities.filter((slot) => slot.weekday === weekday);
+}
 
 export function DashboardShiftEmployeeCombobox({
   value,
   onChange,
   employees,
   selectedEmployee,
+  weekday,
   dayAvailabilities,
   emptyLabel,
   disabled = false,
   onApplyAvailability,
   triggerClassName,
   rootClassName,
+  weekdayLabelStyle = "short",
 }: EmployeeComboboxProps) {
   const [open, setOpen] = useState(false);
-  const [availabilityMenuOpen, setAvailabilityMenuOpen] = useState(false);
+  const [hintAvailabilities, setHintAvailabilities] = useState<
+    DashboardEmployeeAvailabilityEntry[] | null
+  >(null);
+  const [availabilityMenuAnchor, setAvailabilityMenuAnchor] =
+    useState<MousePoint | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const hintTooltipRef = useRef<HTMLDivElement>(null);
   const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
   const closeDropdown = useCallback(() => setOpen(false), []);
   useCloseOnOutsideClick(open, closeDropdown, [triggerRef, listRef]);
@@ -356,28 +391,74 @@ export function DashboardShiftEmployeeCombobox({
       ? null
       : employees.find((employee) => employee.id === value) ?? selectedEmployee;
 
-  const canShowAvailabilityMenu =
+  const canShowSelectedEmployeeHint =
     !disabled &&
-    !open &&
+    !availabilityMenuAnchor &&
     selectedEmployee !== null &&
     value !== EMPTY_EMPLOYEE_ID;
 
-  const openAvailabilityMenu = useCallback(() => {
-    if (!canShowAvailabilityMenu) return;
-    setAvailabilityMenuOpen(true);
-  }, [canShowAvailabilityMenu]);
+  const showHint = useCallback(
+    (availabilities: DashboardEmployeeAvailabilityEntry[]) => {
+      setHintAvailabilities(availabilities);
+    },
+    []
+  );
+
+  const hideHint = useCallback(() => {
+    setHintAvailabilities(null);
+  }, []);
 
   const closeAvailabilityMenu = useCallback(() => {
-    setAvailabilityMenuOpen(false);
+    setAvailabilityMenuAnchor(null);
   }, []);
 
   useEffect(() => {
-    if (open) closeAvailabilityMenu();
+    if (open) {
+      closeAvailabilityMenu();
+    }
   }, [open, closeAvailabilityMenu]);
 
   useEffect(() => {
-    if (!canShowAvailabilityMenu) closeAvailabilityMenu();
-  }, [canShowAvailabilityMenu, closeAvailabilityMenu]);
+    if (!hintAvailabilities) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const comboboxEl = rootRef.current;
+      if (!comboboxEl) return;
+
+      const nearCombobox =
+        distanceFromPointToRect(
+          event.clientX,
+          event.clientY,
+          comboboxEl.getBoundingClientRect()
+        ) <= COMBOBOX_TOOLTIP_CLOSE_DISTANCE_PX;
+
+      const nearDropdown =
+        open &&
+        listRef.current &&
+        distanceFromPointToRect(
+          event.clientX,
+          event.clientY,
+          listRef.current.getBoundingClientRect()
+        ) <= COMBOBOX_TOOLTIP_CLOSE_DISTANCE_PX;
+
+      const overTooltip =
+        hintTooltipRef.current?.contains(event.target as Node) ?? false;
+
+      if (!nearCombobox && !nearDropdown && !overTooltip) {
+        hideHint();
+      }
+    };
+
+    const handleScroll = () => hideHint();
+
+    document.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [hintAvailabilities, open, hideHint]);
 
   const options = useMemo(
     () => [
@@ -401,6 +482,10 @@ export function DashboardShiftEmployeeCombobox({
         rootClassName ? "h-9" : !triggerClassName && "mt-1",
         rootClassName
       )}
+      onMouseEnter={() => {
+        if (!canShowSelectedEmployeeHint || open) return;
+        showHint(dayAvailabilities);
+      }}
     >
       <button
         ref={triggerRef}
@@ -418,14 +503,18 @@ export function DashboardShiftEmployeeCombobox({
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
         }}
-        onMouseEnter={() => {
-          openAvailabilityMenu();
-        }}
         onContextMenu={(event) => {
-          if (!canShowAvailabilityMenu) return;
+          if (
+            disabled ||
+            !selectedEmployee ||
+            value === EMPTY_EMPLOYEE_ID
+          ) {
+            return;
+          }
           event.preventDefault();
           event.stopPropagation();
-          openAvailabilityMenu();
+          hideHint();
+          setAvailabilityMenuAnchor({ x: event.clientX, y: event.clientY });
         }}
       >
         <EmployeeColorSwatch hex={selected?.color ?? null} />
@@ -452,6 +541,10 @@ export function DashboardShiftEmployeeCombobox({
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-subtle"
+                    onMouseEnter={() => {
+                      if (!employee.id) return;
+                      showHint(availabilitiesForWeekday(employee, weekday));
+                    }}
                     onClick={() => {
                       onChange(employee.id);
                       setOpen(false);
@@ -469,12 +562,21 @@ export function DashboardShiftEmployeeCombobox({
             document.body
           )
         : null}
-      {availabilityMenuOpen ? (
+      {hintAvailabilities ? (
+        <EmployeeAvailabilityHint
+          availabilities={hintAvailabilities}
+          anchorRef={rootRef}
+          tooltipRef={hintTooltipRef}
+          weekdayLabelStyle={weekdayLabelStyle}
+        />
+      ) : null}
+      {availabilityMenuAnchor ? (
         <EmployeeAvailabilityContextMenu
           availabilities={dayAvailabilities}
-          triggerRef={triggerRef}
+          anchor={availabilityMenuAnchor}
           onSelect={onApplyAvailability}
           onClose={closeAvailabilityMenu}
+          weekdayLabelStyle={weekdayLabelStyle}
         />
       ) : null}
     </div>
@@ -588,14 +690,29 @@ export function DashboardShiftTypeCombobox({
   );
 }
 
+function timeFieldValue(time: string): string {
+  return time.slice(0, 5);
+}
+
+type AddShiftModalProps = {
+  dialog: DashboardAddShiftDialogState;
+  locationId: string;
+  areas: LocationArea[];
+  shiftTypes: ShiftTypeWithBreaks[];
+  serviceHours: AreaServiceHourRef[];
+  onClose: () => void;
+  onSaved?: () => void;
+};
+
 export function DashboardAddShiftModal({
   dialog,
   locationId,
   areas,
   shiftTypes,
+  serviceHours,
   onClose,
   onSaved,
-}: Props) {
+}: AddShiftModalProps) {
   const router = useRouter();
   const { locale } = useLocale();
   const t = useTranslations();
@@ -745,6 +862,18 @@ export function DashboardAddShiftModal({
       return;
     }
 
+    const serviceHoursCheck = validateDashboardShiftServiceHours(
+      serviceHours,
+      dialog.areaId,
+      dialog.date,
+      startTime,
+      endTime
+    );
+    if (!serviceHoursCheck.ok) {
+      setError(serviceHoursCheck.error);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     const result = await assignShiftWithTimes({
@@ -775,6 +904,7 @@ export function DashboardAddShiftModal({
     endTime,
     shiftTypeId,
     locationId,
+    serviceHours,
     onClose,
     onSaved,
     router,
@@ -800,7 +930,7 @@ export function DashboardAddShiftModal({
       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget && !saving) onClose();
       }}
     >
       <div
@@ -822,6 +952,7 @@ export function DashboardAddShiftModal({
           <IconButton
             size="sm"
             onClick={onClose}
+            disabled={saving}
             aria-label={t("common.close")}
             className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
           >
@@ -837,7 +968,7 @@ export function DashboardAddShiftModal({
             <DashboardShiftTypeCombobox
               value={shiftTypeId}
               shiftTypes={shiftTypes}
-              disabled={shiftTypes.length === 0}
+              disabled={shiftTypes.length === 0 || saving}
               onChange={handleShiftTypeChange}
             />
           </div>
@@ -848,6 +979,7 @@ export function DashboardAddShiftModal({
               <TimeInput
                 className="mt-1"
                 value={startTime}
+                disabled={saving}
                 onChange={(event) => setStartTime(event.target.value)}
               />
             </div>
@@ -856,6 +988,7 @@ export function DashboardAddShiftModal({
               <TimeInput
                 className="mt-1"
                 value={endTime}
+                disabled={saving}
                 onChange={(event) => setEndTime(event.target.value)}
               />
             </div>
@@ -868,10 +1001,12 @@ export function DashboardAddShiftModal({
               onChange={handleEmployeeChange}
               employees={matchingEmployees}
               selectedEmployee={selectedEmployee}
+              weekday={weekday}
               dayAvailabilities={selectedDayAvailabilities}
               emptyLabel={t("dashboard.noEmployeeSelected")}
-              disabled={loadingEmployees}
+              disabled={loadingEmployees || saving}
               onApplyAvailability={handleApplyAvailability}
+              weekdayLabelStyle="long"
             />
           </div>
         </div>

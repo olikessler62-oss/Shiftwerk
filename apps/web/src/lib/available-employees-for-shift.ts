@@ -115,6 +115,22 @@ export function filterEmployeesAvailableOnWeekday(
   );
 }
 
+/** Gleiche Kriterien wie die Dashboard-Mitarbeiterliste (planbar + aktiv). */
+export function profileCanReceiveShiftAssignment(
+  profile:
+    | Pick<Profile, "organization_id" | "is_active" | "schedulable">
+    | null
+    | undefined,
+  organizationId: string
+): boolean {
+  return (
+    !!profile &&
+    profile.organization_id === organizationId &&
+    profile.is_active &&
+    profile.schedulable
+  );
+}
+
 export function filterEmployeesNotAbsentOnDate(
   profiles: readonly Profile[],
   absences: readonly AbsenceRequest[],

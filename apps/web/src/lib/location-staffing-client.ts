@@ -15,6 +15,8 @@ export function weekdayIndexFromDate(isoDate: string): number {
 export type AreaServiceHourRef = {
   location_area_id: string;
   weekday: number;
+  start_time?: string;
+  end_time?: string;
 };
 
 function normalizeWeekday(value: number | string): number {
@@ -48,7 +50,7 @@ export function isStaffingDayEnabled(
   return isAreaOpenOnWeekday(serviceHours, areaId, weekday);
 }
 
-/** Wochentag für Service-Zeiten: an Feiertagen Spalte 7, sonst Mo=0 … So=6. */
+/** Wochentag für Servicezeiten: an Feiertagen Spalte 7, sonst Mo=0 … So=6. */
 export function serviceWeekdayForDate(isoDate: string): number {
   if (isGermanPublicHoliday(isoDate)) return STAFFING_HOLIDAY_WEEKDAY;
   return weekdayIndexFromDate(isoDate);
@@ -261,8 +263,10 @@ export function tagAreaHeaderStaffingEntries(
   dateISO: string,
   serviceHours: AreaServiceHourRef[],
   shiftTypes: ShiftTypeStaffingRef[],
-  assignedShifts: { shiftTypeId: string }[]
+  assignedShifts: { shiftTypeId: string }[],
+  options: { shortenLabels?: boolean } = {}
 ): TagAreaHeaderStaffingEntry[] {
+  const { shortenLabels = true } = options;
   const weekday = serviceWeekdayForDate(dateISO);
   if (!isAreaOpenOnWeekday(serviceHours, areaId, weekday)) return [];
 
@@ -299,7 +303,9 @@ export function tagAreaHeaderStaffingEntries(
     const type = shiftTypeById.get(shiftTypeId);
     entries.push({
       shiftTypeId,
-      label: shortenShiftTypeDisplayName(type?.name ?? "Schicht"),
+      label: shortenLabels
+        ? shortenShiftTypeDisplayName(type?.name ?? "Schicht")
+        : (type?.name ?? "Schicht").trim(),
       assigned: assignedByType.get(shiftTypeId) ?? 0,
       required,
     });

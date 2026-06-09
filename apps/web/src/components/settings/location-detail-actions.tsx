@@ -14,7 +14,7 @@ type DetailPanel = "serviceHours" | "staffing";
 type Props = {
   selectedLocation: Location | null;
   selectedArea: LocationArea | null;
-  /** Geladen: [] = keine Öffnungszeiten; undefined = noch nicht geladen */
+  /** Geladen: [] = keine Servicezeiten; undefined = noch nicht geladen */
   serviceHours?: LocationAreaServiceHour[];
   /** Geladen: [] = kein Personalbedarf; undefined = noch nicht geladen */
   staffing?: LocationAreaStaffing[];

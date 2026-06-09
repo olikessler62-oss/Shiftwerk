@@ -182,12 +182,14 @@ create table public.location_area_service_hours (
   weekday smallint not null check (weekday >= 0 and weekday <= 7),
   start_time time not null,
   end_time time not null,
-  constraint location_area_service_hours_time_order check (end_time > start_time),
-  unique (location_area_id, weekday)
+  constraint location_area_service_hours_time_order check (end_time > start_time)
 );
 
 create index location_area_service_hours_area_id_idx
   on public.location_area_service_hours (location_area_id);
+
+create index location_area_service_hours_area_weekday_start_idx
+  on public.location_area_service_hours (location_area_id, weekday, start_time);
 
 -- Personalbedarf: Bereich × Schichtart × Wochentag × Qualifikation (0=Mo … 6=So, 7=Feiertage)
 create table public.location_area_staffing (

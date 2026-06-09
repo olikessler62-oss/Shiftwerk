@@ -9,7 +9,34 @@ const WEEKDAY_ABBREVS = {
   en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
 } as const;
 
+const WEEKDAY_LONG = {
+  de: [
+    "Montag",
+    "Dienstag",
+    "Mittwoch",
+    "Donnerstag",
+    "Freitag",
+    "Samstag",
+    "Sonntag",
+  ],
+  en: [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ],
+} as const;
+
 const HOLIDAY_ABBREV = "FT";
+const HOLIDAY_LONG = {
+  de: "Feiertag",
+  en: "Public holiday",
+} as const;
+
+export type WeekdayLabelStyle = "short" | "long";
 const SHIFT_SUFFIX = "schicht";
 
 /** z. B. Frühschicht → Früh, Spätschicht → Spät */
@@ -30,9 +57,20 @@ export function shiftTypeNameWithSchicht(name: string): string {
   return `${shortenShiftTypeDisplayName(trimmed)}${SHIFT_SUFFIX}`;
 }
 
+export function weekdayLabel(
+  weekday: number,
+  locale: "de" | "en",
+  style: WeekdayLabelStyle = "short"
+): string {
+  if (weekday === PROFILE_AVAILABILITY_HOLIDAY_WEEKDAY) {
+    return style === "long" ? HOLIDAY_LONG[locale] : HOLIDAY_ABBREV;
+  }
+  const labels = style === "long" ? WEEKDAY_LONG : WEEKDAY_ABBREVS;
+  return labels[locale][weekday] ?? "?";
+}
+
 export function weekdayAbbrev(weekday: number, locale: "de" | "en"): string {
-  if (weekday === PROFILE_AVAILABILITY_HOLIDAY_WEEKDAY) return HOLIDAY_ABBREV;
-  return WEEKDAY_ABBREVS[locale][weekday] ?? "?";
+  return weekdayLabel(weekday, locale, "short");
 }
 
 /** z. B. 08:00 – 17:00 oder 22:00 – 06:00 (+1) */

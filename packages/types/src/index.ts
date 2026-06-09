@@ -122,7 +122,7 @@ export interface Location {
   archived_at: string | null;
 }
 
-/** Service-Zeiten pro Bereich: weekday 0=Mo … 6=So, 7=Feiertage */
+/** Servicezeiten pro Bereich: weekday 0=Mo … 6=So, 7=Feiertage */
 export interface LocationAreaServiceHour {
   id: string;
   location_area_id: string;

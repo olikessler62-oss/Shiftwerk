@@ -12,14 +12,19 @@ import {
   type ShiftAssignUndoBatch,
   type ShiftUndoSnapshot,
 } from "@/lib/shift-assign-undo-store";
-import { areDashboardShiftTimesComplete } from "@/lib/available-employees-for-shift";
+import {
+  areDashboardShiftTimesComplete,
+  profileCanReceiveShiftAssignment,
+} from "@/lib/available-employees-for-shift";
+import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
 import type { EmployeeShiftRecord } from "@schichtwerk/database";
+import type { LocationAreaServiceHour } from "@schichtwerk/types";
 
 export type ShiftActionResult =
   | { ok: true }
   | { ok: false; error: string };
 
-export type AssignShiftWithTimesInput = {
+type AssignShiftWithTimesInput = {
   employeeId: string;
   shiftDate: string;
   startTime: string;
@@ -157,12 +162,7 @@ async function validateAssignContext(
   }
 
   const profile = await db.getProfileById(employeeId);
-  if (
-    !profile ||
-    profile.organization_id !== organizationId ||
-    profile.role !== "basic" ||
-    !profile.is_active
-  ) {
+  if (!profileCanReceiveShiftAssignment(profile, organizationId)) {
     return { ok: false, error: "Mitarbeiter nicht gefunden" };
   }
 
@@ -188,8 +188,9 @@ export async function assignShiftWithTimes(
     );
     if (!context.ok) return context;
 
+    const db = await getDatabase();
+
     if (input.shiftTypeId) {
-      const db = await getDatabase();
       const shiftType = await db.getShiftTypeForAssign(
         input.shiftTypeId,
         organizationId
@@ -198,6 +199,19 @@ export async function assignShiftWithTimes(
         return { ok: false, error: "Schichttyp nicht gefunden" };
       }
     }
+
+    const areaServiceHours = await db.listLocationAreaServiceHoursForArea(
+      input.locationAreaId,
+      input.locationId
+    );
+    const serviceHoursCheck = validateDashboardShiftServiceHours(
+      areaServiceHours,
+      input.locationAreaId,
+      input.shiftDate,
+      input.startTime,
+      input.endTime
+    );
+    if (!serviceHoursCheck.ok) return serviceHoursCheck;
 
     const undoBatch: ShiftAssignUndoBatch = {
       createdIds: [],
@@ -242,6 +256,12 @@ export async function assignShiftBatch(input: {
       return { ok: false, error: "Bereich nicht gefunden" };
     }
 
+    const areaServiceHours: LocationAreaServiceHour[] =
+      await db.listLocationAreaServiceHoursForArea(
+        input.locationAreaId,
+        input.locationId
+      );
+
     type ValidRow = AssignShiftBatchRowInput & {
       rowIndex: number;
       starts_at: string;
@@ -281,6 +301,18 @@ export async function assignShiftBatch(input: {
           results.push({ rowIndex, ok: false, error: "Schichttyp nicht gefunden" });
           continue;
         }
+      }
+
+      const serviceHoursCheck = validateDashboardShiftServiceHours(
+        areaServiceHours,
+        input.locationAreaId,
+        input.shiftDate,
+        row.startTime,
+        row.endTime
+      );
+      if (!serviceHoursCheck.ok) {
+        results.push({ rowIndex, ok: false, error: serviceHoursCheck.error });
+        continue;
       }
 
       const { starts_at, ends_at } = buildShiftTimestamps(
@@ -447,12 +479,7 @@ export async function assignShift(
     }
 
     const profile = await db.getProfileById(employeeId);
-    if (
-      !profile ||
-      profile.organization_id !== organizationId ||
-      profile.role !== "basic" ||
-      !profile.is_active
-    ) {
+    if (!profileCanReceiveShiftAssignment(profile, organizationId)) {
       return { ok: false, error: "Mitarbeiter nicht gefunden" };
     }
 

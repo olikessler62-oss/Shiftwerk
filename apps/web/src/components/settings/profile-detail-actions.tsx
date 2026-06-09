@@ -20,7 +20,7 @@ type DetailPanel = "qualifications" | "availability" | "compensation" | "invite"
 
 type Props = {
   selectedProfile: Profile | null;
-  /** Geladen: [] = keine Position; undefined = noch nicht geladen */
+  /** Geladen: [] = keine Funktion; undefined = noch nicht geladen */
   profileQualifications?: { name: string }[];
   /** Geladen: [] = keine Verfügbarkeiten; undefined = noch nicht geladen */
   profileAvailability?: ProfileRecurringAvailability[];

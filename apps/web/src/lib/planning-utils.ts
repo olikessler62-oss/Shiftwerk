@@ -93,12 +93,17 @@ export function getDashboardWeekHeaderParts(
   };
 }
 
+export type DayHeaderWeekdayStyle = "short" | "long";
+
 export function formatDayHeader(
   dateISO: string,
-  intlLocale = "de-DE"
+  intlLocale = "de-DE",
+  weekdayStyle: DayHeaderWeekdayStyle = "short"
 ): { weekday: string; label: string } {
   const d = parseISODate(dateISO);
-  const weekday = new Intl.DateTimeFormat(intlLocale, { weekday: "short" }).format(d);
+  const weekday = new Intl.DateTimeFormat(intlLocale, {
+    weekday: weekdayStyle === "long" ? "long" : "short",
+  }).format(d);
   const label = new Intl.DateTimeFormat(intlLocale, {
     day: "numeric",
     month: "short",

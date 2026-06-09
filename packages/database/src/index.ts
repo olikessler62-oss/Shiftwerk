@@ -101,8 +101,20 @@ export {
 } from "./location-service-hours";
 export {
   validateServiceHoursInput,
+  validateShiftAgainstServiceHours,
+  shiftTimesWithinServiceHours,
+  parseServiceHourTimeToMinutes,
+  SHIFT_OUTSIDE_SERVICE_HOURS_ERROR,
+  NO_SERVICE_HOURS_FOR_DAY_ERROR,
   type ServiceHourInput,
+  type ServiceHourWindow,
 } from "./location-service-hours-validation";
+export {
+  canAddServiceHourSlot,
+  findServiceHourGaps,
+  suggestNextServiceHourSlot,
+  type ServiceHourSlotTime,
+} from "./location-service-hours-slots";
 export {
   validateStaffingRulesInput,
   type StaffingRuleInput,

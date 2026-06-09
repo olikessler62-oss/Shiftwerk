@@ -100,6 +100,7 @@ export default async function DashboardPage({
       startTime: startFromTs,
       endTime: endFromTs,
       employeeName: profile?.full_name ?? "Unbekannt",
+      employeeColor: profile?.color ?? null,
     });
   }
 

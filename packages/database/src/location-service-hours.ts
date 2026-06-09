@@ -17,6 +17,8 @@ export function isServiceHoursTableUnavailable(message: string): boolean {
 export type AreaServiceHourRef = {
   location_area_id: string;
   weekday: number;
+  start_time?: string;
+  end_time?: string;
 };
 
 export function isAreaOpenOnWeekday(

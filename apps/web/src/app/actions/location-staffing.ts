@@ -116,7 +116,7 @@ export async function saveShiftTypeStaffing(input: {
       return {
         ok: false,
         error:
-          "Der alte Datenbank-Constraint blockiert mehrere Positionen pro Tag. Bitte die Migration 20250624_drop_old_staffing_unique_truncated.sql in Supabase ausführen (behebt gekürzte Constraint-Namen).",
+          "Der alte Datenbank-Constraint blockiert mehrere Funktionen pro Tag. Bitte die Migration 20250624_drop_old_staffing_unique_truncated.sql in Supabase ausführen (behebt gekürzte Constraint-Namen).",
       };
     }
     return { ok: false, error: message };

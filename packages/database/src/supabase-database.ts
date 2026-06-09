@@ -915,7 +915,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       qual.organization_id !== organizationId ||
       qual.archived_at != null
     ) {
-      throw new Error("Position nicht gefunden");
+      throw new Error("Funktion nicht gefunden");
     }
 
     const { error } = await this.client.from(T.profileQualifications).insert({
@@ -2074,7 +2074,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.locationAreaServiceHours)
       .select("id, location_area_id, weekday, start_time, end_time")
-      .in("location_area_id", areaIds);
+      .in("location_area_id", areaIds)
+      .order("weekday")
+      .order("start_time");
     if (error) {
       if (isServiceHoursTableUnavailable(error.message)) return [];
       throw new Error(error.message);
@@ -2092,7 +2094,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .from(T.locationAreaServiceHours)
       .select("id, location_area_id, weekday, start_time, end_time")
       .eq("location_area_id", locationAreaId)
-      .order("weekday");
+      .order("weekday")
+      .order("start_time");
     if (error) {
       if (isServiceHoursTableUnavailable(error.message)) return [];
       throw new Error(error.message);

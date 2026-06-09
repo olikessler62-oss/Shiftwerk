@@ -6,6 +6,10 @@ import {
   saveLocationAreaServiceHours,
 } from "@/app/actions/location-service-hours";
 import type { Location, LocationArea, LocationAreaServiceHour } from "@schichtwerk/types";
+import {
+  canAddServiceHourSlot,
+  suggestNextServiceHourSlot,
+} from "@schichtwerk/database";
 import { STAFFING_HOLIDAY_WEEKDAY } from "@/lib/location-staffing-client";
 import { useTranslations } from "@/i18n/locale-provider";
 import {
@@ -18,7 +22,9 @@ import {
   CheckIcon,
   CloseIcon,
   IconButton,
+  PlusIcon,
   TimeInput,
+  TrashIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
@@ -36,11 +42,24 @@ const DAY_COUNT = WEEKDAY_KEYS.length + 1;
 const DEFAULT_START = "09:00";
 const DEFAULT_END = "18:00";
 
-type DayRow = {
-  enabled: boolean;
+type TimeSlot = {
+  id: string;
   start_time: string;
   end_time: string;
 };
+
+type DayRow = {
+  enabled: boolean;
+  slots: TimeSlot[];
+};
+
+function createDefaultSlot(): TimeSlot {
+  return {
+    id: crypto.randomUUID(),
+    start_time: DEFAULT_START,
+    end_time: DEFAULT_END,
+  };
+}
 
 function timeToInput(value: string): string {
   const parts = value.trim().split(":");
@@ -51,14 +70,21 @@ function timeToInput(value: string): string {
 
 function buildRowsFromHours(hours: LocationAreaServiceHour[]): DayRow[] {
   return Array.from({ length: DAY_COUNT }, (_, weekday) => {
-    const rule = hours.find((h) => h.weekday === weekday);
-    if (!rule) {
-      return { enabled: false, start_time: DEFAULT_START, end_time: DEFAULT_END };
+    const dayHours = hours
+      .filter((hour) => hour.weekday === weekday)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+    if (dayHours.length === 0) {
+      return { enabled: false, slots: [createDefaultSlot()] };
     }
+
     return {
       enabled: true,
-      start_time: timeToInput(rule.start_time),
-      end_time: timeToInput(rule.end_time),
+      slots: dayHours.map((hour) => ({
+        id: hour.id,
+        start_time: timeToInput(hour.start_time),
+        end_time: timeToInput(hour.end_time),
+      })),
     };
   });
 }
@@ -67,16 +93,16 @@ function buildHoursFromRows(
   areaId: string,
   rows: DayRow[]
 ): LocationAreaServiceHour[] {
-  return rows
-    .map((row, weekday) => ({ row, weekday }))
-    .filter(({ row }) => row.enabled)
-    .map(({ row, weekday }) => ({
-      id: `${areaId}:${weekday}`,
+  return rows.flatMap((row, weekday) => {
+    if (!row.enabled) return [];
+    return row.slots.map((slot) => ({
+      id: slot.id,
       location_area_id: areaId,
       weekday,
-      start_time: timeToInput(row.start_time) + ":00",
-      end_time: timeToInput(row.end_time) + ":00",
+      start_time: timeToInput(slot.start_time) + ":00",
+      end_time: timeToInput(slot.end_time) + ":00",
     }));
+  });
 }
 
 type Props = {
@@ -137,30 +163,84 @@ export function LocationServiceHoursPanelModal({
 
   function setRowEnabled(weekday: number, enabled: boolean) {
     setRows((prev) =>
-      prev.map((row, index) =>
-        index === weekday ? { ...row, enabled } : row
-      )
+      prev.map((row, index) => {
+        if (index !== weekday) return row;
+        if (enabled) {
+          return {
+            enabled: true,
+            slots: row.slots.length ? row.slots : [createDefaultSlot()],
+          };
+        }
+        return { ...row, enabled: false };
+      })
     );
   }
 
-  function setRowTime(weekday: number, field: "start_time" | "end_time", value: string) {
+  function setSlotTime(
+    weekday: number,
+    slotIndex: number,
+    field: "start_time" | "end_time",
+    value: string
+  ) {
     setRows((prev) =>
-      prev.map((row, index) =>
-        index === weekday ? { ...row, [field]: value } : row
-      )
+      prev.map((row, index) => {
+        if (index !== weekday) return row;
+        return {
+          ...row,
+          slots: row.slots.map((slot, currentIndex) =>
+            currentIndex === slotIndex ? { ...slot, [field]: value } : slot
+          ),
+        };
+      })
+    );
+  }
+
+  function addSlot(weekday: number) {
+    setRows((prev) =>
+      prev.map((row, index) => {
+        if (index !== weekday) return row;
+        const nextSlot = suggestNextServiceHourSlot(row.slots);
+        if (!nextSlot) return row;
+        return {
+          ...row,
+          enabled: true,
+          slots: [
+            ...row.slots,
+            {
+              id: crypto.randomUUID(),
+              start_time: nextSlot.start_time,
+              end_time: nextSlot.end_time,
+            },
+          ],
+        };
+      })
+    );
+  }
+
+  function removeSlot(weekday: number, slotIndex: number) {
+    setRows((prev) =>
+      prev.map((row, index) => {
+        if (index !== weekday) return row;
+        const nextSlots = row.slots.filter((_, currentIndex) => currentIndex !== slotIndex);
+        if (nextSlots.length === 0) {
+          return { enabled: false, slots: [createDefaultSlot()] };
+        }
+        return { ...row, slots: nextSlots };
+      })
     );
   }
 
   async function handleSave() {
     setErrorMessage(null);
-    const payload = rows
-      .map((row, weekday) => ({ row, weekday }))
-      .filter(({ row }) => row.enabled)
-      .map(({ row, weekday }) => ({
-        weekday,
-        start_time: row.start_time,
-        end_time: row.end_time,
-      }));
+    const payload = rows.flatMap((row, weekday) =>
+      row.enabled
+        ? row.slots.map((slot) => ({
+            weekday,
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+          }))
+        : []
+    );
 
     setSaving(true);
     try {
@@ -182,20 +262,107 @@ export function LocationServiceHoursPanelModal({
     }
   }
 
+  function renderDayRows(label: string, weekday: number) {
+    const row = rows[weekday]!;
+    const visibleSlots = row.enabled ? row.slots : [row.slots[0]!];
+    const canAddSlot = row.enabled && canAddServiceHourSlot(row.slots);
+
+    return visibleSlots.map((slot, slotIndex) => (
+      <tr key={slot.id}>
+        {slotIndex === 0 ? (
+          <>
+            <td
+              rowSpan={visibleSlots.length}
+              className="py-0.5 pr-3 align-top text-sm text-foreground"
+            >
+              {label}
+            </td>
+            <td rowSpan={visibleSlots.length} className="px-2 py-0.5 text-center align-top">
+              <input
+                type="checkbox"
+                checked={row.enabled}
+                disabled={saving}
+                onChange={(event) => setRowEnabled(weekday, event.target.checked)}
+                className="mt-1 size-4 rounded border-border"
+                aria-label={label}
+              />
+            </td>
+          </>
+        ) : null}
+        <td className="px-2 py-0.5">
+          <TimeInput
+            value={slot.start_time}
+            disabled={saving || !row.enabled}
+            onChange={(event) =>
+              setSlotTime(weekday, slotIndex, "start_time", event.target.value)
+            }
+            className={cn(
+              "h-8 w-[9.5rem] tabular-nums",
+              !row.enabled && "opacity-50"
+            )}
+          />
+        </td>
+        <td className="px-2 py-0.5">
+          <TimeInput
+            value={slot.end_time}
+            disabled={saving || !row.enabled}
+            onChange={(event) =>
+              setSlotTime(weekday, slotIndex, "end_time", event.target.value)
+            }
+            className={cn(
+              "h-8 w-[9.5rem] tabular-nums",
+              !row.enabled && "opacity-50"
+            )}
+          />
+        </td>
+        <td className="px-1 py-0.5">
+          <div className="flex items-center justify-end gap-0.5">
+            {row.enabled && row.slots.length > 1 ? (
+              <IconButton
+                size="sm"
+                type="button"
+                disabled={saving}
+                aria-label={t("locations.serviceHoursRemoveSlot")}
+                onClick={() => removeSlot(weekday, slotIndex)}
+                className="border-transparent bg-transparent hover:bg-subtle"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </IconButton>
+            ) : (
+              <span className="inline-block h-8 w-8" aria-hidden />
+            )}
+            {row.enabled && slotIndex === visibleSlots.length - 1 ? (
+              <IconButton
+                size="sm"
+                type="button"
+                disabled={saving || !canAddSlot}
+                aria-label={t("locations.serviceHoursAddSlot")}
+                onClick={() => addSlot(weekday)}
+                className="border-transparent bg-transparent hover:bg-subtle disabled:opacity-40"
+              >
+                <PlusIcon className="h-4 w-4" />
+              </IconButton>
+            ) : null}
+          </div>
+        </td>
+      </tr>
+    ));
+  }
+
   return (
     <div
       className="absolute inset-0 z-[60] flex items-center justify-center rounded-2xl bg-black/30 p-4"
       role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !saving) onClose();
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) onClose();
       }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="location-service-hours-title"
-        className="relative z-[61] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
-        onMouseDown={(e) => e.stopPropagation()}
+        className="relative z-[61] flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="min-w-0">
@@ -218,7 +385,11 @@ export function LocationServiceHoursPanelModal({
         </div>
 
         <div className="overflow-x-hidden px-5 py-3">
-          {errorMessage && <Alert variant="error" className="mb-3">{errorMessage}</Alert>}
+          {errorMessage ? (
+            <Alert variant="error" className="mb-3">
+              {errorMessage}
+            </Alert>
+          ) : null}
           {loading ? (
             <p className="py-6 text-center text-sm text-muted">{t("common.loading")}</p>
           ) : (
@@ -258,49 +429,20 @@ export function LocationServiceHoursPanelModal({
                     >
                       {t("locations.serviceHoursColumnTo")}
                     </th>
+                    <th className="w-20 pb-1" aria-hidden />
                   </tr>
                 </thead>
                 <tbody>
-                  {WEEKDAY_KEYS.map((key, weekday) => {
-                    const row = rows[weekday]!;
-                    return (
-                      <DayRowFields
-                        key={key}
-                        label={t(`locations.weekdays.${key}`)}
-                        row={row}
-                        disabled={saving}
-                        onToggle={(enabled) => setRowEnabled(weekday, enabled)}
-                        onStartChange={(value) =>
-                          setRowTime(weekday, "start_time", value)
-                        }
-                        onEndChange={(value) =>
-                          setRowTime(weekday, "end_time", value)
-                        }
-                      />
-                    );
-                  })}
-                  {(() => {
-                    const weekday = STAFFING_HOLIDAY_WEEKDAY;
-                    const row = rows[weekday]!;
-                    return (
-                      <DayRowFields
-                        key="holiday"
-                        label={t("locations.weekdays.holiday")}
-                        row={row}
-                        disabled={saving}
-                        onToggle={(enabled) => setRowEnabled(weekday, enabled)}
-                        onStartChange={(value) =>
-                          setRowTime(weekday, "start_time", value)
-                        }
-                        onEndChange={(value) =>
-                          setRowTime(weekday, "end_time", value)
-                        }
-                      />
-                    );
-                  })()}
+                  {WEEKDAY_KEYS.flatMap((key, weekday) =>
+                    renderDayRows(t(`locations.weekdays.${key}`), weekday)
+                  )}
+                  {renderDayRows(
+                    t("locations.weekdays.holiday"),
+                    STAFFING_HOLIDAY_WEEKDAY
+                  )}
                 </tbody>
               </table>
-              <p className="mt-2 max-w-[28rem] text-center text-xs text-muted">
+              <p className="mt-2 max-w-[32rem] text-center text-xs text-muted">
                 {t("locations.serviceHoursHint")}
               </p>
             </div>
@@ -324,61 +466,5 @@ export function LocationServiceHoursPanelModal({
         </div>
       </div>
     </div>
-  );
-}
-
-function DayRowFields({
-  label,
-  row,
-  disabled,
-  onToggle,
-  onStartChange,
-  onEndChange,
-}: {
-  label: string;
-  row: DayRow;
-  disabled: boolean;
-  onToggle: (enabled: boolean) => void;
-  onStartChange: (value: string) => void;
-  onEndChange: (value: string) => void;
-}) {
-  const timeDisabled = disabled || !row.enabled;
-
-  return (
-    <tr>
-      <td className="py-0.5 pr-3 text-sm text-foreground">{label}</td>
-      <td className="px-2 py-0.5 text-center">
-        <input
-          type="checkbox"
-          checked={row.enabled}
-          disabled={disabled}
-          onChange={(e) => onToggle(e.target.checked)}
-          className="size-4 rounded border-border"
-          aria-label={label}
-        />
-      </td>
-      <td className="px-2 py-0.5">
-        <TimeInput
-          value={row.start_time}
-          disabled={timeDisabled}
-          onChange={(e) => onStartChange(e.target.value)}
-          className={cn(
-            "h-8 w-[9.5rem] tabular-nums",
-            timeDisabled && "opacity-50"
-          )}
-        />
-      </td>
-      <td className="px-2 py-0.5">
-        <TimeInput
-          value={row.end_time}
-          disabled={timeDisabled}
-          onChange={(e) => onEndChange(e.target.value)}
-          className={cn(
-            "h-8 w-[9.5rem] tabular-nums",
-            timeDisabled && "opacity-50"
-          )}
-        />
-      </td>
-    </tr>
   );
 }
