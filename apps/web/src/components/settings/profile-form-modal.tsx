@@ -11,7 +11,14 @@ import {
 import { cn } from "@/lib/cn";
 import type { Profile } from "@schichtwerk/types";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsNestedModalDialogClass,
+  settingsNestedModalOverlayClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -246,7 +253,7 @@ export function ProfileFormModal({
 
   return (
     <div
-      className="absolute inset-0 z-[70] flex min-w-0 items-center justify-center rounded-2xl bg-black/30 p-4"
+      className={settingsNestedModalOverlayClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !pending) onClose();
@@ -256,10 +263,15 @@ export function ProfileFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-form-title"
-        className="relative z-[71] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={settingsNestedModalDialogClass("lg")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3 id="profile-form-title" className={SETTINGS_MODAL_TITLE_CLASS}>
             {mode === "create"
               ? t("profiles.createTitle")
@@ -276,7 +288,12 @@ export function ProfileFormModal({
           </IconButton>
         </div>
 
-        <div className="max-h-[min(75vh,36rem)] overflow-x-hidden overflow-y-auto px-5 py-4">
+        <div
+          className={cn(
+            "max-h-[min(75dvh,36rem)] min-w-0 flex-1 overflow-x-hidden overflow-y-auto",
+            settingsModalBodyPaddingClass()
+          )}
+        >
           {error && (
             <div className="mb-4">
               <Alert variant="error">{error}</Alert>
@@ -383,7 +400,7 @@ export function ProfileFormModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+        <div className={settingsModalFooterClass()}>
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             <CloseIcon />
             {t("common.cancel")}

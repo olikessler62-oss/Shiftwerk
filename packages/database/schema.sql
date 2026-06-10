@@ -129,6 +129,46 @@ create unique index profile_hourly_rates_one_open_per_profile
   on public.profile_hourly_rates (profile_id)
   where valid_to is null;
 
+-- Sonderzuschläge (Organisations-Katalog)
+create table public.compensation_surcharge_types (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  name text not null,
+  trigger text not null check (trigger in ('public_holiday')),
+  amount numeric(10, 2) not null check (amount >= 0),
+  unit text not null check (unit in ('eur_per_hour', 'percent_of_base')),
+  sort_order int not null default 0,
+  archived_at timestamptz
+);
+
+create index compensation_surcharge_types_organization_id_idx
+  on public.compensation_surcharge_types (organization_id);
+
+-- Profil-Sonderzuschläge (Historie mit Gültigkeitszeitraum)
+create table public.profile_compensation_surcharges (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  profile_id uuid not null references public.profiles (id) on delete cascade,
+  surcharge_type_id uuid not null references public.compensation_surcharge_types (id) on delete restrict,
+  amount numeric(10, 2) check (amount is null or amount >= 0),
+  valid_from date not null,
+  valid_to date,
+  created_at timestamptz not null default now(),
+  created_by uuid references public.profiles (id) on delete set null,
+  constraint profile_compensation_surcharges_valid_range_check
+    check (valid_to is null or valid_to >= valid_from)
+);
+
+create index profile_compensation_surcharges_profile_id_idx
+  on public.profile_compensation_surcharges (profile_id);
+
+create index profile_compensation_surcharges_profile_type_valid_from_idx
+  on public.profile_compensation_surcharges (profile_id, surcharge_type_id, valid_from desc);
+
+create unique index profile_compensation_surcharges_one_open_per_type
+  on public.profile_compensation_surcharges (profile_id, surcharge_type_id)
+  where valid_to is null;
+
 -- Wiederkehrende Verfügbarkeiten pro Profil (Wochentag + Zeitfenster)
 create table public.profile_recurring_availability (
   id uuid primary key default gen_random_uuid(),
@@ -169,6 +209,8 @@ create table public.location_areas (
   location_id uuid not null references public.locations (id) on delete cascade,
   name text not null,
   sort_order int not null default 0,
+  planning_mode text not null default 'simple'
+    check (planning_mode in ('simple', 'advanced')),
   archived_at timestamptz,
   unique (location_id, name)
 );
@@ -191,22 +233,51 @@ create index location_area_service_hours_area_id_idx
 create index location_area_service_hours_area_weekday_start_idx
   on public.location_area_service_hours (location_area_id, weekday, start_time);
 
--- Personalbedarf: Bereich × Schichtart × Wochentag × Qualifikation (0=Mo … 6=So, 7=Feiertage)
+-- Personalbedarf: Bereich × Servicezeit-Fenster × Qualifikation
 create table public.location_area_staffing (
   id uuid primary key default gen_random_uuid(),
   location_area_id uuid not null references public.location_areas (id) on delete cascade,
-  shift_type_id uuid not null references public.shift_types (id) on delete cascade,
+  service_hour_id uuid not null references public.location_area_service_hours (id) on delete cascade,
   qualification_id uuid not null references public.qualifications (id) on delete restrict,
-  weekday smallint not null check (weekday >= 0 and weekday <= 7),
   required_count int not null default 1 check (required_count >= 0),
-  unique (location_area_id, shift_type_id, weekday, qualification_id)
+  unique (service_hour_id, qualification_id)
 );
 
 create index location_area_staffing_area_id_idx
   on public.location_area_staffing (location_area_id);
 
+create index location_area_staffing_service_hour_id_idx
+  on public.location_area_staffing (service_hour_id);
+
 create index location_area_staffing_qualification_id_idx
   on public.location_area_staffing (qualification_id);
+
+-- Schichtvorlagen pro Bereich (optional, nur Zuweisungs-Kurzwahl)
+create table public.area_shift_templates (
+  id uuid primary key default gen_random_uuid(),
+  location_area_id uuid not null references public.location_areas (id) on delete cascade,
+  name text not null,
+  color text not null default '#0D9488',
+  start_time time not null,
+  end_time time not null,
+  sort_order int not null default 0,
+  archived_at timestamptz,
+  unique (location_area_id, name)
+);
+
+create index area_shift_templates_location_area_id_idx
+  on public.area_shift_templates (location_area_id);
+
+create table public.area_shift_template_breaks (
+  id uuid primary key default gen_random_uuid(),
+  area_shift_template_id uuid not null references public.area_shift_templates (id) on delete cascade,
+  break_start time not null,
+  break_end time not null,
+  sort_order int not null default 0
+);
+
+create index area_shift_template_breaks_template_id_idx
+  on public.area_shift_template_breaks (area_shift_template_id);
 
 -- Pausen pro Schichtart
 create table public.shift_type_breaks (
@@ -315,9 +386,8 @@ $$;
 grant execute on function public.current_date_iso() to authenticated;
 grant execute on function public.current_date_iso() to service_role;
 
-create or replace function public.replace_location_area_staffing_for_shift_type(
-  p_location_area_id uuid,
-  p_shift_type_id uuid,
+create or replace function public.replace_location_area_staffing_for_service_hour(
+  p_service_hour_id uuid,
   p_rules jsonb default '[]'::jsonb
 )
 returns void
@@ -327,8 +397,7 @@ set search_path = public
 as $$
 begin
   delete from public.location_area_staffing
-  where location_area_id = p_location_area_id
-    and shift_type_id = p_shift_type_id;
+  where service_hour_id = p_service_hour_id;
 
   if p_rules is null or jsonb_array_length(p_rules) = 0 then
     return;
@@ -336,25 +405,24 @@ begin
 
   insert into public.location_area_staffing (
     location_area_id,
-    shift_type_id,
+    service_hour_id,
     qualification_id,
-    weekday,
     required_count
   )
   select
-    p_location_area_id,
-    p_shift_type_id,
+    lash.location_area_id,
+    p_service_hour_id,
     (r->>'qualification_id')::uuid,
-    (r->>'weekday')::smallint,
     (r->>'required_count')::int
   from jsonb_array_elements(p_rules) as r
+  join public.location_area_service_hours lash on lash.id = p_service_hour_id
   where coalesce((r->>'required_count')::int, 0) > 0;
 end;
 $$;
 
-grant execute on function public.replace_location_area_staffing_for_shift_type(uuid, uuid, jsonb)
+grant execute on function public.replace_location_area_staffing_for_service_hour(uuid, jsonb)
   to authenticated;
-grant execute on function public.replace_location_area_staffing_for_shift_type(uuid, uuid, jsonb)
+grant execute on function public.replace_location_area_staffing_for_service_hour(uuid, jsonb)
   to service_role;
 
 -- RLS helpers (private schema — not exposed via PostgREST RPC)
@@ -401,11 +469,15 @@ alter table public.qualifications enable row level security;
 alter table public.profile_qualifications enable row level security;
 alter table public.profile_recurring_availability enable row level security;
 alter table public.profile_hourly_rates enable row level security;
+alter table public.compensation_surcharge_types enable row level security;
+alter table public.profile_compensation_surcharges enable row level security;
 alter table public.roles enable row level security;
 alter table public.locations enable row level security;
 alter table public.location_areas enable row level security;
 alter table public.location_area_staffing enable row level security;
 alter table public.location_area_service_hours enable row level security;
+alter table public.area_shift_templates enable row level security;
+alter table public.area_shift_template_breaks enable row level security;
 alter table public.shift_type_breaks enable row level security;
 alter table public.shifts enable row level security;
 alter table public.availability enable row level security;
@@ -574,6 +646,50 @@ create policy "profile_recurring_availability_delete_own"
   on public.profile_recurring_availability for delete
   using (profile_id = auth.uid());
 
+-- Compensation surcharge types
+create policy "compensation_surcharge_types_select_org"
+  on public.compensation_surcharge_types for select
+  using (
+    organization_id in (select organization_id from private.current_profile())
+  );
+
+create policy "compensation_surcharge_types_write_manager"
+  on public.compensation_surcharge_types for all
+  using (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  )
+  with check (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
+-- Profile compensation surcharges
+create policy "profile_compensation_surcharges_select_org"
+  on public.profile_compensation_surcharges for select
+  using (
+    organization_id in (select organization_id from private.current_profile())
+  );
+
+create policy "profile_compensation_surcharges_write_manager"
+  on public.profile_compensation_surcharges for all
+  using (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  )
+  with check (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
 -- Profile hourly rates
 create policy "profile_hourly_rates_select_org"
   on public.profile_hourly_rates for select
@@ -687,6 +803,76 @@ create policy "location_area_staffing_write_manager"
   with check (
     location_area_id in (
       select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  );
+
+-- Area shift templates
+create policy "area_shift_templates_select_org"
+  on public.area_shift_templates for select
+  using (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (select organization_id from private.current_profile())
+    )
+  );
+
+create policy "area_shift_templates_write_manager"
+  on public.area_shift_templates for all
+  using (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  )
+  with check (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  );
+
+create policy "area_shift_template_breaks_select_org"
+  on public.area_shift_template_breaks for select
+  using (
+    area_shift_template_id in (
+      select ast.id from public.area_shift_templates ast
+      join public.location_areas la on la.id = ast.location_area_id
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (select organization_id from private.current_profile())
+    )
+  );
+
+create policy "area_shift_template_breaks_write_manager"
+  on public.area_shift_template_breaks for all
+  using (
+    area_shift_template_id in (
+      select ast.id from public.area_shift_templates ast
+      join public.location_areas la on la.id = ast.location_area_id
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  )
+  with check (
+    area_shift_template_id in (
+      select ast.id from public.area_shift_templates ast
+      join public.location_areas la on la.id = ast.location_area_id
       join public.locations l on l.id = la.location_id
       where l.organization_id in (
         select organization_id from private.current_profile()

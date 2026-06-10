@@ -15,7 +15,15 @@ import {
 } from "@/app/actions/absences";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+  settingsConfirmDialogClass,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsNestedModalDialogClass,
+  settingsNestedModalOverlayClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -298,7 +306,7 @@ export function AbsenceFormModal({
 
   return (
     <div
-      className="absolute inset-0 z-[70] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+      className={settingsNestedModalOverlayClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !pending) onClose();
@@ -308,10 +316,15 @@ export function AbsenceFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="absence-form-title"
-        className="relative z-[71] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={settingsNestedModalDialogClass("lg")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3 id="absence-form-title" className={SETTINGS_MODAL_TITLE_CLASS}>
             {mode === "create"
               ? t("settings.absences.createTitle")
@@ -328,7 +341,7 @@ export function AbsenceFormModal({
           </IconButton>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className={cn("min-h-0 flex-1 space-y-4 overflow-y-auto", settingsModalBodyPaddingClass())}>
           {error && <Alert variant="error">{error}</Alert>}
 
           <div>
@@ -358,7 +371,7 @@ export function AbsenceFormModal({
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <LabelMuted>{t("settings.absences.startDate")}</LabelMuted>
               <Input
@@ -392,7 +405,7 @@ export function AbsenceFormModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+        <div className={settingsModalFooterClass()}>
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             <CloseIcon />
             {t("common.cancel")}
@@ -410,7 +423,7 @@ export function AbsenceFormModal({
 
         {shiftConflictCount !== null && (
           <div
-            className="absolute inset-0 z-[72] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+            className={settingsNestedModalOverlayClass("z-[72]")}
             role="presentation"
             onMouseDown={(e) => {
               if (e.target === e.currentTarget && !pending) {
@@ -422,7 +435,7 @@ export function AbsenceFormModal({
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="absence-form-shift-conflict-title"
-              className="relative z-[73] w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-2xl"
+              className={settingsConfirmDialogClass("z-[73]")}
               onMouseDown={(e) => e.stopPropagation()}
             >
               <h4
@@ -436,7 +449,7 @@ export function AbsenceFormModal({
                   count: shiftConflictCount,
                 })}
               </p>
-              <div className="mt-5 flex justify-end gap-2">
+              <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
                 <Button
                   type="button"
                   variant="outline"

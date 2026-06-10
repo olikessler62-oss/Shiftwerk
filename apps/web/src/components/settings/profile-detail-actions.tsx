@@ -10,6 +10,7 @@ import {
 import type { Profile, ProfileRecurringAvailability } from "@schichtwerk/types";
 import type { ProfileCompensationCacheEntry } from "./profile-compensation-panel-modal";
 import { formatHourlyRateLabel } from "@/lib/profile-hourly-rate-display";
+import { formatEffectiveSurchargeSummary } from "@/lib/profile-surcharge-display";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { SettingsActionRow } from "./settings-list-ui";
 import { cn } from "@/lib/cn";
@@ -266,15 +267,26 @@ export function ProfileDetailActions({
       t("profiles.actionAvailabilityHint")
     );
   const currentHourlyRate = profileCompensation?.currentRate ?? null;
-  const compensationHint = currentHourlyRate ? (
-    <span className="block truncate text-xs text-primary">
-      {t("profiles.actionCompensationCurrent", {
-        rate: formatHourlyRateLabel(currentHourlyRate, localeKey),
-      })}
-    </span>
-  ) : (
-    t("profiles.actionCompensationHint")
-  );
+  const currentSurcharges = profileCompensation?.currentSurcharges ?? [];
+  const compensationHint =
+    currentHourlyRate || currentSurcharges.length > 0 ? (
+      <span className="block truncate text-xs text-primary">
+        {[
+          currentHourlyRate
+            ? t("profiles.actionCompensationCurrent", {
+                rate: formatHourlyRateLabel(currentHourlyRate, localeKey),
+              })
+            : null,
+          currentSurcharges.length > 0
+            ? formatEffectiveSurchargeSummary(currentSurcharges, localeKey)
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </span>
+    ) : (
+      t("profiles.actionCompensationHint")
+    );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2">

@@ -2,6 +2,7 @@ import { normalizeTime } from "./utils";
 import type { ShiftTypeBreakInput } from "./interface";
 
 export const MAX_SHIFT_TYPES_PER_ORGANIZATION = 6;
+export const MAX_AREA_SHIFT_TEMPLATES_PER_AREA = 6;
 
 const MINUTES_PER_DAY = 24 * 60;
 
@@ -217,6 +218,19 @@ export function validateShiftTypeCount(
     return {
       ok: false,
       error: `Es sind höchstens ${MAX_SHIFT_TYPES_PER_ORGANIZATION} verschiedene Schichtarten erlaubt.`,
+    };
+  }
+  return { ok: true };
+}
+
+export function validateAreaShiftTemplateCount(
+  existingCount: number,
+  isCreate: boolean
+): { ok: true } | { ok: false; error: string } {
+  if (isCreate && existingCount >= MAX_AREA_SHIFT_TEMPLATES_PER_AREA) {
+    return {
+      ok: false,
+      error: `Es sind höchstens ${MAX_AREA_SHIFT_TEMPLATES_PER_AREA} Schichtvorlagen pro Bereich erlaubt.`,
     };
   }
   return { ok: true };

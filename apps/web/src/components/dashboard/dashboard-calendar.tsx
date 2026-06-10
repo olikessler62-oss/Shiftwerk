@@ -11,11 +11,16 @@ import {
 } from "react";
 import { isPastCalendarDate } from "@/lib/dates";
 import { buildHolidayNamesByDate, isGermanPublicHoliday } from "@/lib/german-public-holidays";
+import { shiftColorStyle } from "@/lib/shift-color-style";
 import { formatDayHeader, formatTimeRange } from "@/lib/planning-utils";
 import { shortenShiftTypeDisplayName } from "@/lib/profile-availability-label";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
-import type { LocationArea, ShiftTypeWithBreaks } from "@schichtwerk/types";
+import type {
+  AreaShiftTemplateWithBreaks,
+  LocationArea,
+  ShiftTypeWithBreaks,
+} from "@schichtwerk/types";
 import {
   areaHasStaffingRequirementOnDate,
   hasStaffingRequirementInCalendar,
@@ -77,6 +82,7 @@ type Props = {
   staffingRules: StaffingRule[];
   shifts: DashboardShiftCard[];
   shiftTypes: ShiftTypeWithBreaks[];
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   qualifications: Qualification[];
   profiles: Profile[];
   fullStaffingRules: LocationAreaStaffing[];
@@ -275,7 +281,7 @@ function DashboardShiftCardView({ shift }: { shift: DashboardShiftCard }) {
   return (
     <div
       className={DASHBOARD_SHIFT_CARD_CLASS}
-      style={{ backgroundColor: shift.color }}
+      style={shiftColorStyle(shift.color)}
     >
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <ShiftCardEmployeeSwatch hex={shift.employeeColor} />
@@ -387,6 +393,7 @@ export function DashboardCalendar({
   staffingRules,
   shifts,
   shiftTypes,
+  areaShiftTemplates,
   qualifications,
   profiles,
   fullStaffingRules,
@@ -498,11 +505,6 @@ export function DashboardCalendar({
       document.removeEventListener("scroll", closeMenu, true);
     };
   }, [contextMenu]);
-
-  const shiftTypeNameById = useMemo(
-    () => new Map(shiftTypes.map((type) => [type.id, type.name])),
-    [shiftTypes]
-  );
 
   const dayUsesWideColumn = useMemo(
     () =>
@@ -907,15 +909,10 @@ export function DashboardCalendar({
                         area.id,
                         date,
                         serviceHours,
-                        shiftTypes,
-                        dayShifts
-                          .filter(
-                            (shift): shift is DashboardShiftCard & { shiftTypeId: string } =>
-                              shift.shiftTypeId != null
-                          )
-                          .map((shift) => ({
-                            shiftTypeId: shift.shiftTypeId,
-                          }))
+                        dayShifts.map((shift) => ({
+                          startTime: shift.startTime,
+                          endTime: shift.endTime,
+                        }))
                       );
 
                       return (
@@ -951,7 +948,6 @@ export function DashboardCalendar({
                               <TagAreaHeaderStrip
                                 showDaytimesGradient={showDaytimesGradient}
                                 entries={headerStaffing}
-                                shiftTypeNameById={shiftTypeNameById}
                                 overlayBackgroundColor={
                                   isPastWorkDayCell
                                     ? PAST_TAG_AREA_OVERLAY_BG
@@ -1054,6 +1050,7 @@ export function DashboardCalendar({
           locationId={locationId}
           areas={areas}
           shiftTypes={shiftTypes}
+          areaShiftTemplates={areaShiftTemplates}
           serviceHours={serviceHours}
           onClose={() => setAddShiftDialog(null)}
           onSaved={handleShiftSaved}
@@ -1068,6 +1065,7 @@ export function DashboardCalendar({
           locationName={locationName}
           areas={areas}
           shiftTypes={shiftTypes}
+          areaShiftTemplates={areaShiftTemplates}
           staffingRules={fullStaffingRules}
           serviceHours={serviceHours}
           qualifications={qualifications}
@@ -1075,10 +1073,12 @@ export function DashboardCalendar({
             .filter(
               (shift) =>
                 shift.locationAreaId === bulkShiftDialog.areaId &&
-                shift.shift_date === bulkShiftDialog.date &&
-                shift.shiftTypeId != null
+                shift.shift_date === bulkShiftDialog.date
             )
-            .map((shift) => ({ shiftTypeId: shift.shiftTypeId as string }))}
+            .map((shift) => ({
+              startTime: shift.startTime,
+              endTime: shift.endTime,
+            }))}
           areaExistingAssignments={shifts
             .filter(
               (shift) =>

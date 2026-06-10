@@ -1,4 +1,8 @@
-import type { ShiftType, ShiftTypeWithBreaks } from "@schichtwerk/types";
+import type {
+  AreaShiftTemplateWithBreaks,
+  ShiftType,
+  ShiftTypeWithBreaks,
+} from "@schichtwerk/types";
 import {
   DEFAULT_LOCATION_AREAS,
   DEFAULT_ORG_ROLES,
@@ -44,6 +48,24 @@ export function normalizeShiftTypesWithBreaks(rows: unknown[]): ShiftTypeWithBre
     return {
       ...r,
       shift_type_breaks: [...list].sort((a, b) => a.sort_order - b.sort_order),
+    };
+  });
+}
+
+export function normalizeAreaShiftTemplatesWithBreaks(
+  rows: unknown[]
+): AreaShiftTemplateWithBreaks[] {
+  return rows.map((row) => {
+    const r = row as AreaShiftTemplateWithBreaks & {
+      area_shift_template_breaks?: AreaShiftTemplateWithBreaks["area_shift_template_breaks"];
+    };
+    const breaks = r.area_shift_template_breaks;
+    const list = Array.isArray(breaks) ? breaks : breaks ? [breaks] : [];
+    return {
+      ...r,
+      area_shift_template_breaks: [...list].sort(
+        (a, b) => a.sort_order - b.sort_order
+      ),
     };
   });
 }
@@ -168,6 +190,34 @@ export async function replaceShiftTypeBreaks(
 
   const { error: insError } = await client
     .from(Schema.tables.shiftTypeBreaks)
+    .insert(rows);
+
+  if (insError) throw new Error(insError.message);
+}
+
+export async function replaceAreaShiftTemplateBreaks(
+  client: SupabaseClient,
+  templateId: string,
+  breaks: ShiftTypeBreakInput[]
+): Promise<void> {
+  const { error: delError } = await client
+    .from(Schema.tables.areaShiftTemplateBreaks)
+    .delete()
+    .eq("area_shift_template_id", templateId);
+
+  if (delError) throw new Error(delError.message);
+
+  if (breaks.length === 0) return;
+
+  const rows = breaks.map((b, index) => ({
+    area_shift_template_id: templateId,
+    break_start: normalizeTime(b.break_start),
+    break_end: normalizeTime(b.break_end),
+    sort_order: index,
+  }));
+
+  const { error: insError } = await client
+    .from(Schema.tables.areaShiftTemplateBreaks)
     .insert(rows);
 
   if (insError) throw new Error(insError.message);

@@ -17,11 +17,13 @@ import {
   reorderLocationAreas,
 } from "@/app/actions/location-areas";
 import type {
+  AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
   LocationAreaServiceHour,
   LocationAreaStaffing,
 } from "@schichtwerk/types";
+import { fetchAreaShiftTemplates } from "@/app/actions/area-shift-templates";
 import { fetchLocationStaffingEditor } from "@/app/actions/location-staffing";
 import { fetchLocationAreaServiceHours } from "@/app/actions/location-service-hours";
 import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
@@ -31,9 +33,17 @@ import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { LocationDetailActions } from "./location-detail-actions";
 import { LocationServiceHoursPanelModal } from "./location-service-hours-panel-modal";
 import { LocationStaffingPanelModal } from "./location-staffing-panel-modal";
+import { AreaShiftTemplatesPanelModal } from "./area-shift-templates-panel-modal";
 import {
   SETTINGS_LIST_SCROLL_COMPACT_CLASS,
+  SETTINGS_MODAL_MAX_WIDTH,
   SETTINGS_MODAL_TITLE_CLASS,
+  settingsMasterDetailLayoutClass,
+  settingsMasterDetailListsClass,
+  settingsModalBackdropClass,
+  settingsModalDialogClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -65,6 +75,10 @@ type Props = {
   initialSelectedLocationId?: string | null;
   initialAreas?: LocationArea[];
   initialSelectedAreaId?: string | null;
+  /** Bereits geladene Detaildaten (Dashboard) — kein erneuter Fetch beim Öffnen */
+  initialServiceHours?: LocationAreaServiceHour[];
+  initialStaffing?: LocationAreaStaffing[];
+  initialShiftTemplates?: AreaShiftTemplateWithBreaks[];
 };
 
 type LocationFormMode =
@@ -77,15 +91,46 @@ type AreaFormMode =
   | { type: "create" }
   | { type: "edit"; area: LocationArea };
 
-type DetailPanel = null | "serviceHours" | "staffing";
+type DetailPanel = null | "serviceHours" | "staffing" | "shiftTemplates";
 
-const MODAL_MAX_WIDTH = "calc(54rem + 120px)";
 const COLUMN_GAP_PX = 20;
 const MAX_NAME_DISPLAY = 25;
 
 function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
   if (name.length <= max) return name;
   return `${name.slice(0, max - 1)}…`;
+}
+
+function filterByArea<T extends { location_area_id: string }>(
+  items: T[],
+  areaId: string
+): T[] {
+  return items.filter((item) => item.location_area_id === areaId);
+}
+
+function buildInitialDetailCaches(
+  areaId: string,
+  serviceHours: LocationAreaServiceHour[],
+  staffing: LocationAreaStaffing[],
+  shiftTemplates: AreaShiftTemplateWithBreaks[]
+) {
+  return {
+    serviceHoursCache: { [areaId]: filterByArea(serviceHours, areaId) },
+    staffingCache: { [areaId]: filterByArea(staffing, areaId) },
+    shiftTemplatesCache: { [areaId]: filterByArea(shiftTemplates, areaId) },
+  };
+}
+
+function shouldDeferLocationsModalRender(
+  locationId: string | null,
+  hasPrefetchedAreas: boolean,
+  selectedAreaId: string | null,
+  detailPrefetched: boolean
+): boolean {
+  if (!locationId) return false;
+  if (!hasPrefetchedAreas) return true;
+  if (selectedAreaId && !detailPrefetched) return true;
+  return false;
 }
 
 function ColumnActionButton({
@@ -144,7 +189,7 @@ function ColumnShell({
         <div className="min-h-0 bg-background px-2 py-2">
           <div
             className={cn(
-              "min-h-0 overflow-y-auto rounded-md border border-border bg-surface",
+              "min-h-0 overflow-auto rounded-md border border-border bg-surface",
               listScrollClassName
             )}
           >
@@ -169,12 +214,28 @@ function resolveInitialAreaId(
   return areas[0]?.id ?? null;
 }
 
+function isAreaDetailCached(
+  areaId: string,
+  serviceHoursCache: Record<string, LocationAreaServiceHour[]>,
+  staffingCache: Record<string, LocationAreaStaffing[]>,
+  shiftTemplatesCache: Record<string, AreaShiftTemplateWithBreaks[]>
+): boolean {
+  return (
+    areaId in serviceHoursCache &&
+    areaId in staffingCache &&
+    areaId in shiftTemplatesCache
+  );
+}
+
 export function LocationsModal({
   locations,
   onClose,
   initialSelectedLocationId = null,
   initialAreas = [],
   initialSelectedAreaId = null,
+  initialServiceHours,
+  initialStaffing,
+  initialShiftTemplates,
 }: Props) {
   const router = useRouter();
   const t = useTranslations();
@@ -185,9 +246,32 @@ export function LocationsModal({
   const hasPrefetchedAreas =
     initialLocationId != null &&
     initialLocationId === initialSelectedLocationId;
+  const detailPrefetched =
+    hasPrefetchedAreas &&
+    !!initialSelectedAreaId &&
+    initialServiceHours !== undefined &&
+    initialStaffing !== undefined &&
+    initialShiftTemplates !== undefined;
+  const initialDetailCaches =
+    detailPrefetched && initialSelectedAreaId
+      ? buildInitialDetailCaches(
+          initialSelectedAreaId,
+          initialServiceHours,
+          initialStaffing,
+          initialShiftTemplates
+        )
+      : null;
   const skipInitialAreasFetch = useRef(hasPrefetchedAreas);
 
   const [pending, startTransition] = useTransition();
+  const [initialLoading, setInitialLoading] = useState(() =>
+    shouldDeferLocationsModalRender(
+      initialLocationId,
+      hasPrefetchedAreas,
+      initialSelectedAreaId,
+      detailPrefetched
+    )
+  );
   const [list, setList] = useState(locations);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
     initialLocationId
@@ -203,12 +287,18 @@ export function LocationsModal({
       ? resolveInitialAreaId(initialAreas, initialSelectedAreaId)
       : null
   );
+  const [displayedAreaId, setDisplayedAreaId] = useState<string | null>(() =>
+    detailPrefetched && initialSelectedAreaId ? initialSelectedAreaId : null
+  );
   const [serviceHoursCache, setServiceHoursCache] = useState<
     Record<string, LocationAreaServiceHour[]>
-  >({});
+  >(() => initialDetailCaches?.serviceHoursCache ?? {});
   const [staffingCache, setStaffingCache] = useState<
     Record<string, LocationAreaStaffing[]>
-  >({});
+  >(() => initialDetailCaches?.staffingCache ?? {});
+  const [shiftTemplatesCache, setShiftTemplatesCache] = useState<
+    Record<string, AreaShiftTemplateWithBreaks[]>
+  >(() => initialDetailCaches?.shiftTemplatesCache ?? {});
 
   const [locationFormMode, setLocationFormMode] = useState<LocationFormMode>(null);
   const [areaFormMode, setAreaFormMode] = useState<AreaFormMode>(null);
@@ -264,10 +354,27 @@ export function LocationsModal({
 
   const selectedLocation = sortedLocations.find((l) => l.id === selectedLocationId);
   const selectedArea = sortedAreas.find((a) => a.id === selectedAreaId);
+  const displayedArea = displayedAreaId
+    ? sortedAreas.find((a) => a.id === displayedAreaId)
+    : undefined;
   const panelAreaReady =
     !!selectedAreaId &&
-    selectedAreaId in serviceHoursCache &&
-    selectedAreaId in staffingCache;
+    isAreaDetailCached(
+      selectedAreaId,
+      serviceHoursCache,
+      staffingCache,
+      shiftTemplatesCache
+    );
+  const displayedPanelReady =
+    !!displayedAreaId &&
+    isAreaDetailCached(
+      displayedAreaId,
+      serviceHoursCache,
+      staffingCache,
+      shiftTemplatesCache
+    );
+  const areaDetailSwitching =
+    !!selectedAreaId && selectedAreaId !== displayedAreaId;
   const clearLocationScrollTarget = useCallback(
     () => setScrollToLocationId(null),
     []
@@ -291,6 +398,7 @@ export function LocationsModal({
         setErrorMessage(result.error);
         setAreas([]);
         setSelectedAreaId(null);
+        setDisplayedAreaId(null);
         return;
       }
       setAreas(result.areas ?? []);
@@ -300,6 +408,22 @@ export function LocationsModal({
       });
     });
   }, []);
+
+  useEffect(() => {
+    if (!initialLoading) return;
+    if (areasLoading) return;
+    if (selectedAreaId && !panelAreaReady) return;
+    setInitialLoading(false);
+  }, [initialLoading, areasLoading, selectedAreaId, panelAreaReady]);
+
+  useEffect(() => {
+    if (!selectedAreaId) {
+      setDisplayedAreaId(null);
+      return;
+    }
+    if (!panelAreaReady) return;
+    setDisplayedAreaId(selectedAreaId);
+  }, [selectedAreaId, panelAreaReady]);
 
   useEffect(() => {
     setList(locations);
@@ -316,6 +440,7 @@ export function LocationsModal({
     if (!selectedLocationId) {
       setAreas([]);
       setSelectedAreaId(null);
+      setDisplayedAreaId(null);
       setAreasLoading(false);
       return;
     }
@@ -327,6 +452,7 @@ export function LocationsModal({
     setDetailPanel(null);
     setAreas([]);
     setSelectedAreaId(null);
+    setDisplayedAreaId(null);
     setAreasLoading(true);
     loadAreas(selectedLocationId);
   }, [selectedLocationId, loadAreas]);
@@ -390,6 +516,7 @@ export function LocationsModal({
   function handleAreaFormSaved(createdId?: string) {
     if (createdId) {
       setSelectedAreaId(createdId);
+      setDisplayedAreaId(null);
       setScrollToAreaId(createdId);
     }
     if (selectedLocationId) loadAreas(selectedLocationId);
@@ -405,6 +532,13 @@ export function LocationsModal({
   const handleStaffingCacheUpdate = useCallback(
     (areaId: string, staffing: LocationAreaStaffing[]) => {
       setStaffingCache((prev) => ({ ...prev, [areaId]: staffing }));
+    },
+    []
+  );
+
+  const handleShiftTemplatesCacheUpdate = useCallback(
+    (areaId: string, templates: AreaShiftTemplateWithBreaks[]) => {
+      setShiftTemplatesCache((prev) => ({ ...prev, [areaId]: templates }));
     },
     []
   );
@@ -425,7 +559,8 @@ export function LocationsModal({
     const areaId = selectedAreaId;
     const hoursReady = areaId in serviceHoursCache;
     const staffingReady = areaId in staffingCache;
-    if (hoursReady && staffingReady) return;
+    const templatesReady = areaId in shiftTemplatesCache;
+    if (hoursReady && staffingReady && templatesReady) return;
 
     let cancelled = false;
 
@@ -436,12 +571,17 @@ export function LocationsModal({
       staffingReady
         ? Promise.resolve(null)
         : fetchLocationStaffingEditor(selectedLocationId, areaId),
-    ]).then(([hoursResult, staffingResult]) => {
+      templatesReady
+        ? Promise.resolve(null)
+        : fetchAreaShiftTemplates(selectedLocationId, areaId),
+    ]).then(([hoursResult, staffingResult, templatesResult]) => {
       if (cancelled) return;
       const hours =
         hoursResult?.ok === true ? (hoursResult.hours ?? []) : [];
       const staffing =
         staffingResult?.ok === true ? (staffingResult.staffing ?? []) : [];
+      const templates =
+        templatesResult?.ok === true ? (templatesResult.templates ?? []) : [];
       setServiceHoursCache((prev) => {
         if (areaId in prev) return prev;
         return { ...prev, [areaId]: hours };
@@ -449,6 +589,10 @@ export function LocationsModal({
       setStaffingCache((prev) => {
         if (areaId in prev) return prev;
         return { ...prev, [areaId]: staffing };
+      });
+      setShiftTemplatesCache((prev) => {
+        if (areaId in prev) return prev;
+        return { ...prev, [areaId]: templates };
       });
     });
 
@@ -460,6 +604,7 @@ export function LocationsModal({
     selectedAreaId,
     serviceHoursCache,
     staffingCache,
+    shiftTemplatesCache,
   ]);
 
   function selectLocation(id: string) {
@@ -467,6 +612,7 @@ export function LocationsModal({
     setSelectedLocationId(id);
     setAreas([]);
     setSelectedAreaId(null);
+    setDisplayedAreaId(null);
     setAreasLoading(true);
     setConfirmDeleteLocation(false);
     setConfirmDeleteArea(false);
@@ -475,7 +621,18 @@ export function LocationsModal({
   }
 
   function selectArea(id: string) {
+    if (id === selectedAreaId) return;
     setSelectedAreaId(id);
+    if (
+      isAreaDetailCached(
+        id,
+        serviceHoursCache,
+        staffingCache,
+        shiftTemplatesCache
+      )
+    ) {
+      setDisplayedAreaId(id);
+    }
     setConfirmDeleteArea(false);
     setDetailPanel(null);
     setErrorMessage(null);
@@ -528,6 +685,7 @@ export function LocationsModal({
         return;
       }
       setAreas(result.areas ?? []);
+      setDisplayedAreaId(null);
       setSelectedAreaId(result.areas?.[0]?.id ?? null);
       setConfirmDeleteArea(false);
       refreshList();
@@ -537,10 +695,14 @@ export function LocationsModal({
   return (
     <div
       className={cn(
-        "absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4",
-        (pending || areasLoading) && "cursor-wait"
+        settingsModalBackdropClass(),
+        (initialLoading || pending || areasLoading || areaDetailSwitching) &&
+          "cursor-wait"
       )}
       role="presentation"
+      aria-busy={
+        initialLoading || pending || areasLoading || areaDetailSwitching
+      }
       onMouseDown={(e) => {
         if (
           e.target === e.currentTarget &&
@@ -552,9 +714,10 @@ export function LocationsModal({
         }
       }}
     >
+      {!initialLoading ? (
       <div
-        className="relative flex w-full flex-col"
-        style={{ maxWidth: MODAL_MAX_WIDTH }}
+        className="relative flex w-full min-w-0 flex-col"
+        style={{ maxWidth: SETTINGS_MODAL_MAX_WIDTH }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div
@@ -562,14 +725,15 @@ export function LocationsModal({
           aria-modal="true"
           aria-labelledby="locations-modal-title"
           aria-hidden={overlayFormOpen}
-          aria-busy={pending || areasLoading}
+          aria-busy={pending || areasLoading || areaDetailSwitching}
           className={cn(
-            "flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
+            settingsModalDialogClass(),
             overlayFormOpen ? "pointer-events-none" : "",
-            (pending || areasLoading) && "[&_*]:cursor-wait"
+            (pending || areasLoading || areaDetailSwitching) &&
+              "[&_*]:cursor-wait"
           )}
         >
-          <div className="shrink-0 border-b border-border px-6 py-4">
+          <div className={cn("shrink-0 border-b border-border", settingsModalHeaderPaddingClass())}>
             <h2 id="locations-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("locations.title")}
             </h2>
@@ -582,11 +746,11 @@ export function LocationsModal({
           )}
 
           <div
-            className="grid shrink-0 grid-cols-[minmax(0,calc(66%-10px))_minmax(0,calc(34%-10px))] items-stretch bg-background px-4 py-3"
+            className={settingsMasterDetailLayoutClass()}
             style={{ gap: COLUMN_GAP_PX }}
           >
             <div
-              className="grid min-h-0 min-w-0 grid-cols-2 items-stretch"
+              className={settingsMasterDetailListsClass()}
               style={{ gap: COLUMN_GAP_PX }}
             >
               <ColumnShell
@@ -710,7 +874,9 @@ export function LocationsModal({
                         <ColumnActionButton
                           label={t("locations.areaEdit")}
                           icon={<PencilIcon />}
-                          disabled={pending || !selectedArea}
+                          disabled={
+                            pending || areaDetailSwitching || !selectedArea
+                          }
                           onClick={() => {
                             if (!selectedArea) return;
                             openEditArea(selectedArea);
@@ -719,7 +885,12 @@ export function LocationsModal({
                         <SettingsReorderButtons
                           moveUpLabel={t("common.moveUp")}
                           moveDownLabel={t("common.moveDown")}
-                          disabled={pending || areasLoading || !selectedLocationId}
+                          disabled={
+                            pending ||
+                            areasLoading ||
+                            areaDetailSwitching ||
+                            !selectedLocationId
+                          }
                           canMoveUp={canMoveAreaUp}
                           canMoveDown={canMoveAreaDown}
                           onMoveUp={() => {
@@ -737,7 +908,9 @@ export function LocationsModal({
                       <ColumnActionButton
                         label={t("locations.areaDelete")}
                         icon={<TrashIcon />}
-                        disabled={pending || !selectedArea}
+                        disabled={
+                          pending || areaDetailSwitching || !selectedArea
+                        }
                         onClick={() => {
                           setConfirmDeleteArea(true);
                           setErrorMessage(null);
@@ -796,37 +969,36 @@ export function LocationsModal({
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
               <h3 className={settingsPanelHeaderClass()}>
-                {selectedArea
+                {displayedArea
                   ? t("locations.panelSelected")
                   : t("locations.panelDetails")}
               </h3>
-              {panelAreaReady && selectedArea ? (
+              {displayedArea && displayedPanelReady ? (
                 <LocationDetailActions
                   selectedLocation={selectedLocation ?? null}
-                  selectedArea={selectedArea}
-                  serviceHours={serviceHoursCache[selectedArea.id]}
-                  staffing={staffingCache[selectedArea.id]}
-                  disabled={pending || areasLoading}
+                  selectedArea={displayedArea}
+                  serviceHours={serviceHoursCache[displayedArea.id]}
+                  staffing={staffingCache[displayedArea.id]}
+                  shiftTemplates={shiftTemplatesCache[displayedArea.id]}
+                  disabled={
+                    pending || areasLoading || areaDetailSwitching
+                  }
                   onOpen={setDetailPanel}
-                />
-              ) : selectedAreaId ? (
-                <div
-                  className="min-h-0 flex-1"
-                  aria-busy="true"
-                  aria-label={t("common.loading")}
                 />
               ) : (
                 <LocationDetailActions
                   selectedLocation={selectedLocation ?? null}
                   selectedArea={null}
-                  disabled={pending || areasLoading}
+                  disabled={
+                    pending || areasLoading || areaDetailSwitching
+                  }
                   onOpen={setDetailPanel}
                 />
               )}
             </div>
           </div>
 
-          <div className="flex shrink-0 justify-end border-t border-border px-6 py-3">
+          <div className={settingsModalFooterClass("shrink-0 px-4 sm:px-6")}>
             <Button
               type="button"
               variant="outline"
@@ -874,6 +1046,14 @@ export function LocationsModal({
             existingAreas={areas}
             onClose={() => setAreaFormMode(null)}
             onSaved={handleAreaFormSaved}
+            onServiceHoursUpdated={(areaId) => {
+              void fetchLocationAreaServiceHours(selectedLocationId, areaId).then(
+                (result) => {
+                  if (!result.ok) return;
+                  handleServiceHoursCacheUpdate(areaId, result.hours ?? []);
+                }
+              );
+            }}
           />
         )}
         {confirmDeleteLocation && selectedLocation && (
@@ -901,6 +1081,11 @@ export function LocationsModal({
                 ? serviceHoursCache[selectedArea.id]
                 : undefined
             }
+            cachedShiftTemplates={
+              selectedArea.id in shiftTemplatesCache
+                ? shiftTemplatesCache[selectedArea.id]
+                : undefined
+            }
             onClose={() => {
               setDetailPanel(null);
               refreshList();
@@ -918,7 +1103,18 @@ export function LocationsModal({
             }}
           />
         )}
+        {detailPanel === "shiftTemplates" && selectedLocation && selectedArea && (
+          <AreaShiftTemplatesPanelModal
+            location={selectedLocation}
+            area={selectedArea}
+            onClose={() => {
+              setDetailPanel(null);
+            }}
+            onCacheUpdate={handleShiftTemplatesCacheUpdate}
+          />
+        )}
       </div>
+      ) : null}
     </div>
   );
 }

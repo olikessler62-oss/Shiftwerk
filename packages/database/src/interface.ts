@@ -5,6 +5,9 @@ import type {
   Profile,
   ProfileHourlyRate,
   ProfileHourlyRateSummary,
+  ProfileCompensationSurcharge,
+  EffectiveProfileCompensationSurcharge,
+  CompensationSurchargeType,
   ProfileRecurringAvailability,
   Shift,
   Qualification,
@@ -183,8 +186,7 @@ export interface SchichtwerkDatabase {
   ): Promise<ShiftType[]>;
   loadShiftTypesWithBreaks(organizationId: string): Promise<ShiftTypeWithBreaks[]>;
   loadShiftTypesWithBreaksForDashboard(
-    organizationId: string,
-    staffingRules: { shift_type_id: string; required_count: number }[]
+    organizationId: string
   ): Promise<ShiftTypeWithBreaks[]>;
   seedDefaultShiftTypes(organizationId: string): Promise<void>;
   getShiftTypeForAssign(
@@ -294,6 +296,83 @@ export interface SchichtwerkDatabase {
     referenceDate: string
   ): Promise<void>;
 
+  // —— Compensation surcharge types ——
+  listCompensationSurchargeTypes(
+    organizationId: string
+  ): Promise<CompensationSurchargeType[]>;
+  getNextCompensationSurchargeTypeSortOrder(
+    organizationId: string
+  ): Promise<number>;
+  insertCompensationSurchargeType(row: {
+    organization_id: string;
+    name: string;
+    trigger: CompensationSurchargeType["trigger"];
+    amount: number;
+    unit: CompensationSurchargeType["unit"];
+    sort_order: number;
+  }): Promise<{ id: string }>;
+  updateCompensationSurchargeType(
+    id: string,
+    organizationId: string,
+    row: {
+      name: string;
+      trigger: CompensationSurchargeType["trigger"];
+      amount: number;
+      unit: CompensationSurchargeType["unit"];
+    }
+  ): Promise<void>;
+  archiveCompensationSurchargeType(
+    id: string,
+    organizationId: string
+  ): Promise<void>;
+  reorderCompensationSurchargeTypes(
+    organizationId: string,
+    orderedIds: string[]
+  ): Promise<void>;
+
+  // —— Profile compensation surcharges ——
+  listProfileCompensationSurcharges(
+    organizationId: string,
+    profileId: string,
+    limit?: number
+  ): Promise<ProfileCompensationSurcharge[]>;
+  listEffectiveProfileCompensationSurchargesForDate(
+    organizationId: string,
+    profileId: string,
+    date: string
+  ): Promise<EffectiveProfileCompensationSurcharge[]>;
+  getProfileCompensationSurchargeById(
+    organizationId: string,
+    profileId: string,
+    entryId: string
+  ): Promise<ProfileCompensationSurcharge | null>;
+  setProfileCompensationSurcharge(
+    organizationId: string,
+    profileId: string,
+    input: {
+      surcharge_type_id: string;
+      amount: number | null;
+      valid_from: string;
+      created_by: string;
+    }
+  ): Promise<ProfileCompensationSurcharge>;
+  updateProfileCompensationSurcharge(
+    organizationId: string,
+    profileId: string,
+    entryId: string,
+    input: {
+      amount: number | null;
+      valid_from: string;
+    },
+    referenceDate: string
+  ): Promise<ProfileCompensationSurcharge>;
+  deleteProfileCompensationSurcharge(
+    organizationId: string,
+    profileId: string,
+    entryId: string,
+    referenceDate: string
+  ): Promise<void>;
+
   // —— Profile recurring availability ——
   listProfileRecurringAvailability(
     organizationId: string,
@@ -396,6 +475,12 @@ export interface SchichtwerkDatabase {
     locationId: string,
     rows: { weekday: number; start_time: string; end_time: string }[]
   ): Promise<void>;
+  ensureLocationAreaServiceHour(
+    locationAreaId: string,
+    locationId: string,
+    row: { weekday: number; start_time: string; end_time: string },
+    options?: { excludeServiceHourId?: string }
+  ): Promise<LocationAreaServiceHour>;
 
   listLocationAreas(locationId: string): Promise<LocationArea[]>;
   listLocationAreasForDashboard(
@@ -412,37 +497,76 @@ export interface SchichtwerkDatabase {
     locationAreaId: string,
     locationId: string,
     rules: {
-      shift_type_id: string;
-      weekday: number;
+      service_hour_id: string;
       qualification_id: string;
       required_count: number;
     }[]
   ): Promise<void>;
-  saveLocationAreaStaffingForShiftType(
-    locationAreaId: string,
+  saveLocationAreaStaffingForServiceHour(
+    serviceHourId: string,
     locationId: string,
-    shiftTypeId: string,
     rules: {
-      weekday: number;
       qualification_id: string;
       required_count: number;
     }[]
   ): Promise<void>;
-  removeLocationAreaStaffingForShiftType(
+  removeLocationAreaStaffingForServiceHour(
+    serviceHourId: string,
+    locationId: string
+  ): Promise<void>;
+  listAreaShiftTemplatesWithBreaksForArea(
+    locationAreaId: string,
+    locationId: string
+  ): Promise<import("@schichtwerk/types").AreaShiftTemplateWithBreaks[]>;
+  listAreaShiftTemplatesWithBreaksForLocation(
+    locationId: string
+  ): Promise<import("@schichtwerk/types").AreaShiftTemplateWithBreaks[]>;
+  getNextAreaShiftTemplateSortOrder(
+    locationAreaId: string,
+    locationId: string
+  ): Promise<number>;
+  insertAreaShiftTemplate(row: {
+    location_area_id: string;
+    name: string;
+    start_time: string;
+    end_time: string;
+    color: string;
+    sort_order: number;
+  }): Promise<{ id: string }>;
+  updateAreaShiftTemplate(
+    id: string,
     locationAreaId: string,
     locationId: string,
-    shiftTypeId: string
+    row: { name: string; start_time: string; end_time: string; color?: string }
+  ): Promise<void>;
+  replaceAreaShiftTemplateBreaks(
+    templateId: string,
+    breaks: ShiftTypeBreakInput[]
+  ): Promise<void>;
+  archiveAreaShiftTemplate(
+    id: string,
+    locationAreaId: string,
+    locationId: string
+  ): Promise<void>;
+  reorderAreaShiftTemplates(
+    locationAreaId: string,
+    locationId: string,
+    orderedIds: string[]
   ): Promise<void>;
   getNextLocationAreaSortOrder(locationId: string): Promise<number>;
   insertLocationArea(row: {
     location_id: string;
     name: string;
     sort_order: number;
+    planning_mode?: import("@schichtwerk/types").AreaPlanningMode;
   }): Promise<{ id: string }>;
   updateLocationArea(
     id: string,
     locationId: string,
-    row: { name: string }
+    row: {
+      name: string;
+      planning_mode?: import("@schichtwerk/types").AreaPlanningMode;
+    }
   ): Promise<void>;
   archiveLocationArea(id: string, locationId: string): Promise<void>;
   reorderLocationAreas(locationId: string, orderedIds: string[]): Promise<void>;

@@ -17,7 +17,8 @@ import {
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
-  settingsColumnHeaderClass,
+  settingsStickyColumnHeaderClass,
+  settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -201,10 +202,15 @@ export function RolesModal({ roles, onClose }: Props) {
                 ) : (
                   <table className="w-full border-collapse">
                     <thead>
-                      <tr className="border-b border-border bg-subtle">
-                        <th className="w-1 p-0" aria-hidden />
-                        <th className={settingsColumnHeaderClass()}>{t("roles.designation")}</th>
-                        <th className={settingsColumnHeaderClass("center")}>
+                      <tr className="border-b border-border">
+                        <th
+                          className={settingsStickyIndicatorHeaderClass()}
+                          aria-hidden
+                        />
+                        <th className={settingsStickyColumnHeaderClass()}>
+                          {t("roles.designation")}
+                        </th>
+                        <th className={settingsStickyColumnHeaderClass("center")}>
                           {t("roles.permission")}
                         </th>
                       </tr>

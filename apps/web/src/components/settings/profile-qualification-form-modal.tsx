@@ -7,7 +7,15 @@ import {
 } from "@/app/actions/profile-qualifications";
 import type { Qualification } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
-import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { cn } from "@/lib/cn";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsNestedModalDialogClass,
+  settingsNestedModalOverlayClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -92,7 +100,7 @@ export function ProfileQualificationFormModal({
 
   return (
     <div
-      className="absolute inset-0 z-[70] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+      className={settingsNestedModalOverlayClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !pending) onClose();
@@ -102,10 +110,15 @@ export function ProfileQualificationFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-qualification-form-title"
-        className="relative z-[71] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={settingsNestedModalDialogClass("md")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3
             id="profile-qualification-form-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
@@ -125,7 +138,7 @@ export function ProfileQualificationFormModal({
           </IconButton>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className={cn("space-y-4", settingsModalBodyPaddingClass())}>
           {error && <Alert variant="error">{error}</Alert>}
 
           <div>
@@ -145,7 +158,7 @@ export function ProfileQualificationFormModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+        <div className={settingsModalFooterClass()}>
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             <CloseIcon />
             {t("common.cancel")}

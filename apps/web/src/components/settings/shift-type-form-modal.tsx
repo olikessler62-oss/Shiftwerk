@@ -21,7 +21,16 @@ import {
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import type { ShiftTypeBreak, ShiftTypeWithBreaks } from "@schichtwerk/types";
-import { SETTINGS_MODAL_TITLE_CLASS, settingsColumnHeaderClass } from "./settings-list-ui";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+  settingsColumnHeaderClass,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsNestedModalDialogClass,
+  settingsNestedModalOverlayClass,
+  settingsResponsiveTableWrapClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -195,7 +204,7 @@ export function ShiftTypeFormModal({
 
   return (
     <div
-      className="absolute inset-0 z-[70] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+      className={settingsNestedModalOverlayClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !pending) onClose();
@@ -205,10 +214,15 @@ export function ShiftTypeFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="shift-type-form-title"
-        className="relative z-[71] flex max-h-[min(90vh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={settingsNestedModalDialogClass("lg")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3 id="shift-type-form-title" className={SETTINGS_MODAL_TITLE_CLASS}>
             {mode === "create" ? t("shiftTypes.createTitle") : t("shiftTypes.editTitle")}
           </h3>
@@ -223,7 +237,7 @@ export function ShiftTypeFormModal({
           </IconButton>
         </div>
 
-        <div className="space-y-5 overflow-y-auto px-5 py-4">
+        <div className={cn("min-h-0 flex-1 space-y-5 overflow-y-auto", settingsModalBodyPaddingClass())}>
           {error && <Alert variant="error">{error}</Alert>}
 
           <div>
@@ -235,12 +249,12 @@ export function ShiftTypeFormModal({
             />
           </div>
 
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="min-w-[120px] flex-1">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <div className="min-w-0">
               <LabelMuted>{t("shiftTypes.timeFrom")}</LabelMuted>
               <TimeInput value={startTime} onChange={(e) => setStartTime(e.target.value)} />
             </div>
-            <div className="min-w-[120px] flex-1">
+            <div className="min-w-0">
               <LabelMuted>{t("shiftTypes.timeTo")}</LabelMuted>
               <TimeInput value={endTime} onChange={(e) => setEndTime(e.target.value)} />
             </div>
@@ -276,7 +290,8 @@ export function ShiftTypeFormModal({
               </div>
             </div>
 
-            <table className="w-full border-collapse text-sm">
+            <div className={settingsResponsiveTableWrapClass()}>
+            <table className="w-full min-w-[16rem] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-border">
                   <th className={settingsColumnHeaderClass()}>{t("shiftTypes.breakFrom")}</th>
@@ -336,10 +351,11 @@ export function ShiftTypeFormModal({
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+        <div className={settingsModalFooterClass()}>
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             <CloseIcon />
             {t("common.cancel")}

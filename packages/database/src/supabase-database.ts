@@ -1,6 +1,7 @@
 import type {
   AbsenceRequest,
   AbsenceType,
+  AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
   LocationAreaServiceHour,
@@ -8,6 +9,9 @@ import type {
   Profile,
   ProfileHourlyRate,
   ProfileHourlyRateSummary,
+  ProfileCompensationSurcharge,
+  EffectiveProfileCompensationSurcharge,
+  CompensationSurchargeType,
   ProfileRecurringAvailability,
   Qualification,
   Role,
@@ -46,6 +50,7 @@ import {
   isServiceHoursTableUnavailable,
   SERVICE_HOURS_MIGRATION_HINT,
 } from "./location-service-hours";
+import { validateServiceHoursInput } from "./location-service-hours-validation";
 import {
   parseAvailabilityTimeRange,
   parseAvailabilityWeekday,
@@ -53,8 +58,10 @@ import {
 } from "./profile-availability-validation";
 import {
   dedupeShiftTypes,
+  normalizeAreaShiftTemplatesWithBreaks,
   normalizeShiftTypesWithBreaks,
   normalizeTime,
+  replaceAreaShiftTemplateBreaks,
   replaceShiftTypeBreaks,
   seedDefaultAreaServiceHours,
   seedDefaultLocationAreas,
@@ -63,7 +70,7 @@ import {
 } from "./utils";
 
 const T = Schema.tables;
-const PROFILE_SELECT = "*, roles!inner(permission_level)";
+const PROFILE_SELECT = "*, roles!inner(permission_level, name)";
 
 function throwServiceHoursDbError(message: string): never {
   if (isServiceHoursTableUnavailable(message)) {
@@ -72,8 +79,10 @@ function throwServiceHoursDbError(message: string): never {
   throw new Error(message);
 }
 
-type ProfileRow = Omit<Profile, "role"> & {
-  roles: { permission_level: RolePermissionLevel } | { permission_level: RolePermissionLevel }[];
+type ProfileRow = Omit<Profile, "role" | "role_name"> & {
+  roles:
+    | { permission_level: RolePermissionLevel; name: string }
+    | { permission_level: RolePermissionLevel; name: string }[];
 };
 
 function mapProfile(row: ProfileRow): Profile {
@@ -82,11 +91,15 @@ function mapProfile(row: ProfileRow): Profile {
   return {
     ...rest,
     role: roleRel?.permission_level ?? "basic",
+    role_name: roleRel?.name ?? "",
   };
 }
 
 const PROFILE_HOURLY_RATE_SELECT =
   "*, creator:created_by(full_name)";
+
+const PROFILE_COMPENSATION_SURCHARGE_SELECT =
+  "*, creator:created_by(full_name), surcharge_type:compensation_surcharge_types(name, trigger, amount, unit)";
 
 type ProfileHourlyRateRow = {
   id: string;
@@ -152,6 +165,79 @@ function mapProfileHourlyRate(row: ProfileHourlyRateRow): ProfileHourlyRate {
     created_at: row.created_at,
     created_by: row.created_by,
     created_by_name: creatorRel?.full_name ?? null,
+  };
+}
+
+type ProfileCompensationSurchargeRow = {
+  id: string;
+  organization_id: string;
+  profile_id: string;
+  surcharge_type_id: string;
+  amount: number | string | null;
+  valid_from: string;
+  valid_to: string | null;
+  created_at: string;
+  created_by: string | null;
+  creator?: { full_name: string } | { full_name: string }[] | null;
+  surcharge_type?:
+    | {
+        name: string;
+        trigger: CompensationSurchargeType["trigger"];
+        amount: number | string;
+        unit: CompensationSurchargeType["unit"];
+      }
+    | {
+        name: string;
+        trigger: CompensationSurchargeType["trigger"];
+        amount: number | string;
+        unit: CompensationSurchargeType["unit"];
+      }[]
+    | null;
+};
+
+function parseNumericField(value: number | string): number {
+  return typeof value === "string" ? Number.parseFloat(value) : value;
+}
+
+function mapProfileCompensationSurcharge(
+  row: ProfileCompensationSurchargeRow
+): ProfileCompensationSurcharge {
+  const typeRel = Array.isArray(row.surcharge_type)
+    ? row.surcharge_type[0]
+    : row.surcharge_type;
+  const creatorRel = Array.isArray(row.creator) ? row.creator[0] : row.creator;
+  const amount =
+    row.amount === null || row.amount === undefined
+      ? null
+      : parseNumericField(row.amount);
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    profile_id: row.profile_id,
+    surcharge_type_id: row.surcharge_type_id,
+    surcharge_type_name: typeRel?.name ?? "",
+    trigger: typeRel?.trigger ?? "public_holiday",
+    type_default_amount: typeRel ? parseNumericField(typeRel.amount) : 0,
+    type_default_unit: typeRel?.unit ?? "eur_per_hour",
+    amount,
+    valid_from: row.valid_from.slice(0, 10),
+    valid_to: row.valid_to ? row.valid_to.slice(0, 10) : null,
+    created_at: row.created_at,
+    created_by: row.created_by,
+    created_by_name: creatorRel?.full_name ?? null,
+  };
+}
+
+function mapEffectiveProfileCompensationSurcharge(
+  row: ProfileCompensationSurcharge
+): EffectiveProfileCompensationSurcharge {
+  return {
+    id: row.id,
+    surcharge_type_id: row.surcharge_type_id,
+    name: row.surcharge_type_name,
+    trigger: row.trigger,
+    amount: row.amount ?? row.type_default_amount,
+    unit: row.type_default_unit,
   };
 }
 
@@ -668,34 +754,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     );
   }
 
-  async loadShiftTypesWithBreaksForDashboard(
-    organizationId: string,
-    staffingRules: { shift_type_id: string; required_count: number }[]
-  ) {
-    const active = await this.loadShiftTypesWithBreaks(organizationId);
-    const known = new Set(active.map((type) => type.id));
-    const extraIds = [
-      ...new Set(
-        staffingRules
-          .filter((rule) => rule.required_count > 0)
-          .map((rule) => rule.shift_type_id)
-          .filter((id) => id && !known.has(id))
-      ),
-    ];
-    if (!extraIds.length) return active;
-
-    const { data, error } = await this.client
-      .from(T.shiftTypes)
-      .select(`*, ${T.shiftTypeBreaks}(*)`)
-      .eq("organization_id", organizationId)
-      .in("id", extraIds)
-      .order("sort_order");
-    if (error) throw new Error(error.message);
-
-    return [
-      ...active,
-      ...normalizeShiftTypesWithBreaks(data ?? []),
-    ];
+  async loadShiftTypesWithBreaksForDashboard(organizationId: string) {
+    return this.loadShiftTypesWithBreaks(organizationId);
   }
 
   async seedDefaultShiftTypes(organizationId: string) {
@@ -1548,6 +1608,444 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }
   }
 
+  async listCompensationSurchargeTypes(organizationId: string) {
+    const { data, error } = await this.client
+      .from(T.compensationSurchargeTypes)
+      .select("*")
+      .eq("organization_id", organizationId)
+      .is("archived_at", null)
+      .order("sort_order");
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) => ({
+      id: row.id as string,
+      organization_id: row.organization_id as string,
+      name: row.name as string,
+      trigger: row.trigger as CompensationSurchargeType["trigger"],
+      amount: parseNumericField(row.amount as number | string),
+      unit: row.unit as CompensationSurchargeType["unit"],
+      sort_order: row.sort_order as number,
+      archived_at: (row.archived_at as string | null) ?? null,
+    }));
+  }
+
+  async getNextCompensationSurchargeTypeSortOrder(organizationId: string) {
+    const { data } = await this.client
+      .from(T.compensationSurchargeTypes)
+      .select("sort_order")
+      .eq("organization_id", organizationId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data ? (data.sort_order as number) + 1 : 0;
+  }
+
+  async insertCompensationSurchargeType(row: {
+    organization_id: string;
+    name: string;
+    trigger: CompensationSurchargeType["trigger"];
+    amount: number;
+    unit: CompensationSurchargeType["unit"];
+    sort_order: number;
+  }) {
+    const { data, error } = await this.client
+      .from(T.compensationSurchargeTypes)
+      .insert({
+        organization_id: row.organization_id,
+        name: row.name,
+        trigger: row.trigger,
+        amount: row.amount,
+        unit: row.unit,
+        sort_order: row.sort_order,
+      })
+      .select("id")
+      .single();
+    if (error || !data) {
+      throw new Error(error?.message ?? "Speichern fehlgeschlagen");
+    }
+    return { id: data.id as string };
+  }
+
+  async updateCompensationSurchargeType(
+    id: string,
+    organizationId: string,
+    row: {
+      name: string;
+      trigger: CompensationSurchargeType["trigger"];
+      amount: number;
+      unit: CompensationSurchargeType["unit"];
+    }
+  ) {
+    const { error } = await this.client
+      .from(T.compensationSurchargeTypes)
+      .update({
+        name: row.name,
+        trigger: row.trigger,
+        amount: row.amount,
+        unit: row.unit,
+      })
+      .eq("id", id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async archiveCompensationSurchargeType(id: string, organizationId: string) {
+    const now = new Date().toISOString();
+    const { error } = await this.client
+      .from(T.compensationSurchargeTypes)
+      .update({ archived_at: now })
+      .eq("id", id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async reorderCompensationSurchargeTypes(
+    organizationId: string,
+    orderedIds: string[]
+  ) {
+    const existing = await this.listCompensationSurchargeTypes(organizationId);
+    validateReorderPermutation(
+      existing.map((entry) => entry.id),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.compensationSurchargeTypes)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("organization_id", organizationId)
+          .is("archived_at", null)
+      )
+    );
+  }
+
+  async getProfileCompensationSurchargeById(
+    organizationId: string,
+    profileId: string,
+    entryId: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .select(PROFILE_COMPENSATION_SURCHARGE_SELECT)
+      .eq("id", entryId)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return mapProfileCompensationSurcharge(
+      data as ProfileCompensationSurchargeRow
+    );
+  }
+
+  private async findPredecessorProfileCompensationSurcharge(
+    organizationId: string,
+    profileId: string,
+    surchargeTypeId: string,
+    validFrom: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .select("id, valid_from, valid_to")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .eq("surcharge_type_id", surchargeTypeId)
+      .eq("valid_to", dayBefore(validFrom))
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data as { id: string; valid_from: string; valid_to: string | null } | null;
+  }
+
+  private async findSuccessorProfileCompensationSurcharge(
+    organizationId: string,
+    profileId: string,
+    surchargeTypeId: string,
+    validFrom: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .select("id, valid_from")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .eq("surcharge_type_id", surchargeTypeId)
+      .gt("valid_from", validFrom)
+      .order("valid_from", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data as { id: string; valid_from: string } | null;
+  }
+
+  async listProfileCompensationSurcharges(
+    organizationId: string,
+    profileId: string,
+    limit = 20
+  ) {
+    const profile = await this.getProfileById(profileId);
+    if (!profile || profile.organization_id !== organizationId) return [];
+
+    const { data, error } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .select(PROFILE_COMPENSATION_SURCHARGE_SELECT)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .order("valid_from", { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) =>
+      mapProfileCompensationSurcharge(row as ProfileCompensationSurchargeRow)
+    );
+  }
+
+  async listEffectiveProfileCompensationSurchargesForDate(
+    organizationId: string,
+    profileId: string,
+    date: string
+  ) {
+    const profile = await this.getProfileById(profileId);
+    if (!profile || profile.organization_id !== organizationId) return [];
+
+    const { data, error } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .select(PROFILE_COMPENSATION_SURCHARGE_SELECT)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .lte("valid_from", date)
+      .or(`valid_to.is.null,valid_to.gte.${date}`)
+      .order("valid_from", { ascending: false });
+    if (error) throw new Error(error.message);
+
+    const byType = new Map<string, EffectiveProfileCompensationSurcharge>();
+    for (const row of data ?? []) {
+      const mapped = mapProfileCompensationSurcharge(
+        row as ProfileCompensationSurchargeRow
+      );
+      if (byType.has(mapped.surcharge_type_id)) continue;
+      byType.set(
+        mapped.surcharge_type_id,
+        mapEffectiveProfileCompensationSurcharge(mapped)
+      );
+    }
+    return [...byType.values()];
+  }
+
+  async setProfileCompensationSurcharge(
+    organizationId: string,
+    profileId: string,
+    input: {
+      surcharge_type_id: string;
+      amount: number | null;
+      valid_from: string;
+      created_by: string;
+    }
+  ) {
+    if (!input.created_by) {
+      throw new Error("Erfasser ist erforderlich.");
+    }
+
+    const profile = await this.getProfileById(profileId);
+    if (!profile || profile.organization_id !== organizationId) {
+      throw new Error("Profil nicht gefunden");
+    }
+
+    const creator = await this.getProfileById(input.created_by);
+    if (!creator || creator.organization_id !== organizationId) {
+      throw new Error("Erfasser nicht gefunden");
+    }
+
+    const { data: surchargeType, error: typeError } = await this.client
+      .from(T.compensationSurchargeTypes)
+      .select("id")
+      .eq("id", input.surcharge_type_id)
+      .eq("organization_id", organizationId)
+      .is("archived_at", null)
+      .maybeSingle();
+    if (typeError) throw new Error(typeError.message);
+    if (!surchargeType) {
+      throw new Error("Sonderzuschlag nicht gefunden");
+    }
+
+    const { data: openEntry, error: openError } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .select("id, valid_from")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .eq("surcharge_type_id", input.surcharge_type_id)
+      .is("valid_to", null)
+      .maybeSingle();
+    if (openError) throw new Error(openError.message);
+
+    if (
+      openEntry &&
+      input.valid_from <= (openEntry.valid_from as string).slice(0, 10)
+    ) {
+      throw new Error("Das Gültig-ab-Datum muss nach dem aktuellen Eintrag liegen.");
+    }
+
+    if (openEntry) {
+      const { error: closeError } = await this.client
+        .from(T.profileCompensationSurcharges)
+        .update({ valid_to: dayBefore(input.valid_from) })
+        .eq("id", openEntry.id as string)
+        .eq("organization_id", organizationId);
+      if (closeError) throw new Error(closeError.message);
+    }
+
+    const { data: inserted, error: insertError } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .insert({
+        organization_id: organizationId,
+        profile_id: profileId,
+        surcharge_type_id: input.surcharge_type_id,
+        amount: input.amount,
+        valid_from: input.valid_from,
+        valid_to: null,
+        created_by: input.created_by,
+      })
+      .select(PROFILE_COMPENSATION_SURCHARGE_SELECT)
+      .single();
+    if (insertError || !inserted) {
+      throw new Error(
+        insertError?.message ?? "Sonderzuschlag konnte nicht gespeichert werden"
+      );
+    }
+    return mapProfileCompensationSurcharge(
+      inserted as ProfileCompensationSurchargeRow
+    );
+  }
+
+  async updateProfileCompensationSurcharge(
+    organizationId: string,
+    profileId: string,
+    entryId: string,
+    input: {
+      amount: number | null;
+      valid_from: string;
+    },
+    referenceDate: string
+  ) {
+    const entry = await this.getProfileCompensationSurchargeById(
+      organizationId,
+      profileId,
+      entryId
+    );
+    if (!entry) {
+      throw new Error("Sonderzuschlag nicht gefunden");
+    }
+    if (!isMutableHourlyRate(entry.valid_from, referenceDate)) {
+      throw new Error(
+        "Nur Einträge mit Gültig-ab ab heute können geändert oder gelöscht werden."
+      );
+    }
+
+    const validFromCheck = validateMutableHourlyRateValidFrom(
+      input.valid_from,
+      referenceDate
+    );
+    if (!validFromCheck.ok) throw new Error(validFromCheck.error);
+
+    const successor = await this.findSuccessorProfileCompensationSurcharge(
+      organizationId,
+      profileId,
+      entry.surcharge_type_id,
+      entry.valid_from
+    );
+    if (successor && input.valid_from >= successor.valid_from.slice(0, 10)) {
+      throw new Error("Das Gültig-ab-Datum muss vor dem nächsten Eintrag liegen.");
+    }
+
+    if (input.valid_from !== entry.valid_from) {
+      const predecessor = await this.findPredecessorProfileCompensationSurcharge(
+        organizationId,
+        profileId,
+        entry.surcharge_type_id,
+        entry.valid_from
+      );
+      if (predecessor) {
+        const { error: predError } = await this.client
+          .from(T.profileCompensationSurcharges)
+          .update({ valid_to: dayBefore(input.valid_from) })
+          .eq("id", predecessor.id)
+          .eq("organization_id", organizationId);
+        if (predError) throw new Error(predError.message);
+      }
+    }
+
+    const { data: updated, error: updateError } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .update({
+        amount: input.amount,
+        valid_from: input.valid_from,
+      })
+      .eq("id", entryId)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .select(PROFILE_COMPENSATION_SURCHARGE_SELECT)
+      .single();
+    if (updateError || !updated) {
+      throw new Error(
+        updateError?.message ?? "Sonderzuschlag konnte nicht aktualisiert werden"
+      );
+    }
+    return mapProfileCompensationSurcharge(
+      updated as ProfileCompensationSurchargeRow
+    );
+  }
+
+  async deleteProfileCompensationSurcharge(
+    organizationId: string,
+    profileId: string,
+    entryId: string,
+    referenceDate: string
+  ) {
+    const entry = await this.getProfileCompensationSurchargeById(
+      organizationId,
+      profileId,
+      entryId
+    );
+    if (!entry) {
+      throw new Error("Sonderzuschlag nicht gefunden");
+    }
+    if (!isMutableHourlyRate(entry.valid_from, referenceDate)) {
+      throw new Error(
+        "Nur Einträge mit Gültig-ab ab heute können geändert oder gelöscht werden."
+      );
+    }
+
+    const predecessor = await this.findPredecessorProfileCompensationSurcharge(
+      organizationId,
+      profileId,
+      entry.surcharge_type_id,
+      entry.valid_from
+    );
+    const successor = await this.findSuccessorProfileCompensationSurcharge(
+      organizationId,
+      profileId,
+      entry.surcharge_type_id,
+      entry.valid_from
+    );
+
+    const { error: deleteError } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .delete()
+      .eq("id", entryId)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId);
+    if (deleteError) throw new Error(deleteError.message);
+
+    if (predecessor) {
+      const nextValidTo = successor
+        ? dayBefore(successor.valid_from.slice(0, 10))
+        : null;
+      const { error: predError } = await this.client
+        .from(T.profileCompensationSurcharges)
+        .update({ valid_to: nextValidTo })
+        .eq("id", predecessor.id)
+        .eq("organization_id", organizationId);
+      if (predError) throw new Error(predError.message);
+    }
+  }
+
   async countUpcomingShiftsForQualificationProfiles(
     organizationId: string,
     qualificationId: string,
@@ -1851,6 +2349,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     location_id: string;
     name: string;
     sort_order: number;
+    planning_mode?: import("@schichtwerk/types").AreaPlanningMode;
   }) {
     const { data, error } = await this.client
       .from(T.locationAreas)
@@ -1858,6 +2357,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         location_id: row.location_id,
         name: row.name,
         sort_order: row.sort_order,
+        planning_mode: row.planning_mode ?? "simple",
       })
       .select("id")
       .single();
@@ -1870,11 +2370,20 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async updateLocationArea(
     id: string,
     locationId: string,
-    row: { name: string }
+    row: {
+      name: string;
+      planning_mode?: import("@schichtwerk/types").AreaPlanningMode;
+    }
   ) {
+    const payload: { name: string; planning_mode?: string } = {
+      name: row.name,
+    };
+    if (row.planning_mode !== undefined) {
+      payload.planning_mode = row.planning_mode;
+    }
     const { error } = await this.client
       .from(T.locationAreas)
-      .update({ name: row.name })
+      .update(payload)
       .eq("id", id)
       .eq("location_id", locationId)
       .is("archived_at", null);
@@ -1950,7 +2459,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.locationAreaStaffing)
       .select(
-        "id, location_area_id, shift_type_id, qualification_id, weekday, required_count"
+        "id, location_area_id, service_hour_id, qualification_id, required_count"
       )
       .in("location_area_id", areaIds);
     if (error) throw new Error(error.message);
@@ -1966,7 +2475,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.locationAreaStaffing)
       .select(
-        "id, location_area_id, shift_type_id, qualification_id, weekday, required_count"
+        "id, location_area_id, service_hour_id, qualification_id, required_count"
       )
       .eq("location_area_id", locationAreaId);
     if (error) throw new Error(error.message);
@@ -1977,8 +2486,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     locationAreaId: string,
     locationId: string,
     rules: {
-      shift_type_id: string;
-      weekday: number;
+      service_hour_id: string;
       qualification_id: string;
       required_count: number;
     }[]
@@ -2000,58 +2508,202 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { error: insError } = await this.client.from(T.locationAreaStaffing).insert(
       toInsert.map((r) => ({
         location_area_id: locationAreaId,
-        shift_type_id: r.shift_type_id,
+        service_hour_id: r.service_hour_id,
         qualification_id: r.qualification_id,
-        weekday: r.weekday,
         required_count: r.required_count,
       }))
     );
     if (insError) throw new Error(insError.message);
   }
 
-  async saveLocationAreaStaffingForShiftType(
-    locationAreaId: string,
+  async saveLocationAreaStaffingForServiceHour(
+    serviceHourId: string,
     locationId: string,
-    shiftTypeId: string,
     rules: {
-      weekday: number;
       qualification_id: string;
       required_count: number;
     }[]
   ) {
-    const areas = await this.listLocationAreas(locationId);
-    if (!areas.some((a) => a.id === locationAreaId)) {
-      throw new Error("Bereich nicht gefunden");
+    const hours = await this.listLocationAreaServiceHours(locationId);
+    if (!hours.some((hour) => hour.id === serviceHourId)) {
+      throw new Error("Servicezeit nicht gefunden");
     }
 
     const toInsert = rules.filter((r) => r.required_count > 0);
     const { error } = await this.client.rpc(
-      "replace_location_area_staffing_for_shift_type",
+      "replace_location_area_staffing_for_service_hour",
       {
-        p_location_area_id: locationAreaId,
-        p_shift_type_id: shiftTypeId,
+        p_service_hour_id: serviceHourId,
         p_rules: toInsert,
       }
     );
     if (error) throw new Error(error.message);
   }
 
-  async removeLocationAreaStaffingForShiftType(
-    locationAreaId: string,
-    locationId: string,
-    shiftTypeId: string
+  async removeLocationAreaStaffingForServiceHour(
+    serviceHourId: string,
+    locationId: string
   ) {
-    const areas = await this.listLocationAreas(locationId);
-    if (!areas.some((a) => a.id === locationAreaId)) {
-      throw new Error("Bereich nicht gefunden");
+    const hours = await this.listLocationAreaServiceHours(locationId);
+    if (!hours.some((hour) => hour.id === serviceHourId)) {
+      throw new Error("Servicezeit nicht gefunden");
     }
 
     const { error } = await this.client
       .from(T.locationAreaStaffing)
       .delete()
-      .eq("location_area_id", locationAreaId)
-      .eq("shift_type_id", shiftTypeId);
+      .eq("service_hour_id", serviceHourId);
     if (error) throw new Error(error.message);
+  }
+
+  private async assertLocationAreaInLocation(
+    locationAreaId: string,
+    locationId: string
+  ) {
+    const areas = await this.listLocationAreas(locationId);
+    if (!areas.some((area) => area.id === locationAreaId)) {
+      throw new Error("Bereich nicht gefunden");
+    }
+  }
+
+  async listAreaShiftTemplatesWithBreaksForArea(
+    locationAreaId: string,
+    locationId: string
+  ): Promise<AreaShiftTemplateWithBreaks[]> {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+    const { data, error } = await this.client
+      .from(T.areaShiftTemplates)
+      .select(`*, ${T.areaShiftTemplateBreaks}(*)`)
+      .eq("location_area_id", locationAreaId)
+      .is("archived_at", null)
+      .order("sort_order");
+    if (error) throw new Error(error.message);
+    return normalizeAreaShiftTemplatesWithBreaks(data ?? []);
+  }
+
+  async listAreaShiftTemplatesWithBreaksForLocation(locationId: string) {
+    const areas = await this.listLocationAreas(locationId);
+    if (!areas.length) return [];
+    const areaIds = areas.map((area) => area.id);
+    const { data, error } = await this.client
+      .from(T.areaShiftTemplates)
+      .select(`*, ${T.areaShiftTemplateBreaks}(*)`)
+      .in("location_area_id", areaIds)
+      .is("archived_at", null)
+      .order("sort_order");
+    if (error) throw new Error(error.message);
+    return normalizeAreaShiftTemplatesWithBreaks(data ?? []);
+  }
+
+  async getNextAreaShiftTemplateSortOrder(
+    locationAreaId: string,
+    locationId: string
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+    const { data } = await this.client
+      .from(T.areaShiftTemplates)
+      .select("sort_order")
+      .eq("location_area_id", locationAreaId)
+      .is("archived_at", null)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return ((data?.sort_order as number) ?? -1) + 1;
+  }
+
+  async insertAreaShiftTemplate(row: {
+    location_area_id: string;
+    name: string;
+    start_time: string;
+    end_time: string;
+    color: string;
+    sort_order: number;
+  }) {
+    const { data, error } = await this.client
+      .from(T.areaShiftTemplates)
+      .insert({
+        location_area_id: row.location_area_id,
+        name: row.name,
+        start_time: normalizeTime(row.start_time),
+        end_time: normalizeTime(row.end_time),
+        color: row.color,
+        sort_order: row.sort_order,
+      })
+      .select("id")
+      .single();
+    if (error || !data) throw new Error(error?.message ?? "Speichern fehlgeschlagen");
+    return { id: data.id as string };
+  }
+
+  async updateAreaShiftTemplate(
+    id: string,
+    locationAreaId: string,
+    locationId: string,
+    row: { name: string; start_time: string; end_time: string; color?: string }
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+    const { error } = await this.client
+      .from(T.areaShiftTemplates)
+      .update({
+        name: row.name,
+        start_time: normalizeTime(row.start_time),
+        end_time: normalizeTime(row.end_time),
+        ...(row.color !== undefined ? { color: row.color } : {}),
+      })
+      .eq("id", id)
+      .eq("location_area_id", locationAreaId)
+      .is("archived_at", null);
+    if (error) throw new Error(error.message);
+  }
+
+  async replaceAreaShiftTemplateBreaks(
+    templateId: string,
+    breaks: ShiftTypeBreakInput[]
+  ) {
+    await replaceAreaShiftTemplateBreaks(this.client, templateId, breaks);
+  }
+
+  async archiveAreaShiftTemplate(
+    id: string,
+    locationAreaId: string,
+    locationId: string
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+    const { error } = await this.client
+      .from(T.areaShiftTemplates)
+      .update({ archived_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("location_area_id", locationAreaId)
+      .is("archived_at", null);
+    if (error) throw new Error(error.message);
+  }
+
+  async reorderAreaShiftTemplates(
+    locationAreaId: string,
+    locationId: string,
+    orderedIds: string[]
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+    const { data, error } = await this.client
+      .from(T.areaShiftTemplates)
+      .select("id")
+      .eq("location_area_id", locationAreaId)
+      .is("archived_at", null);
+    if (error) throw new Error(error.message);
+    validateReorderPermutation(
+      (data ?? []).map((row) => row.id as string),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.areaShiftTemplates)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("location_area_id", locationAreaId)
+          .is("archived_at", null)
+      )
+    );
   }
 
   async updateLocation(
@@ -2132,6 +2784,59 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         }))
       );
     if (insError) throwServiceHoursDbError(insError.message);
+  }
+
+  async ensureLocationAreaServiceHour(
+    locationAreaId: string,
+    locationId: string,
+    row: { weekday: number; start_time: string; end_time: string },
+    options?: { excludeServiceHourId?: string }
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+
+    const validated = validateServiceHoursInput([row]);
+    if (!validated.ok) throw new Error(validated.error);
+    const normalized = validated.data[0]!;
+
+    const existing = await this.listLocationAreaServiceHoursForArea(
+      locationAreaId,
+      locationId
+    );
+    const match = existing.find(
+      (hour) =>
+        hour.weekday === normalized.weekday &&
+        hour.start_time.slice(0, 5) === normalized.start_time.slice(0, 5) &&
+        hour.end_time.slice(0, 5) === normalized.end_time.slice(0, 5)
+    );
+    if (match) return match;
+
+    const comparableExisting = options?.excludeServiceHourId
+      ? existing.filter((hour) => hour.id !== options.excludeServiceHourId)
+      : existing;
+
+    const merged = [
+      ...comparableExisting.map((hour) => ({
+        weekday: hour.weekday,
+        start_time: hour.start_time,
+        end_time: hour.end_time,
+      })),
+      normalized,
+    ];
+    const overlapCheck = validateServiceHoursInput(merged);
+    if (!overlapCheck.ok) throw new Error(overlapCheck.error);
+
+    const { data, error } = await this.client
+      .from(T.locationAreaServiceHours)
+      .insert({
+        location_area_id: locationAreaId,
+        weekday: normalized.weekday,
+        start_time: normalized.start_time,
+        end_time: normalized.end_time,
+      })
+      .select()
+      .single();
+    if (error) throwServiceHoursDbError(error.message);
+    return data as LocationAreaServiceHour;
   }
 
   async listMyShifts(fromDate: string, toDate: string) {

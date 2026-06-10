@@ -27,8 +27,15 @@ import {
   filterDashboardShiftAssignEmployeesByWindow,
   pickEmployeeLongestWithoutShift,
   profileAvailabilityWeekdayFromDashboardDate,
-  resolveShiftTypeIdFromTimes,
 } from "@/lib/available-employees-for-shift";
+import {
+  areaShiftTemplatesForArea,
+  dashboardAssignmentPresetsForArea,
+  resolvePresetIdFromTimes,
+  shiftTypeIdForAssign,
+  usesAreaShiftTemplatesForAssign,
+  type DashboardAssignmentPreset,
+} from "@/lib/dashboard-assignment-presets";
 import { formatDayHeader } from "@/lib/planning-utils";
 import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
 import {
@@ -47,7 +54,11 @@ import { cn } from "@/lib/cn";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
-import type { LocationArea, ShiftTypeWithBreaks } from "@schichtwerk/types";
+import type {
+  AreaShiftTemplateWithBreaks,
+  LocationArea,
+  ShiftTypeWithBreaks,
+} from "@schichtwerk/types";
 
 const EMPTY_EMPLOYEE_ID = "";
 export { EMPTY_EMPLOYEE_ID as DASHBOARD_EMPTY_EMPLOYEE_ID };
@@ -585,8 +596,9 @@ export function DashboardShiftEmployeeCombobox({
 
 type ShiftTypeComboboxProps = {
   value: string;
-  onChange: (shiftTypeId: string) => void;
-  shiftTypes: ShiftTypeWithBreaks[];
+  onChange: (presetId: string) => void;
+  presets: DashboardAssignmentPreset[];
+  placeholder: string;
   disabled?: boolean;
   rootClassName?: string;
 };
@@ -594,19 +606,18 @@ type ShiftTypeComboboxProps = {
 export function DashboardShiftTypeCombobox({
   value,
   onChange,
-  shiftTypes,
+  presets,
+  placeholder,
   disabled = false,
   rootClassName,
 }: ShiftTypeComboboxProps) {
-  const t = useTranslations();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
   const closeDropdown = useCallback(() => setOpen(false), []);
   useCloseOnOutsideClick(open, closeDropdown, [triggerRef, listRef]);
-  const placeholder = t("dashboard.selectShiftType");
-  const selectedType = shiftTypes.find((type) => type.id === value) ?? null;
+  const selectedType = presets.find((type) => type.id === value) ?? null;
   const isPlaceholder = !value;
   const displayText = selectedType?.name ?? placeholder;
 
@@ -665,7 +676,7 @@ export function DashboardShiftTypeCombobox({
                   ) : null}
                 </button>
               </li>
-              {shiftTypes.map((type) => (
+              {presets.map((type) => (
                 <li key={type.id} role="option" aria-selected={value === type.id}>
                   <button
                     type="button"
@@ -675,6 +686,11 @@ export function DashboardShiftTypeCombobox({
                       setOpen(false);
                     }}
                   >
+                    <span
+                      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-border/60"
+                      style={{ backgroundColor: type.color }}
+                      aria-hidden
+                    />
                     <span className="min-w-0 flex-1 truncate">{type.name}</span>
                     {value === type.id ? (
                       <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
@@ -699,6 +715,7 @@ type AddShiftModalProps = {
   locationId: string;
   areas: LocationArea[];
   shiftTypes: ShiftTypeWithBreaks[];
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   serviceHours: AreaServiceHourRef[];
   onClose: () => void;
   onSaved?: () => void;
@@ -709,6 +726,7 @@ export function DashboardAddShiftModal({
   locationId,
   areas,
   shiftTypes,
+  areaShiftTemplates,
   serviceHours,
   onClose,
   onSaved,
@@ -722,6 +740,22 @@ export function DashboardAddShiftModal({
   const areaName =
     areas.find((area) => area.id === dialog.areaId)?.name ?? "";
   const dayHeader = formatDayHeader(dialog.date, intlLocale);
+
+  const templatesForArea = useMemo(
+    () => areaShiftTemplatesForArea(dialog.areaId, areaShiftTemplates),
+    [areaShiftTemplates, dialog.areaId]
+  );
+  const assignmentPresets = useMemo(
+    () => dashboardAssignmentPresetsForArea(templatesForArea, shiftTypes),
+    [templatesForArea, shiftTypes]
+  );
+  const usesAreaTemplates = usesAreaShiftTemplatesForAssign(templatesForArea);
+  const presetPlaceholder = usesAreaTemplates
+    ? t("dashboard.selectShiftTemplate")
+    : t("dashboard.selectShiftType");
+  const presetLabel = usesAreaTemplates
+    ? t("dashboard.shiftTemplateLabel")
+    : t("shiftTypes.designation");
 
   const [shiftTypeId, setShiftTypeId] = useState("");
   const [startTime, setStartTime] = useState("00:00");
@@ -784,12 +818,12 @@ export function DashboardAddShiftModal({
       setShiftTypeId((current) => (current ? "" : current));
       return;
     }
-    const matchedShiftTypeId =
-      resolveShiftTypeIdFromTimes(startTime, endTime, shiftTypes) ?? "";
+    const matchedPresetId =
+      resolvePresetIdFromTimes(startTime, endTime, assignmentPresets) ?? "";
     setShiftTypeId((current) =>
-      current === matchedShiftTypeId ? current : matchedShiftTypeId
+      current === matchedPresetId ? current : matchedPresetId
     );
-  }, [startTime, endTime, shiftTypes, timesComplete]);
+  }, [startTime, endTime, assignmentPresets, timesComplete]);
 
   useEffect(() => {
     if (employeeManuallySelected || loadingEmployees) return;
@@ -816,14 +850,14 @@ export function DashboardAddShiftModal({
   const handleShiftTypeChange = useCallback(
     (nextId: string) => {
       setShiftTypeId(nextId);
-      const type = shiftTypes.find((item) => item.id === nextId);
-      if (type) {
+      const preset = assignmentPresets.find((item) => item.id === nextId);
+      if (preset) {
         skipShiftTypeFromTimesSyncRef.current = true;
-        setStartTime(timeFieldValue(type.start_time));
-        setEndTime(timeFieldValue(type.end_time));
+        setStartTime(timeFieldValue(preset.start_time));
+        setEndTime(timeFieldValue(preset.end_time));
       }
     },
-    [shiftTypes]
+    [assignmentPresets]
   );
 
   const handleApplyAvailability = useCallback(
@@ -835,21 +869,23 @@ export function DashboardAddShiftModal({
       setEndTime(nextEnd);
       setEmployeeManuallySelected(true);
 
-      if (entry.shift_type_id) {
+      if (entry.shift_type_id && !usesAreaTemplates) {
         setShiftTypeId(entry.shift_type_id);
         return;
       }
 
-      const matchedShiftTypeId = resolveShiftTypeIdFromTimes(
+      const matchedPresetId = resolvePresetIdFromTimes(
         nextStart,
         nextEnd,
-        shiftTypes
+        assignmentPresets
       );
-      if (matchedShiftTypeId) {
-        setShiftTypeId(matchedShiftTypeId);
+      if (matchedPresetId) {
+        setShiftTypeId(matchedPresetId);
+      } else if (entry.shift_type_id) {
+        setShiftTypeId(entry.shift_type_id);
       }
     },
-    [shiftTypes]
+    [assignmentPresets, usesAreaTemplates]
   );
 
   const handleOk = useCallback(async () => {
@@ -881,7 +917,7 @@ export function DashboardAddShiftModal({
       shiftDate: dialog.date,
       startTime,
       endTime,
-      shiftTypeId: shiftTypeId || null,
+      shiftTypeId: shiftTypeIdForAssign(shiftTypeId, assignmentPresets),
       locationId,
       locationAreaId: dialog.areaId,
     });
@@ -903,6 +939,7 @@ export function DashboardAddShiftModal({
     startTime,
     endTime,
     shiftTypeId,
+    assignmentPresets,
     locationId,
     serviceHours,
     onClose,
@@ -964,11 +1001,12 @@ export function DashboardAddShiftModal({
           {error ? <Alert variant="error">{error}</Alert> : null}
 
           <div>
-            <LabelMuted>{t("shiftTypes.designation")}</LabelMuted>
+            <LabelMuted>{presetLabel}</LabelMuted>
             <DashboardShiftTypeCombobox
               value={shiftTypeId}
-              shiftTypes={shiftTypes}
-              disabled={shiftTypes.length === 0 || saving}
+              presets={assignmentPresets}
+              placeholder={presetPlaceholder}
+              disabled={assignmentPresets.length === 0 || saving}
               onChange={handleShiftTypeChange}
             />
           </div>

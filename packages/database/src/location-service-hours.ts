@@ -19,6 +19,7 @@ export type AreaServiceHourRef = {
   weekday: number;
   start_time?: string;
   end_time?: string;
+  id?: string;
 };
 
 export function isAreaOpenOnWeekday(

@@ -17,12 +17,20 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
-  settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
   settingsListItemAttrs,
+  settingsModalBackdropClass,
+  settingsModalBodyPaddingClass,
+  settingsModalDialogClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsModalRootClass,
   settingsPanelHeaderClass,
+  settingsScrollableTableListClass,
+  settingsStickyColumnHeaderClass,
+  settingsStickyIndicatorHeaderClass,
   useScrollToSettingsListItem,
 } from "./settings-list-ui";
 import { AbsenceFormModal } from "./absence-form-modal";
@@ -236,10 +244,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
 
   return (
     <div
-      className={cn(
-        "absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4",
-        loading && "cursor-wait"
-      )}
+      className={cn(settingsModalBackdropClass(), loading && "cursor-wait")}
       role="presentation"
       aria-busy={loading}
       onMouseDown={(e) => {
@@ -250,7 +255,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
     >
       {!loading ? (
       <div
-        className="relative w-full max-w-4xl"
+        className={settingsModalRootClass("4xl")}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div
@@ -259,11 +264,16 @@ export function AbsencesModal({ profiles, onClose }: Props) {
           aria-labelledby="absences-modal-title"
           aria-hidden={!!formMode}
           className={cn(
-            "flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
+            settingsModalDialogClass(),
             formMode ? "pointer-events-none" : ""
           )}
         >
-          <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div
+            className={cn(
+              "flex items-center justify-between border-b border-border",
+              settingsModalHeaderPaddingClass()
+            )}
+          >
             <h2 id="absences-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("settings.absences.title")}
             </h2>
@@ -283,45 +293,49 @@ export function AbsencesModal({ profiles, onClose }: Props) {
             </div>
           )}
 
-          <div className="bg-background px-6 py-4">
+          <div className={cn(settingsModalBodyPaddingClass(), "bg-background")}>
             <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
               <h3 className={settingsPanelHeaderClass()}>
                 {t("settings.absences.column")}
               </h3>
 
-              <div
-                className={cn(
-                  "space-y-1 bg-background px-2 py-2",
-                  SETTINGS_ABSENCES_LIST_SCROLL_CLASS
-                )}
-              >
+              <div className="space-y-1 bg-background px-2 py-2">
                 {list.length === 0 ? (
                   <SettingsEmptyState
                     message={t("settings.absences.emptyList")}
                     hint={t("common.emptyHintCreate")}
                   />
                 ) : (
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr>
-                        <th className="w-3 p-0" aria-hidden />
-                        <th className={settingsColumnHeaderClass()}>
-                          {t("settings.absences.employee")}
-                        </th>
-                        <th className={settingsColumnHeaderClass()}>
-                          {t("settings.absences.type")}
-                        </th>
-                        <th className={settingsColumnHeaderClass()}>
-                          {t("settings.absences.startDate")}
-                        </th>
-                        <th className={settingsColumnHeaderClass()}>
-                          {t("settings.absences.endDate")}
-                        </th>
-                        <th className={settingsColumnHeaderClass()}>
-                          {t("settings.absences.notes")}
-                        </th>
-                      </tr>
-                    </thead>
+                  <div
+                    className={cn(
+                      settingsScrollableTableListClass(),
+                      SETTINGS_ABSENCES_LIST_SCROLL_CLASS
+                    )}
+                  >
+                    <table className="w-full min-w-[28rem] border-collapse">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th
+                            className={settingsStickyIndicatorHeaderClass("w-3")}
+                            aria-hidden
+                          />
+                          <th className={settingsStickyColumnHeaderClass()}>
+                            {t("settings.absences.employee")}
+                          </th>
+                          <th className={settingsStickyColumnHeaderClass()}>
+                            {t("settings.absences.type")}
+                          </th>
+                          <th className={settingsStickyColumnHeaderClass()}>
+                            {t("settings.absences.startDate")}
+                          </th>
+                          <th className={settingsStickyColumnHeaderClass()}>
+                            {t("settings.absences.endDate")}
+                          </th>
+                          <th className={settingsStickyColumnHeaderClass()}>
+                            {t("settings.absences.notes")}
+                          </th>
+                        </tr>
+                      </thead>
                     <tbody>
                       {list.map((item) => {
                         const profile = profileById.get(item.employee_id);
@@ -382,6 +396,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </div>
 
@@ -420,7 +435,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-border px-6 py-4">
+          <div className={settingsModalFooterClass()}>
             <Button
               type="button"
               variant="outline"

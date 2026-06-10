@@ -79,7 +79,7 @@ export function areDashboardShiftTimesComplete(
   }).ok;
 }
 
-function dashboardTimeKey(raw: string): string {
+export function dashboardTimeKey(raw: string): string {
   const trimmed = raw.trim();
   const parts = trimmed.split(":");
   const hRaw = parts[0] ?? "00";

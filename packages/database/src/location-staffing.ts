@@ -15,8 +15,7 @@ export function weekdayIndexFromDate(isoDate: string): number {
 
 export type StaffingRule = {
   location_area_id: string;
-  shift_type_id: string;
-  weekday: number;
+  service_hour_id: string;
   required_count: number;
 };
 
@@ -25,11 +24,22 @@ export function requiredStaffForAreaOnDate(
   rules: StaffingRule[],
   areaId: string,
   dateISO: string,
-  serviceHours: AreaServiceHourRef[]
+  serviceHours: (AreaServiceHourRef & { id: string })[]
 ): number {
   const weekday = weekdayIndexFromDate(dateISO);
   if (!isAreaOpenOnWeekday(serviceHours, areaId, weekday)) return 0;
+  const hourIds = new Set(
+    serviceHours
+      .filter(
+        (hour) =>
+          hour.location_area_id === areaId && hour.weekday === weekday && hour.id
+      )
+      .map((hour) => hour.id as string)
+  );
   return rules
-    .filter((r) => r.location_area_id === areaId && r.weekday === weekday)
-    .reduce((sum, r) => sum + r.required_count, 0);
+    .filter(
+      (rule) =>
+        rule.location_area_id === areaId && hourIds.has(rule.service_hour_id)
+    )
+    .reduce((sum, rule) => sum + rule.required_count, 0);
 }

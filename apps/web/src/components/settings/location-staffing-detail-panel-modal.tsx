@@ -1,21 +1,35 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { saveShiftTypeStaffing } from "@/app/actions/location-staffing";
+import { saveServiceHourStaffing } from "@/app/actions/location-staffing";
+import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
+import { SERVICE_HOUR_WEEKDAY_COUNT } from "@/lib/location-service-hour-entries";
 import {
-  isStaffingDayEnabled,
-  STAFFING_HOLIDAY_WEEKDAY,
+  isShiftTemplateBlockedOnWeekday,
+  suggestStaffingCreateWindow,
+} from "@/lib/location-staffing-create-suggest";
+import {
+  formatServiceHourStaffingListLabel,
+  weekdayLabelFromIndex,
 } from "@/lib/location-staffing-client";
 import type {
+  AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
+  LocationAreaServiceHour,
   LocationAreaStaffing,
   Qualification,
-  ShiftType,
 } from "@schichtwerk/types";
-import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import { useTranslations } from "@/i18n/locale-provider";
-import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { cn } from "@/lib/cn";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsNestedModalDialogClass,
+  settingsNestedModalOverlayClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -23,29 +37,16 @@ import {
   CloseIcon,
   IconButton,
   Input,
+  LabelMuted,
+  Select,
+  TimeInput,
   TrashIcon,
 } from "@/components/ui";
-const WEEKDAY_KEYS = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-] as const;
-
-const STAFFING_DAY_COUNT = WEEKDAY_KEYS.length + 1;
 
 type QualRow = {
   key: string;
   qualification_id: string;
   count: string;
-};
-
-type DayBlock = {
-  weekday: number;
-  rows: QualRow[];
 };
 
 let rowKeyCounter = 0;
@@ -54,73 +55,59 @@ function nextRowKey() {
   return `staff-row-${rowKeyCounter}`;
 }
 
-function weekdayLabel(
-  weekday: number,
-  t: (key: string) => string
-): string {
-  if (weekday === STAFFING_HOLIDAY_WEEKDAY) {
-    return t("locations.weekdays.holiday");
-  }
-  return t(`locations.weekdays.${WEEKDAY_KEYS[weekday]!}`);
+function buildInitialRows(
+  serviceHourId: string,
+  staffing: LocationAreaStaffing[]
+): QualRow[] {
+  return staffing
+    .filter((rule) => rule.service_hour_id === serviceHourId)
+    .map((rule) => ({
+      key: rule.id,
+      qualification_id: rule.qualification_id,
+      count: String(rule.required_count),
+    }));
 }
 
-function openWeekdays(
-  serviceHours: AreaServiceHourRef[],
-  areaId: string
-): number[] {
-  const days: number[] = [];
-  for (let weekday = 0; weekday < STAFFING_DAY_COUNT; weekday++) {
-    if (isStaffingDayEnabled(serviceHours, areaId, weekday)) {
-      days.push(weekday);
+function timeFieldValue(time: string): string {
+  return time.slice(0, 5);
+}
+
+function initialWindowState(
+  mode: "create" | "edit",
+  serviceHours: LocationAreaServiceHour[],
+  initialServiceHourId: string | undefined,
+  shiftTemplates: readonly AreaShiftTemplateWithBreaks[],
+  staffing: LocationAreaStaffing[]
+) {
+  if (mode === "edit" && initialServiceHourId) {
+    const hour = serviceHours.find((entry) => entry.id === initialServiceHourId);
+    if (hour) {
+      const start_time = timeFieldValue(hour.start_time);
+      const end_time = timeFieldValue(hour.end_time);
+      return {
+        weekday: hour.weekday,
+        start_time,
+        end_time,
+        templateId:
+          resolvePresetIdFromTimes(start_time, end_time, shiftTemplates) ?? "",
+        dayFullyBooked: false,
+      };
     }
   }
-  return days;
-}
 
-function buildInitialBlocks(
-  shiftTypeId: string,
-  staffing: LocationAreaStaffing[],
-  serviceHours: AreaServiceHourRef[],
-  areaId: string
-): DayBlock[] {
-  return openWeekdays(serviceHours, areaId).map((weekday) => ({
-    weekday,
-    rows: staffing
-      .filter((s) => s.shift_type_id === shiftTypeId && s.weekday === weekday)
-      .map((s) => ({
-        key: s.id,
-        qualification_id: s.qualification_id,
-        count: String(s.required_count),
-      })),
-  }));
-}
-
-function buildCreateDayBlocks(
-  serviceHours: AreaServiceHourRef[],
-  areaId: string,
-  qualifications: Qualification[]
-): DayBlock[] {
-  const defaultQual = qualifications[0];
-  return openWeekdays(serviceHours, areaId).map((weekday) => ({
-    weekday,
-    rows: defaultQual
-      ? [
-          {
-            key: nextRowKey(),
-            qualification_id: defaultQual.id,
-            count: "1",
-          },
-        ]
-      : [],
-  }));
-}
-
-function configuredShiftTypeIds(staffing: LocationAreaStaffing[]): Set<string> {
-  const ids = new Set<string>();
-  for (const rule of staffing) {
-    if (rule.required_count > 0) ids.add(rule.shift_type_id);
-  }
-  return ids;
+  const suggestion = suggestStaffingCreateWindow(
+    serviceHours,
+    staffing,
+    shiftTemplates,
+    { searchAllWeekdays: true }
+  );
+  return {
+    weekday: suggestion.weekday,
+    start_time: suggestion.start_time,
+    end_time: suggestion.end_time,
+    templateId: suggestion.templateId,
+    dayFullyBooked: suggestion.dayFullyBooked,
+  };
 }
 
 const COUNT_INPUT_CLASS =
@@ -130,15 +117,16 @@ type Props = {
   mode: "create" | "edit";
   location: Location;
   area: LocationArea;
-  serviceHours: AreaServiceHourRef[];
-  shiftTypes: ShiftType[];
+  serviceHours: LocationAreaServiceHour[];
+  shiftTemplates: AreaShiftTemplateWithBreaks[];
   qualifications: Qualification[];
   staffing: LocationAreaStaffing[];
-  initialShiftTypeId?: string;
+  initialServiceHourId?: string;
   onClose: () => void;
   onSaved: (
-    createdShiftTypeId?: string,
-    staffing?: LocationAreaStaffing[]
+    createdServiceHourId?: string,
+    staffing?: LocationAreaStaffing[],
+    serviceHours?: LocationAreaServiceHour[]
   ) => void;
 };
 
@@ -147,10 +135,10 @@ export function LocationStaffingDetailPanelModal({
   location,
   area,
   serviceHours,
-  shiftTypes,
+  shiftTemplates,
   qualifications,
   staffing,
-  initialShiftTypeId,
+  initialServiceHourId,
   onClose,
   onSaved,
 }: Props) {
@@ -158,158 +146,166 @@ export function LocationStaffingDetailPanelModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const availableShiftTypes = useMemo(() => {
-    if (mode === "edit" && initialShiftTypeId) {
-      return shiftTypes.filter((type) => type.id === initialShiftTypeId);
-    }
-    const configured = configuredShiftTypeIds(staffing);
-    return shiftTypes.filter((type) => !configured.has(type.id));
-  }, [mode, initialShiftTypeId, shiftTypes, staffing]);
-
-  const initialShiftType =
-    initialShiftTypeId ?? availableShiftTypes[0]?.id ?? "";
-
-  const [shiftTypeId, setShiftTypeId] = useState(() => initialShiftType);
-  const [dayBlocks, setDayBlocks] = useState<DayBlock[]>(() =>
-    mode === "create"
-      ? buildCreateDayBlocks(serviceHours, area.id, qualifications)
-      : buildInitialBlocks(
-          initialShiftType,
-          staffing,
-          serviceHours,
-          area.id
-        )
+  const initialWindow = useMemo(
+    () =>
+      initialWindowState(
+        mode,
+        serviceHours,
+        initialServiceHourId,
+        shiftTemplates,
+        staffing
+      ),
+    [mode, serviceHours, initialServiceHourId, shiftTemplates, staffing]
   );
 
-  const selectedShiftType = shiftTypes.find((type) => type.id === shiftTypeId);
+  const [weekday, setWeekday] = useState(initialWindow.weekday);
+  const [templateId, setTemplateId] = useState(initialWindow.templateId);
+  const [startTime, setStartTime] = useState(initialWindow.start_time);
+  const [endTime, setEndTime] = useState(initialWindow.end_time);
+  const [dayFullyBooked, setDayFullyBooked] = useState(
+    initialWindow.dayFullyBooked
+  );
+  const [rows, setRows] = useState<QualRow[]>(() =>
+    mode === "create"
+      ? qualifications[0]
+        ? [
+            {
+              key: nextRowKey(),
+              qualification_id: qualifications[0].id,
+              count: "1",
+            },
+          ]
+        : []
+      : buildInitialRows(initialServiceHourId ?? "", staffing)
+  );
 
-  function handleShiftTypeChange(nextId: string) {
-    setShiftTypeId(nextId);
-    setDayBlocks(
-      mode === "create"
-        ? buildCreateDayBlocks(serviceHours, area.id, qualifications)
-        : buildInitialBlocks(nextId, staffing, serviceHours, area.id)
+  const windowLabel = formatServiceHourStaffingListLabel(
+    { weekday, start_time: startTime, end_time: endTime },
+    (value) => weekdayLabelFromIndex(value, t),
+    shiftTemplates
+  );
+
+  const title =
+    mode === "create"
+      ? t("locations.staffingCreateTitle")
+      : t("locations.staffingDetailTitle", { window: windowLabel });
+
+  function handleWeekdayChange(nextWeekday: number) {
+    setWeekday(nextWeekday);
+    setError(null);
+    if (mode !== "create") return;
+
+    const suggestion = suggestStaffingCreateWindow(
+      serviceHours,
+      staffing,
+      shiftTemplates,
+      { weekday: nextWeekday, searchAllWeekdays: false }
+    );
+    setStartTime(suggestion.start_time);
+    setEndTime(suggestion.end_time);
+    setTemplateId(suggestion.templateId);
+    setDayFullyBooked(suggestion.dayFullyBooked);
+  }
+
+  function handleTemplateChange(nextTemplateId: string) {
+    setTemplateId(nextTemplateId);
+    if (!nextTemplateId) return;
+    const template = shiftTemplates.find((entry) => entry.id === nextTemplateId);
+    if (!template) return;
+    setStartTime(timeFieldValue(template.start_time));
+    setEndTime(timeFieldValue(template.end_time));
+    setDayFullyBooked(false);
+    setError(null);
+  }
+
+  function handleStartTimeChange(value: string) {
+    setStartTime(value);
+    setDayFullyBooked(false);
+    setTemplateId(
+      resolvePresetIdFromTimes(value, endTime, shiftTemplates) ?? ""
     );
     setError(null);
   }
 
-  function updateDayBlocks(updater: (blocks: DayBlock[]) => DayBlock[]) {
-    setDayBlocks((prev) => updater(prev));
+  function handleEndTimeChange(value: string) {
+    setEndTime(value);
+    setDayFullyBooked(false);
+    setTemplateId(
+      resolvePresetIdFromTimes(startTime, value, shiftTemplates) ?? ""
+    );
+    setError(null);
   }
 
-  function addRow(weekday: number) {
-    const defaultQual = qualifications.find(
-      (q) =>
-        !dayBlocks
-          .find((b) => b.weekday === weekday)
-          ?.rows.some((r) => r.qualification_id === q.id)
-    );
+  function addRow() {
+    const usedIds = new Set(rows.map((row) => row.qualification_id));
+    const defaultQual = qualifications.find((qual) => !usedIds.has(qual.id));
     if (!defaultQual) return;
-    updateDayBlocks((blocks) =>
-      blocks.map((block) =>
-        block.weekday === weekday
-          ? {
-              ...block,
-              rows: [
-                ...block.rows,
-                {
-                  key: nextRowKey(),
-                  qualification_id: defaultQual.id,
-                  count: "1",
-                },
-              ],
-            }
-          : block
+    setRows((prev) => [
+      ...prev,
+      {
+        key: nextRowKey(),
+        qualification_id: defaultQual.id,
+        count: "1",
+      },
+    ]);
+  }
+
+  function removeRow(key: string) {
+    setRows((prev) => prev.filter((row) => row.key !== key));
+  }
+
+  function setQualification(key: string, qualificationId: string) {
+    setRows((prev) =>
+      prev.map((row) =>
+        row.key === key ? { ...row, qualification_id: qualificationId } : row
       )
     );
   }
 
-  function removeRow(weekday: number, key: string) {
-    updateDayBlocks((blocks) =>
-      blocks.map((block) =>
-        block.weekday === weekday
-          ? { ...block, rows: block.rows.filter((r) => r.key !== key) }
-          : block
-      )
-    );
-  }
-
-  function setQualification(weekday: number, key: string, qualificationId: string) {
-    updateDayBlocks((blocks) =>
-      blocks.map((block) =>
-        block.weekday === weekday
-          ? {
-              ...block,
-              rows: block.rows.map((r) =>
-                r.key === key ? { ...r, qualification_id: qualificationId } : r
-              ),
-            }
-          : block
-      )
-    );
-  }
-
-  function setCount(weekday: number, key: string, value: string) {
+  function setCount(key: string, value: string) {
     const digits = value.replace(/\D/g, "").slice(0, 2);
-    updateDayBlocks((blocks) =>
-      blocks.map((block) =>
-        block.weekday === weekday
-          ? {
-              ...block,
-              rows: block.rows.map((r) =>
-                r.key === key ? { ...r, count: digits } : r
-              ),
-            }
-          : block
-      )
+    setRows((prev) =>
+      prev.map((row) => (row.key === key ? { ...row, count: digits } : row))
     );
   }
 
   async function handleSubmit() {
     setError(null);
-    if (!shiftTypeId) {
-      setError(t("locations.staffingSelectShiftType"));
-      return;
-    }
     if (!qualifications.length) {
       setError(t("locations.staffingNoQualifications"));
       return;
     }
 
     const rules: {
-      weekday: number;
       qualification_id: string;
       required_count: number;
     }[] = [];
+    const seenQualifications = new Set<string>();
 
-    for (const block of dayBlocks) {
-      const seenQualifications = new Set<string>();
-      for (const row of block.rows) {
-        const trimmed = row.count.trim();
-        if (!trimmed) {
-          setError(t("locations.staffingEnterCountForDay"));
-          return;
-        }
-        const count = Number.parseInt(trimmed, 10);
-        if (!Number.isFinite(count) || count < 1 || count > 99) {
-          setError(t("locations.staffingInvalidCount"));
-          return;
-        }
-        if (!row.qualification_id) {
-          setError(t("locations.staffingSelectQualification"));
-          return;
-        }
-        if (seenQualifications.has(row.qualification_id)) {
-          setError(t("locations.staffingDuplicateQualificationPerDay"));
-          return;
-        }
-        seenQualifications.add(row.qualification_id);
-        rules.push({
-          weekday: block.weekday,
-          qualification_id: row.qualification_id,
-          required_count: count,
-        });
+    for (const row of rows) {
+      const trimmed = row.count.trim();
+      if (!trimmed) {
+        setError(t("locations.staffingEnterCount"));
+        return;
       }
+      const count = Number.parseInt(trimmed, 10);
+      if (!Number.isFinite(count) || count < 1 || count > 99) {
+        setError(t("locations.staffingInvalidCount"));
+        return;
+      }
+      if (!row.qualification_id) {
+        setError(t("locations.staffingSelectQualification"));
+        return;
+      }
+      if (seenQualifications.has(row.qualification_id)) {
+        setError(t("locations.staffingDuplicateQualification"));
+        return;
+      }
+      seenQualifications.add(row.qualification_id);
+      rules.push({
+        qualification_id: row.qualification_id,
+        required_count: count,
+      });
     }
 
     if (mode === "create" && rules.length === 0) {
@@ -319,20 +315,23 @@ export function LocationStaffingDetailPanelModal({
 
     setSaving(true);
     try {
-      const result = await saveShiftTypeStaffing({
+      const result = await saveServiceHourStaffing({
         locationId: location.id,
         locationAreaId: area.id,
-        shiftTypeId,
+        window: {
+          weekday,
+          start_time: startTime,
+          end_time: endTime,
+        },
+        previousServiceHourId:
+          mode === "edit" ? initialServiceHourId : undefined,
         rules,
       });
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      onSaved(
-        mode === "create" ? shiftTypeId : undefined,
-        result.staffing
-      );
+      onSaved(result.serviceHourId, result.staffing, result.serviceHours);
     } catch {
       setError("Speichern fehlgeschlagen");
     } finally {
@@ -340,16 +339,12 @@ export function LocationStaffingDetailPanelModal({
     }
   }
 
-  const title =
-    mode === "create"
-      ? t("locations.staffingCreateTitle")
-      : selectedShiftType
-        ? t("locations.staffingDetailTitle", { shift: selectedShiftType.name })
-        : t("locations.staffingEditTitle");
+  const usedIds = new Set(rows.map((row) => row.qualification_id));
+  const canAdd = qualifications.some((qual) => !usedIds.has(qual.id));
 
   return (
     <div
-      className="absolute inset-0 z-[70] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+      className={settingsNestedModalOverlayClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !saving) onClose();
@@ -359,10 +354,15 @@ export function LocationStaffingDetailPanelModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="location-staffing-detail-title"
-        className="relative z-[71] flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={settingsNestedModalDialogClass("2xl")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-start justify-between gap-3 border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <div className="min-w-0">
             <h3 id="location-staffing-detail-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {title}
@@ -385,124 +385,172 @@ export function LocationStaffingDetailPanelModal({
           </IconButton>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+        <div className={cn("min-h-0 flex-1 overflow-y-auto", settingsModalBodyPaddingClass())}>
           {error && <Alert variant="error" className="mb-3">{error}</Alert>}
+          {mode === "create" && dayFullyBooked && (
+            <Alert variant="info" className="mb-3">
+              {t("locations.staffingCreateDayFullyBooked")}
+            </Alert>
+          )}
 
-          {mode === "create" && (
-            <div className="mb-4">
-              <select
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-semibold text-info-foreground"
-                value={shiftTypeId}
-                disabled={saving || availableShiftTypes.length === 0}
-                onChange={(e) => handleShiftTypeChange(e.target.value)}
+          <div
+            className={cn(
+              "mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,auto)_minmax(0,1fr)_9rem_9rem] lg:items-end"
+            )}
+          >
+            <div className="w-full shrink-0 lg:w-auto">
+              <LabelMuted className="mb-1 block">
+                {t("locations.serviceHoursColumnWeekdays")}
+              </LabelMuted>
+              <Select
+                className="h-8 min-h-8 w-full py-0 text-sm lg:w-auto lg:min-w-[8.5rem]"
+                value={String(weekday)}
+                disabled={saving}
+                onChange={(event) => {
+                  handleWeekdayChange(Number.parseInt(event.target.value, 10));
+                }}
               >
-                {availableShiftTypes.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.name}
+                {Array.from({ length: SERVICE_HOUR_WEEKDAY_COUNT }, (_, index) => (
+                  <option key={index} value={String(index)}>
+                    {weekdayLabelFromIndex(index, t)}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
-          )}
+            <div className="min-w-0">
+              <LabelMuted className="mb-1 block">
+                {t("locations.serviceHoursColumnTemplate")}
+              </LabelMuted>
+              <Select
+                className={cn(
+                  "h-8 min-h-8 py-0 text-xs",
+                  !templateId && "text-[silver]"
+                )}
+                value={templateId}
+                disabled={saving || shiftTemplates.length === 0}
+                onChange={(event) => handleTemplateChange(event.target.value)}
+              >
+                <option value="">
+                  {t("locations.serviceHoursSelectTemplate")}
+                </option>
+                {shiftTemplates.map((template) => (
+                  <option
+                    key={template.id}
+                    value={template.id}
+                    disabled={
+                      mode === "create" &&
+                      isShiftTemplateBlockedOnWeekday(
+                        template,
+                        weekday,
+                        serviceHours,
+                        staffing
+                      )
+                    }
+                  >
+                    {template.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="shrink-0 min-w-[9rem]">
+              <LabelMuted className="mb-1 block">
+                {t("locations.serviceHoursColumnFrom")}
+              </LabelMuted>
+              <TimeInput
+                value={startTime}
+                disabled={saving}
+                onChange={(event) => handleStartTimeChange(event.target.value)}
+                className="h-8 min-w-[9rem] w-full tabular-nums"
+              />
+            </div>
+            <div className="shrink-0 min-w-[9rem]">
+              <LabelMuted className="mb-1 block">
+                {t("locations.serviceHoursColumnTo")}
+              </LabelMuted>
+              <TimeInput
+                value={endTime}
+                disabled={saving}
+                onChange={(event) => handleEndTimeChange(event.target.value)}
+                className="h-8 min-w-[9rem] w-full tabular-nums"
+              />
+            </div>
+          </div>
 
           {qualifications.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">
               {t("locations.staffingNoQualifications")}
             </p>
-          ) : dayBlocks.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted">
-              {t("locations.staffingNoOpenDays")}
-            </p>
           ) : (
-            <div className="space-y-4">
-              {dayBlocks.map((block) => {
-                const usedIds = new Set(block.rows.map((r) => r.qualification_id));
-                const canAdd = qualifications.some((q) => !usedIds.has(q.id));
-                return (
-                  <section key={block.weekday}>
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-foreground">
-                        {weekdayLabel(block.weekday, t)}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={saving || !canAdd}
-                        className="h-7 shrink-0 text-xs"
-                        onClick={() => addRow(block.weekday)}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-foreground">
+                  {t("locations.staffingQualificationsSection")}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || !canAdd}
+                  className="h-7 shrink-0 text-xs"
+                  onClick={addRow}
+                >
+                  {t("locations.staffingAddQualification")}
+                </Button>
+              </div>
+              {rows.length === 0 ? (
+                <p className="text-xs text-muted">
+                  {t("locations.staffingWindowEmpty")}
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {rows.map((row) => (
+                    <div key={row.key} className="flex items-center gap-2">
+                      <select
+                        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                        value={row.qualification_id}
+                        disabled={saving}
+                        onChange={(e) => setQualification(row.key, e.target.value)}
                       >
-                        {t("locations.staffingAddQualification")}
-                      </Button>
-                    </div>
-                    {block.rows.length === 0 ? (
-                      <p className="text-xs text-muted">
-                        {t("locations.staffingDayEmpty")}
-                      </p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {block.rows.map((row) => (
-                          <div
-                            key={row.key}
-                            className="flex items-center gap-2"
+                        {qualifications.map((qual) => (
+                          <option
+                            key={qual.id}
+                            value={qual.id}
+                            disabled={
+                              usedIds.has(qual.id) &&
+                              qual.id !== row.qualification_id
+                            }
                           >
-                            <select
-                              className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                              value={row.qualification_id}
-                              disabled={saving}
-                              onChange={(e) =>
-                                setQualification(
-                                  block.weekday,
-                                  row.key,
-                                  e.target.value
-                                )
-                              }
-                            >
-                              {qualifications.map((q) => (
-                                <option
-                                  key={q.id}
-                                  value={q.id}
-                                  disabled={
-                                    usedIds.has(q.id) &&
-                                    q.id !== row.qualification_id
-                                  }
-                                >
-                                  {q.name}
-                                </option>
-                              ))}
-                            </select>
-                            <Input
-                              value={row.count}
-                              disabled={saving}
-                              onChange={(e) =>
-                                setCount(block.weekday, row.key, e.target.value)
-                              }
-                              inputMode="numeric"
-                              maxLength={2}
-                              className={COUNT_INPUT_CLASS}
-                              aria-label={t("locations.staffingFormColumnCount")}
-                            />
-                            <IconButton
-                              size="sm"
-                              disabled={saving}
-                              className="border border-border"
-                              aria-label={t("common.delete")}
-                              onClick={() => removeRow(block.weekday, row.key)}
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                            </IconButton>
-                          </div>
+                            {qual.name}
+                          </option>
                         ))}
-                      </div>
-                    )}
-                  </section>
-                );
-              })}
+                      </select>
+                      <Input
+                        value={row.count}
+                        disabled={saving}
+                        onChange={(e) => setCount(row.key, e.target.value)}
+                        inputMode="numeric"
+                        maxLength={2}
+                        className={COUNT_INPUT_CLASS}
+                        aria-label={t("locations.staffingFormColumnCount")}
+                      />
+                      <IconButton
+                        size="sm"
+                        disabled={saving}
+                        className="border border-border"
+                        aria-label={t("common.delete")}
+                        onClick={() => removeRow(row.key)}
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </IconButton>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+        <div className={settingsModalFooterClass()}>
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             <CloseIcon />
             {t("common.cancel")}
@@ -511,12 +559,7 @@ export function LocationStaffingDetailPanelModal({
             type="button"
             variant="primary"
             onClick={() => void handleSubmit()}
-            disabled={
-              saving ||
-              !shiftTypeId ||
-              !qualifications.length ||
-              dayBlocks.length === 0
-            }
+            disabled={saving || !qualifications.length}
           >
             <CheckIcon />
             {t("common.ok")}

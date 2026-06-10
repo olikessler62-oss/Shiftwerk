@@ -19,6 +19,16 @@ export {
   SupabaseSchichtwerkDatabase,
 } from "./supabase-database";
 export {
+  validateCompensationSurchargeTypeUniqueness,
+  parseSurchargeAmount,
+  isCompensationSurchargeTrigger,
+  isCompensationSurchargeUnit,
+  validateNewProfileCompensationSurcharge,
+  COMPENSATION_SURCHARGE_TRIGGERS,
+  COMPENSATION_SURCHARGE_UNITS,
+  type CompensationSurchargeTypeUniquenessInput,
+} from "./compensation-surcharge-validation";
+export {
   validateShiftTypeUniqueness,
   type ShiftTypeUniquenessInput,
 } from "./shift-type-validation";
@@ -55,6 +65,14 @@ export {
   validateLocationAreaName,
   type LocationAreaUniquenessInput,
 } from "./location-area-validation";
+export {
+  AREA_PLANNING_MODES,
+  DEFAULT_AREA_PLANNING_MODE,
+  isAreaPlanningMode,
+  normalizeAreaPlanningMode,
+  validateAreaPlanningMode,
+  type AreaPlanningMode,
+} from "./area-planning-mode";
 export {
   PROFILE_COLOR_PALETTE,
   getProfileColorLabel,
@@ -116,15 +134,37 @@ export {
   type ServiceHourSlotTime,
 } from "./location-service-hours-slots";
 export {
-  validateStaffingRulesInput,
-  type StaffingRuleInput,
-} from "./location-staffing-validation";
+  validateServiceHourStaffingRulesInput,
+  type ServiceHourStaffingRuleInput,
+} from "./location-service-hour-staffing-validation";
 export {
   MAX_SHIFT_TYPES_PER_ORGANIZATION,
+  MAX_AREA_SHIFT_TEMPLATES_PER_AREA,
   centeredBreakForShift,
   getBreakDurationRule,
   getSuggestedBreakMinutes,
   breakRuleHint,
   validateShiftTypeBreaks,
   validateShiftTypeCount,
+  validateAreaShiftTemplateCount,
 } from "./shift-type-break-rules";
+export {
+  suggestServiceHoursFromTemplates,
+  uniqueSuggestedServiceHourSlots,
+  resolveTargetWeekdaysForServiceHourSuggestion,
+  hasConfiguredServiceHours,
+  shouldOfferServiceHoursFromTemplates,
+  type TemplateTimeRef,
+  type SuggestedServiceHourSlot,
+  type SuggestServiceHoursFromTemplatesInput,
+} from "./suggest-service-hours-from-templates";
+export {
+  isShiftTemplateGradientColor,
+  isShiftTemplatePickerColor,
+  resolveShiftTemplateNameColor,
+  resolveShiftTemplateSaveColor,
+  resolveShiftTemplateStoredColor,
+  SHIFT_TEMPLATE_DEFAULT_COLOR,
+  SHIFT_TEMPLATE_NAME_COLORS,
+  SHIFT_TEMPLATE_PICKER_COLORS,
+} from "./shift-template-name-color";

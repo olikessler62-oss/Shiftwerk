@@ -2,19 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
-  deleteShiftTypeStaffing,
+  deleteServiceHourStaffing,
   fetchLocationStaffingEditor,
 } from "@/app/actions/location-staffing";
-import { fetchLocationAreaServiceHours } from "@/app/actions/location-service-hours";
 import type {
+  AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
   LocationAreaServiceHour,
   LocationAreaStaffing,
   Qualification,
-  ShiftType,
 } from "@schichtwerk/types";
-import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
+import {
+  formatServiceHourStaffingListLabel,
+  weekdayLabelFromIndex,
+} from "@/lib/location-staffing-client";
+import { fetchAreaShiftTemplates } from "@/app/actions/area-shift-templates";
 import { useTranslations } from "@/i18n/locale-provider";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import {
@@ -29,6 +32,11 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  settingsModalFooterClass,
+  settingsScrollableTableListClass,
+  settingsModalHeaderPaddingClass,
+  settingsSubModalDialogClass,
+  settingsSubModalOverlayClass,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -48,7 +56,7 @@ import {
 type StaffingFormMode =
   | null
   | { type: "create" }
-  | { type: "edit"; shiftTypeId: string };
+  | { type: "edit"; serviceHourId: string };
 
 type Props = {
   location: Location;
@@ -57,9 +65,10 @@ type Props = {
 };
 
 type StaffingEditorData = {
-  shiftTypes: ShiftType[];
+  serviceHours: LocationAreaServiceHour[];
   qualifications: Qualification[];
   staffing: LocationAreaStaffing[];
+  shiftTemplates: AreaShiftTemplateWithBreaks[];
 };
 
 const STAFFING_CONTENT_EMPTY_STATE_CLASS = "min-h-full";
@@ -69,45 +78,53 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
   const staffingRef = useRef<LocationAreaStaffingMatrixHandle>(null);
   const [pending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [serviceHours, setServiceHours] = useState<AreaServiceHourRef[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
   const [staffingFormMode, setStaffingFormMode] = useState<StaffingFormMode>(null);
   const [confirmDeleteStaffing, setConfirmDeleteStaffing] = useState(false);
-  const [selectedStaffingShiftTypeId, setSelectedStaffingShiftTypeId] =
-    useState<string | null>(null);
+  const [selectedServiceHourId, setSelectedServiceHourId] = useState<string | null>(
+    null
+  );
   const [staffingEditorData, setStaffingEditorData] =
     useState<StaffingEditorData | null>(null);
   const [scrollToStaffingId, setScrollToStaffingId] = useState<string | null>(
     null
   );
 
-  const configuredStaffingShiftTypeIds = useMemo(() => {
+  const configuredServiceHourIds = useMemo(() => {
     const ids = new Set<string>();
     for (const rule of staffingEditorData?.staffing ?? []) {
-      if (rule.required_count > 0) ids.add(rule.shift_type_id);
+      if (rule.required_count > 0) ids.add(rule.service_hour_id);
     }
     return ids;
   }, [staffingEditorData]);
-  const hasUnassignedShiftTypes = (staffingEditorData?.shiftTypes ?? []).some(
-    (type) => !configuredStaffingShiftTypeIds.has(type.id)
-  );
-  const selectedStaffingShiftType =
-    staffingEditorData?.shiftTypes.find(
-      (type) => type.id === selectedStaffingShiftTypeId
+
+  const selectedServiceHour =
+    staffingEditorData?.serviceHours.find(
+      (hour) => hour.id === selectedServiceHourId
     ) ?? null;
+
+  const selectedServiceHourLabel = selectedServiceHour
+    ? formatServiceHourStaffingListLabel(
+        selectedServiceHour,
+        (weekday) => weekdayLabelFromIndex(weekday, t),
+        staffingEditorData?.shiftTemplates
+      )
+    : "";
+
   const anyOverlayOpen = !!staffingFormMode || confirmDeleteStaffing;
   const listsLoading = initialLoading || reloading;
-  const configuredShiftTypesForScroll = useMemo(
+
+  const configuredServiceHoursForScroll = useMemo(
     () =>
-      (staffingEditorData?.shiftTypes ?? []).filter((type) =>
-        configuredStaffingShiftTypeIds.has(type.id)
+      (staffingEditorData?.serviceHours ?? []).filter((hour) =>
+        configuredServiceHourIds.has(hour.id)
       ),
-    [staffingEditorData, configuredStaffingShiftTypeIds]
+    [staffingEditorData, configuredServiceHourIds]
   );
 
   useScrollToSettingsListItem(
-    configuredShiftTypesForScroll,
+    configuredServiceHoursForScroll,
     scrollToStaffingId,
     () => setScrollToStaffingId(null)
   );
@@ -118,38 +135,31 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
     setReloading(false);
     setErrorMessage(null);
     setStaffingEditorData(null);
-    setSelectedStaffingShiftTypeId(null);
+    setSelectedServiceHourId(null);
 
     void Promise.all([
-      fetchLocationAreaServiceHours(location.id, area.id),
       fetchLocationStaffingEditor(location.id, area.id),
-    ]).then(([hoursResult, editorResult]) => {
+      fetchAreaShiftTemplates(location.id, area.id),
+    ]).then(([editorResult, templatesResult]) => {
       if (cancelled) return;
 
-      if (!hoursResult.ok) {
-        setErrorMessage(hoursResult.error);
-        setServiceHours([]);
-      } else {
-        setServiceHours(
-          (hoursResult.hours ?? []).map((h: LocationAreaServiceHour) => ({
-            location_area_id: h.location_area_id,
-            weekday: h.weekday,
-          }))
-        );
-      }
+      const shiftTemplates =
+        templatesResult.ok === true ? (templatesResult.templates ?? []) : [];
 
       if (!editorResult.ok) {
-        setErrorMessage((current) => current ?? editorResult.error);
+        setErrorMessage(editorResult.error);
         setStaffingEditorData({
-          shiftTypes: [],
+          serviceHours: [],
           qualifications: [],
           staffing: [],
+          shiftTemplates,
         });
       } else {
         setStaffingEditorData({
-          shiftTypes: editorResult.shiftTypes ?? [],
+          serviceHours: editorResult.serviceHours ?? [],
           qualifications: editorResult.qualifications ?? [],
           staffing: editorResult.staffing ?? [],
+          shiftTemplates,
         });
       }
 
@@ -179,34 +189,40 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
   }, [confirmDeleteStaffing, staffingFormMode, onClose]);
 
   function handleStaffingSaved(
-    createdShiftTypeId?: string,
-    staffing?: LocationAreaStaffing[]
+    createdServiceHourId?: string,
+    staffing?: LocationAreaStaffing[],
+    serviceHours?: LocationAreaServiceHour[]
   ) {
-    if (createdShiftTypeId) {
+    if (createdServiceHourId) {
       applyCreatedListSelection(
-        createdShiftTypeId,
-        (id) => setSelectedStaffingShiftTypeId(id),
+        createdServiceHourId,
+        (id) => setSelectedServiceHourId(id),
         setScrollToStaffingId
       );
     }
     if (staffing !== undefined) {
       setStaffingEditorData((prev) =>
-        prev ? { ...prev, staffing } : prev
+        prev
+          ? {
+              ...prev,
+              staffing,
+              ...(serviceHours !== undefined ? { serviceHours } : {}),
+            }
+          : prev
       );
-      staffingRef.current?.applyStaffing(staffing);
+      staffingRef.current?.applyStaffing(staffing, serviceHours);
       return;
     }
     staffingRef.current?.reload();
   }
 
   function handleDeleteStaffing() {
-    if (!selectedStaffingShiftTypeId) return;
+    if (!selectedServiceHourId) return;
     setErrorMessage(null);
     startTransition(async () => {
-      const result = await deleteShiftTypeStaffing({
+      const result = await deleteServiceHourStaffing({
         locationId: location.id,
-        locationAreaId: area.id,
-        shiftTypeId: selectedStaffingShiftTypeId,
+        serviceHourId: selectedServiceHourId,
       });
       if (!result.ok) {
         setErrorMessage(result.error);
@@ -214,17 +230,14 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
         return;
       }
       setConfirmDeleteStaffing(false);
-      setSelectedStaffingShiftTypeId(null);
-      handleStaffingSaved();
+      setSelectedServiceHourId(null);
+      handleStaffingSaved(undefined, result.staffing);
     });
   }
 
   return (
     <div
-      className={cn(
-        "absolute inset-0 z-[60] flex items-center justify-center rounded-2xl bg-black/30 p-4",
-        listsLoading && "cursor-wait"
-      )}
+      className={cn(settingsSubModalOverlayClass(), listsLoading && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !anyOverlayOpen) onClose();
@@ -237,13 +250,18 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
         aria-busy={listsLoading || pending}
         aria-hidden={anyOverlayOpen}
         className={cn(
-          "relative z-[61] flex max-h-[min(90vh,720px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          settingsSubModalDialogClass("2xl"),
           listsLoading && "[&_*]:cursor-wait",
           anyOverlayOpen ? "pointer-events-none" : ""
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3 id="location-staffing-panel-title" className={SETTINGS_MODAL_TITLE_CLASS}>
             {t("locations.panelStaffingOf", {
               location: location.name,
@@ -267,12 +285,7 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
           </div>
         )}
 
-        <div
-          className={cn(
-            "min-h-0 flex-1 overflow-hidden px-4 py-3",
-            SETTINGS_LIST_SCROLL_COMPACT_CLASS
-          )}
-        >
+        <div className="min-h-0 flex-1 overflow-hidden px-4 py-3">
           {initialLoading || !staffingEditorData ? (
             <SettingsEmptyState
               message={t("common.loading")}
@@ -282,19 +295,32 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
             <LocationAreaStaffingMatrix
               ref={staffingRef}
               embedded
+              listScrollClassName={cn(
+                settingsScrollableTableListClass(),
+                SETTINGS_LIST_SCROLL_COMPACT_CLASS
+              )}
               locationId={location.id}
               area={area}
-              serviceHours={serviceHours}
               initialEditorData={staffingEditorData}
-              selectedShiftTypeId={selectedStaffingShiftTypeId}
-              onSelectShiftType={setSelectedStaffingShiftTypeId}
-              onEditShiftType={(shiftTypeId) => {
+              selectedServiceHourId={selectedServiceHourId}
+              onSelectServiceHour={setSelectedServiceHourId}
+              onEditServiceHour={(serviceHourId) => {
                 if (pending || listsLoading) return;
-                setStaffingFormMode({ type: "edit", shiftTypeId });
+                setStaffingFormMode({ type: "edit", serviceHourId });
                 setConfirmDeleteStaffing(false);
                 setErrorMessage(null);
               }}
-              onDataLoaded={setStaffingEditorData}
+              onDataLoaded={(data) => {
+                setStaffingEditorData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        ...data,
+                        shiftTemplates: prev.shiftTemplates,
+                      }
+                    : { ...data, shiftTemplates: [] }
+                );
+              }}
               onLoadingChange={setReloading}
             />
           )}
@@ -307,7 +333,9 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
                 label={t("locations.new")}
                 icon={<PlusIcon />}
                 disabled={
-                  pending || listsLoading || !hasUnassignedShiftTypes
+                  pending ||
+                  listsLoading ||
+                  !(staffingEditorData?.qualifications.length ?? 0)
                 }
                 onClick={() => {
                   setStaffingFormMode({ type: "create" });
@@ -320,12 +348,12 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
               <SettingsIconActionButton
                 label={t("locations.edit")}
                 icon={<PencilIcon />}
-                disabled={pending || listsLoading || !selectedStaffingShiftTypeId}
+                disabled={pending || listsLoading || !selectedServiceHourId}
                 onClick={() => {
-                  if (!selectedStaffingShiftTypeId) return;
+                  if (!selectedServiceHourId) return;
                   setStaffingFormMode({
                     type: "edit",
-                    shiftTypeId: selectedStaffingShiftTypeId,
+                    serviceHourId: selectedServiceHourId,
                   });
                   setConfirmDeleteStaffing(false);
                   setErrorMessage(null);
@@ -336,7 +364,7 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
               <SettingsIconActionButton
                 label={t("locations.delete")}
                 icon={<TrashIcon />}
-                disabled={pending || listsLoading || !selectedStaffingShiftTypeId}
+                disabled={pending || listsLoading || !selectedServiceHourId}
                 onClick={() => {
                   setConfirmDeleteStaffing(true);
                   setErrorMessage(null);
@@ -346,7 +374,7 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
           />
         </div>
 
-        <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
+        <div className={settingsModalFooterClass("shrink-0")}>
           <Button
             type="button"
             variant="outline"
@@ -364,31 +392,31 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
         <LocationStaffingDetailPanelModal
           key={
             staffingFormMode.type === "edit"
-              ? `edit-${staffingFormMode.shiftTypeId}`
+              ? `edit-${staffingFormMode.serviceHourId}`
               : "create"
           }
           mode={staffingFormMode.type}
           location={location}
           area={area}
-          serviceHours={serviceHours}
-          shiftTypes={staffingEditorData.shiftTypes}
+          serviceHours={staffingEditorData.serviceHours}
+          shiftTemplates={staffingEditorData.shiftTemplates}
           qualifications={staffingEditorData.qualifications}
           staffing={staffingEditorData.staffing}
-          initialShiftTypeId={
+          initialServiceHourId={
             staffingFormMode.type === "edit"
-              ? staffingFormMode.shiftTypeId
+              ? staffingFormMode.serviceHourId
               : undefined
           }
           onClose={() => setStaffingFormMode(null)}
-          onSaved={(createdShiftTypeId, staffing) => {
+          onSaved={(createdServiceHourId, staffing, serviceHours) => {
             setStaffingFormMode(null);
-            handleStaffingSaved(createdShiftTypeId, staffing);
+            handleStaffingSaved(createdServiceHourId, staffing, serviceHours);
           }}
         />
       )}
-      {confirmDeleteStaffing && selectedStaffingShiftType && (
+      {confirmDeleteStaffing && selectedServiceHourLabel && (
         <DeleteConfirmModal
-          name={selectedStaffingShiftType.name}
+          name={selectedServiceHourLabel}
           pending={pending}
           onCancel={() => setConfirmDeleteStaffing(false)}
           onConfirm={handleDeleteStaffing}

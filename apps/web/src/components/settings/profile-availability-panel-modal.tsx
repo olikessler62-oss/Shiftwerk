@@ -36,8 +36,14 @@ import {
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
   settingsListItemAttrs,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsScrollableTableListClass,
+  settingsSubModalDialogClass,
+  settingsSubModalOverlayClass,
   useScrollToSettingsListItem,
-  settingsColumnHeaderClass,
+  settingsStickyColumnHeaderClass,
+  settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -242,10 +248,7 @@ export function ProfileAvailabilityPanelModal({
 
   return (
     <div
-      className={cn(
-        "absolute inset-0 z-[60] flex items-center justify-center rounded-2xl bg-black/30 p-4",
-        (loading || pending) && "cursor-wait"
-      )}
+      className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !anyFormOpen && !confirmRemove) {
@@ -260,13 +263,18 @@ export function ProfileAvailabilityPanelModal({
         aria-busy={loading || pending}
         aria-hidden={anyFormOpen}
         className={cn(
-          "relative z-[61] flex w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          settingsSubModalDialogClass("xl"),
           (loading || pending) && "[&_*]:cursor-wait",
           anyFormOpen ? "pointer-events-none" : ""
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3
             id="profile-availability-panel-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
@@ -293,7 +301,7 @@ export function ProfileAvailabilityPanelModal({
         <div className="min-h-0 bg-background px-4 py-3">
           <div
             className={cn(
-              "min-h-0 overflow-y-auto rounded-md border border-border bg-surface",
+              settingsScrollableTableListClass(),
               SETTINGS_PROFILES_LIST_SCROLL_CLASS
             )}
           >
@@ -309,17 +317,20 @@ export function ProfileAvailabilityPanelModal({
                 className={EMPTY_STATE_CLASS}
               />
             ) : (
-              <table className="w-full border-collapse">
-                <thead className="sticky top-0 z-[1] bg-subtle">
-                  <tr className="border-b border-border bg-subtle">
-                    <th className="w-1 p-0" aria-hidden />
-                    <th className={settingsColumnHeaderClass()}>
+              <table className="w-full min-w-[24rem] border-collapse">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th
+                      className={settingsStickyIndicatorHeaderClass()}
+                      aria-hidden
+                    />
+                    <th className={settingsStickyColumnHeaderClass()}>
                       {t("profiles.columnWeekday")}
                     </th>
-                    <th className={settingsColumnHeaderClass()}>
+                    <th className={settingsStickyColumnHeaderClass()}>
                       {t("profiles.columnTimeRange")}
                     </th>
-                    <th className={settingsColumnHeaderClass()}>
+                    <th className={settingsStickyColumnHeaderClass()}>
                       {t("profiles.columnShiftType")}
                     </th>
                   </tr>
@@ -448,7 +459,7 @@ export function ProfileAvailabilityPanelModal({
           />
         </div>
 
-        <div className="flex shrink-0 justify-end border-t border-border px-5 py-3">
+        <div className={settingsModalFooterClass("shrink-0")}>
           <Button
             type="button"
             variant="outline"

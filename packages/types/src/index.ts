@@ -38,6 +38,8 @@ export interface Profile {
   id: string;
   organization_id: string;
   role_id: string;
+  /** Anzeigename der zugewiesenen Rolle (aus roles.name) */
+  role_name: string;
   /** Abgeleitet aus roles.permission_level */
   role: RolePermissionLevel;
   full_name: string;
@@ -68,6 +70,47 @@ export interface ProfileHourlyRateSummary {
   profile_id: string;
   amount: number;
   currency: string;
+}
+
+export type CompensationSurchargeTrigger = "public_holiday";
+
+export type CompensationSurchargeUnit = "eur_per_hour" | "percent_of_base";
+
+export interface CompensationSurchargeType {
+  id: string;
+  organization_id: string;
+  name: string;
+  trigger: CompensationSurchargeTrigger;
+  amount: number;
+  unit: CompensationSurchargeUnit;
+  sort_order: number;
+  archived_at: string | null;
+}
+
+export interface ProfileCompensationSurcharge {
+  id: string;
+  organization_id: string;
+  profile_id: string;
+  surcharge_type_id: string;
+  surcharge_type_name: string;
+  trigger: CompensationSurchargeTrigger;
+  type_default_amount: number;
+  type_default_unit: CompensationSurchargeUnit;
+  amount: number | null;
+  valid_from: string;
+  valid_to: string | null;
+  created_at: string;
+  created_by: string | null;
+  created_by_name: string | null;
+}
+
+export interface EffectiveProfileCompensationSurcharge {
+  id: string;
+  surcharge_type_id: string;
+  name: string;
+  trigger: CompensationSurchargeTrigger;
+  amount: number;
+  unit: CompensationSurchargeUnit;
 }
 
 export interface ProfileRecurringAvailability {
@@ -131,23 +174,50 @@ export interface LocationAreaServiceHour {
   end_time: string;
 }
 
+export type AreaPlanningMode = "simple" | "advanced";
+
 export interface LocationArea {
   id: string;
   location_id: string;
   name: string;
   sort_order: number;
+  /** simple = kompakte Planung; advanced = mehrere Servicezeiten pro Tag */
+  planning_mode: AreaPlanningMode;
   archived_at: string | null;
 }
 
-/** Personalbedarf: Bereich × Schichtart × Wochentag × Qualifikation (Mo=0 … So=6, Feiertage=7) */
+/** Personalbedarf: Bereich × Servicezeit-Fenster × Qualifikation */
 export interface LocationAreaStaffing {
   id: string;
   location_area_id: string;
-  shift_type_id: string;
+  service_hour_id: string;
   qualification_id: string;
-  weekday: number;
   required_count: number;
 }
+
+/** Schichtvorlage pro Bereich (Kurzwahl beim Zuweisen) */
+export interface AreaShiftTemplate {
+  id: string;
+  location_area_id: string;
+  name: string;
+  color: string;
+  start_time: string;
+  end_time: string;
+  sort_order: number;
+  archived_at: string | null;
+}
+
+export interface AreaShiftTemplateBreak {
+  id: string;
+  area_shift_template_id: string;
+  break_start: string;
+  break_end: string;
+  sort_order: number;
+}
+
+export type AreaShiftTemplateWithBreaks = AreaShiftTemplate & {
+  area_shift_template_breaks?: AreaShiftTemplateBreak[];
+};
 
 export interface Shift {
   id: string;

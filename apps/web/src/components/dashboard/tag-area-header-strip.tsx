@@ -8,7 +8,6 @@ export const DAYTIMES_HEADER_IMAGE_HEIGHT_PX = 4;
 type Props = {
   showDaytimesGradient: boolean;
   entries: TagAreaHeaderStaffingEntry[];
-  shiftTypeNameById: ReadonlyMap<string, string>;
   overlayBackgroundColor?: string;
   staffingTone?: "default" | "past" | "inactive";
   className?: string;
@@ -19,7 +18,6 @@ type Props = {
 export function TagAreaHeaderStrip({
   showDaytimesGradient,
   entries,
-  shiftTypeNameById,
   overlayBackgroundColor,
   staffingTone = "default",
   className,
@@ -55,7 +53,6 @@ export function TagAreaHeaderStrip({
       <div className="relative z-[1] flex h-full w-full min-w-0 -translate-y-[3px] items-center justify-center px-1">
         <TagAreaHeaderStaffingOverlay
           entries={entries}
-          shiftTypeNameById={shiftTypeNameById}
           tone={staffingTone}
         />
       </div>

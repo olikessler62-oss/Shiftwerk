@@ -24,7 +24,13 @@ import { ProfileDetailActions } from "./profile-detail-actions";
 import { ProfileQualificationsPanelModal } from "./profile-qualifications-panel-modal";
 import {
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
+  SETTINGS_MODAL_MAX_WIDTH,
   SETTINGS_MODAL_TITLE_CLASS,
+  settingsMasterDetailLayoutClass,
+  settingsModalBackdropClass,
+  settingsModalDialogClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -32,7 +38,8 @@ import {
   SettingsReorderButtons,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
-  settingsColumnHeaderClass,
+  settingsStickyColumnHeaderClass,
+  settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -70,7 +77,6 @@ type DetailPanel =
   | "compensation"
   | "invite";
 
-const MODAL_MAX_WIDTH = "calc(54rem + 120px)";
 const COLUMN_GAP_PX = 20;
 const MAX_NAME_DISPLAY = 25;
 
@@ -120,7 +126,7 @@ function ColumnShell({
         <div className="min-h-0 bg-background px-2 py-2">
           <div
             className={cn(
-              "min-h-0 overflow-y-auto rounded-md border border-border bg-surface",
+              "min-h-0 overflow-auto rounded-md border border-border bg-surface",
               listScrollClassName
             )}
           >
@@ -257,13 +263,21 @@ export function ProfilesModal({
             [profileId]: {
               currentRate: compResult.currentRate ?? null,
               rates: compResult.rates ?? [],
+              currentSurcharges: compResult.currentSurcharges ?? [],
+              surchargeEntries: compResult.surchargeEntries ?? [],
               serverToday: compResult.serverToday ?? "",
             },
           };
         }
         return {
           ...prev,
-          [profileId]: { currentRate: null, rates: [], serverToday: "" },
+          [profileId]: {
+            currentRate: null,
+            rates: [],
+            currentSurcharges: [],
+            surchargeEntries: [],
+            serverToday: "",
+          },
         };
       });
     });
@@ -410,10 +424,7 @@ export function ProfilesModal({
 
   return (
     <div
-      className={cn(
-        "absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4",
-        modalBusy && "cursor-wait"
-      )}
+      className={cn(settingsModalBackdropClass(), modalBusy && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
         if (
@@ -426,8 +437,8 @@ export function ProfilesModal({
       }}
     >
       <div
-        className="relative flex w-full flex-col"
-        style={{ maxWidth: MODAL_MAX_WIDTH }}
+        className="relative flex w-full min-w-0 flex-col"
+        style={{ maxWidth: SETTINGS_MODAL_MAX_WIDTH }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div
@@ -437,12 +448,12 @@ export function ProfilesModal({
           aria-busy={modalBusy}
           aria-hidden={anyOverlayOpen}
           className={cn(
-            "flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
+            settingsModalDialogClass(),
             modalBusy && "[&_*]:cursor-wait",
             anyOverlayOpen ? "pointer-events-none" : ""
           )}
         >
-          <div className="shrink-0 border-b border-border px-6 py-4">
+          <div className={cn("shrink-0 border-b border-border", settingsModalHeaderPaddingClass())}>
             <h2 id="profiles-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("profiles.title")}
             </h2>
@@ -455,7 +466,7 @@ export function ProfilesModal({
           )}
 
           <div
-            className="grid shrink-0 grid-cols-[minmax(0,calc(50%-10px+40px))_minmax(0,calc(50%-10px-40px))] items-stretch bg-background px-4 py-3"
+            className={settingsMasterDetailLayoutClass()}
             style={{ gap: COLUMN_GAP_PX }}
             aria-busy={actionDetailsLoading}
           >
@@ -528,17 +539,23 @@ export function ProfilesModal({
                 />
               ) : (
                 <table className="w-full border-collapse">
-                  <thead className="sticky top-0 z-[1] bg-subtle">
-                    <tr className="border-b border-border bg-subtle">
-                      <th className="w-1 p-0" aria-hidden />
-                      <th className={cn(settingsColumnHeaderClass("center"), "w-14")}>
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th
+                        className={settingsStickyIndicatorHeaderClass()}
+                        aria-hidden
+                      />
+                      <th className={cn(settingsStickyColumnHeaderClass("center"), "w-14")}>
                         {t("profiles.columnActive")}
                       </th>
-                      <th className={cn(settingsColumnHeaderClass("center"), "w-10")}>
+                      <th className={cn(settingsStickyColumnHeaderClass("center"), "w-10")}>
                         {t("profiles.color")}
                       </th>
-                      <th className={settingsColumnHeaderClass()}>
+                      <th className={settingsStickyColumnHeaderClass()}>
                         {t("profiles.columnName")}
+                      </th>
+                      <th className={settingsStickyColumnHeaderClass()}>
+                        {t("profiles.columnRole")}
                       </th>
                     </tr>
                   </thead>
@@ -588,6 +605,14 @@ export function ProfilesModal({
                           >
                             {truncateLabel(item.full_name)}
                           </td>
+                          <td
+                            className={settingsDataCellClass(isSelected, {
+                              className: "max-w-[10rem] truncate text-muted",
+                            })}
+                            title={item.role_name || undefined}
+                          >
+                            {item.role_name ? truncateLabel(item.role_name, 20) : "—"}
+                          </td>
                         </tr>
                       );
                     })}
@@ -602,10 +627,24 @@ export function ProfilesModal({
                 actionDetailsLoading && "pointer-events-none"
               )}
             >
-              <h3 className={settingsPanelHeaderClass()}>
-                {selectedProfile
-                  ? t("profiles.panelSelected")
-                  : t("profiles.panelDetails")}
+              <h3
+                className={cn(
+                  settingsPanelHeaderClass(),
+                  selectedProfile?.role_name && "flex min-w-0 items-baseline gap-2"
+                )}
+              >
+                {selectedProfile ? (
+                  <>
+                    <span className="shrink-0">{t("profiles.panelSelected")}</span>
+                    {selectedProfile.role_name ? (
+                      <span className="min-w-0 truncate text-xs font-normal text-muted">
+                        {selectedProfile.role_name}
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  t("profiles.panelDetails")
+                )}
               </h3>
               {actionDetailsLoading ? (
                 <div
@@ -637,7 +676,7 @@ export function ProfilesModal({
             </div>
           </div>
 
-          <div className="flex shrink-0 justify-end border-t border-border px-6 py-3">
+          <div className={settingsModalFooterClass("shrink-0 px-4 sm:px-6")}>
             <Button
               type="button"
               variant="outline"

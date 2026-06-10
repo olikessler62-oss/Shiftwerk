@@ -22,8 +22,16 @@ import {
   SettingsReorderButtons,
   applyCreatedListSelection,
   settingsListItemAttrs,
+  settingsModalBackdropClass,
+  settingsModalBodyPaddingClass,
+  settingsModalDialogClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsModalRootClass,
+  settingsScrollableTableListClass,
+  settingsStickyColumnHeaderClass,
+  settingsStickyIndicatorHeaderClass,
   useScrollToSettingsListItem,
-  settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -168,24 +176,29 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
+      className={settingsModalBackdropClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !formMode && !confirmDelete) onClose();
       }}
     >
-      <div className="relative w-full max-w-3xl" onMouseDown={(e) => e.stopPropagation()}>
+      <div className={settingsModalRootClass("3xl")} onMouseDown={(e) => e.stopPropagation()}>
         <div
           role="dialog"
           aria-modal="true"
           aria-labelledby="shift-types-modal-title"
           aria-hidden={!!formMode}
           className={cn(
-            "flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
+            settingsModalDialogClass(),
             formMode ? "pointer-events-none" : ""
           )}
         >
-          <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div
+            className={cn(
+              "flex items-center justify-between border-b border-border",
+              settingsModalHeaderPaddingClass()
+            )}
+          >
             <h2 id="shift-types-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("shiftTypes.title")}
             </h2>
@@ -205,26 +218,34 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
             </div>
           )}
 
-          <div className="bg-background px-6 py-4">
+          <div className={cn(settingsModalBodyPaddingClass(), "bg-background")}>
             <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
               <h3 className={settingsPanelHeaderClass()}>{t("shiftTypes.title")}</h3>
 
-              <div className={cn("bg-background px-2 py-2", SETTINGS_LIST_SCROLL_CLASS)}>
+              <div className="bg-background px-2 py-2">
                 {list.length === 0 ? (
                   <SettingsEmptyState
                     message={t("shiftTypes.emptyList")}
                     hint={t("common.emptyHintCreate")}
                   />
                 ) : (
-                  <div className="min-w-0 overflow-x-auto rounded-md border border-border bg-surface">
-                    <table className="w-full min-w-[36rem] border-collapse">
+                  <div
+                    className={cn(
+                      settingsScrollableTableListClass(),
+                      SETTINGS_LIST_SCROLL_CLASS
+                    )}
+                  >
+                    <table className="w-full min-w-[28rem] border-collapse sm:min-w-[36rem]">
                       <thead>
-                        <tr className="border-b border-border bg-subtle">
-                          <th className="w-1 p-0" aria-hidden />
+                        <tr className="border-b border-border">
+                          <th
+                            className={settingsStickyIndicatorHeaderClass()}
+                            aria-hidden
+                          />
                           {COLUMN_LABEL_KEYS.map((label, index) => (
                             <th
                               key={label}
-                              className={settingsColumnHeaderClass(
+                              className={settingsStickyColumnHeaderClass(
                                 index === 0 ? "left" : "center"
                               )}
                             >
@@ -340,7 +361,7 @@ export function ShiftTypesModal({ shiftTypes, onClose }: Props) {
             </div>
           </div>
 
-          <div className="flex shrink-0 justify-end border-t border-border px-6 py-3">
+          <div className={settingsModalFooterClass("shrink-0 px-4 sm:px-6")}>
             <Button
               type="button"
               variant="outline"

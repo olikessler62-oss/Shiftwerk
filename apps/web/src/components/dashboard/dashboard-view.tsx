@@ -5,10 +5,13 @@ import type {
   Location,
   LocationArea,
   LocationAreaStaffing,
+  LocationAreaServiceHour,
   Profile,
   Qualification,
+  CompensationSurchargeType,
   Role,
   ShiftTypeWithBreaks,
+  AreaShiftTemplateWithBreaks,
 } from "@schichtwerk/types";
 import type {
   AreaServiceHourRef,
@@ -16,10 +19,12 @@ import type {
 } from "@/lib/location-staffing-client";
 import { ShiftTypesModal } from "@/components/settings/shift-types-modal";
 import { QualificationsModal } from "@/components/settings/qualifications-modal";
+import { CompensationSurchargeTypesModal } from "@/components/settings/compensation-surcharge-types-modal";
 import { LocationsModal } from "@/components/settings/locations-modal";
 import { RolesModal } from "@/components/settings/roles-modal";
 import { AbsencesModal } from "@/components/settings/absences-modal";
 import { ProfilesModal } from "@/components/settings/profiles-modal";
+import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { DashboardHeader } from "./dashboard-header";
 import {
   DashboardCalendar,
@@ -37,7 +42,9 @@ type Props = {
   serviceHours: AreaServiceHourRef[];
   shifts: DashboardShiftCard[];
   shiftTypes: ShiftTypeWithBreaks[];
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   qualifications: Qualification[];
+  compensationSurchargeTypes: CompensationSurchargeType[];
   roles: Role[];
   profiles: Profile[];
   locations: Location[];
@@ -54,7 +61,9 @@ export function DashboardView({
   serviceHours,
   shifts,
   shiftTypes,
+  areaShiftTemplates,
   qualifications,
+  compensationSurchargeTypes,
   roles,
   profiles,
   locations,
@@ -66,6 +75,9 @@ export function DashboardView({
   const showRoles = searchParams.get("rollen") === "1";
   const showShiftTypes = searchParams.get("schichtarten") === "1";
   const showQualifications = searchParams.get("qualifikationen") === "1";
+  const showSurcharges =
+    COMPENSATION_SURCHARGES_UI_ENABLED &&
+    searchParams.get("sonderzuschlaege") === "1";
   const showAbsences = searchParams.get("abwesenheiten") === "1";
 
   function closeSettingsModal(
@@ -75,6 +87,7 @@ export function DashboardView({
       | "rollen"
       | "schichtarten"
       | "qualifikationen"
+      | "sonderzuschlaege"
       | "abwesenheiten"
   ) {
     const params = new URLSearchParams(searchParams.toString());
@@ -103,6 +116,7 @@ export function DashboardView({
           serviceHours={serviceHours}
           shifts={shifts}
           shiftTypes={shiftTypes}
+          areaShiftTemplates={areaShiftTemplates}
           qualifications={qualifications}
           profiles={profiles}
           fullStaffingRules={fullStaffingRules}
@@ -113,6 +127,9 @@ export function DashboardView({
             initialSelectedLocationId={selectedLocationId}
             initialAreas={areas}
             initialSelectedAreaId={areas[0]?.id ?? null}
+            initialServiceHours={serviceHours as LocationAreaServiceHour[]}
+            initialStaffing={fullStaffingRules}
+            initialShiftTemplates={areaShiftTemplates}
             onClose={() => closeSettingsModal("standorte")}
           />
         )}
@@ -139,6 +156,12 @@ export function DashboardView({
           <QualificationsModal
             qualifications={qualifications}
             onClose={() => closeSettingsModal("qualifikationen")}
+          />
+        )}
+        {showSurcharges && (
+          <CompensationSurchargeTypesModal
+            surchargeTypes={compensationSurchargeTypes}
+            onClose={() => closeSettingsModal("sonderzuschlaege")}
           />
         )}
         {showAbsences && (

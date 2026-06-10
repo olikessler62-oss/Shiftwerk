@@ -18,12 +18,21 @@ import {
   BULK_SHIFT_LIST_SCROLL_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
   SettingsPrimaryActionButton,
+  dashboardAlertDialogClass,
+  dashboardModalBackdropClass,
+  dashboardModalDialogClass,
+  dashboardNestedModalOverlayClass,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsResponsiveTableWrapClass,
 } from "@/components/settings/settings-list-ui";
 import {
   Button,
   CloseIcon,
   IconButton,
   PlusIcon,
+  Select,
   TimeInput,
   TrashIcon,
 } from "@/components/ui";
@@ -32,10 +41,22 @@ import {
   filterDashboardShiftAssignEmployeesByWindowWithoutOverlap,
   pickEmployeeLongestWithoutShift,
   profileAvailabilityWeekdayFromDashboardDate,
-  resolveShiftTypeIdFromTimes,
 } from "@/lib/available-employees-for-shift";
+import {
+  areaShiftTemplatesForArea,
+  dashboardAssignmentPresetsForArea,
+  resolvePresetIdFromTimes,
+  shiftTypeIdForAssign,
+  usesAreaShiftTemplatesForAssign,
+  type DashboardAssignmentPreset,
+} from "@/lib/dashboard-assignment-presets";
 import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
-import { evaluateBulkRowQualification } from "@/lib/bulk-shift-qualification";
+import {
+  areaStaffingQualificationOptions,
+  filterEmployeesByQualification,
+  presetQualificationForServiceHour,
+  type StaffingQualificationOption,
+} from "@/lib/bulk-shift-qualification";
 import { sortBulkShiftRows } from "@/lib/bulk-shift-sort";
 import {
   tagAreaHeaderStaffingEntries,
@@ -51,6 +72,7 @@ import { cn } from "@/lib/cn";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type {
+  AreaShiftTemplateWithBreaks,
   LocationArea,
   LocationAreaStaffing,
   Qualification,
@@ -66,6 +88,7 @@ export type DashboardBulkShiftDialogState = DashboardAddShiftDialogState;
 type BulkRow = {
   id: string;
   employeeId: string;
+  qualificationId: string;
   shiftTypeId: string;
   startTime: string;
   endTime: string;
@@ -78,10 +101,11 @@ type Props = {
   locationName: string;
   areas: LocationArea[];
   shiftTypes: ShiftTypeWithBreaks[];
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   staffingRules: LocationAreaStaffing[];
   serviceHours: AreaServiceHourRef[];
   qualifications: Qualification[];
-  areaAssignedShifts: { shiftTypeId: string }[];
+  areaAssignedShifts: { startTime: string; endTime: string }[];
   areaExistingAssignments: DashboardAssignmentTimeWindow[];
   onClose: () => void;
   onSaved?: () => void;
@@ -91,6 +115,7 @@ function createEmptyRow(): BulkRow {
   return {
     id: crypto.randomUUID(),
     employeeId: DASHBOARD_EMPTY_EMPLOYEE_ID,
+    qualificationId: "",
     shiftTypeId: "",
     startTime: "00:00",
     endTime: "00:00",
@@ -178,7 +203,7 @@ function buildAreaAssignmentsForRow(
   return [...areaExistingAssignments, ...fromRows];
 }
 
-function firstUnsatisfiedStaffingShiftType(
+function firstUnsatisfiedStaffingEntry(
   staffingEntries: TagAreaHeaderStaffingEntry[]
 ): TagAreaHeaderStaffingEntry | null {
   return staffingEntries.find((entry) => entry.assigned < entry.required) ?? null;
@@ -189,18 +214,13 @@ function computeBulkModalStaffingEntries(
   areaId: string,
   dateISO: string,
   serviceHours: AreaServiceHourRef[],
-  shiftTypes: ShiftTypeWithBreaks[],
-  areaAssignedShifts: { shiftTypeId: string }[],
+  areaAssignedShifts: { startTime: string; endTime: string }[],
   rows: BulkRow[] = []
 ): TagAreaHeaderStaffingEntry[] {
   const pendingAssignments = rows.flatMap((row) => {
     if (row.employeeId === DASHBOARD_EMPTY_EMPLOYEE_ID) return [];
     if (!areDashboardShiftTimesComplete(row.startTime, row.endTime)) return [];
-
-    const shiftTypeId =
-      row.shiftTypeId ||
-      resolveShiftTypeIdFromTimes(row.startTime, row.endTime, shiftTypes);
-    return shiftTypeId ? [{ shiftTypeId }] : [];
+    return [{ startTime: row.startTime, endTime: row.endTime }];
   });
 
   return tagAreaHeaderStaffingEntries(
@@ -208,101 +228,79 @@ function computeBulkModalStaffingEntries(
     areaId,
     dateISO,
     serviceHours,
-    shiftTypes.map((type) => ({
-      id: type.id,
-      name: type.name,
-      start_time: type.start_time,
-    })),
-    [...areaAssignedShifts, ...pendingAssignments],
-    { shortenLabels: false }
+    [...areaAssignedShifts, ...pendingAssignments]
   );
 }
 
 function createPresetBulkRow(
   staffingEntries: TagAreaHeaderStaffingEntry[],
-  shiftTypes: ShiftTypeWithBreaks[]
+  serviceHours: AreaServiceHourRef[],
+  assignmentPresets: DashboardAssignmentPreset[],
+  staffingRules: LocationAreaStaffing[],
+  areaId: string
 ): BulkRow {
-  const unsatisfiedEntry = firstUnsatisfiedStaffingShiftType(staffingEntries);
-  const presetType = unsatisfiedEntry
-    ? shiftTypes.find((type) => type.id === unsatisfiedEntry.shiftTypeId) ?? null
+  const unsatisfiedEntry = firstUnsatisfiedStaffingEntry(staffingEntries);
+  const presetHour = unsatisfiedEntry
+    ? serviceHours.find((hour) => hour.id === unsatisfiedEntry.serviceHourId)
     : null;
+
+  const startTime = presetHour?.start_time
+    ? timeFieldValue(presetHour.start_time)
+    : "00:00";
+  const endTime = presetHour?.end_time
+    ? timeFieldValue(presetHour.end_time)
+    : "00:00";
+  const matchedPresetId =
+    resolvePresetIdFromTimes(startTime, endTime, assignmentPresets) ?? "";
 
   return {
     ...createEmptyRow(),
-    shiftTypeId: presetType?.id ?? "",
-    startTime: presetType ? timeFieldValue(presetType.start_time) : "00:00",
-    endTime: presetType ? timeFieldValue(presetType.end_time) : "00:00",
+    shiftTypeId: matchedPresetId,
+    qualificationId: presetQualificationForServiceHour(
+      staffingRules,
+      areaId,
+      unsatisfiedEntry?.serviceHourId
+    ),
+    startTime,
+    endTime,
     employeeManuallySelected: false,
   };
-}
-
-function QualificationAmpel({
-  status,
-  missingNames,
-}: {
-  status: "neutral" | "ok" | "missing";
-  missingNames: string[];
-}) {
-  const t = useTranslations();
-  const title =
-    status === "ok"
-      ? t("dashboard.bulkShiftQualificationOk")
-      : status === "missing"
-        ? t("dashboard.bulkShiftQualificationMissing", {
-            names: missingNames.join(", "),
-          })
-        : t("dashboard.bulkShiftQualificationNeutral");
-
-  return (
-    <span
-      className="inline-flex items-center justify-center"
-      title={title}
-      aria-label={title}
-    >
-      <span
-        className={cn(
-          "inline-block h-3 w-3 rounded-full border border-border/60",
-          status === "ok" && "bg-emerald-500",
-          status === "missing" && "bg-amber-400",
-          status === "neutral" && "bg-muted"
-        )}
-      />
-    </span>
-  );
 }
 
 type BulkShiftRowEditorProps = {
   row: BulkRow;
   weekday: number;
   employees: DashboardShiftAssignEmployee[];
-  shiftTypes: ShiftTypeWithBreaks[];
-  staffingRules: LocationAreaStaffing[];
-  areaId: string;
+  assignmentPresets: DashboardAssignmentPreset[];
+  orgShiftTypes: ShiftTypeWithBreaks[];
+  areaQualifications: StaffingQualificationOption[];
   dateISO: string;
   areaExistingAssignments: DashboardAssignmentTimeWindow[];
   allRows: BulkRow[];
-  qualificationNameById: Map<string, string>;
   profileQualificationIds: Map<string, Set<string>>;
   onChange: (patch: Partial<BulkRow>) => void;
   onDelete: () => void;
   disabled?: boolean;
+  presetPlaceholder: string;
+  qualificationPlaceholder: string;
 };
 
 function BulkShiftRowEditor({
   row,
   weekday,
   employees,
-  shiftTypes,
-  staffingRules,
-  areaId,
+  assignmentPresets,
+  orgShiftTypes,
+  areaQualifications,
   dateISO,
   areaExistingAssignments,
   allRows,
-  qualificationNameById,
   profileQualificationIds,
   onChange,
   onDelete,
   disabled = false,
+  presetPlaceholder,
+  qualificationPlaceholder,
 }: BulkShiftRowEditorProps) {
   const t = useTranslations();
   const skipSyncRef = useRef(false);
@@ -313,27 +311,32 @@ function BulkShiftRowEditor({
     [areaExistingAssignments, allRows, row.id]
   );
 
-  const matchingEmployees = useMemo(
-    () =>
-      filterDashboardShiftAssignEmployeesByWindowWithoutOverlap(
-        employees,
-        weekday,
-        row.startTime,
-        row.endTime,
-        dateISO,
-        areaAssignmentsForRow,
-        shiftTypes
-      ),
-    [
+  const matchingEmployees = useMemo(() => {
+    const byWindow = filterDashboardShiftAssignEmployeesByWindowWithoutOverlap(
       employees,
       weekday,
       row.startTime,
       row.endTime,
       dateISO,
       areaAssignmentsForRow,
-      shiftTypes,
-    ]
-  );
+      orgShiftTypes
+    );
+    return filterEmployeesByQualification(
+      byWindow,
+      row.qualificationId,
+      profileQualificationIds
+    );
+  }, [
+    employees,
+    weekday,
+    row.startTime,
+    row.endTime,
+    row.qualificationId,
+    dateISO,
+    areaAssignmentsForRow,
+    orgShiftTypes,
+    profileQualificationIds,
+  ]);
 
   useEffect(() => {
     const skipTypeFromTimesSync = skipSyncRef.current;
@@ -355,11 +358,21 @@ function BulkShiftRowEditor({
     }
 
     const matched =
-      resolveShiftTypeIdFromTimes(row.startTime, row.endTime, shiftTypes) ?? "";
+      resolvePresetIdFromTimes(row.startTime, row.endTime, assignmentPresets) ?? "";
     const patch: Partial<BulkRow> = {};
     if (!skipTypeFromTimesSync && matched !== row.shiftTypeId) {
       patch.shiftTypeId = matched;
     }
+
+    if (
+      row.qualificationId &&
+      row.employeeId !== DASHBOARD_EMPTY_EMPLOYEE_ID &&
+      !profileQualificationIds.get(row.employeeId)?.has(row.qualificationId)
+    ) {
+      patch.employeeId = DASHBOARD_EMPTY_EMPLOYEE_ID;
+      patch.employeeManuallySelected = false;
+    }
+
     if (!row.employeeManuallySelected) {
       const preferred = pickEmployeeLongestWithoutShift(matchingEmployees);
       const nextId = preferred?.id ?? DASHBOARD_EMPTY_EMPLOYEE_ID;
@@ -371,11 +384,13 @@ function BulkShiftRowEditor({
     row.startTime,
     row.endTime,
     row.shiftTypeId,
+    row.qualificationId,
     row.employeeId,
     row.employeeManuallySelected,
-    shiftTypes,
+    assignmentPresets,
     timesComplete,
     matchingEmployees,
+    profileQualificationIds,
   ]);
 
   const selectedEmployee = useMemo(
@@ -391,63 +406,40 @@ function BulkShiftRowEditor({
     return selectedEmployee.availabilities.filter((slot) => slot.weekday === weekday);
   }, [selectedEmployee, weekday]);
 
-  const qualification = evaluateBulkRowQualification({
-    shiftTypeId: row.shiftTypeId || null,
-    employeeId:
-      row.employeeId === DASHBOARD_EMPTY_EMPLOYEE_ID ? "" : row.employeeId,
-    areaId,
-    dateISO,
-    staffingRules,
-    employeeQualificationIds:
-      profileQualificationIds.get(row.employeeId) ?? new Set<string>(),
-    qualificationNameById,
-  });
-
   const handleApplyAvailability = (entry: DashboardEmployeeAvailabilityEntry) => {
     const nextStart = timeFieldValue(entry.start_time);
     const nextEnd = timeFieldValue(entry.end_time);
     skipSyncRef.current = true;
+    const matchedPresetId = resolvePresetIdFromTimes(
+      nextStart,
+      nextEnd,
+      assignmentPresets
+    );
     onChange({
       startTime: nextStart,
       endTime: nextEnd,
       employeeManuallySelected: true,
-      shiftTypeId: entry.shift_type_id ?? row.shiftTypeId,
+      shiftTypeId: matchedPresetId ?? entry.shift_type_id ?? row.shiftTypeId,
     });
   };
 
   return (
     <tr className="border-b border-border/60">
-      <td className="min-w-[10rem] px-1 py-2 align-middle">
-        <DashboardShiftEmployeeCombobox
-          value={row.employeeId}
-          onChange={(employeeId) =>
-            onChange({ employeeId, employeeManuallySelected: true })
-          }
-          employees={matchingEmployees}
-          selectedEmployee={selectedEmployee}
-          weekday={weekday}
-          dayAvailabilities={dayAvailabilities}
-          emptyLabel={t("dashboard.noEmployeeSelected")}
-          disabled={disabled}
-          onApplyAvailability={handleApplyAvailability}
-          rootClassName="w-full"
-          weekdayLabelStyle="long"
-        />
-      </td>
-      <td className="min-w-[8rem] px-1 py-2 align-middle">
+      <td className="w-[6rem] max-w-[6.5rem] px-1 py-2 align-middle">
         <DashboardShiftTypeCombobox
           value={row.shiftTypeId}
-          shiftTypes={shiftTypes}
-          disabled={disabled || shiftTypes.length === 0}
+          presets={assignmentPresets}
+          placeholder={presetPlaceholder}
+          disabled={disabled || assignmentPresets.length === 0}
           rootClassName="w-full"
           onChange={(nextId) => {
-            const type = shiftTypes.find((item) => item.id === nextId);
-            if (type) {
+            const preset = assignmentPresets.find((item) => item.id === nextId);
+            if (preset) {
               skipSyncRef.current = true;
               onChange({
                 shiftTypeId: nextId,
-                startTime: timeFieldValue(type.start_time),
-                endTime: timeFieldValue(type.end_time),
+                startTime: timeFieldValue(preset.start_time),
+                endTime: timeFieldValue(preset.end_time),
                 employeeManuallySelected: false,
               });
             } else {
@@ -455,6 +447,26 @@ function BulkShiftRowEditor({
             }
           }}
         />
+      </td>
+      <td className="min-w-[7rem] px-1 py-2 align-middle">
+        <Select
+          className={cn(ROW_CONTROL_CLASS, !row.qualificationId && "text-[silver]")}
+          value={row.qualificationId}
+          disabled={disabled || areaQualifications.length === 0}
+          onChange={(event) =>
+            onChange({
+              qualificationId: event.target.value,
+              employeeManuallySelected: false,
+            })
+          }
+        >
+          <option value="">{qualificationPlaceholder}</option>
+          {areaQualifications.map((qualification) => (
+            <option key={qualification.id} value={qualification.id}>
+              {qualification.name}
+            </option>
+          ))}
+        </Select>
       </td>
       <td className="w-[7rem] px-1 py-2 align-middle">
         <TimeInput
@@ -482,13 +494,22 @@ function BulkShiftRowEditor({
           }
         />
       </td>
-      <td className="w-10 px-1 py-2 align-middle">
-        <div className="flex h-9 items-center justify-center">
-          <QualificationAmpel
-            status={qualification.status}
-            missingNames={qualification.missingNames}
-          />
-        </div>
+      <td className="min-w-[10rem] px-1 py-2 align-middle">
+        <DashboardShiftEmployeeCombobox
+          value={row.employeeId}
+          onChange={(employeeId) =>
+            onChange({ employeeId, employeeManuallySelected: true })
+          }
+          employees={matchingEmployees}
+          selectedEmployee={selectedEmployee}
+          weekday={weekday}
+          dayAvailabilities={dayAvailabilities}
+          emptyLabel={t("dashboard.noEmployeeSelected")}
+          disabled={disabled}
+          onApplyAvailability={handleApplyAvailability}
+          rootClassName="w-full"
+          weekdayLabelStyle="long"
+        />
       </td>
       <td className="w-10 px-1 py-2 align-middle">
         <div className="flex h-9 items-center justify-center">
@@ -514,6 +535,7 @@ export function DashboardBulkShiftModal({
   locationName,
   areas,
   shiftTypes,
+  areaShiftTemplates,
   staffingRules,
   serviceHours,
   qualifications,
@@ -532,6 +554,33 @@ export function DashboardBulkShiftModal({
   const dayHeader = formatDayHeader(dialog.date, intlLocale, "long");
   const contextLine = `${locationName} / ${areaName} - ${dayHeader.weekday}, ${dayHeader.label}`;
 
+  const templatesForArea = useMemo(
+    () => areaShiftTemplatesForArea(dialog.areaId, areaShiftTemplates),
+    [areaShiftTemplates, dialog.areaId]
+  );
+  const assignmentPresets = useMemo(
+    () => dashboardAssignmentPresetsForArea(templatesForArea, shiftTypes),
+    [templatesForArea, shiftTypes]
+  );
+  const usesAreaTemplates = usesAreaShiftTemplatesForAssign(templatesForArea);
+  const presetColumnLabel = usesAreaTemplates
+    ? t("dashboard.bulkShiftTemplate")
+    : t("dashboard.bulkShiftType");
+  const presetPlaceholder = usesAreaTemplates
+    ? t("dashboard.selectShiftTemplate")
+    : t("dashboard.selectShiftType");
+  const qualificationPlaceholder = t("dashboard.selectQualification");
+
+  const areaQualifications = useMemo(
+    () =>
+      areaStaffingQualificationOptions(
+        staffingRules,
+        dialog.areaId,
+        qualifications
+      ),
+    [staffingRules, dialog.areaId, qualifications]
+  );
+
   const [rows, setRows] = useState<BulkRow[]>(() => [
     createPresetBulkRow(
       computeBulkModalStaffingEntries(
@@ -539,10 +588,15 @@ export function DashboardBulkShiftModal({
         dialog.areaId,
         dialog.date,
         serviceHours,
-        shiftTypes,
         areaAssignedShifts
       ),
-      shiftTypes
+      serviceHours,
+      dashboardAssignmentPresetsForArea(
+        areaShiftTemplatesForArea(dialog.areaId, areaShiftTemplates),
+        shiftTypes
+      ),
+      staffingRules,
+      dialog.areaId
     ),
   ]);
   const [employees, setEmployees] = useState<DashboardShiftAssignEmployee[]>([]);
@@ -560,7 +614,6 @@ export function DashboardBulkShiftModal({
         dialog.areaId,
         dialog.date,
         serviceHours,
-        shiftTypes,
         areaAssignedShifts,
         rows
       ),
@@ -569,15 +622,9 @@ export function DashboardBulkShiftModal({
       dialog.areaId,
       dialog.date,
       serviceHours,
-      shiftTypes,
       areaAssignedShifts,
       rows,
     ]
-  );
-
-  const qualificationNameById = useMemo(
-    () => new Map(qualifications.map((q) => [q.id, q.name])),
-    [qualifications]
   );
 
   const employeeNameById = useMemo(
@@ -632,10 +679,12 @@ export function DashboardBulkShiftModal({
               dialog.areaId,
               dialog.date,
               serviceHours,
-              shiftTypes,
               areaAssignedShifts
             ),
-            shiftTypes
+            serviceHours,
+            assignmentPresets,
+            staffingRules,
+            dialog.areaId
           ),
         ];
       });
@@ -645,8 +694,8 @@ export function DashboardBulkShiftModal({
       dialog.areaId,
       dialog.date,
       serviceHours,
-      shiftTypes,
       areaAssignedShifts,
+      assignmentPresets,
     ]
   );
 
@@ -660,9 +709,26 @@ export function DashboardBulkShiftModal({
 
     setRows((current) => {
       if (current.length >= MAX_ROWS) return current;
-      return [...current, createPresetBulkRow(staffingEntries, shiftTypes)];
+      return [
+        ...current,
+        createPresetBulkRow(
+          staffingEntries,
+          serviceHours,
+          assignmentPresets,
+          staffingRules,
+          dialog.areaId
+        ),
+      ];
     });
-  }, [rows, t, staffingEntries, shiftTypes]);
+  }, [
+    rows,
+    t,
+    staffingEntries,
+    serviceHours,
+    assignmentPresets,
+    staffingRules,
+    dialog.areaId,
+  ]);
 
   const handleOk = useCallback(async () => {
     const validation = validateBulkShiftRows(rows, t);
@@ -751,7 +817,7 @@ export function DashboardBulkShiftModal({
         employeeId: row.employeeId,
         startTime: row.startTime,
         endTime: row.endTime,
-        shiftTypeId: row.shiftTypeId || null,
+        shiftTypeId: shiftTypeIdForAssign(row.shiftTypeId, assignmentPresets),
       })),
     });
     setSaving(false);
@@ -802,14 +868,12 @@ export function DashboardBulkShiftModal({
     router,
     t,
     serviceHours,
+    assignmentPresets,
   ]);
 
   return (
     <div
-      className={cn(
-        "fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4",
-        loading && "cursor-wait"
-      )}
+      className={cn(dashboardModalBackdropClass(), loading && "cursor-wait")}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !saving && !alertMessage) {
@@ -822,12 +886,17 @@ export function DashboardBulkShiftModal({
         aria-modal="true"
         aria-labelledby="dashboard-bulk-shift-title"
         className={cn(
-          "relative z-[111] flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          dashboardModalDialogClass("5xl"),
           loading && "cursor-wait"
         )}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-start justify-between gap-3 border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <div className="min-w-0">
             <h3 id="dashboard-bulk-shift-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("dashboard.bulkShiftTitle")}
@@ -839,7 +908,7 @@ export function DashboardBulkShiftModal({
               <p className="mt-2 text-sm leading-relaxed">
                 <span className="text-muted">{t("dashboard.bulkShiftStaffingPrefix")} </span>
                 {staffingEntries.map((entry, index) => (
-                  <span key={entry.shiftTypeId}>
+                  <span key={entry.serviceHourId}>
                     {index > 0 ? " - " : ""}
                     <span
                       className={cn(
@@ -867,18 +936,18 @@ export function DashboardBulkShiftModal({
           </IconButton>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden px-5 py-4">
-          <div className={cn(BULK_SHIFT_LIST_SCROLL_CLASS)}>
-            <table className="w-full text-sm">
+        <div className={cn("min-h-0 flex-1 overflow-hidden", settingsModalBodyPaddingClass())}>
+          <div className={cn(BULK_SHIFT_LIST_SCROLL_CLASS, settingsResponsiveTableWrapClass())}>
+            <table className="w-full min-w-[36rem] text-sm">
               <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="text-left text-xs text-muted">
-                  <th className="px-1 py-2">{t("dashboard.bulkShiftEmployee")}</th>
-                  <th className="px-1 py-2">{t("dashboard.bulkShiftType")}</th>
-                  <th className="px-1 py-2">{t("dashboard.bulkShiftFrom")}</th>
-                  <th className="px-1 py-2">{t("dashboard.bulkShiftTo")}</th>
-                  <th className="px-1 py-2 text-center">
+                  <th className="w-[6rem] px-1 py-2">{presetColumnLabel}</th>
+                  <th className="min-w-[7rem] px-1 py-2">
                     {t("dashboard.bulkShiftQualification")}
                   </th>
+                  <th className="w-[7rem] px-1 py-2">{t("dashboard.bulkShiftFrom")}</th>
+                  <th className="w-[7rem] px-1 py-2">{t("dashboard.bulkShiftTo")}</th>
+                  <th className="px-1 py-2">{t("dashboard.bulkShiftEmployee")}</th>
                   <th className="px-1 py-2" aria-hidden />
                 </tr>
               </thead>
@@ -889,17 +958,18 @@ export function DashboardBulkShiftModal({
                     row={row}
                     weekday={weekday}
                     employees={employees}
-                    shiftTypes={shiftTypes}
-                    staffingRules={staffingRules}
-                    areaId={dialog.areaId}
+                    assignmentPresets={assignmentPresets}
+                    orgShiftTypes={shiftTypes}
+                    areaQualifications={areaQualifications}
                     dateISO={dialog.date}
                     areaExistingAssignments={areaExistingAssignments}
                     allRows={rows}
-                    qualificationNameById={qualificationNameById}
                     profileQualificationIds={profileQualificationIds}
                     disabled={loading || saving}
                     onChange={(patch) => updateRow(row.id, patch)}
                     onDelete={() => deleteRow(row.id)}
+                    presetPlaceholder={presetPlaceholder}
+                    qualificationPlaceholder={qualificationPlaceholder}
                   />
                 ))}
               </tbody>
@@ -921,7 +991,7 @@ export function DashboardBulkShiftModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+        <div className={settingsModalFooterClass()}>
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </Button>
@@ -936,7 +1006,7 @@ export function DashboardBulkShiftModal({
 
         {alertMessage ? (
           <div
-            className="absolute inset-0 z-[112] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+            className={dashboardNestedModalOverlayClass()}
             role="presentation"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) {
@@ -948,7 +1018,7 @@ export function DashboardBulkShiftModal({
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="dashboard-bulk-shift-validation-message"
-              className="relative z-[113] w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-2xl"
+              className={dashboardAlertDialogClass()}
               onMouseDown={(event) => event.stopPropagation()}
             >
               <p
@@ -957,7 +1027,7 @@ export function DashboardBulkShiftModal({
               >
                 {alertMessage}
               </p>
-              <div className="mt-5 flex justify-end">
+              <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0 sm:justify-end")}>
                 <Button
                   type="button"
                   variant="primary"

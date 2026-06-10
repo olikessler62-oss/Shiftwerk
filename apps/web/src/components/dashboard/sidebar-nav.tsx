@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 
 const NAV_LINKS = [
   { href: "/dashboard", labelKey: "nav.dashboard" },
@@ -43,6 +44,7 @@ export function SidebarNav({ onNavigate }: Props) {
   const rollenOpen = searchParams.get("rollen") === "1";
   const schichtartenOpen = searchParams.get("schichtarten") === "1";
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
+  const sonderzuschlaegeOpen = searchParams.get("sonderzuschlaege") === "1";
   const abwesenheitenOpen = searchParams.get("abwesenheiten") === "1";
   const settingsModalOpen =
     standorteOpen ||
@@ -50,6 +52,7 @@ export function SidebarNav({ onNavigate }: Props) {
     rollenOpen ||
     schichtartenOpen ||
     qualifikationenOpen ||
+    sonderzuschlaegeOpen ||
     abwesenheitenOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [SETTINGS_SECTION_ID]: settingsModalOpen,
@@ -74,6 +77,7 @@ export function SidebarNav({ onNavigate }: Props) {
       | "rollen"
       | "schichtarten"
       | "qualifikationen"
+      | "sonderzuschlaege"
       | "abwesenheiten"
   ) {
     const params = new URLSearchParams({ [flag]: "1" });
@@ -96,6 +100,15 @@ export function SidebarNav({ onNavigate }: Props) {
       labelKey: "nav.qualifications",
       open: qualifikationenOpen,
     },
+    ...(COMPENSATION_SURCHARGES_UI_ENABLED
+      ? [
+          {
+            flag: "sonderzuschlaege" as const,
+            labelKey: "nav.surcharges" as const,
+            open: sonderzuschlaegeOpen,
+          },
+        ]
+      : []),
     {
       flag: "abwesenheiten" as const,
       labelKey: "nav.absences",

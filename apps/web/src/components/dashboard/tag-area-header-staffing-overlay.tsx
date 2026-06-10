@@ -11,7 +11,6 @@ import { cn } from "@/lib/cn";
 
 type Props = {
   entries: TagAreaHeaderStaffingEntry[];
-  shiftTypeNameById: ReadonlyMap<string, string>;
   tone?: "default" | "past" | "inactive";
 };
 
@@ -32,17 +31,12 @@ function staffingTextClass(
 
 export function TagAreaHeaderStaffingOverlay({
   entries,
-  shiftTypeNameById,
   tone = "default",
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [display, setDisplay] = useState<StaffingHeaderDisplay>(() =>
     entries.length > 0
-      ? resolveStaffingHeaderDisplay(
-          entries,
-          shiftTypeNameById,
-          Number.POSITIVE_INFINITY
-        )
+      ? resolveStaffingHeaderDisplay(entries, Number.POSITIVE_INFINITY)
       : EMPTY_DISPLAY
   );
 
@@ -51,7 +45,7 @@ export function TagAreaHeaderStaffingOverlay({
       entries
         .map(
           (entry) =>
-            `${entry.shiftTypeId}:${entry.assigned}/${entry.required}:${entry.label}`
+            `${entry.serviceHourId}:${entry.assigned}/${entry.required}:${entry.label}`
         )
         .join("|"),
     [entries]
@@ -64,13 +58,9 @@ export function TagAreaHeaderStaffingOverlay({
     }
 
     setDisplay(
-      resolveStaffingHeaderDisplay(
-        entries,
-        shiftTypeNameById,
-        Number.POSITIVE_INFINITY
-      )
+      resolveStaffingHeaderDisplay(entries, Number.POSITIVE_INFINITY)
     );
-  }, [entries, entryKey, shiftTypeNameById]);
+  }, [entries, entryKey]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -81,7 +71,6 @@ export function TagAreaHeaderStaffingOverlay({
       setDisplay(
         resolveStaffingHeaderDisplay(
           entries,
-          shiftTypeNameById,
           container.clientWidth,
           measureStaffingHeaderText
         )
@@ -93,7 +82,7 @@ export function TagAreaHeaderStaffingOverlay({
     const observer = new ResizeObserver(updateDisplay);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [entries, entryKey, shiftTypeNameById]);
+  }, [entries, entryKey]);
 
   if (entries.length === 0) return null;
 
@@ -134,7 +123,7 @@ export function TagAreaHeaderStaffingOverlay({
       {display.mode === "segments" ? (
         <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden">
           {display.segments.map((segment, segmentIndex) => (
-            <Fragment key={segment.shiftTypeId}>
+            <Fragment key={segment.serviceHourId}>
               {segmentIndex > 0 ? (
                 <span
                   className={cn(

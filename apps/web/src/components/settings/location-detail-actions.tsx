@@ -1,15 +1,17 @@
 "use client";
 
 import type {
+  AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
   LocationAreaServiceHour,
   LocationAreaStaffing,
 } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
+import { areaPlanningModeLabel } from "./area-planning-mode-field";
 import { SettingsActionRow } from "./settings-list-ui";
 
-type DetailPanel = "serviceHours" | "staffing";
+type DetailPanel = "serviceHours" | "staffing" | "shiftTemplates";
 
 type Props = {
   selectedLocation: Location | null;
@@ -18,6 +20,8 @@ type Props = {
   serviceHours?: LocationAreaServiceHour[];
   /** Geladen: [] = kein Personalbedarf; undefined = noch nicht geladen */
   staffing?: LocationAreaStaffing[];
+  /** Geladen: [] = keine Schichtvorlagen; undefined = noch nicht geladen */
+  shiftTemplates?: AreaShiftTemplateWithBreaks[];
   disabled?: boolean;
   onOpen: (panel: DetailPanel) => void;
 };
@@ -71,6 +75,26 @@ function StaffingIcon({ className }: { className?: string }) {
   );
 }
 
+function ShiftTemplateIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M8 2v4M16 2v4M3 10h18" />
+    </svg>
+  );
+}
+
 function AreaSummary({
   location,
   area,
@@ -78,12 +102,18 @@ function AreaSummary({
   location: Location;
   area: LocationArea;
 }) {
+  const t = useTranslations();
+
   return (
     <div className="rounded-lg border border-border/80 bg-background px-3 py-3">
       <p className="min-w-0 truncate text-sm font-semibold text-foreground">
         {area.name}
       </p>
       <p className="mt-0.5 truncate text-xs text-muted">{location.name}</p>
+      <p className="mt-1 text-xs text-muted">
+        {t("locations.planningModeLabel")}:{" "}
+        {areaPlanningModeLabel(area.planning_mode, t)}
+      </p>
     </div>
   );
 }
@@ -93,6 +123,7 @@ export function LocationDetailActions({
   selectedArea,
   serviceHours,
   staffing,
+  shiftTemplates,
   disabled = false,
   onOpen,
 }: Props) {
@@ -100,10 +131,13 @@ export function LocationDetailActions({
   const areaActionsDisabled = disabled || !selectedLocation || !selectedArea;
   const serviceHoursLoaded = serviceHours !== undefined;
   const staffingLoaded = staffing !== undefined;
+  const shiftTemplatesLoaded = shiftTemplates !== undefined;
   const hasServiceHours = serviceHoursLoaded && serviceHours.length > 0;
   const hasStaffing =
     staffingLoaded &&
     staffing.some((rule) => rule.required_count > 0);
+  const hasShiftTemplates =
+    shiftTemplatesLoaded && (shiftTemplates?.length ?? 0) > 0;
   const serviceHoursHint = !serviceHoursLoaded
     ? null
     : hasServiceHours
@@ -114,6 +148,11 @@ export function LocationDetailActions({
     : hasStaffing
       ? configuredHint(t("locations.actionStaffingHint"))
       : t("locations.actionStaffingHint");
+  const shiftTemplatesHint = !shiftTemplatesLoaded
+    ? null
+    : hasShiftTemplates
+      ? configuredHint(t("locations.actionShiftTemplatesConfigured"))
+      : t("locations.actionShiftTemplatesHint");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2">
@@ -126,6 +165,14 @@ export function LocationDetailActions({
       )}
 
       <div className="mt-2 rounded-lg border border-border/80 bg-background px-1 py-1">
+        <SettingsActionRow
+          icon={<ShiftTemplateIcon />}
+          label={t("locations.panelShiftTemplates")}
+          hint={shiftTemplatesHint}
+          disabled={areaActionsDisabled}
+          onClick={() => onOpen("shiftTemplates")}
+        />
+        <div className="mx-2 border-t border-border/60" />
         <SettingsActionRow
           icon={<ServiceHoursIcon />}
           label={t("locations.panelServiceHours")}

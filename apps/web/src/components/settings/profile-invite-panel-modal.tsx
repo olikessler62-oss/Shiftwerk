@@ -3,7 +3,15 @@
 import { useEffect } from "react";
 import { InviteForm } from "@/components/settings/invite-form";
 import { useTranslations } from "@/i18n/locale-provider";
-import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { cn } from "@/lib/cn";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsSubModalDialogClass,
+  settingsSubModalOverlayClass,
+} from "./settings-list-ui";
 import { Button, CloseIcon, IconButton } from "@/components/ui";
 
 type Props = {
@@ -29,7 +37,7 @@ export function ProfileInvitePanelModal({
 
   return (
     <div
-      className="absolute inset-0 z-[60] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+      className={settingsSubModalOverlayClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -39,10 +47,15 @@ export function ProfileInvitePanelModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-invite-panel-title"
-        className="relative z-[61] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={settingsSubModalDialogClass("lg")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3 id="profile-invite-panel-title" className={SETTINGS_MODAL_TITLE_CLASS}>
             {t("profiles.inviteEmployeeTitle")}
           </h3>
@@ -56,7 +69,7 @@ export function ProfileInvitePanelModal({
           </IconButton>
         </div>
 
-        <div className="px-5 py-4">
+        <div className={settingsModalBodyPaddingClass()}>
           <InviteForm
             employeeCount={employeeCount}
             embedded
@@ -64,7 +77,7 @@ export function ProfileInvitePanelModal({
           />
         </div>
 
-        <div className="flex justify-end border-t border-border px-5 py-4">
+        <div className={settingsModalFooterClass()}>
           <Button type="button" variant="outline" onClick={onClose}>
             <CloseIcon />
             {t("common.close")}

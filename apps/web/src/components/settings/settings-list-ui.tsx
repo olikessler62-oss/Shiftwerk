@@ -18,15 +18,38 @@ export {
 
 export const SETTINGS_MODAL_TITLE_CLASS = "text-xl font-semibold text-foreground";
 
+export {
+  SETTINGS_MODAL_MAX_WIDTH,
+  settingsConfirmDialogClass,
+  settingsMasterDetailLayoutClass,
+  settingsMasterDetailListsClass,
+  settingsModalBackdropClass,
+  settingsModalBodyPaddingClass,
+  settingsModalDialogClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsNestedModalDialogClass,
+  settingsNestedModalOverlayClass,
+  settingsResponsiveTableWrapClass,
+  settingsResponsiveWindowFieldsClass,
+  settingsModalRootClass,
+  settingsSubModalDialogClass,
+  settingsSubModalOverlayClass,
+  dashboardAlertDialogClass,
+  dashboardModalBackdropClass,
+  dashboardModalDialogClass,
+  dashboardNestedModalOverlayClass,
+} from "./settings-modal-shell";
+
 export const SETTINGS_LIST_SCROLL_CLASS =
-  "max-h-[min(calc(2rem+13.5rem),calc(100dvh-18rem))] overflow-y-auto";
+  "max-h-[min(calc(2rem+13.5rem),calc(100dvh-18rem))] overflow-auto";
 
 export const SETTINGS_LIST_SCROLL_COMPACT_CLASS =
-  "h-[calc(2rem+11rem)] min-h-[calc(2rem+11rem)] max-h-[calc(2rem+11rem)] overflow-y-auto";
+  "h-[calc(2rem+11rem)] min-h-[calc(2rem+11rem)] max-h-[calc(2rem+11rem)] overflow-auto";
 
 /** Tabellenkopf (~2.5rem) + 4 Datenzeilen à ~2.75rem — Abwesenheiten-Liste */
 export const SETTINGS_ABSENCES_LIST_SCROLL_CLASS =
-  "max-h-[calc(2.5rem+11rem)] overflow-y-auto";
+  "max-h-[calc(2.5rem+11rem)] overflow-auto";
 
 /** Tabellenkopf + max. 6 Zeilen — Bulk-Schichtzuweisung */
 export const BULK_SHIFT_LIST_SCROLL_CLASS =
@@ -54,6 +77,29 @@ export function settingsColumnHeaderClass(
       : align === "right"
         ? "text-right"
         : "text-left"
+  );
+}
+
+/** Scroll-Container für Tabellenlisten — ein Scrollport, kein overflow-x-Wrapper (sticky thead). */
+export function settingsScrollableTableListClass(className?: string) {
+  return cn(
+    "min-h-0 overflow-auto rounded-md border border-border bg-surface",
+    className
+  );
+}
+
+export function settingsStickyIndicatorHeaderClass(className?: string) {
+  return cn("sticky top-0 z-[2] w-1 bg-subtle p-0", className);
+}
+
+export function settingsStickyColumnHeaderClass(
+  align: "left" | "center" | "right" = "left",
+  className?: string
+) {
+  return cn(
+    settingsColumnHeaderClass(align),
+    "sticky top-0 z-[1] bg-subtle",
+    className
   );
 }
 
@@ -299,7 +345,7 @@ export function SettingsActionBar({
   destructive,
 }: SettingsActionBarProps) {
   return (
-    <div className="flex h-11 shrink-0 flex-nowrap items-center gap-1.5 border-t border-border bg-subtle px-2">
+    <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-1.5 border-t border-border bg-subtle px-2 py-1.5 sm:h-11 sm:flex-nowrap sm:py-0">
       {primary}
       {secondary}
       {destructive ? (

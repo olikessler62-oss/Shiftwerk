@@ -1,10 +1,22 @@
 /** Reine Hilfsfunktionen für Client-Komponenten (kein @schichtwerk/database-Import). */
 
+import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
 import { isPastCalendarDate } from "@/lib/dates";
 import { isGermanPublicHoliday } from "@/lib/german-public-holidays";
-import { shortenShiftTypeDisplayName } from "@/lib/profile-availability-label";
+import { formatTimeRange } from "@/lib/planning-utils";
+import type { AreaShiftTemplate } from "@schichtwerk/types";
 
 export const STAFFING_HOLIDAY_WEEKDAY = 7;
+
+const WEEKDAY_KEYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
 
 export function weekdayIndexFromDate(isoDate: string): number {
   const [y, m, d] = isoDate.split("-").map(Number);
@@ -13,6 +25,7 @@ export function weekdayIndexFromDate(isoDate: string): number {
 }
 
 export type AreaServiceHourRef = {
+  id?: string;
   location_area_id: string;
   weekday: number;
   start_time?: string;
@@ -30,15 +43,161 @@ function normalizeRequiredCount(value: number | string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function parseTimeToMinutes(value: string): number | null {
+  const trimmed = value.trim().slice(0, 5);
+  if (!/^\d{1,2}:\d{2}$/.test(trimmed)) return null;
+  const [h, m] = trimmed.split(":").map(Number);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
+function shiftFitsInServiceHourWindow(
+  startTime: string,
+  endTime: string,
+  windowStart: string,
+  windowEnd: string
+): boolean {
+  const startMin = parseTimeToMinutes(startTime);
+  const endMin = parseTimeToMinutes(endTime);
+  const windowStartMin = parseTimeToMinutes(windowStart);
+  const windowEndMin = parseTimeToMinutes(windowEnd);
+  if (
+    startMin == null ||
+    endMin == null ||
+    windowStartMin == null ||
+    windowEndMin == null
+  ) {
+    return false;
+  }
+  if (endMin <= startMin) return false;
+  return startMin >= windowStartMin && endMin <= windowEndMin;
+}
+
+export function serviceHourIdsForAreaOnDate(
+  serviceHours: AreaServiceHourRef[],
+  areaId: string,
+  dateISO: string
+): Set<string> {
+  const weekday = serviceWeekdayForDate(dateISO);
+  return new Set(
+    serviceHours
+      .filter(
+        (hour) =>
+          hour.location_area_id === areaId &&
+          normalizeWeekday(hour.weekday) === weekday &&
+          hour.id
+      )
+      .map((hour) => hour.id as string)
+  );
+}
+
+export function findServiceHourIdForShift(
+  serviceHours: AreaServiceHourRef[],
+  areaId: string,
+  dateISO: string,
+  startTime: string,
+  endTime: string
+): string | null {
+  const weekday = serviceWeekdayForDate(dateISO);
+  for (const hour of serviceHours) {
+    if (
+      hour.location_area_id !== areaId ||
+      normalizeWeekday(hour.weekday) !== weekday ||
+      !hour.id ||
+      !hour.start_time ||
+      !hour.end_time
+    ) {
+      continue;
+    }
+    if (
+      shiftFitsInServiceHourWindow(
+        startTime,
+        endTime,
+        hour.start_time,
+        hour.end_time
+      )
+    ) {
+      return hour.id;
+    }
+  }
+  return null;
+}
+
+export function formatServiceHourLabel(
+  hour: Pick<AreaServiceHourRef, "weekday" | "start_time" | "end_time">,
+  weekdayLabel: (weekday: number) => string
+): string {
+  const day =
+    hour.weekday === STAFFING_HOLIDAY_WEEKDAY
+      ? weekdayLabel(STAFFING_HOLIDAY_WEEKDAY)
+      : weekdayLabel(hour.weekday);
+  const from = (hour.start_time ?? "00:00").slice(0, 5);
+  const to = (hour.end_time ?? "00:00").slice(0, 5);
+  return `${day}, ${formatTimeRange(from, to)}`;
+}
+
+type ServiceHourShiftTemplateRef = Pick<
+  AreaShiftTemplate,
+  "id" | "name" | "start_time" | "end_time"
+>;
+
+export function shiftTemplateNameForServiceHour(
+  hour: Pick<AreaServiceHourRef, "start_time" | "end_time">,
+  templates: readonly ServiceHourShiftTemplateRef[]
+): string | null {
+  const templateId = resolvePresetIdFromTimes(
+    hour.start_time ?? "00:00",
+    hour.end_time ?? "00:00",
+    templates
+  );
+  if (!templateId) return null;
+  return templates.find((template) => template.id === templateId)?.name ?? null;
+}
+
+/** Servicezeit in der Personalbedarf-Liste, optional mit passender Schichtvorlage. */
+export function formatServiceHourStaffingListLabel(
+  hour: Pick<AreaServiceHourRef, "weekday" | "start_time" | "end_time">,
+  weekdayLabel: (weekday: number) => string,
+  templates?: readonly ServiceHourShiftTemplateRef[]
+): string {
+  const base = formatServiceHourLabel(hour, weekdayLabel);
+  const templateName = templates
+    ? shiftTemplateNameForServiceHour(hour, templates)
+    : null;
+  return templateName ? `${base} (${templateName})` : base;
+}
+
+export function staffingQualificationLabelsForHour(
+  serviceHourId: string,
+  staffing: readonly { service_hour_id: string; qualification_id: string; required_count: number }[],
+  qualificationNameById: ReadonlyMap<string, string>
+): string[] {
+  return staffing
+    .filter(
+      (rule) =>
+        rule.service_hour_id === serviceHourId && rule.required_count > 0
+    )
+    .map((rule) => {
+      const name = qualificationNameById.get(rule.qualification_id);
+      if (!name) return null;
+      return { name, count: rule.required_count };
+    })
+    .filter((entry): entry is { name: string; count: number } => !!entry)
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    )
+    .map(({ count, name }) => `${count} ${name}`);
+}
+
 export function isAreaOpenOnWeekday(
   serviceHours: AreaServiceHourRef[],
   areaId: string,
   weekday: number
 ): boolean {
   return serviceHours.some(
-    (h) =>
-      h.location_area_id === areaId &&
-      normalizeWeekday(h.weekday) === weekday
+    (hour) =>
+      hour.location_area_id === areaId &&
+      normalizeWeekday(hour.weekday) === weekday
   );
 }
 
@@ -80,8 +239,7 @@ export function isAnyAreaOpenOnDate(
 
 export type StaffingRule = {
   location_area_id: string;
-  shift_type_id: string;
-  weekday: number;
+  service_hour_id: string;
   required_count: number;
 };
 
@@ -92,7 +250,7 @@ export function areaHasServiceHours(
   return serviceHours.some((hour) => hour.location_area_id === areaId);
 }
 
-/** Personalbedarf für einen Bereich an mindestens einem Wochentag. */
+/** Personalbedarf für einen Bereich an mindestens einem Servicezeit-Fenster. */
 export function areaHasStaffingRequirement(
   rules: StaffingRule[],
   areaId: string
@@ -111,12 +269,12 @@ export function areaHasStaffingRequirementOnDate(
   dateISO: string,
   serviceHours: AreaServiceHourRef[]
 ): boolean {
-  const weekday = serviceWeekdayForDate(dateISO);
-  if (!isAreaOpenOnWeekday(serviceHours, areaId, weekday)) return false;
+  const hourIds = serviceHourIdsForAreaOnDate(serviceHours, areaId, dateISO);
+  if (hourIds.size === 0) return false;
   return rules.some(
     (rule) =>
       rule.location_area_id === areaId &&
-      normalizeWeekday(rule.weekday) === weekday &&
+      hourIds.has(rule.service_hour_id) &&
       normalizeRequiredCount(rule.required_count) > 0
   );
 }
@@ -187,22 +345,36 @@ export function isPastAreaWorkDayCell(
   );
 }
 
-/** Personalbedarf und Einsatz je Schichtart für Tag-Bereich-Header (Dashboard). */
+export type ServiceHourStaffingRef = {
+  id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+};
+
+export type TagAreaHeaderStaffingEntry = {
+  serviceHourId: string;
+  label: string;
+  assigned: number;
+  required: number;
+};
+
+/** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header (Dashboard). */
 export function tagAreaHeaderStaffingEntriesInCalendar(
   rules: StaffingRule[],
   areaId: string,
   dateISO: string,
   serviceHours: AreaServiceHourRef[],
-  shiftTypes: ShiftTypeStaffingRef[],
-  assignedShifts: { shiftTypeId: string }[]
+  assignedShifts: { startTime: string; endTime: string }[],
+  options: { formatLabel?: (hour: ServiceHourStaffingRef) => string } = {}
 ): TagAreaHeaderStaffingEntry[] {
   return tagAreaHeaderStaffingEntries(
     rules,
     areaId,
     dateISO,
     serviceHours,
-    shiftTypes,
-    assignedShifts
+    assignedShifts,
+    options
   );
 }
 
@@ -213,16 +385,10 @@ export function hasStaffingRequirementOnDate(
   dateISO: string,
   serviceHours: AreaServiceHourRef[]
 ): boolean {
-  const weekday = serviceWeekdayForDate(dateISO);
   for (const areaId of areaIds) {
-    if (!isAreaOpenOnWeekday(serviceHours, areaId, weekday)) continue;
-    const hasRule = rules.some(
-      (rule) =>
-        rule.location_area_id === areaId &&
-        normalizeWeekday(rule.weekday) === weekday &&
-        normalizeRequiredCount(rule.required_count) > 0
-    );
-    if (hasRule) return true;
+    if (areaHasStaffingRequirementOnDate(rules, areaId, dateISO, serviceHours)) {
+      return true;
+    }
   }
   return false;
 }
@@ -233,89 +399,101 @@ export function requiredStaffForAreaOnDate(
   dateISO: string,
   serviceHours: AreaServiceHourRef[]
 ): number {
-  const weekday = serviceWeekdayForDate(dateISO);
-  if (!isAreaOpenOnWeekday(serviceHours, areaId, weekday)) return 0;
+  const hourIds = serviceHourIdsForAreaOnDate(serviceHours, areaId, dateISO);
+  if (hourIds.size === 0) return 0;
   return rules
     .filter(
-      (r) =>
-        r.location_area_id === areaId && normalizeWeekday(r.weekday) === weekday
+      (rule) =>
+        rule.location_area_id === areaId && hourIds.has(rule.service_hour_id)
     )
-    .reduce((sum, r) => sum + normalizeRequiredCount(r.required_count), 0);
+    .reduce((sum, rule) => sum + normalizeRequiredCount(rule.required_count), 0);
 }
 
-export type ShiftTypeStaffingRef = {
-  id: string;
-  name: string;
-  start_time: string;
-};
+function defaultServiceHourLabel(hour: ServiceHourStaffingRef): string {
+  const day =
+    hour.weekday === STAFFING_HOLIDAY_WEEKDAY
+      ? "FT"
+      : WEEKDAY_KEYS[hour.weekday]?.slice(0, 2).toUpperCase() ?? "?";
+  return `${day} ${formatTimeRange(hour.start_time, hour.end_time)}`;
+}
 
-export type TagAreaHeaderStaffingEntry = {
-  shiftTypeId: string;
-  label: string;
-  assigned: number;
-  required: number;
-};
-
-/** Personalbedarf und Einsatz je Schichtart für Tag-Bereich-Header. */
+/** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header. */
 export function tagAreaHeaderStaffingEntries(
   rules: StaffingRule[],
   areaId: string,
   dateISO: string,
   serviceHours: AreaServiceHourRef[],
-  shiftTypes: ShiftTypeStaffingRef[],
-  assignedShifts: { shiftTypeId: string }[],
-  options: { shortenLabels?: boolean } = {}
+  assignedShifts: { startTime: string; endTime: string }[],
+  options: { formatLabel?: (hour: ServiceHourStaffingRef) => string } = {}
 ): TagAreaHeaderStaffingEntry[] {
-  const { shortenLabels = true } = options;
+  const formatLabel = options.formatLabel ?? defaultServiceHourLabel;
   const weekday = serviceWeekdayForDate(dateISO);
-  if (!isAreaOpenOnWeekday(serviceHours, areaId, weekday)) return [];
+  const dayHours = serviceHours
+    .filter(
+      (hour) =>
+        hour.location_area_id === areaId &&
+        normalizeWeekday(hour.weekday) === weekday &&
+        hour.id &&
+        hour.start_time &&
+        hour.end_time
+    )
+    .map(
+      (hour): ServiceHourStaffingRef => ({
+        id: hour.id as string,
+        weekday: normalizeWeekday(hour.weekday),
+        start_time: hour.start_time!.slice(0, 5),
+        end_time: hour.end_time!.slice(0, 5),
+      })
+    )
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
-  const requiredByType = new Map<string, number>();
+  if (dayHours.length === 0) return [];
+
+  const requiredByHour = new Map<string, number>();
   for (const rule of rules) {
-    if (
-      rule.location_area_id !== areaId ||
-      normalizeWeekday(rule.weekday) !== weekday
-    ) {
-      continue;
-    }
+    if (rule.location_area_id !== areaId) continue;
     const count = normalizeRequiredCount(rule.required_count);
     if (count <= 0) continue;
-    requiredByType.set(
-      rule.shift_type_id,
-      (requiredByType.get(rule.shift_type_id) ?? 0) + count
+    requiredByHour.set(
+      rule.service_hour_id,
+      (requiredByHour.get(rule.service_hour_id) ?? 0) + count
     );
   }
 
-  const assignedByType = new Map<string, number>();
+  const assignedByHour = new Map<string, number>();
   for (const shift of assignedShifts) {
-    assignedByType.set(
-      shift.shiftTypeId,
-      (assignedByType.get(shift.shiftTypeId) ?? 0) + 1
+    const hourId = findServiceHourIdForShift(
+      serviceHours,
+      areaId,
+      dateISO,
+      shift.startTime,
+      shift.endTime
     );
+    if (!hourId) continue;
+    assignedByHour.set(hourId, (assignedByHour.get(hourId) ?? 0) + 1);
   }
-
-  const shiftTypeById = new Map(shiftTypes.map((type) => [type.id, type]));
-  const sortIndex = new Map(shiftTypes.map((type, index) => [type.id, index]));
 
   const entries: TagAreaHeaderStaffingEntry[] = [];
-  for (const [shiftTypeId, required] of requiredByType) {
+  for (const hour of dayHours) {
+    const required = requiredByHour.get(hour.id) ?? 0;
     if (required <= 0) continue;
-    const type = shiftTypeById.get(shiftTypeId);
     entries.push({
-      shiftTypeId,
-      label: shortenLabels
-        ? shortenShiftTypeDisplayName(type?.name ?? "Schicht")
-        : (type?.name ?? "Schicht").trim(),
-      assigned: assignedByType.get(shiftTypeId) ?? 0,
+      serviceHourId: hour.id,
+      label: formatLabel(hour),
+      assigned: assignedByHour.get(hour.id) ?? 0,
       required,
     });
   }
 
-  entries.sort((a, b) => {
-    const aIndex = sortIndex.get(a.shiftTypeId) ?? Number.MAX_SAFE_INTEGER;
-    const bIndex = sortIndex.get(b.shiftTypeId) ?? Number.MAX_SAFE_INTEGER;
-    return aIndex - bIndex;
-  });
-
   return entries;
+}
+
+export function weekdayLabelFromIndex(
+  weekday: number,
+  t: (key: string) => string
+): string {
+  if (weekday === STAFFING_HOLIDAY_WEEKDAY) {
+    return t("locations.weekdays.holiday");
+  }
+  return t(`locations.weekdays.${WEEKDAY_KEYS[weekday]!}`);
 }

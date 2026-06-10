@@ -8,6 +8,7 @@ import {
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
 import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
+import { findAreaShiftTemplateByTimes } from "@/lib/dashboard-assignment-presets";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-calendar";
 
@@ -44,10 +45,11 @@ export default async function DashboardPage({
   const from = dates[0];
   const to = dates[6];
 
-  let [shiftTypes, qualifications, roles, profiles, locations] =
+  let [shiftTypes, qualifications, compensationSurchargeTypes, roles, profiles, locations] =
     await Promise.all([
       db.loadShiftTypesWithBreaks(orgId),
       db.listQualifications(orgId),
+      db.listCompensationSurchargeTypes(orgId),
       db.listRoles(orgId),
       db.listOrganizationProfiles(orgId),
       db.listLocationsForDashboard(orgId, from, to),
@@ -62,20 +64,21 @@ export default async function DashboardPage({
   const selectedLocation =
     locations.find((l) => l.id === selectedLocationId) ?? null;
 
-  const [areas, staffingRules, serviceHours, shiftRows] = selectedLocationId
+  const [areas, staffingRules, serviceHours, shiftRows, areaShiftTemplates] =
+    selectedLocationId
     ? await Promise.all([
         db.listLocationAreasForDashboard(selectedLocationId, from, to),
         db.listLocationAreaStaffing(selectedLocationId),
         db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),
         db.listDashboardShifts(orgId, from, to, selectedLocationId),
+        db.listAreaShiftTemplatesWithBreaksForLocation(selectedLocationId).catch(
+          () => []
+        ),
       ])
-    : [[], [], [], []];
+    : [[], [], [], [], []];
 
   if (selectedLocationId) {
-    shiftTypes = await db.loadShiftTypesWithBreaksForDashboard(
-      orgId,
-      staffingRules
-    );
+    shiftTypes = await db.loadShiftTypesWithBreaksForDashboard(orgId);
   }
 
   const cards: DashboardShiftCard[] = [];
@@ -88,6 +91,15 @@ export default async function DashboardPage({
     const endFromTs = s.ends_at
       ? s.ends_at.slice(11, 16)
       : type?.end_time?.slice(0, 5) ?? "00:00";
+    const areaTemplate =
+      !type && s.location_area_id
+        ? findAreaShiftTemplateByTimes(
+            s.location_area_id,
+            startFromTs,
+            endFromTs,
+            areaShiftTemplates
+          )
+        : null;
 
     cards.push({
       id: s.id,
@@ -95,8 +107,8 @@ export default async function DashboardPage({
       locationAreaId: s.location_area_id,
       shiftTypeId: s.shift_type_id,
       employeeId: s.employee_id,
-      shiftName: type?.name ?? "",
-      color: type?.color ?? profile?.color ?? "#64748b",
+      shiftName: type?.name ?? areaTemplate?.name ?? "",
+      color: type?.color ?? areaTemplate?.color ?? profile?.color ?? "#64748b",
       startTime: startFromTs,
       endTime: endFromTs,
       employeeName: profile?.full_name ?? "Unbekannt",
@@ -117,7 +129,9 @@ export default async function DashboardPage({
         serviceHours={serviceHours}
         shifts={cards}
         shiftTypes={shiftTypes}
+        areaShiftTemplates={areaShiftTemplates}
         qualifications={qualifications}
+        compensationSurchargeTypes={compensationSurchargeTypes}
         roles={roles}
         profiles={profiles}
         locations={locations}

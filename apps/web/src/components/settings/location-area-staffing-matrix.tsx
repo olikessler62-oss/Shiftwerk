@@ -10,19 +10,22 @@ import {
 } from "react";
 import { fetchLocationStaffingEditor } from "@/app/actions/location-staffing";
 import {
-  isStaffingDayEnabled,
-  STAFFING_HOLIDAY_WEEKDAY,
+  formatServiceHourStaffingListLabel,
+  staffingQualificationLabelsForHour,
+  weekdayLabelFromIndex,
 } from "@/lib/location-staffing-client";
 import type {
+  AreaShiftTemplateWithBreaks,
   LocationArea,
+  LocationAreaServiceHour,
   LocationAreaStaffing,
   Qualification,
-  ShiftType,
 } from "@schichtwerk/types";
-import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import {
   SettingsEmptyState,
-  settingsColumnHeaderClass,
+  settingsScrollableTableListClass,
+  settingsStickyColumnHeaderClass,
+  settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -32,57 +35,53 @@ import { useTranslations } from "@/i18n/locale-provider";
 import { Alert } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-const WEEKDAY_KEYS = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-] as const;
-
 const LIST_SCROLL_FALLBACK =
-  "h-[calc(1.75rem+10rem)] min-h-[calc(1.75rem+10rem)] overflow-y-auto";
+  "h-[calc(1.75rem+10rem)] min-h-[calc(1.75rem+10rem)] overflow-auto";
 
 export type LocationAreaStaffingMatrixHandle = {
   reload: () => void;
-  applyStaffing: (staffing: LocationAreaStaffing[]) => void;
+  applyStaffing: (
+    staffing: LocationAreaStaffing[],
+    serviceHours?: LocationAreaServiceHour[]
+  ) => void;
 };
 
 export type StaffingEditorData = {
-  shiftTypes: ShiftType[];
+  serviceHours: LocationAreaServiceHour[];
   qualifications: Qualification[];
   staffing: LocationAreaStaffing[];
+  shiftTemplates?: AreaShiftTemplateWithBreaks[];
 };
 
 type Props = {
   locationId: string;
   area: LocationArea;
-  serviceHours: AreaServiceHourRef[];
   initialEditorData?: StaffingEditorData;
-  selectedShiftTypeId: string | null;
-  onSelectShiftType: (shiftTypeId: string | null) => void;
-  onEditShiftType?: (shiftTypeId: string) => void;
+  selectedServiceHourId: string | null;
+  onSelectServiceHour: (serviceHourId: string | null) => void;
+  onEditServiceHour?: (serviceHourId: string) => void;
   onDataLoaded?: (data: StaffingEditorData) => void;
   embedded?: boolean;
   listScrollClassName?: string;
   onLoadingChange?: (loading: boolean) => void;
 };
 
-function staffingKey(shiftTypeId: string, weekday: number) {
-  return `${shiftTypeId}:${weekday}`;
-}
-
 function buildCountsFromData(
-  staffing: { shift_type_id: string; weekday: number; required_count: number }[]
+  staffing: LocationAreaStaffing[]
 ): Record<string, number> {
   const next: Record<string, number> = {};
   for (const rule of staffing) {
-    const key = staffingKey(rule.shift_type_id, rule.weekday);
-    next[key] = (next[key] ?? 0) + rule.required_count;
+    next[rule.service_hour_id] =
+      (next[rule.service_hour_id] ?? 0) + rule.required_count;
   }
   return next;
+}
+
+function sortServiceHours(hours: LocationAreaServiceHour[]): LocationAreaServiceHour[] {
+  return [...hours].sort((a, b) => {
+    if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+    return a.start_time.localeCompare(b.start_time);
+  });
 }
 
 export const LocationAreaStaffingMatrix = forwardRef<
@@ -92,11 +91,10 @@ export const LocationAreaStaffingMatrix = forwardRef<
   {
     locationId,
     area,
-    serviceHours,
     initialEditorData,
-    selectedShiftTypeId,
-    onSelectShiftType,
-    onEditShiftType,
+    selectedServiceHourId,
+    onSelectServiceHour,
+    onEditServiceHour,
     onDataLoaded,
     embedded = false,
     listScrollClassName,
@@ -106,42 +104,59 @@ export const LocationAreaStaffingMatrix = forwardRef<
 ) {
   const t = useTranslations();
   const [error, setError] = useState<string | null>(null);
-  const [shiftTypes, setShiftTypes] = useState<ShiftType[]>(
-    () => initialEditorData?.shiftTypes ?? []
+  const [serviceHours, setServiceHours] = useState<LocationAreaServiceHour[]>(
+    () => initialEditorData?.serviceHours ?? []
   );
   const [counts, setCounts] = useState<Record<string, number>>(() =>
     initialEditorData ? buildCountsFromData(initialEditorData.staffing) : {}
+  );
+  const [staffing, setStaffing] = useState<LocationAreaStaffing[]>(
+    () => initialEditorData?.staffing ?? []
+  );
+  const [shiftTemplates, setShiftTemplates] = useState<
+    AreaShiftTemplateWithBreaks[]
+  >(() => initialEditorData?.shiftTemplates ?? []);
+  const [qualifications, setQualifications] = useState<Qualification[]>(
+    () => initialEditorData?.qualifications ?? []
   );
   const [loading, setLoading] = useState(!initialEditorData);
   const [hasDisplayData, setHasDisplayData] = useState(!!initialEditorData);
   const [reloadToken, setReloadToken] = useState(0);
   const skipInitialFetchRef = useRef(!!initialEditorData);
   const editorMetaRef = useRef({
-    shiftTypes: initialEditorData?.shiftTypes ?? [],
+    serviceHours: initialEditorData?.serviceHours ?? [],
     qualifications: initialEditorData?.qualifications ?? [],
+    shiftTemplates: initialEditorData?.shiftTemplates ?? [],
   });
 
   useEffect(() => {
     if (!initialEditorData || reloadToken !== 0) return;
     skipInitialFetchRef.current = true;
     editorMetaRef.current = {
-      shiftTypes: initialEditorData.shiftTypes,
+      serviceHours: initialEditorData.serviceHours,
       qualifications: initialEditorData.qualifications,
+      shiftTemplates: initialEditorData.shiftTemplates ?? [],
     };
-    setShiftTypes(initialEditorData.shiftTypes);
+    setServiceHours(initialEditorData.serviceHours);
     setCounts(buildCountsFromData(initialEditorData.staffing));
+    setStaffing(initialEditorData.staffing);
+    setQualifications(initialEditorData.qualifications);
+    setShiftTemplates(initialEditorData.shiftTemplates ?? []);
     setHasDisplayData(true);
     setLoading(false);
     setError(null);
   }, [initialEditorData, reloadToken]);
 
-  const configuredShiftTypes = useMemo(() => {
-    const ids = new Set<string>();
-    for (const [key, count] of Object.entries(counts)) {
-      if (count > 0) ids.add(key.split(":")[0]!);
-    }
-    return shiftTypes.filter((type) => ids.has(type.id));
-  }, [counts, shiftTypes]);
+  const qualificationNameById = useMemo(
+    () => new Map(qualifications.map((entry) => [entry.id, entry.name])),
+    [qualifications]
+  );
+
+  const configuredServiceHours = useMemo(() => {
+    return sortServiceHours(
+      serviceHours.filter((hour) => (counts[hour.id] ?? 0) > 0)
+    );
+  }, [counts, serviceHours]);
 
   useEffect(() => {
     onLoadingChange?.(loading);
@@ -166,20 +181,23 @@ export const LocationAreaStaffingMatrix = forwardRef<
       setLoading(false);
       if (!result.ok) {
         setError(result.error);
-        setShiftTypes([]);
+        setServiceHours([]);
         setCounts({});
+        setStaffing([]);
         setHasDisplayData(false);
-        onDataLoaded?.({ shiftTypes: [], qualifications: [], staffing: [] });
+        onDataLoaded?.({ serviceHours: [], qualifications: [], staffing: [] });
         return;
       }
-      const types = result.shiftTypes ?? [];
+      const hours = result.serviceHours ?? [];
       const qualifications = result.qualifications ?? [];
       const staffing = result.staffing ?? [];
-      editorMetaRef.current = { shiftTypes: types, qualifications };
-      setShiftTypes(types);
+      editorMetaRef.current = { serviceHours: hours, qualifications, shiftTemplates: editorMetaRef.current.shiftTemplates };
+      setServiceHours(hours);
       setCounts(buildCountsFromData(staffing));
+      setStaffing(staffing);
+      setQualifications(qualifications);
       setHasDisplayData(true);
-      onDataLoaded?.({ shiftTypes: types, qualifications, staffing });
+      onDataLoaded?.({ serviceHours: hours, qualifications, staffing });
     });
     return () => {
       cancelled = true;
@@ -187,17 +205,17 @@ export const LocationAreaStaffingMatrix = forwardRef<
   }, [locationId, area.id, reloadToken, onDataLoaded]);
 
   useEffect(() => {
-    if (configuredShiftTypes.length === 0) {
-      if (selectedShiftTypeId !== null) onSelectShiftType(null);
+    if (configuredServiceHours.length === 0) {
+      if (selectedServiceHourId !== null) onSelectServiceHour(null);
       return;
     }
     if (
-      !selectedShiftTypeId ||
-      !configuredShiftTypes.some((type) => type.id === selectedShiftTypeId)
+      !selectedServiceHourId ||
+      !configuredServiceHours.some((hour) => hour.id === selectedServiceHourId)
     ) {
-      onSelectShiftType(configuredShiftTypes[0]!.id);
+      onSelectServiceHour(configuredServiceHours[0]!.id);
     }
-  }, [configuredShiftTypes, selectedShiftTypeId, onSelectShiftType]);
+  }, [configuredServiceHours, selectedServiceHourId, onSelectServiceHour]);
 
   useImperativeHandle(
     ref,
@@ -206,13 +224,24 @@ export const LocationAreaStaffingMatrix = forwardRef<
         skipInitialFetchRef.current = false;
         setReloadToken((n) => n + 1);
       },
-      applyStaffing: (staffing: LocationAreaStaffing[]) => {
+      applyStaffing: (
+        staffing: LocationAreaStaffing[],
+        serviceHours?: LocationAreaServiceHour[]
+      ) => {
+        if (serviceHours !== undefined) {
+          editorMetaRef.current = {
+            ...editorMetaRef.current,
+            serviceHours,
+          };
+          setServiceHours(serviceHours);
+        }
         setCounts(buildCountsFromData(staffing));
+        setStaffing(staffing);
         setHasDisplayData(true);
         setLoading(false);
         setError(null);
         onDataLoaded?.({
-          shiftTypes: editorMetaRef.current.shiftTypes,
+          serviceHours: serviceHours ?? editorMetaRef.current.serviceHours,
           qualifications: editorMetaRef.current.qualifications,
           staffing,
         });
@@ -230,16 +259,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
     );
   }
 
-  if (shiftTypes.length === 0) {
-    return (
-      <SettingsEmptyState
-        message={t("locations.staffingNoShiftTypes")}
-        className={embedded ? "min-h-full" : undefined}
-      />
-    );
-  }
-
-  if (configuredShiftTypes.length === 0) {
+  if (configuredServiceHours.length === 0) {
     return (
       <SettingsEmptyState
         message={t("locations.staffingEmpty")}
@@ -264,104 +284,89 @@ export const LocationAreaStaffingMatrix = forwardRef<
       )}
       <div
         className={cn(
-          "overflow-x-auto rounded-md border-0",
           embedded
-            ? "min-h-0 flex-1 border-0 bg-transparent"
-            : listScrollClassName ?? LIST_SCROLL_FALLBACK
+            ? cn("min-h-0 flex-1 border-0 bg-transparent", listScrollClassName)
+            : cn(
+                settingsScrollableTableListClass("rounded-md border-0"),
+                listScrollClassName ?? LIST_SCROLL_FALLBACK
+              )
         )}
       >
-        <table className="w-full min-w-[360px] border-collapse">
+        <table className="w-full min-w-[320px] border-collapse table-fixed">
           <thead>
-            <tr className="border-b border-border bg-subtle">
-              <th className="w-1 p-0" aria-hidden />
-              <th className={cn(settingsColumnHeaderClass(), "sticky left-0 z-10 min-w-[122px] bg-background")}>
-                {t("locations.staffingShiftType")}
-              </th>
-              {WEEKDAY_KEYS.map((key, weekday) => {
-                const open = isStaffingDayEnabled(serviceHours, area.id, weekday);
-                return (
-                  <th
-                    key={key}
-                    className={cn(
-                      settingsColumnHeaderClass("center"),
-                      "min-w-[36px]",
-                      !open && "text-muted/40"
-                    )}
-                  >
-                    {t(`locations.weekdays.${key}`).slice(0, 2)}
-                  </th>
-                );
-              })}
+            <tr className="border-b border-border">
+              <th
+                className={settingsStickyIndicatorHeaderClass()}
+                aria-hidden
+              />
               <th
                 className={cn(
-                  settingsColumnHeaderClass("center"),
-                  "min-w-[36px]",
-                  !isStaffingDayEnabled(
-                    serviceHours,
-                    area.id,
-                    STAFFING_HOLIDAY_WEEKDAY
-                  ) &&
-                    "text-muted/40"
+                  settingsStickyColumnHeaderClass(),
+                  "sticky left-0 z-[2] w-[42%] min-w-[160px]"
                 )}
               >
-                {t("locations.weekdays.holiday").slice(0, 2)}
+                {t("locations.staffingServiceWindow")}
+              </th>
+              <th
+                className={cn(
+                  settingsStickyColumnHeaderClass(),
+                  "w-[58%]"
+                )}
+              >
+                {t("locations.staffingQualificationsSection")}
               </th>
             </tr>
           </thead>
           <tbody>
-            {configuredShiftTypes.map((type) => {
-              const isSelected = type.id === selectedShiftTypeId;
+            {configuredServiceHours.map((hour) => {
+              const isSelected = hour.id === selectedServiceHourId;
+              const label = formatServiceHourStaffingListLabel(
+                hour,
+                (weekday) => weekdayLabelFromIndex(weekday, t),
+                shiftTemplates
+              );
+              const qualificationLabels = staffingQualificationLabelsForHour(
+                hour.id,
+                staffing,
+                qualificationNameById
+              );
+              const qualificationsText = qualificationLabels.join(", ");
               return (
                 <tr
-                  key={type.id}
-                  {...settingsListItemAttrs(type.id)}
-                  onClick={() => onSelectShiftType(type.id)}
+                  key={hour.id}
+                  {...settingsListItemAttrs(hour.id)}
+                  onClick={() => onSelectServiceHour(hour.id)}
                   onDoubleClick={(e) => {
                     e.preventDefault();
                     window.getSelection()?.removeAllRanges();
-                    onSelectShiftType(type.id);
-                    onEditShiftType?.(type.id);
+                    onSelectServiceHour(hour.id);
+                    onEditServiceHour?.(hour.id);
                   }}
                   className={settingsDataRowClass(isSelected)}
                 >
                   <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
-                  <td className={cn(settingsDataCellClass(isSelected, { className: "sticky left-0 z-10 min-w-[122px] bg-background font-medium" }))}>
-                    <span
-                      className="mr-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
-                      style={{ backgroundColor: type.color }}
-                    />
-                    {type.name}
+                  <td
+                    className={cn(
+                      settingsDataCellClass(isSelected, {
+                        className:
+                          "sticky left-0 z-10 min-w-[160px] bg-background font-medium",
+                      })
+                    )}
+                  >
+                    {label}
                   </td>
-                  {WEEKDAY_KEYS.map((_, weekday) => {
-                    const open = isStaffingDayEnabled(serviceHours, area.id, weekday);
-                    const count = counts[staffingKey(type.id, weekday)] ?? 0;
-                    return (
-                      <td
-                        key={weekday}
-                        className={cn(
-                          settingsDataCellClass(isSelected, { align: "center" }),
-                          !open && "text-muted/40"
-                        )}
+                  <td className={settingsDataCellClass(isSelected, { className: "max-w-0" })}>
+                    {qualificationsText ? (
+                      <span
+                        className="block truncate"
+                        title={qualificationsText}
                       >
-                        {count > 0 ? count : "—"}
-                      </td>
-                    );
-                  })}
-                  {(() => {
-                    const weekday = STAFFING_HOLIDAY_WEEKDAY;
-                    const open = isStaffingDayEnabled(serviceHours, area.id, weekday);
-                    const count = counts[staffingKey(type.id, weekday)] ?? 0;
-                    return (
-                      <td
-                        className={cn(
-                          settingsDataCellClass(isSelected, { align: "center" }),
-                          !open && "text-muted/40"
-                        )}
-                      >
-                        {count > 0 ? count : "—"}
-                      </td>
-                    );
-                  })()}
+                        {qualificationsText}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               );
             })}

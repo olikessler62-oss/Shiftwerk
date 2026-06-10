@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import {
   validateLocationAreaName,
   validateLocationAreaUniqueness,
+  validateAreaPlanningMode,
+  DEFAULT_AREA_PLANNING_MODE,
 } from "@schichtwerk/database";
-import type { LocationArea } from "@schichtwerk/types";
+import type { AreaPlanningMode, LocationArea } from "@schichtwerk/types";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 
@@ -36,6 +38,7 @@ export async function fetchLocationAreas(
 export async function createLocationArea(input: {
   locationId: string;
   name: string;
+  planning_mode?: AreaPlanningMode;
 }): Promise<LocationAreaActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -54,11 +57,17 @@ export async function createLocationArea(input: {
     });
     if (!unique.ok) return unique;
 
+    const modeCheck = validateAreaPlanningMode(
+      input.planning_mode ?? DEFAULT_AREA_PLANNING_MODE
+    );
+    if (!modeCheck.ok) return modeCheck;
+
     const sortOrder = await db.getNextLocationAreaSortOrder(input.locationId);
     const created = await db.insertLocationArea({
       location_id: input.locationId,
       name: nameCheck.value,
       sort_order: sortOrder,
+      planning_mode: modeCheck.value,
     });
 
     revalidatePath("/dashboard");
@@ -76,6 +85,7 @@ export async function updateLocationArea(input: {
   id: string;
   locationId: string;
   name: string;
+  planning_mode?: AreaPlanningMode;
 }): Promise<LocationAreaActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -95,8 +105,14 @@ export async function updateLocationArea(input: {
     });
     if (!unique.ok) return unique;
 
+    const modeCheck = validateAreaPlanningMode(
+      input.planning_mode ?? DEFAULT_AREA_PLANNING_MODE
+    );
+    if (!modeCheck.ok) return modeCheck;
+
     await db.updateLocationArea(input.id, input.locationId, {
       name: nameCheck.value,
+      planning_mode: modeCheck.value,
     });
 
     revalidatePath("/dashboard");

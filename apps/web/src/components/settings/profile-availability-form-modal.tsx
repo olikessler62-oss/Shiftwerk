@@ -15,7 +15,15 @@ import type {
 } from "@schichtwerk/types";
 import { formatAvailabilityTimeRange } from "@/lib/profile-availability-label";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { cn } from "@/lib/cn";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsNestedModalDialogClass,
+  settingsNestedModalOverlayClass,
+} from "./settings-list-ui";
 import {
   Alert,
   Button,
@@ -186,7 +194,7 @@ export function ProfileAvailabilityFormModal({
 
   return (
     <div
-      className="absolute inset-0 z-[70] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+      className={settingsNestedModalOverlayClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !saving) onClose();
@@ -196,10 +204,15 @@ export function ProfileAvailabilityFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-availability-form-title"
-        className="relative z-[71] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={settingsNestedModalDialogClass("md")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3
             id="profile-availability-form-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
@@ -219,7 +232,7 @@ export function ProfileAvailabilityFormModal({
           </IconButton>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className={cn("space-y-4", settingsModalBodyPaddingClass())}>
           {error && <Alert variant="error">{error}</Alert>}
 
           <div>
@@ -291,7 +304,7 @@ export function ProfileAvailabilityFormModal({
               ) : null}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <LabelMuted>{t("profiles.availabilityFrom")}</LabelMuted>
                 <TimeInput
@@ -319,7 +332,7 @@ export function ProfileAvailabilityFormModal({
           ) : null}
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
+        <div className={settingsModalFooterClass()}>
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             <CloseIcon />
             {t("common.cancel")}

@@ -23,6 +23,7 @@ const SETTINGS_MODAL_PARAMS = [
   "rollen",
   "schichtarten",
   "qualifikationen",
+  "sonderzuschlaege",
   "abwesenheiten",
 ] as const;
 

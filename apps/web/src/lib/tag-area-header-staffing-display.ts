@@ -1,7 +1,3 @@
-import {
-  shiftTypeNameWithSchicht,
-  shortenShiftTypeDisplayName,
-} from "@/lib/profile-availability-label";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 
 export type StaffingHeaderDisplayLevel =
@@ -12,7 +8,7 @@ export type StaffingHeaderDisplayLevel =
   | "indicator";
 
 export type StaffingHeaderSegment = {
-  shiftTypeId: string;
+  serviceHourId: string;
   text: string;
   understaffed: boolean;
 };
@@ -44,24 +40,23 @@ export function formatStaffingCount(
 }
 
 function abbrevLetter(label: string): string {
-  const short = shortenShiftTypeDisplayName(label).trim();
-  return (short.charAt(0) || "?").toUpperCase();
+  const trimmed = label.trim();
+  const match = trimmed.match(/\d{1,2}:\d{2}/);
+  if (match) return match[0]!.slice(0, 2);
+  return (trimmed.charAt(0) || "?").toUpperCase();
 }
 
-function segmentFullSchicht(
-  entry: TagAreaHeaderStaffingEntry,
-  shiftTypeName: string
-): StaffingHeaderSegment {
+function segmentFull(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment {
   return {
-    shiftTypeId: entry.shiftTypeId,
-    text: `${shiftTypeNameWithSchicht(shiftTypeName)} ${formatStaffingCount(entry.assigned, entry.required)}`,
+    serviceHourId: entry.serviceHourId,
+    text: `${entry.label} ${formatStaffingCount(entry.assigned, entry.required)}`,
     understaffed: entry.assigned < entry.required,
   };
 }
 
 function segmentShort(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment {
   return {
-    shiftTypeId: entry.shiftTypeId,
+    serviceHourId: entry.serviceHourId,
     text: `${entry.label} ${formatStaffingCount(entry.assigned, entry.required)}`,
     understaffed: entry.assigned < entry.required,
   };
@@ -69,7 +64,7 @@ function segmentShort(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment 
 
 function segmentAbbrev(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment {
   return {
-    shiftTypeId: entry.shiftTypeId,
+    serviceHourId: entry.serviceHourId,
     text: `${abbrevLetter(entry.label)}${formatStaffingCount(entry.assigned, entry.required)}`,
     understaffed: entry.assigned < entry.required,
   };
@@ -112,7 +107,6 @@ export function measureStaffingHeaderText(text: string): number {
 
 export function resolveStaffingHeaderDisplay(
   entries: readonly TagAreaHeaderStaffingEntry[],
-  shiftTypeNameById: ReadonlyMap<string, string>,
   availableWidth: number,
   measure: (text: string) => number = measureStaffingHeaderText
 ): StaffingHeaderDisplay {
@@ -123,17 +117,12 @@ export function resolveStaffingHeaderDisplay(
     (entry) => entry.assigned < entry.required
   );
 
-  const fullSchichtSegments = entries.map((entry) =>
-    segmentFullSchicht(
-      entry,
-      shiftTypeNameById.get(entry.shiftTypeId) ?? entry.label
-    )
-  );
-  if (measureRenderedSegments(fullSchichtSegments, measure) <= width) {
+  const fullSegments = entries.map((entry) => segmentFull(entry));
+  if (measureRenderedSegments(fullSegments, measure) <= width) {
     return {
       mode: "segments",
       level: "full-schicht",
-      segments: fullSchichtSegments,
+      segments: fullSegments,
       separator: "pipe",
     };
   }
