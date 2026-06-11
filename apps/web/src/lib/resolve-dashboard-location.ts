@@ -1,4 +1,4 @@
-import type { Location } from "@schichtwerk/types";
+import type { Location, LocationArea } from "@schichtwerk/types";
 
 export function resolveSelectedLocationId(
   locations: Location[],
@@ -9,4 +9,15 @@ export function resolveSelectedLocationId(
     return locationParam;
   }
   return locations[0].id;
+}
+
+export function resolveSelectedAreaId(
+  areas: LocationArea[],
+  areaParam: string | undefined
+): string | null {
+  if (areas.length === 0) return null;
+  if (areaParam && areas.some((area) => area.id === areaParam)) {
+    return areaParam;
+  }
+  return areas[0].id;
 }

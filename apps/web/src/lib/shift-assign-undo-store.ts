@@ -1,7 +1,7 @@
 export type ShiftUndoSnapshot = {
   id: string;
   employee_id: string;
-  shift_type_id: string | null;
+  area_shift_template_id: string | null;
   location_id: string | null;
   location_area_id: string | null;
   shift_date: string;

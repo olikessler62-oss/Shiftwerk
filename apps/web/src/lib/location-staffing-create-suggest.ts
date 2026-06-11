@@ -1,4 +1,5 @@
 import { parseServiceHourTimeToMinutes } from "@schichtwerk/database";
+import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
 import { capStaffingWindowDuration } from "@/lib/staffing-window-limits";
 import type {
   AreaShiftTemplateWithBreaks,
@@ -56,39 +57,59 @@ function staffedServiceHourIds(staffing: readonly LocationAreaStaffing[]): Set<s
   return ids;
 }
 
+function sameTimeWindow(a: TimeWindow, b: TimeWindow): boolean {
+  const aStart = parseServiceHourTimeToMinutes(timeFieldValue(a.start_time));
+  const aEnd = parseServiceHourTimeToMinutes(timeFieldValue(a.end_time));
+  const bStart = parseServiceHourTimeToMinutes(timeFieldValue(b.start_time));
+  const bEnd = parseServiceHourTimeToMinutes(timeFieldValue(b.end_time));
+  if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
+    return false;
+  }
+  return aStart === bStart && aEnd === bEnd;
+}
+
+function serviceHoursOnWeekday(
+  weekday: number,
+  serviceHours: readonly LocationAreaServiceHour[]
+): LocationAreaServiceHour[] {
+  return serviceHours.filter((hour) => hour.weekday === weekday);
+}
+
 function blockedContextForWeekday(
   weekday: number,
-  serviceHours: readonly LocationAreaServiceHour[],
-  staffedIds: ReadonlySet<string>
+  serviceHours: readonly LocationAreaServiceHour[]
 ) {
-  const windows = serviceHours
-    .filter((hour) => hour.weekday === weekday)
-    .map((hour) => ({
-      start_time: hour.start_time,
-      end_time: hour.end_time,
-    }));
+  const hoursOnDay = serviceHoursOnWeekday(weekday, serviceHours);
+  const windows = hoursOnDay.map((hour) => ({
+    start_time: hour.start_time,
+    end_time: hour.end_time,
+  }));
 
-  const staffedExact = new Set<string>();
-  for (const hour of serviceHours) {
-    if (hour.weekday !== weekday || !staffedIds.has(hour.id)) continue;
-    staffedExact.add(
-      `${timeFieldValue(hour.start_time)}|${timeFieldValue(hour.end_time)}`
-    );
-  }
-
-  return { windows, staffedExact };
+  return { hoursOnDay, windows };
 }
 
 function isCandidateBlocked(
   candidate: TimeWindow,
-  blocked: readonly TimeWindow[],
-  staffedExact: ReadonlySet<string>
+  hoursOnDay: readonly LocationAreaServiceHour[],
+  staffedIds: ReadonlySet<string>
 ): boolean {
-  const key = `${timeFieldValue(candidate.start_time)}|${timeFieldValue(
-    candidate.end_time
-  )}`;
-  if (staffedExact.has(key)) return true;
-  return blocked.some((window) => windowsOverlap(candidate, window));
+  for (const hour of hoursOnDay) {
+    const hourWindow: TimeWindow = {
+      start_time: hour.start_time,
+      end_time: hour.end_time,
+    };
+
+    if (sameTimeWindow(candidate, hourWindow)) {
+      if (staffedIds.has(hour.id)) return true;
+      continue;
+    }
+
+    if (windowsOverlap(candidate, hourWindow)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function sortedTemplates(
@@ -183,14 +204,30 @@ function suggestForWeekday(
   shiftTemplates: readonly AreaShiftTemplateWithBreaks[]
 ): StaffingCreateWindowSuggestion | null {
   const staffedIds = staffedServiceHourIds(staffing);
-  const { windows, staffedExact } = blockedContextForWeekday(
-    weekday,
-    serviceHours,
-    staffedIds
-  );
+  const { hoursOnDay, windows } = blockedContextForWeekday(weekday, serviceHours);
 
   if (windows.length === 0) {
     return emptyDaySuggestion(weekday, shiftTemplates);
+  }
+
+  const unstafedHours = serviceHours
+    .filter(
+      (hour) => hour.weekday === weekday && !staffedIds.has(hour.id)
+    )
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+  if (unstafedHours.length > 0) {
+    const hour = unstafedHours[0]!;
+    const start_time = timeFieldValue(hour.start_time);
+    const end_time = timeFieldValue(hour.end_time);
+    return {
+      weekday,
+      start_time,
+      end_time,
+      templateId:
+        resolvePresetIdFromTimes(start_time, end_time, shiftTemplates) ?? "",
+      dayFullyBooked: false,
+    };
   }
 
   for (const template of sortedTemplates(shiftTemplates)) {
@@ -198,7 +235,7 @@ function suggestForWeekday(
       start_time: timeFieldValue(template.start_time),
       end_time: timeFieldValue(template.end_time),
     };
-    if (!isCandidateBlocked(candidate, windows, staffedExact)) {
+    if (!isCandidateBlocked(candidate, hoursOnDay, staffedIds)) {
       return {
         weekday,
         start_time: candidate.start_time,
@@ -230,18 +267,14 @@ export function isShiftTemplateBlockedOnWeekday(
   staffing: readonly LocationAreaStaffing[]
 ): boolean {
   const staffedIds = staffedServiceHourIds(staffing);
-  const { windows, staffedExact } = blockedContextForWeekday(
-    weekday,
-    serviceHours,
-    staffedIds
-  );
+  const { hoursOnDay } = blockedContextForWeekday(weekday, serviceHours);
   return isCandidateBlocked(
     {
       start_time: timeFieldValue(template.start_time),
       end_time: timeFieldValue(template.end_time),
     },
-    windows,
-    staffedExact
+    hoursOnDay,
+    staffedIds
   );
 }
 

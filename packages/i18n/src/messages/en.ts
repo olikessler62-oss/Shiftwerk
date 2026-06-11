@@ -89,6 +89,8 @@ export const en = {
     selectQualification: "Select function",
     noEmployeeSelected: "—",
     shiftSaveFailed: "Save failed",
+    noShiftTemplatesForArea:
+      "No shift templates are configured for this area yet. Add them under Locations → Area → Shift templates.",
   },
   shiftTypes: {
     title: "Shift types",
@@ -184,6 +186,7 @@ export const en = {
     openCompensationOf: "Compensation of {name}",
     panelCompensation: "Compensation",
     panelCompensationOf: "Compensation of {name}",
+    panelSurchargesOf: "Surcharges of {name}",
     inviteEmployee: "Invite employee",
     inviteEmployeeTitle: "Invite employee",
     sectionProfile: "Profile",
@@ -194,6 +197,8 @@ export const en = {
     actionAvailabilityConfigured: "available at specific times",
     actionCompensationHint: "Edit hourly rate and history",
     actionCompensationCurrent: "current: {rate}",
+    actionSurchargesHint: "Assign and manage surcharges",
+    actionSurchargesUnavailable: "Coming soon",
     actionInviteHint: "Invite to the app by email",
     emptyAvailability: "No availability on file.",
     availabilityCreateTitle: "Add availability",
@@ -365,6 +370,17 @@ export const en = {
     actionStaffingHint: "Staffing requirements per service window",
     actionShiftTemplatesHint: "Assignment shortcuts (optional)",
     actionShiftTemplatesConfigured: "Shift templates configured",
+    panelQualificationTemplates: "Function templates",
+    panelQualificationTemplatesOf: "Function templates — {location} | {area}",
+    actionQualificationTemplatesHint: "Define functions for this area",
+    actionQualificationTemplatesConfigured: "Function templates configured",
+    areaQualificationTemplatesHint:
+      "Which functions apply to staffing in this area.",
+    areaQualificationTemplatesEmpty:
+      "No function templates for this area yet.",
+    areaQualificationTemplatesCreateTitle: "Add function",
+    areaQualificationTemplatesAllAssigned:
+      "All organization functions are already assigned.",
     areaShiftTemplatesHint:
       "Optional presets to fill in times quickly when assigning shifts in the dashboard.",
     areaShiftTemplatesEmpty: "No shift templates for this area yet.",
@@ -372,6 +388,8 @@ export const en = {
     areaShiftTemplatesEditTitle: "Edit shift template",
     areaShiftTemplateBreaksLabel: "(incl.) breaks",
     areaShiftTemplatesMax: "At most {max} shift templates per area.",
+    areaShiftTemplatesCopyApply: "Copy shift templates from",
+    areaShiftTemplatesCopySelectArea: "Area with shift templates",
     serviceHoursColumnDay: "Day",
     serviceHoursColumnWeekdays: "Weekdays",
     serviceHoursColumnTemplate: "Shift template",
@@ -381,6 +399,14 @@ export const en = {
     serviceHoursColumnTo: "To",
     serviceHoursHint:
       "One time window per row: select weekdays (incl. holidays), optionally pick a shift template for times, or enter from/to manually. Add rows for multiple windows per day.",
+    serviceHoursPresetMonFri: "Mon–Fri",
+    serviceHoursPresetMonSat: "Mon–Sat",
+    serviceHoursPresetMonSun: "Mon–Sun",
+    serviceHoursPresetSatSun: "Sat–Sun",
+    serviceHoursPresetAll: "All",
+    serviceHoursPresetNone: "None",
+    serviceHoursCopyApply: "Copy times from",
+    serviceHoursCopySelectArea: "Area with service hours",
     serviceHoursAddRow: "Add time window",
     serviceHoursRemoveRow: "Remove time window",
     serviceHoursAddSlot: "Add time window",
@@ -388,6 +414,7 @@ export const en = {
     confirmDeleteStaffing: "really remove?",
     staffingTitle: "Staffing requirements",
     staffingServiceWindow: "Service window",
+    staffingColumnTime: "Time",
     staffingEmpty: "No staffing requirements yet.",
     staffingCreateTitle: "Add staffing requirements",
     staffingEditTitle: "Edit staffing requirements",
@@ -400,6 +427,10 @@ export const en = {
     staffingInvalidCount: "Count must be between 1 and 99.",
     staffingNoServiceHours: "Configure service hours for this area first.",
     staffingNoQualifications: "Create functions in Settings first.",
+    staffingNoAreaQualificationTemplates:
+      "No function templates are configured for this area yet. Assign at least one function under Locations → Function templates.",
+    staffingAllQualificationsAssigned:
+      "All functions for this area are already listed.",
     staffingNoUnconfiguredWindows:
       "Staffing is already configured for all service windows.",
     staffingDetailTitle: "Staffing — {window}",
@@ -413,6 +444,14 @@ export const en = {
       "Add at least one function with a count.",
     staffingCreateDayFullyBooked:
       "All time windows are already taken on this day. Please adjust the times manually.",
+    staffingDuplicateWindow:
+      "Time windows on the same day must not overlap.",
+    staffingSaveAndContinue: "Save and add another",
+    staffingSelectWeekdays: "Please select at least one weekday.",
+    staffingCopyApply: "Copy staffing from",
+    staffingCopySelectArea: "Area with staffing",
+    staffingListHint:
+      "Compact overview of all time windows. Create new or double-click to edit.",
     staffingMatrixSumHint: "Total functions",
   },
   settings: {
@@ -454,7 +493,10 @@ export const en = {
   },
   planning: {
     readOnlyWeek:
-      "This week is in the past — the schedule is view-only. Archived shift types remain visible.",
+      "This week is in the past — the schedule is view-only.",
     readOnlyDay: "Past days can no longer be changed.",
+    selectArea: "Select area",
+    area: "Area",
+    noAreas: "No areas configured for this location yet.",
   },
 } satisfies Messages;

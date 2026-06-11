@@ -2,6 +2,7 @@ import type {
   AbsenceRequest,
   AbsenceType,
   AreaShiftTemplateWithBreaks,
+  AreaQualificationTemplateEntry,
   Location,
   LocationArea,
   LocationAreaServiceHour,
@@ -17,8 +18,6 @@ import type {
   Role,
   RolePermissionLevel,
   Shift,
-  ShiftType,
-  ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
 import type { Session } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -31,7 +30,6 @@ import type {
   InviteUserResult,
   SchichtwerkDatabase,
   ShiftTypeBreakInput,
-  ShiftWithTypeRow,
 } from "./interface";
 import {
   isDateWithinAbsenceRange,
@@ -50,23 +48,20 @@ import {
   isServiceHoursTableUnavailable,
   SERVICE_HOURS_MIGRATION_HINT,
 } from "./location-service-hours";
-import { validateServiceHoursInput } from "./location-service-hours-validation";
+import { validateServiceHoursInput, serviceHoursSameWindow } from "./location-service-hours-validation";
 import {
   parseAvailabilityTimeRange,
   parseAvailabilityWeekday,
+  sortProfileRecurringAvailabilityBySchedule,
   validateNoOverlappingAvailability,
 } from "./profile-availability-validation";
 import {
-  dedupeShiftTypes,
   normalizeAreaShiftTemplatesWithBreaks,
-  normalizeShiftTypesWithBreaks,
   normalizeTime,
   replaceAreaShiftTemplateBreaks,
-  replaceShiftTypeBreaks,
   seedDefaultAreaServiceHours,
   seedDefaultLocationAreas,
   seedDefaultRoles,
-  seedDefaultShiftTypes,
 } from "./utils";
 
 const T = Schema.tables;
@@ -121,21 +116,13 @@ type ProfileRecurringAvailabilityRow = {
   weekday: number;
   start_time: string;
   end_time: string;
-  shift_type_id: string | null;
   sort_order: number;
   created_at: string;
-  shift_types:
-    | { name: string }
-    | { name: string }[]
-    | null;
 };
 
 function mapProfileRecurringAvailability(
   row: ProfileRecurringAvailabilityRow
 ): ProfileRecurringAvailability {
-  const shiftRel = Array.isArray(row.shift_types)
-    ? row.shift_types[0]
-    : row.shift_types;
   return {
     id: row.id,
     organization_id: row.organization_id,
@@ -143,8 +130,6 @@ function mapProfileRecurringAvailability(
     weekday: row.weekday,
     start_time: row.start_time,
     end_time: row.end_time,
-    shift_type_id: row.shift_type_id,
-    shift_type_name: shiftRel?.name ?? null,
     sort_order: row.sort_order,
     created_at: row.created_at,
   };
@@ -681,195 +666,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (error) throw new Error(error.message);
   }
 
-  async listShiftTypes(organizationId: string) {
-    const { data } = await this.client
-      .from(T.shiftTypes)
-      .select("*")
-      .eq("organization_id", organizationId)
-      .is("archived_at", null)
-      .order("sort_order");
-    return dedupeShiftTypes((data ?? []) as ShiftType[]);
-  }
-
-  async listShiftTypesForPlanning(
-    organizationId: string,
-    from: string,
-    to: string
-  ) {
-    const active = await this.listShiftTypes(organizationId);
-    const known = new Set(active.map((t) => t.id));
-
-    const { data: shiftRows, error } = await this.client
-      .from(T.shifts)
-      .select("shift_type_id")
-      .eq("organization_id", organizationId)
-      .gte("shift_date", from)
-      .lte("shift_date", to);
-    if (error) throw new Error(error.message);
-
-    const extraIds = [
-      ...new Set(
-        (shiftRows ?? [])
-          .map((r) => r.shift_type_id as string)
-          .filter((id) => id && !known.has(id))
-      ),
-    ];
-    if (!extraIds.length) return active;
-
-    const { data: historical, error: histErr } = await this.client
-      .from(T.shiftTypes)
-      .select("*")
-      .in("id", extraIds)
-      .order("sort_order");
-    if (histErr) throw new Error(histErr.message);
-
-    return dedupeShiftTypes(
-      [...active, ...((historical ?? []) as ShiftType[])].sort(
-        (a, b) => a.sort_order - b.sort_order
-      )
-    );
-  }
-
-  async loadShiftTypesWithBreaks(organizationId: string) {
-    let { data } = await this.client
-      .from(T.shiftTypes)
-      .select(`*, ${T.shiftTypeBreaks}(*)`)
-      .eq("organization_id", organizationId)
-      .is("archived_at", null)
-      .order("sort_order");
-
-    if (!data?.length) {
-      await seedDefaultShiftTypes(this.client, organizationId);
-      const res = await this.client
-        .from(T.shiftTypes)
-        .select(`*, ${T.shiftTypeBreaks}(*)`)
-        .eq("organization_id", organizationId)
-        .is("archived_at", null)
-        .order("sort_order");
-      data = res.data;
-    }
-
-    return dedupeShiftTypes(
-      normalizeShiftTypesWithBreaks(data ?? [])
-    );
-  }
-
-  async loadShiftTypesWithBreaksForDashboard(organizationId: string) {
-    return this.loadShiftTypesWithBreaks(organizationId);
-  }
-
-  async seedDefaultShiftTypes(organizationId: string) {
-    await seedDefaultShiftTypes(this.client, organizationId);
-  }
-
-  async getShiftTypeForAssign(shiftTypeId: string, organizationId: string) {
-    const { data, error } = await this.client
-      .from(T.shiftTypes)
-      .select("id, start_time, end_time, organization_id")
-      .eq("id", shiftTypeId)
-      .eq("organization_id", organizationId)
-      .is("archived_at", null)
-      .single();
-    if (error || !data) return null;
-    return data as Pick<ShiftType, "id" | "start_time" | "end_time">;
-  }
-
-  async getNextShiftTypeSortOrder(organizationId: string) {
-    const { data } = await this.client
-      .from(T.shiftTypes)
-      .select("sort_order")
-      .eq("organization_id", organizationId)
-      .is("archived_at", null)
-      .order("sort_order", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return ((data?.sort_order as number) ?? -1) + 1;
-  }
-
-  async insertShiftType(row: {
-    organization_id: string;
-    name: string;
-    start_time: string;
-    end_time: string;
-    color: string;
-    sort_order: number;
-  }) {
-    const { data, error } = await this.client
-      .from(T.shiftTypes)
-      .insert({
-        organization_id: row.organization_id,
-        name: row.name,
-        start_time: normalizeTime(row.start_time),
-        end_time: normalizeTime(row.end_time),
-        color: row.color,
-        sort_order: row.sort_order,
-      })
-      .select("id")
-      .single();
-    if (error || !data) throw new Error(error?.message ?? "Speichern fehlgeschlagen");
-    return { id: data.id as string };
-  }
-
-  async updateShiftType(
-    id: string,
-    organizationId: string,
-    row: { name: string; start_time: string; end_time: string }
-  ) {
-    const { error } = await this.client
-      .from(T.shiftTypes)
-      .update({
-        name: row.name,
-        start_time: normalizeTime(row.start_time),
-        end_time: normalizeTime(row.end_time),
-      })
-      .eq("id", id)
-      .eq("organization_id", organizationId)
-      .is("archived_at", null);
-    if (error) throw new Error(error.message);
-  }
-
-  async replaceShiftTypeBreaks(shiftTypeId: string, breaks: ShiftTypeBreakInput[]) {
-    await replaceShiftTypeBreaks(this.client, shiftTypeId, breaks);
-  }
-
-  async countShiftsUsingType(shiftTypeId: string, organizationId: string) {
-    const { count, error } = await this.client
-      .from(T.shifts)
-      .select("id", { count: "exact", head: true })
-      .eq("shift_type_id", shiftTypeId)
-      .eq("organization_id", organizationId);
-    if (error) throw new Error(error.message);
-    return count ?? 0;
-  }
-
-  async archiveShiftType(id: string, organizationId: string) {
-    const now = new Date().toISOString();
-    const { error } = await this.client
-      .from(T.shiftTypes)
-      .update({ archived_at: now })
-      .eq("id", id)
-      .eq("organization_id", organizationId);
-    if (error) throw new Error(error.message);
-  }
-
-  async reorderShiftTypes(organizationId: string, orderedIds: string[]) {
-    const existing = await this.listShiftTypes(organizationId);
-    validateReorderPermutation(
-      existing.map((entry) => entry.id),
-      orderedIds
-    );
-    await applySortOrderBatch(
-      orderedIds.map((id, index) =>
-        this.client
-          .from(T.shiftTypes)
-          .update({ sort_order: index })
-          .eq("id", id)
-          .eq("organization_id", organizationId)
-          .is("archived_at", null)
-      )
-    );
-  }
-
   async listQualifications(organizationId: string) {
     const { data, error } = await this.client
       .from(T.qualifications)
@@ -1012,27 +808,63 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
     const { data, error } = await this.client
       .from(T.profileRecurringAvailability)
-      .select("*, shift_types(name)")
+      .select("*")
       .eq("organization_id", organizationId)
       .eq("profile_id", profileId)
       .order("sort_order");
     if (error) throw new Error(error.message);
 
-    return (data ?? []).map((row) =>
-      mapProfileRecurringAvailability(row as ProfileRecurringAvailabilityRow)
+    return sortProfileRecurringAvailabilityBySchedule(
+      (data ?? []).map((row) =>
+        mapProfileRecurringAvailability(row as ProfileRecurringAvailabilityRow)
+      )
     );
   }
 
   async listOrganizationRecurringAvailability(organizationId: string) {
     const { data, error } = await this.client
       .from(T.profileRecurringAvailability)
-      .select("*, shift_types(name)")
+      .select("*")
       .eq("organization_id", organizationId)
       .order("sort_order");
     if (error) throw new Error(error.message);
 
-    return (data ?? []).map((row) =>
-      mapProfileRecurringAvailability(row as ProfileRecurringAvailabilityRow)
+    return sortProfileRecurringAvailabilityBySchedule(
+      (data ?? []).map((row) =>
+        mapProfileRecurringAvailability(row as ProfileRecurringAvailabilityRow)
+      )
+    );
+  }
+
+  private async syncProfileRecurringAvailabilitySortOrder(
+    organizationId: string,
+    profileId: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileRecurringAvailability)
+      .select("id, weekday, start_time, end_time")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId);
+    if (error) throw new Error(error.message);
+
+    const sorted = sortProfileRecurringAvailabilityBySchedule(
+      (data ?? []).map((row) => ({
+        id: row.id as string,
+        weekday: row.weekday as number,
+        start_time: row.start_time as string,
+        end_time: row.end_time as string,
+      }))
+    );
+
+    await applySortOrderBatch(
+      sorted.map((entry, index) =>
+        this.client
+          .from(T.profileRecurringAvailability)
+          .update({ sort_order: index })
+          .eq("id", entry.id)
+          .eq("profile_id", profileId)
+          .eq("organization_id", organizationId)
+      )
     );
   }
 
@@ -1110,40 +942,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     );
   }
 
-  private async resolveAvailabilityTimes(
-    organizationId: string,
-    input: {
-      start_time: string;
-      end_time: string;
-      shift_type_id?: string | null;
-    }
-  ): Promise<
-    | { ok: true; start_time: string; end_time: string; shift_type_id: string | null }
+  private async resolveAvailabilityTimes(input: {
+    start_time: string;
+    end_time: string;
+  }): Promise<
+    | { ok: true; start_time: string; end_time: string }
     | { ok: false; error: string }
   > {
-    if (input.shift_type_id) {
-      const { data, error } = await this.client
-        .from(T.shiftTypes)
-        .select("id, start_time, end_time, archived_at")
-        .eq("id", input.shift_type_id)
-        .eq("organization_id", organizationId)
-        .maybeSingle();
-      if (error || !data || data.archived_at != null) {
-        return { ok: false, error: "Schichtart nicht gefunden." };
-      }
-      const parsed = parseAvailabilityTimeRange({
-        start_time: data.start_time as string,
-        end_time: data.end_time as string,
-      });
-      if (!parsed.ok) return parsed;
-      return {
-        ok: true,
-        start_time: parsed.start_time,
-        end_time: parsed.end_time,
-        shift_type_id: input.shift_type_id,
-      };
-    }
-
     const parsed = parseAvailabilityTimeRange({
       start_time: input.start_time,
       end_time: input.end_time,
@@ -1153,7 +958,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       ok: true,
       start_time: parsed.start_time,
       end_time: parsed.end_time,
-      shift_type_id: null,
     };
   }
 
@@ -1164,7 +968,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       weekday: number;
       start_time: string;
       end_time: string;
-      shift_type_id?: string | null;
     }
   ) {
     const profile = await this.getProfileById(profileId);
@@ -1175,7 +978,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const weekdayResult = parseAvailabilityWeekday(input.weekday);
     if (!weekdayResult.ok) throw new Error(weekdayResult.error);
 
-    const times = await this.resolveAvailabilityTimes(organizationId, input);
+    const times = await this.resolveAvailabilityTimes(input);
     if (!times.ok) throw new Error(times.error);
 
     const existing = await this.listProfileRecurringAvailability(
@@ -1202,14 +1005,14 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         weekday: weekdayResult.weekday,
         start_time: times.start_time,
         end_time: times.end_time,
-        shift_type_id: times.shift_type_id,
         sort_order: sortOrder,
       })
-      .select("*, shift_types(name)")
+      .select("*")
       .single();
     if (error || !data) {
       throw new Error(error?.message ?? "Speichern fehlgeschlagen");
     }
+    await this.syncProfileRecurringAvailabilitySortOrder(organizationId, profileId);
     return mapProfileRecurringAvailability(data as ProfileRecurringAvailabilityRow);
   }
 
@@ -1221,7 +1024,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       weekday: number;
       start_time: string;
       end_time: string;
-      shift_type_id?: string | null;
     }
   ) {
     const profile = await this.getProfileById(profileId);
@@ -1232,7 +1034,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const weekdayResult = parseAvailabilityWeekday(input.weekday);
     if (!weekdayResult.ok) throw new Error(weekdayResult.error);
 
-    const times = await this.resolveAvailabilityTimes(organizationId, input);
+    const times = await this.resolveAvailabilityTimes(input);
     if (!times.ok) throw new Error(times.error);
 
     const existing = await this.listProfileRecurringAvailability(
@@ -1254,14 +1056,14 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         weekday: weekdayResult.weekday,
         start_time: times.start_time,
         end_time: times.end_time,
-        shift_type_id: times.shift_type_id,
       })
       .eq("id", availabilityId)
       .eq("profile_id", profileId)
       .eq("organization_id", organizationId)
-      .select("*, shift_types(name)")
+      .select("*")
       .single();
     if (error || !data) throw new Error(error?.message ?? "Speichern fehlgeschlagen");
+    await this.syncProfileRecurringAvailabilitySortOrder(organizationId, profileId);
     return mapProfileRecurringAvailability(data as ProfileRecurringAvailabilityRow);
   }
 
@@ -1282,6 +1084,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("profile_id", profileId)
       .eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
+    await this.syncProfileRecurringAvailabilitySortOrder(organizationId, profileId);
   }
 
   async getServerDateIso() {
@@ -2678,6 +2481,18 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (error) throw new Error(error.message);
   }
 
+  async clearAreaShiftTemplatesForArea(
+    locationAreaId: string,
+    locationId: string
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+    const { error } = await this.client
+      .from(T.areaShiftTemplates)
+      .delete()
+      .eq("location_area_id", locationAreaId);
+    if (error) throw new Error(error.message);
+  }
+
   async reorderAreaShiftTemplates(
     locationAreaId: string,
     locationId: string,
@@ -2702,6 +2517,211 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           .eq("id", id)
           .eq("location_area_id", locationAreaId)
           .is("archived_at", null)
+      )
+    );
+  }
+
+  async listAreaQualificationTemplatesForArea(
+    locationAreaId: string,
+    locationId: string
+  ): Promise<AreaQualificationTemplateEntry[]> {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+
+    const { data: links, error: linkError } = await this.client
+      .from(T.areaQualificationTemplates)
+      .select("id, location_area_id, qualification_id, sort_order")
+      .eq("location_area_id", locationAreaId)
+      .order("sort_order");
+    if (linkError) throw new Error(linkError.message);
+
+    const rows = links ?? [];
+    if (!rows.length) return [];
+
+    const qualificationIds = rows.map((row) => row.qualification_id as string);
+    const { data: qualifications, error: qualError } = await this.client
+      .from(T.qualifications)
+      .select("*")
+      .in("id", qualificationIds)
+      .is("archived_at", null);
+    if (qualError) throw new Error(qualError.message);
+
+    const qualificationById = new Map(
+      ((qualifications ?? []) as Qualification[]).map((qualification) => [
+        qualification.id,
+        qualification,
+      ])
+    );
+
+    return rows
+      .map((row) => {
+        const qualification = qualificationById.get(row.qualification_id as string);
+        if (!qualification) return null;
+        return {
+          id: row.id as string,
+          location_area_id: row.location_area_id as string,
+          qualification_id: row.qualification_id as string,
+          sort_order: row.sort_order as number,
+          qualification,
+        };
+      })
+      .filter((entry): entry is AreaQualificationTemplateEntry => entry != null);
+  }
+
+  async listAreaQualificationTemplatesForLocation(locationId: string) {
+    const areas = await this.listLocationAreas(locationId);
+    if (!areas.length) return [];
+
+    const areaIds = areas.map((area) => area.id);
+    const { data: links, error: linkError } = await this.client
+      .from(T.areaQualificationTemplates)
+      .select("id, location_area_id, qualification_id, sort_order")
+      .in("location_area_id", areaIds)
+      .order("sort_order");
+    if (linkError) throw new Error(linkError.message);
+
+    const rows = links ?? [];
+    if (!rows.length) return [];
+
+    const qualificationIds = [...new Set(rows.map((row) => row.qualification_id as string))];
+    const { data: qualifications, error: qualError } = await this.client
+      .from(T.qualifications)
+      .select("*")
+      .in("id", qualificationIds)
+      .is("archived_at", null);
+    if (qualError) throw new Error(qualError.message);
+
+    const qualificationById = new Map(
+      ((qualifications ?? []) as Qualification[]).map((qualification) => [
+        qualification.id,
+        qualification,
+      ])
+    );
+
+    return rows
+      .map((row) => {
+        const qualification = qualificationById.get(row.qualification_id as string);
+        if (!qualification) return null;
+        return {
+          id: row.id as string,
+          location_area_id: row.location_area_id as string,
+          qualification_id: row.qualification_id as string,
+          sort_order: row.sort_order as number,
+          qualification,
+        };
+      })
+      .filter((entry): entry is AreaQualificationTemplateEntry => entry != null);
+  }
+
+  async getNextAreaQualificationTemplateSortOrder(
+    locationAreaId: string,
+    locationId: string
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+    const { data } = await this.client
+      .from(T.areaQualificationTemplates)
+      .select("sort_order")
+      .eq("location_area_id", locationAreaId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.sort_order != null ? (data.sort_order as number) + 1 : 0;
+  }
+
+  async assignAreaQualificationTemplate(
+    organizationId: string,
+    locationAreaId: string,
+    locationId: string,
+    qualificationId: string
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+
+    const { data: qualification, error: qualError } = await this.client
+      .from(T.qualifications)
+      .select("id, organization_id, archived_at")
+      .eq("id", qualificationId)
+      .maybeSingle();
+    if (qualError) throw new Error(qualError.message);
+    if (
+      !qualification ||
+      qualification.organization_id !== organizationId ||
+      qualification.archived_at != null
+    ) {
+      throw new Error("Funktion nicht gefunden");
+    }
+
+    const sortOrder = await this.getNextAreaQualificationTemplateSortOrder(
+      locationAreaId,
+      locationId
+    );
+
+    const { error } = await this.client.from(T.areaQualificationTemplates).insert({
+      location_area_id: locationAreaId,
+      qualification_id: qualificationId,
+      sort_order: sortOrder,
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async removeAreaQualificationTemplate(
+    locationAreaId: string,
+    locationId: string,
+    templateId: string
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+
+    const { data: link, error: linkError } = await this.client
+      .from(T.areaQualificationTemplates)
+      .select("id, qualification_id")
+      .eq("id", templateId)
+      .eq("location_area_id", locationAreaId)
+      .maybeSingle();
+    if (linkError) throw new Error(linkError.message);
+    if (!link) throw new Error("Funktionsvorlage nicht gefunden");
+
+    const staffing = await this.listLocationAreaStaffingForArea(
+      locationAreaId,
+      locationId
+    );
+    if (
+      staffing.some(
+        (rule) =>
+          rule.qualification_id === link.qualification_id &&
+          rule.required_count > 0
+      )
+    ) {
+      throw new Error("Funktion wird noch im Personalbedarf verwendet.");
+    }
+
+    const { error } = await this.client
+      .from(T.areaQualificationTemplates)
+      .delete()
+      .eq("id", templateId)
+      .eq("location_area_id", locationAreaId);
+    if (error) throw new Error(error.message);
+  }
+
+  async reorderAreaQualificationTemplates(
+    locationAreaId: string,
+    locationId: string,
+    orderedIds: string[]
+  ) {
+    await this.assertLocationAreaInLocation(locationAreaId, locationId);
+    const { data, error } = await this.client
+      .from(T.areaQualificationTemplates)
+      .select("id")
+      .eq("location_area_id", locationAreaId);
+    if (error) throw new Error(error.message);
+    validateReorderPermutation(
+      (data ?? []).map((row) => row.id as string),
+      orderedIds
+    );
+    await applySortOrderBatch(
+      orderedIds.map((id, index) =>
+        this.client
+          .from(T.areaQualificationTemplates)
+          .update({ sort_order: index })
+          .eq("id", id)
+          .eq("location_area_id", locationAreaId)
       )
     );
   }
@@ -2802,12 +2822,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       locationAreaId,
       locationId
     );
-    const match = existing.find(
-      (hour) =>
-        hour.weekday === normalized.weekday &&
-        hour.start_time.slice(0, 5) === normalized.start_time.slice(0, 5) &&
-        hour.end_time.slice(0, 5) === normalized.end_time.slice(0, 5)
-    );
+    const match = existing.find((hour) => serviceHoursSameWindow(hour, normalized));
     if (match) return match;
 
     const comparableExisting = options?.excludeServiceHourId
@@ -2820,7 +2835,11 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         start_time: hour.start_time,
         end_time: hour.end_time,
       })),
-      normalized,
+      {
+        weekday: normalized.weekday,
+        start_time: normalized.start_time,
+        end_time: normalized.end_time,
+      },
     ];
     const overlapCheck = validateServiceHoursInput(merged);
     if (!overlapCheck.ok) throw new Error(overlapCheck.error);
@@ -2851,16 +2870,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []) as Shift[];
   }
 
-  async listShiftsForWeek(organizationId: string, from: string, to: string) {
-    const { data } = await this.client
-      .from(T.shifts)
-      .select("*, shift_types(name, color, start_time, end_time)")
-      .eq("organization_id", organizationId)
-      .gte("shift_date", from)
-      .lte("shift_date", to);
-    return (data ?? []) as ShiftWithTypeRow[];
-  }
-
   async listDashboardShifts(
     organizationId: string,
     from: string,
@@ -2870,7 +2879,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data } = await this.client
       .from(T.shifts)
       .select(
-        `id, employee_id, location_area_id, shift_type_id, shift_date, starts_at, ends_at, shift_types(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
+        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
       )
       .eq("organization_id", organizationId)
       .eq("location_id", locationId)
@@ -2892,27 +2901,11 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       : null;
   }
 
-  async findShiftByEmployeeDate(employeeId: string, shiftDate: string) {
-    const { data } = await this.client
-      .from(T.shifts)
-      .select("id, location_id")
-      .eq("employee_id", employeeId)
-      .eq("shift_date", shiftDate)
-      .limit(1)
-      .maybeSingle();
-    return data
-      ? {
-          id: data.id as string,
-          location_id: (data.location_id as string | null) ?? null,
-        }
-      : null;
-  }
-
   async listShiftsForEmployeeDate(employeeId: string, shiftDate: string) {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, employee_id, shift_type_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+        "id, employee_id, area_shift_template_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
       )
       .eq("employee_id", employeeId)
       .eq("shift_date", shiftDate)
@@ -2925,7 +2918,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, employee_id, shift_type_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+        "id, employee_id, area_shift_template_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
       )
       .eq("id", id)
       .eq("organization_id", organizationId)
@@ -2964,7 +2957,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async insertShift(row: {
     organization_id: string;
     employee_id: string;
-    shift_type_id: string | null;
+    area_shift_template_id?: string | null;
     location_id: string;
     location_area_id?: string | null;
     shift_date: string;
@@ -2984,7 +2977,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async updateShift(
     id: string,
     row: {
-      shift_type_id: string | null;
+      area_shift_template_id?: string | null;
       location_id: string;
       location_area_id?: string | null;
       starts_at: string;

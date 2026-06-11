@@ -10,8 +10,11 @@ import {
 import { assignShiftBatch } from "@/app/actions/shifts";
 import {
   DASHBOARD_EMPTY_EMPLOYEE_ID,
+  DASHBOARD_TABLE_COMBO_TRIGGER_CLASS,
+  DashboardQualificationCombobox,
   DashboardShiftEmployeeCombobox,
   DashboardShiftTypeCombobox,
+  DASHBOARD_COMBO_EMPTY_LABEL,
   type DashboardAddShiftDialogState,
 } from "@/components/dashboard/dashboard-add-shift-modal";
 import {
@@ -29,10 +32,10 @@ import {
 } from "@/components/settings/settings-list-ui";
 import {
   Button,
+  Alert,
   CloseIcon,
   IconButton,
   PlusIcon,
-  Select,
   TimeInput,
   TrashIcon,
 } from "@/components/ui";
@@ -46,8 +49,7 @@ import {
   areaShiftTemplatesForArea,
   dashboardAssignmentPresetsForArea,
   resolvePresetIdFromTimes,
-  shiftTypeIdForAssign,
-  usesAreaShiftTemplatesForAssign,
+  areaShiftTemplateIdForAssign,
   type DashboardAssignmentPreset,
 } from "@/lib/dashboard-assignment-presets";
 import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
@@ -76,12 +78,19 @@ import type {
   LocationArea,
   LocationAreaStaffing,
   Qualification,
-  ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
 
 const MAX_ROWS = 20;
-const ROW_CONTROL_CLASS =
-  "box-border h-9 min-h-9 max-h-9 py-0 leading-9";
+const BULK_SHIFT_TABLE_CELL_CLASS =
+  "min-w-0 overflow-hidden px-1 py-2 align-middle";
+const BULK_SHIFT_TABLE_COMBO_ROOT_CLASS = "h-9 w-full min-w-0";
+const BULK_SHIFT_TIME_INPUT_CLASS =
+  "box-border h-9 min-h-9 max-h-9 w-full min-w-0 py-0 leading-9 tabular-nums";
+/** Combobox-Spalten −15 %; frei werdende Breite geht an Von/Bis */
+const BULK_SHIFT_COL_TEMPLATE = "18.43072%";
+const BULK_SHIFT_COL_QUALIFICATION = "19.941%";
+const BULK_SHIFT_COL_EMPLOYEE = "27.54%";
+const BULK_SHIFT_COL_TIME = "5.8725rem";
 
 export type DashboardBulkShiftDialogState = DashboardAddShiftDialogState;
 
@@ -100,7 +109,6 @@ type Props = {
   locationId: string;
   locationName: string;
   areas: LocationArea[];
-  shiftTypes: ShiftTypeWithBreaks[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   staffingRules: LocationAreaStaffing[];
   serviceHours: AreaServiceHourRef[];
@@ -272,7 +280,6 @@ type BulkShiftRowEditorProps = {
   weekday: number;
   employees: DashboardShiftAssignEmployee[];
   assignmentPresets: DashboardAssignmentPreset[];
-  orgShiftTypes: ShiftTypeWithBreaks[];
   areaQualifications: StaffingQualificationOption[];
   dateISO: string;
   areaExistingAssignments: DashboardAssignmentTimeWindow[];
@@ -290,7 +297,6 @@ function BulkShiftRowEditor({
   weekday,
   employees,
   assignmentPresets,
-  orgShiftTypes,
   areaQualifications,
   dateISO,
   areaExistingAssignments,
@@ -318,8 +324,7 @@ function BulkShiftRowEditor({
       row.startTime,
       row.endTime,
       dateISO,
-      areaAssignmentsForRow,
-      orgShiftTypes
+      areaAssignmentsForRow
     );
     return filterEmployeesByQualification(
       byWindow,
@@ -334,7 +339,6 @@ function BulkShiftRowEditor({
     row.qualificationId,
     dateISO,
     areaAssignmentsForRow,
-    orgShiftTypes,
     profileQualificationIds,
   ]);
 
@@ -419,19 +423,20 @@ function BulkShiftRowEditor({
       startTime: nextStart,
       endTime: nextEnd,
       employeeManuallySelected: true,
-      shiftTypeId: matchedPresetId ?? entry.shift_type_id ?? row.shiftTypeId,
+      shiftTypeId: matchedPresetId ?? row.shiftTypeId,
     });
   };
 
   return (
     <tr className="border-b border-border/60">
-      <td className="w-[6rem] max-w-[6.5rem] px-1 py-2 align-middle">
+      <td className={BULK_SHIFT_TABLE_CELL_CLASS}>
         <DashboardShiftTypeCombobox
           value={row.shiftTypeId}
           presets={assignmentPresets}
           placeholder={presetPlaceholder}
           disabled={disabled || assignmentPresets.length === 0}
-          rootClassName="w-full"
+          rootClassName={BULK_SHIFT_TABLE_COMBO_ROOT_CLASS}
+          triggerClassName={DASHBOARD_TABLE_COMBO_TRIGGER_CLASS}
           onChange={(nextId) => {
             const preset = assignmentPresets.find((item) => item.id === nextId);
             if (preset) {
@@ -448,29 +453,25 @@ function BulkShiftRowEditor({
           }}
         />
       </td>
-      <td className="min-w-[7rem] px-1 py-2 align-middle">
-        <Select
-          className={cn(ROW_CONTROL_CLASS, !row.qualificationId && "text-[silver]")}
+      <td className={BULK_SHIFT_TABLE_CELL_CLASS}>
+        <DashboardQualificationCombobox
           value={row.qualificationId}
+          options={areaQualifications}
+          placeholder={qualificationPlaceholder}
           disabled={disabled || areaQualifications.length === 0}
-          onChange={(event) =>
+          rootClassName={BULK_SHIFT_TABLE_COMBO_ROOT_CLASS}
+          triggerClassName={DASHBOARD_TABLE_COMBO_TRIGGER_CLASS}
+          onChange={(qualificationId) =>
             onChange({
-              qualificationId: event.target.value,
+              qualificationId,
               employeeManuallySelected: false,
             })
           }
-        >
-          <option value="">{qualificationPlaceholder}</option>
-          {areaQualifications.map((qualification) => (
-            <option key={qualification.id} value={qualification.id}>
-              {qualification.name}
-            </option>
-          ))}
-        </Select>
+        />
       </td>
-      <td className="w-[7rem] px-1 py-2 align-middle">
+      <td className={BULK_SHIFT_TABLE_CELL_CLASS}>
         <TimeInput
-          className={ROW_CONTROL_CLASS}
+          className={BULK_SHIFT_TIME_INPUT_CLASS}
           value={row.startTime}
           disabled={disabled}
           onChange={(event) =>
@@ -481,9 +482,9 @@ function BulkShiftRowEditor({
           }
         />
       </td>
-      <td className="w-[7rem] px-1 py-2 align-middle">
+      <td className={BULK_SHIFT_TABLE_CELL_CLASS}>
         <TimeInput
-          className={ROW_CONTROL_CLASS}
+          className={BULK_SHIFT_TIME_INPUT_CLASS}
           value={row.endTime}
           disabled={disabled}
           onChange={(event) =>
@@ -494,7 +495,7 @@ function BulkShiftRowEditor({
           }
         />
       </td>
-      <td className="min-w-[10rem] px-1 py-2 align-middle">
+      <td className={BULK_SHIFT_TABLE_CELL_CLASS}>
         <DashboardShiftEmployeeCombobox
           value={row.employeeId}
           onChange={(employeeId) =>
@@ -507,11 +508,12 @@ function BulkShiftRowEditor({
           emptyLabel={t("dashboard.noEmployeeSelected")}
           disabled={disabled}
           onApplyAvailability={handleApplyAvailability}
-          rootClassName="w-full"
+          rootClassName={BULK_SHIFT_TABLE_COMBO_ROOT_CLASS}
+          triggerClassName={DASHBOARD_TABLE_COMBO_TRIGGER_CLASS}
           weekdayLabelStyle="long"
         />
       </td>
-      <td className="w-10 px-1 py-2 align-middle">
+      <td className="w-10 shrink-0 px-1 py-2 align-middle">
         <div className="flex h-9 items-center justify-center">
           <IconButton
             size="sm"
@@ -534,7 +536,6 @@ export function DashboardBulkShiftModal({
   locationId,
   locationName,
   areas,
-  shiftTypes,
   areaShiftTemplates,
   staffingRules,
   serviceHours,
@@ -559,17 +560,12 @@ export function DashboardBulkShiftModal({
     [areaShiftTemplates, dialog.areaId]
   );
   const assignmentPresets = useMemo(
-    () => dashboardAssignmentPresetsForArea(templatesForArea, shiftTypes),
-    [templatesForArea, shiftTypes]
+    () => dashboardAssignmentPresetsForArea(templatesForArea),
+    [templatesForArea]
   );
-  const usesAreaTemplates = usesAreaShiftTemplatesForAssign(templatesForArea);
-  const presetColumnLabel = usesAreaTemplates
-    ? t("dashboard.bulkShiftTemplate")
-    : t("dashboard.bulkShiftType");
-  const presetPlaceholder = usesAreaTemplates
-    ? t("dashboard.selectShiftTemplate")
-    : t("dashboard.selectShiftType");
-  const qualificationPlaceholder = t("dashboard.selectQualification");
+  const presetColumnLabel = t("dashboard.bulkShiftTemplate");
+  const presetPlaceholder = DASHBOARD_COMBO_EMPTY_LABEL;
+  const qualificationPlaceholder = DASHBOARD_COMBO_EMPTY_LABEL;
 
   const areaQualifications = useMemo(
     () =>
@@ -592,8 +588,7 @@ export function DashboardBulkShiftModal({
       ),
       serviceHours,
       dashboardAssignmentPresetsForArea(
-        areaShiftTemplatesForArea(dialog.areaId, areaShiftTemplates),
-        shiftTypes
+        areaShiftTemplatesForArea(dialog.areaId, areaShiftTemplates)
       ),
       staffingRules,
       dialog.areaId
@@ -817,7 +812,7 @@ export function DashboardBulkShiftModal({
         employeeId: row.employeeId,
         startTime: row.startTime,
         endTime: row.endTime,
-        shiftTypeId: shiftTypeIdForAssign(row.shiftTypeId, assignmentPresets),
+        areaShiftTemplateId: areaShiftTemplateIdForAssign(row.shiftTypeId),
       })),
     });
     setSaving(false);
@@ -937,17 +932,32 @@ export function DashboardBulkShiftModal({
         </div>
 
         <div className={cn("min-h-0 flex-1 overflow-hidden", settingsModalBodyPaddingClass())}>
+          {assignmentPresets.length === 0 ? (
+            <Alert variant="info" className="mb-4">
+              {t("dashboard.noShiftTemplatesForArea")}
+            </Alert>
+          ) : null}
           <div className={cn(BULK_SHIFT_LIST_SCROLL_CLASS, settingsResponsiveTableWrapClass())}>
-            <table className="w-full min-w-[36rem] text-sm">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col style={{ width: BULK_SHIFT_COL_TEMPLATE }} />
+                <col style={{ width: BULK_SHIFT_COL_QUALIFICATION }} />
+                <col style={{ width: BULK_SHIFT_COL_TIME }} />
+                <col style={{ width: BULK_SHIFT_COL_TIME }} />
+                <col style={{ width: BULK_SHIFT_COL_EMPLOYEE }} />
+                <col style={{ width: "2.5rem" }} />
+              </colgroup>
               <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="text-left text-xs text-muted">
-                  <th className="w-[6rem] px-1 py-2">{presetColumnLabel}</th>
-                  <th className="min-w-[7rem] px-1 py-2">
+                  <th className="min-w-0 truncate px-1 py-2">{presetColumnLabel}</th>
+                  <th className="min-w-0 truncate px-1 py-2">
                     {t("dashboard.bulkShiftQualification")}
                   </th>
-                  <th className="w-[7rem] px-1 py-2">{t("dashboard.bulkShiftFrom")}</th>
-                  <th className="w-[7rem] px-1 py-2">{t("dashboard.bulkShiftTo")}</th>
-                  <th className="px-1 py-2">{t("dashboard.bulkShiftEmployee")}</th>
+                  <th className="px-1 py-2">{t("dashboard.bulkShiftFrom")}</th>
+                  <th className="px-1 py-2">{t("dashboard.bulkShiftTo")}</th>
+                  <th className="min-w-0 truncate px-1 py-2">
+                    {t("dashboard.bulkShiftEmployee")}
+                  </th>
                   <th className="px-1 py-2" aria-hidden />
                 </tr>
               </thead>
@@ -959,7 +969,6 @@ export function DashboardBulkShiftModal({
                     weekday={weekday}
                     employees={employees}
                     assignmentPresets={assignmentPresets}
-                    orgShiftTypes={shiftTypes}
                     areaQualifications={areaQualifications}
                     dateISO={dialog.date}
                     areaExistingAssignments={areaExistingAssignments}

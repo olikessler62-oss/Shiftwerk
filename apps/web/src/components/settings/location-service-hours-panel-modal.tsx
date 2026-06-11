@@ -1,9 +1,11 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchLocationAreaServiceHours,
+  fetchLocationServiceHourSources,
   saveLocationAreaServiceHours,
+  type ServiceHourSourceArea,
 } from "@/app/actions/location-service-hours";
 import { fetchAreaShiftTemplates } from "@/app/actions/area-shift-templates";
 import type {
@@ -17,12 +19,11 @@ import {
   buildServiceHourEntriesFromHours,
   buildServiceHourPayloadFromEntries,
   createDefaultServiceHourEntry,
-  SERVICE_HOUR_WEEKDAY_COUNT,
-  weekdayChipLabel,
-  weekdayChipTooltipLabel,
   type ServiceHourEntry,
 } from "@/lib/location-service-hour-entries";
+import { currentServiceHoursMatchSource } from "@/lib/location-area-copy-compare";
 import { useTranslations } from "@/i18n/locale-provider";
+import { WeekdayChipPicker } from "./weekday-chip-picker";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
   settingsModalBodyPaddingClass,
@@ -67,47 +68,6 @@ function timeFieldValue(time: string): string {
   return time.slice(0, 5);
 }
 
-function WeekdayChipPicker({
-  selected,
-  disabled,
-  onToggle,
-}: {
-  selected: Set<number>;
-  disabled?: boolean;
-  onToggle: (weekday: number) => void;
-}) {
-  const t = useTranslations();
-
-  return (
-    <div className="flex flex-wrap gap-1">
-      {Array.from({ length: SERVICE_HOUR_WEEKDAY_COUNT }, (_, weekday) => {
-        const active = selected.has(weekday);
-        const tooltip = weekdayChipTooltipLabel(weekday, t);
-        return (
-          <button
-            key={weekday}
-            type="button"
-            disabled={disabled}
-            aria-pressed={active}
-            aria-label={tooltip}
-            title={tooltip}
-            onClick={() => onToggle(weekday)}
-            className={cn(
-              "min-w-[2rem] rounded-md border px-1.5 py-0.5 text-xs font-medium transition-colors",
-              active
-                ? "border-primary bg-primary/10 text-foreground"
-                : "border-border bg-surface text-muted hover:bg-subtle",
-              disabled && "cursor-not-allowed opacity-50"
-            )}
-          >
-            {weekdayChipLabel(weekday, t)}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function LocationServiceHoursPanelModal({
   location,
   area,
@@ -128,6 +88,8 @@ export function LocationServiceHoursPanelModal({
   const [entries, setEntries] = useState<ServiceHourEntry[]>(() =>
     buildServiceHourEntriesFromHours(cachedHours ?? [], cachedShiftTemplates ?? [])
   );
+  const [sourceAreas, setSourceAreas] = useState<ServiceHourSourceArea[]>([]);
+  const [selectedSourceAreaId, setSelectedSourceAreaId] = useState("");
 
   const syncEntriesFromHours = useCallback(
     (hours: LocationAreaServiceHour[], templates: AreaShiftTemplateWithBreaks[]) => {
@@ -144,7 +106,20 @@ export function LocationServiceHoursPanelModal({
   }, [cachedHours, cachedShiftTemplates, syncEntriesFromHours]);
 
   useEffect(() => {
-    if (cachedHours !== undefined && cachedShiftTemplates !== undefined) return;
+    let cancelled = false;
+    void fetchLocationServiceHourSources(location.id, area.id).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) return;
+      const sources = result.sources ?? [];
+      setSourceAreas(sources);
+      setSelectedSourceAreaId(sources[0]?.id ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [location.id, area.id]);
+
+  useEffect(() => {
 
     let cancelled = false;
     setLoading(true);
@@ -208,6 +183,16 @@ export function LocationServiceHoursPanelModal({
     );
   }
 
+  function applyWeekdayPreset(entryId: string, weekdays: number[]) {
+    setEntries((prev) =>
+      prev.map((entry) =>
+        entry.id === entryId
+          ? { ...entry, weekdays: new Set(weekdays) }
+          : entry
+      )
+    );
+  }
+
   function handleTemplateChange(entryId: string, templateId: string) {
     const template = shiftTemplates.find((item) => item.id === templateId);
     if (template) {
@@ -224,6 +209,21 @@ export function LocationServiceHoursPanelModal({
   function addEntry() {
     setEntries((prev) => [...prev, createDefaultServiceHourEntry()]);
   }
+
+  function applyFromSourceArea() {
+    const source = sourceAreas.find((entry) => entry.id === selectedSourceAreaId);
+    if (!source) return;
+    setErrorMessage(null);
+    syncEntriesFromHours(source.hours, shiftTemplates);
+  }
+
+  const selectedSourceArea = sourceAreas.find(
+    (entry) => entry.id === selectedSourceAreaId
+  );
+  const copyFromSourceIsNoOp = useMemo(() => {
+    if (!selectedSourceArea) return true;
+    return currentServiceHoursMatchSource(entries, selectedSourceArea.hours);
+  }, [entries, selectedSourceArea]);
 
   function removeEntry(entryId: string) {
     setEntries((prev) => {
@@ -338,6 +338,9 @@ export function LocationServiceHoursPanelModal({
                         selected={entry.weekdays}
                         disabled={saving}
                         onToggle={(weekday) => toggleWeekday(entry.id, weekday)}
+                        onApplyPreset={(weekdays) =>
+                          applyWeekdayPreset(entry.id, weekdays)
+                        }
                       />
                     </div>
                     <div className="min-w-0">
@@ -446,6 +449,9 @@ export function LocationServiceHoursPanelModal({
                         selected={entry.weekdays}
                         disabled={saving}
                         onToggle={(weekday) => toggleWeekday(entry.id, weekday)}
+                        onApplyPreset={(weekdays) =>
+                          applyWeekdayPreset(entry.id, weekdays)
+                        }
                       />
                     </div>
                     <div className="min-w-0">
@@ -520,7 +526,7 @@ export function LocationServiceHoursPanelModal({
                   </div>
                 ))}
               </div>
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 lg:hidden">
                 <Button
                   type="button"
                   variant="outline"
@@ -532,6 +538,85 @@ export function LocationServiceHoursPanelModal({
                   <PlusIcon />
                   {t("locations.serviceHoursAddRow")}
                 </Button>
+                {sourceAreas.length > 0 ? (
+                  <div className="flex min-w-0 items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={saving || !selectedSourceArea || copyFromSourceIsNoOp}
+                      onClick={applyFromSourceArea}
+                      className="h-8 shrink-0 text-xs"
+                    >
+                      {t("locations.serviceHoursCopyApply")}
+                    </Button>
+                    <Select
+                      className={cn(
+                        serviceHoursFieldClass,
+                        "h-8 w-[9.5rem] min-w-[9.5rem] text-xs"
+                      )}
+                      value={selectedSourceAreaId}
+                      disabled={saving}
+                      aria-label={t("locations.serviceHoursCopySelectArea")}
+                      onChange={(event) => setSelectedSourceAreaId(event.target.value)}
+                    >
+                      {sourceAreas.map((source) => (
+                        <option key={source.id} value={source.id}>
+                          {source.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
+              </div>
+              <div className={cn(serviceHoursDesktopGridClass, "mt-3 hidden lg:grid")}>
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={saving}
+                    onClick={addEntry}
+                    className="h-8 text-xs"
+                  >
+                    <PlusIcon />
+                    {t("locations.serviceHoursAddRow")}
+                  </Button>
+                </div>
+                <div aria-hidden />
+                <div aria-hidden />
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  {sourceAreas.length > 0 ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={saving || !selectedSourceArea || copyFromSourceIsNoOp}
+                        onClick={applyFromSourceArea}
+                        className="h-8 shrink-0 text-xs"
+                      >
+                        {t("locations.serviceHoursCopyApply")}
+                      </Button>
+                      <Select
+                        className={cn(
+                          serviceHoursFieldClass,
+                          "h-8 w-[9.5rem] min-w-[9.5rem] text-xs"
+                        )}
+                        value={selectedSourceAreaId}
+                        disabled={saving}
+                        aria-label={t("locations.serviceHoursCopySelectArea")}
+                        onChange={(event) => setSelectedSourceAreaId(event.target.value)}
+                      >
+                        {sourceAreas.map((source) => (
+                          <option key={source.id} value={source.id}>
+                            {source.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </>
+                  ) : null}
+                </div>
               </div>
               <p className="mt-3 text-xs text-muted">{t("locations.serviceHoursHint")}</p>
             </>

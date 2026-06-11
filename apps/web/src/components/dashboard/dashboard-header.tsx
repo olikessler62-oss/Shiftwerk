@@ -21,7 +21,6 @@ const SETTINGS_MODAL_PARAMS = [
   "standorte",
   "profiles",
   "rollen",
-  "schichtarten",
   "qualifikationen",
   "sonderzuschlaege",
   "abwesenheiten",

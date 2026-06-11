@@ -2,12 +2,7 @@ import {
   areDashboardShiftTimesComplete,
   dashboardTimeKey,
 } from "@/lib/available-employees-for-shift";
-import type {
-  AreaShiftTemplateWithBreaks,
-  ShiftTypeWithBreaks,
-} from "@schichtwerk/types";
-
-export type DashboardAssignmentPresetSource = "area_template" | "shift_type";
+import type { AreaShiftTemplateWithBreaks } from "@schichtwerk/types";
 
 export type DashboardAssignmentPreset = {
   id: string;
@@ -15,7 +10,6 @@ export type DashboardAssignmentPreset = {
   color: string;
   start_time: string;
   end_time: string;
-  source: DashboardAssignmentPresetSource;
 };
 
 type TimePresetRef = {
@@ -25,27 +19,14 @@ type TimePresetRef = {
 };
 
 export function dashboardAssignmentPresetsForArea(
-  areaTemplates: readonly AreaShiftTemplateWithBreaks[],
-  orgShiftTypes: readonly ShiftTypeWithBreaks[]
+  areaTemplates: readonly AreaShiftTemplateWithBreaks[]
 ): DashboardAssignmentPreset[] {
-  if (areaTemplates.length > 0) {
-    return areaTemplates.map((template) => ({
-      id: template.id,
-      name: template.name,
-      color: template.color,
-      start_time: template.start_time,
-      end_time: template.end_time,
-      source: "area_template",
-    }));
-  }
-
-  return orgShiftTypes.map((shiftType) => ({
-    id: shiftType.id,
-    name: shiftType.name,
-    color: shiftType.color,
-    start_time: shiftType.start_time,
-    end_time: shiftType.end_time,
-    source: "shift_type",
+  return areaTemplates.map((template) => ({
+    id: template.id,
+    name: template.name,
+    color: template.color,
+    start_time: template.start_time,
+    end_time: template.end_time,
   }));
 }
 
@@ -53,6 +34,10 @@ export function usesAreaShiftTemplatesForAssign(
   areaTemplates: readonly AreaShiftTemplateWithBreaks[]
 ): boolean {
   return areaTemplates.length > 0;
+}
+
+export function areaShiftTemplateIdForAssign(presetId: string): string | null {
+  return presetId || null;
 }
 
 export function resolvePresetIdFromTimes(
@@ -72,16 +57,6 @@ export function resolvePresetIdFromTimes(
         dashboardTimeKey(preset.end_time) === end
     )?.id ?? null
   );
-}
-
-export function shiftTypeIdForAssign(
-  presetId: string,
-  presets: readonly DashboardAssignmentPreset[]
-): string | null {
-  if (!presetId) return null;
-  const preset = presets.find((entry) => entry.id === presetId);
-  if (!preset || preset.source !== "shift_type") return null;
-  return preset.id;
 }
 
 export function findAreaShiftTemplateByTimes(

@@ -175,44 +175,18 @@ type DashboardShiftAssignAvailability = {
   weekday: number | string;
   start_time: string;
   end_time: string;
-  shift_type_id?: string | null;
 };
-
-type ShiftTypeTimeRef = {
-  id: string;
-  start_time: string;
-  end_time: string;
-};
-
-function availabilitySlotTimeWindows(
-  slot: DashboardShiftAssignAvailability,
-  shiftTypes?: readonly ShiftTypeTimeRef[]
-): { start: string; end: string }[] {
-  const windows: { start: string; end: string }[] = [
-    { start: slot.start_time, end: slot.end_time },
-  ];
-  if (slot.shift_type_id && shiftTypes) {
-    const type = shiftTypes.find((entry) => entry.id === slot.shift_type_id);
-    if (type) {
-      windows.push({ start: type.start_time, end: type.end_time });
-    }
-  }
-  return windows;
-}
 
 function availabilitySlotCoversShiftWindow(
   slot: DashboardShiftAssignAvailability,
   windowStart: string,
-  windowEnd: string,
-  shiftTypes?: readonly ShiftTypeTimeRef[]
+  windowEnd: string
 ): boolean {
-  return availabilitySlotTimeWindows(slot, shiftTypes).some((window) =>
-    shiftWindowFitsAvailabilitySlot(
-      windowStart,
-      windowEnd,
-      window.start,
-      window.end
-    )
+  return shiftWindowFitsAvailabilitySlot(
+    windowStart,
+    windowEnd,
+    slot.start_time,
+    slot.end_time
   );
 }
 
@@ -220,13 +194,12 @@ export function employeeMatchesDashboardShiftAssignWindow(
   availabilities: readonly DashboardShiftAssignAvailability[],
   weekday: number,
   windowStart: string,
-  windowEnd: string,
-  shiftTypes?: readonly ShiftTypeTimeRef[]
+  windowEnd: string
 ): boolean {
   return availabilities.some(
     (slot) =>
       normalizeProfileAvailabilityWeekday(slot.weekday) === weekday &&
-      availabilitySlotCoversShiftWindow(slot, windowStart, windowEnd, shiftTypes)
+      availabilitySlotCoversShiftWindow(slot, windowStart, windowEnd)
   );
 }
 
@@ -239,8 +212,7 @@ export function filterDashboardShiftAssignEmployeesByWindow<
   employees: readonly T[],
   weekday: number,
   windowStart: string,
-  windowEnd: string,
-  shiftTypes?: readonly ShiftTypeTimeRef[]
+  windowEnd: string
 ): T[] {
   if (!areDashboardShiftTimesComplete(windowStart, windowEnd)) return [];
   return employees.filter((employee) =>
@@ -248,8 +220,7 @@ export function filterDashboardShiftAssignEmployeesByWindow<
       employee.availabilities,
       weekday,
       windowStart,
-      windowEnd,
-      shiftTypes
+      windowEnd
     )
   );
 }
@@ -271,15 +242,13 @@ export function filterDashboardShiftAssignEmployeesByWindowWithoutOverlap<
   windowStart: string,
   windowEnd: string,
   shiftDate: string,
-  areaAssignments: readonly DashboardAreaAssignmentWindow[],
-  shiftTypes?: readonly ShiftTypeTimeRef[]
+  areaAssignments: readonly DashboardAreaAssignmentWindow[]
 ): T[] {
   const available = filterDashboardShiftAssignEmployeesByWindow(
     employees,
     weekday,
     windowStart,
-    windowEnd,
-    shiftTypes
+    windowEnd
   );
   if (!areDashboardShiftTimesComplete(windowStart, windowEnd)) return [];
 
@@ -313,25 +282,6 @@ export function pickEmployeeLongestWithoutShift<
     const byDate = a.last_shift_date.localeCompare(b.last_shift_date);
     return byDate !== 0 ? byDate : a.id.localeCompare(b.id);
   })[0];
-}
-
-export function resolveShiftTypeIdFromTimes(
-  startTime: string,
-  endTime: string,
-  shiftTypes: readonly { id: string; start_time: string; end_time: string }[]
-): string | null {
-  if (!areDashboardShiftTimesComplete(startTime, endTime)) return null;
-
-  const start = dashboardTimeKey(startTime);
-  const end = dashboardTimeKey(endTime);
-
-  return (
-    shiftTypes.find(
-      (type) =>
-        dashboardTimeKey(type.start_time) === start &&
-        dashboardTimeKey(type.end_time) === end
-    )?.id ?? null
-  );
 }
 
 export function weekdayFromDashboardDate(dateISO: string): number {

@@ -14,9 +14,12 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
+  SettingsListRowDeleteButton,
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
+  settingsListRowDeleteCellClass,
+  settingsListRowDeleteHeaderClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
@@ -31,7 +34,6 @@ import {
   IconButton,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -213,6 +215,10 @@ export function RolesModal({ roles, onClose }: Props) {
                         <th className={settingsStickyColumnHeaderClass("center")}>
                           {t("roles.permission")}
                         </th>
+                        <th
+                          className={settingsListRowDeleteHeaderClass()}
+                          aria-hidden
+                        />
                       </tr>
                     </thead>
                     <tbody>
@@ -240,6 +246,18 @@ export function RolesModal({ roles, onClose }: Props) {
                             </td>
                             <td className={settingsDataCellClass(isSelected, { align: "center", className: "text-muted" })}>
                               {permissionLabel(t, item.permission_level)}
+                            </td>
+                            <td className={settingsListRowDeleteCellClass(isSelected)}>
+                              <SettingsListRowDeleteButton
+                                label={t("roles.delete")}
+                                disabled={pending || item.is_system}
+                                title={item.is_system ? t("roles.systemRoleHint") : undefined}
+                                onClick={() => {
+                                  setSelectedId(item.id);
+                                  setConfirmDelete(true);
+                                  setErrorMessage(null);
+                                }}
+                              />
                             </td>
                           </tr>
                         );
@@ -288,18 +306,6 @@ export function RolesModal({ roles, onClose }: Props) {
                       }}
                     />
                   </>
-                }
-                destructive={
-                  <SettingsIconActionButton
-                    label={t("roles.delete")}
-                    icon={<TrashIcon />}
-                    disabled={pending || !selected || !!selected?.is_system}
-                    title={selected?.is_system ? t("roles.systemRoleHint") : undefined}
-                    onClick={() => {
-                      setConfirmDelete(true);
-                      setErrorMessage(null);
-                    }}
-                  />
                 }
               />
             </div>

@@ -65,20 +65,6 @@ create index profiles_organization_id_idx on public.profiles (organization_id);
 create index profiles_organization_sort_order_idx on public.profiles (organization_id, sort_order);
 create index profiles_role_id_idx on public.profiles (role_id);
 
--- Shift types
-create table public.shift_types (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations (id) on delete cascade,
-  name text not null,
-  color text not null default '#0D9488',
-  start_time time not null,
-  end_time time not null,
-  sort_order int not null default 0,
-  archived_at timestamptz
-);
-
-create index shift_types_organization_id_idx on public.shift_types (organization_id);
-
 -- Qualifikationen
 create table public.qualifications (
   id uuid primary key default gen_random_uuid(),
@@ -177,7 +163,6 @@ create table public.profile_recurring_availability (
   weekday smallint not null check (weekday >= 0 and weekday <= 6),
   start_time time not null,
   end_time time not null,
-  shift_type_id uuid references public.shift_types (id) on delete set null,
   sort_order int not null default 0,
   created_at timestamptz not null default now(),
   constraint profile_recurring_availability_time_check check (start_time <> end_time)
@@ -261,9 +246,12 @@ create table public.area_shift_templates (
   start_time time not null,
   end_time time not null,
   sort_order int not null default 0,
-  archived_at timestamptz,
-  unique (location_area_id, name)
+  archived_at timestamptz
 );
+
+create unique index area_shift_templates_location_area_id_name_active_key
+  on public.area_shift_templates (location_area_id, name)
+  where archived_at is null;
 
 create index area_shift_templates_location_area_id_idx
   on public.area_shift_templates (location_area_id);
@@ -279,24 +267,27 @@ create table public.area_shift_template_breaks (
 create index area_shift_template_breaks_template_id_idx
   on public.area_shift_template_breaks (area_shift_template_id);
 
--- Pausen pro Schichtart
-create table public.shift_type_breaks (
+-- Funktionsvorlagen pro Bereich
+create table public.area_qualification_templates (
   id uuid primary key default gen_random_uuid(),
-  shift_type_id uuid not null references public.shift_types (id) on delete cascade,
-  break_start time not null,
-  break_end time not null,
-  sort_order int not null default 0
+  location_area_id uuid not null references public.location_areas (id) on delete cascade,
+  qualification_id uuid not null references public.qualifications (id) on delete restrict,
+  sort_order int not null default 0,
+  unique (location_area_id, qualification_id)
 );
 
-create index shift_type_breaks_shift_type_id_idx
-  on public.shift_type_breaks (shift_type_id);
+create index area_qualification_templates_location_area_id_idx
+  on public.area_qualification_templates (location_area_id);
+
+create index area_qualification_templates_qualification_id_idx
+  on public.area_qualification_templates (qualification_id);
 
 -- Shifts
 create table public.shifts (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations (id) on delete cascade,
   employee_id uuid not null references public.profiles (id) on delete cascade,
-  shift_type_id uuid references public.shift_types (id) on delete restrict,
+  area_shift_template_id uuid references public.area_shift_templates (id) on delete set null,
   location_id uuid references public.locations (id) on delete restrict,
   location_area_id uuid references public.location_areas (id) on delete restrict,
   shift_date date not null,
@@ -306,6 +297,8 @@ create table public.shifts (
   created_by uuid references public.profiles (id) on delete set null,
   updated_at timestamptz not null default now()
 );
+
+create index shifts_area_shift_template_id_idx on public.shifts (area_shift_template_id);
 
 create index shifts_org_date_idx on public.shifts (organization_id, shift_date);
 create index shifts_location_id_idx on public.shifts (location_id);
@@ -464,7 +457,6 @@ grant execute on function private.is_manager_or_owner() to authenticated, servic
 -- RLS
 alter table public.organizations enable row level security;
 alter table public.profiles enable row level security;
-alter table public.shift_types enable row level security;
 alter table public.qualifications enable row level security;
 alter table public.profile_qualifications enable row level security;
 alter table public.profile_recurring_availability enable row level security;
@@ -478,7 +470,7 @@ alter table public.location_area_staffing enable row level security;
 alter table public.location_area_service_hours enable row level security;
 alter table public.area_shift_templates enable row level security;
 alter table public.area_shift_template_breaks enable row level security;
-alter table public.shift_type_breaks enable row level security;
+alter table public.area_qualification_templates enable row level security;
 alter table public.shifts enable row level security;
 alter table public.availability enable row level security;
 alter table public.absence_requests enable row level security;
@@ -525,28 +517,6 @@ create policy "profiles_update_manager_or_self"
     or (
       organization_id in (select organization_id from private.current_profile())
       and private.is_manager_or_owner()
-    )
-  );
-
--- Shift types
-create policy "shift_types_select_org"
-  on public.shift_types for select
-  using (
-    organization_id in (select organization_id from private.current_profile())
-  );
-
-create policy "shift_types_write_manager"
-  on public.shift_types for all
-  using (
-    organization_id in (
-      select organization_id from private.current_profile()
-      where permission_level in ('admin', 'manager')
-    )
-  )
-  with check (
-    organization_id in (
-      select organization_id from private.current_profile()
-      where permission_level in ('admin', 'manager')
     )
   );
 
@@ -881,6 +851,42 @@ create policy "area_shift_template_breaks_write_manager"
     )
   );
 
+create policy "area_qualification_templates_select_org"
+  on public.area_qualification_templates for select
+  using (
+    location_area_id in (
+      select la.id
+      from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (select organization_id from private.current_profile())
+    )
+  );
+
+create policy "area_qualification_templates_write_manager"
+  on public.area_qualification_templates for all
+  using (
+    location_area_id in (
+      select la.id
+      from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  )
+  with check (
+    location_area_id in (
+      select la.id
+      from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  );
+
 -- Roles
 create policy "roles_select_org"
   on public.roles for select
@@ -922,39 +928,6 @@ create policy "locations_write_manager"
     organization_id in (
       select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
-    )
-  );
-
--- Shift type breaks
-create policy "shift_type_breaks_select_org"
-  on public.shift_type_breaks for select
-  using (
-    shift_type_id in (
-      select id from public.shift_types
-      where organization_id in (select organization_id from private.current_profile())
-    )
-  );
-
-create policy "shift_type_breaks_write_manager"
-  on public.shift_type_breaks for all
-  using (
-    shift_type_id in (
-      select st.id
-      from public.shift_types st
-      where st.organization_id in (
-        select organization_id from private.current_profile()
-        where permission_level in ('admin', 'manager')
-      )
-    )
-  )
-  with check (
-    shift_type_id in (
-      select st.id
-      from public.shift_types st
-      where st.organization_id in (
-        select organization_id from private.current_profile()
-        where permission_level in ('admin', 'manager')
-      )
     )
   );
 

@@ -19,7 +19,6 @@ import { toIntlLocale } from "@/i18n/intl-locale";
 import type {
   AreaShiftTemplateWithBreaks,
   LocationArea,
-  ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
 import {
   areaHasStaffingRequirementOnDate,
@@ -33,6 +32,9 @@ import {
   type AreaServiceHourRef,
   type StaffingRule,
 } from "@/lib/location-staffing-client";
+import {
+  areaShiftTemplatesForArea,
+} from "@/lib/dashboard-assignment-presets";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
 import {
@@ -63,7 +65,7 @@ export type DashboardShiftCard = {
   id: string;
   shift_date: string;
   locationAreaId: string | null;
-  shiftTypeId: string | null;
+  areaShiftTemplateId: string | null;
   employeeId: string;
   shiftName: string;
   color: string;
@@ -81,7 +83,6 @@ type Props = {
   serviceHours: AreaServiceHourRef[];
   staffingRules: StaffingRule[];
   shifts: DashboardShiftCard[];
-  shiftTypes: ShiftTypeWithBreaks[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   qualifications: Qualification[];
   profiles: Profile[];
@@ -222,13 +223,16 @@ function dayHasScheduleActivityOnDate(
 
 /** Platzhalter-Schichtkarte in kompakten Zeilen (50px), z. B. Bereich-Checkbox inaktiv. */
 function InactiveAreaDummyShiftCard({
-  shiftTypes,
+  areaId,
+  areaShiftTemplates,
 }: {
-  shiftTypes: ShiftTypeWithBreaks[];
+  areaId: string;
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
 }) {
+  const templatesForArea = areaShiftTemplatesForArea(areaId, areaShiftTemplates);
   const lineColors =
-    shiftTypes.length > 0
-      ? shiftTypes.map((type) => type.color)
+    templatesForArea.length > 0
+      ? templatesForArea.map((template) => template.color)
       : ["#0d9488", "#f59e0b", "#6366f1"];
 
   return (
@@ -392,7 +396,6 @@ export function DashboardCalendar({
   serviceHours,
   staffingRules,
   shifts,
-  shiftTypes,
   areaShiftTemplates,
   qualifications,
   profiles,
@@ -990,7 +993,8 @@ export function DashboardCalendar({
                                 <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-x-hidden overflow-y-auto">
                                   {showInactivePreviewDummy ? (
                                     <InactiveAreaDummyShiftCard
-                                      shiftTypes={shiftTypes}
+                                      areaId={area.id}
+                                      areaShiftTemplates={areaShiftTemplates}
                                     />
                                   ) : showOpenDayCell ? (
                                     dayShifts.map((shift) => (
@@ -1049,7 +1053,6 @@ export function DashboardCalendar({
           dialog={addShiftDialog}
           locationId={locationId}
           areas={areas}
-          shiftTypes={shiftTypes}
           areaShiftTemplates={areaShiftTemplates}
           serviceHours={serviceHours}
           onClose={() => setAddShiftDialog(null)}
@@ -1064,7 +1067,6 @@ export function DashboardCalendar({
           locationId={locationId}
           locationName={locationName}
           areas={areas}
-          shiftTypes={shiftTypes}
           areaShiftTemplates={areaShiftTemplates}
           staffingRules={fullStaffingRules}
           serviceHours={serviceHours}

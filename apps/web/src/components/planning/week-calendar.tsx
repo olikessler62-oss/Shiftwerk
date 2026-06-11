@@ -1,5 +1,5 @@
 export {
   ShiftPlanner,
   WeekCalendar,
-  type ShiftWithType,
+  type PlanningShift,
 } from "./shift-planner";

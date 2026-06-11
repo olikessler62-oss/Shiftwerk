@@ -23,9 +23,12 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
+  SettingsListRowDeleteButton,
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
+  settingsListRowDeleteCellClass,
+  settingsListRowDeleteHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -40,7 +43,6 @@ import {
   IconButton,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
@@ -237,6 +239,10 @@ export function CompensationSurchargeTypesModal({
                         <th className={settingsStickyColumnHeaderClass()}>
                           {t("surcharges.unit")}
                         </th>
+                        <th
+                          className={settingsListRowDeleteHeaderClass()}
+                          aria-hidden
+                        />
                       </tr>
                     </thead>
                     <tbody>
@@ -287,6 +293,17 @@ export function CompensationSurchargeTypesModal({
                             <td className={settingsDataCellClass(isSelected)}>
                               {formatSurchargeUnitLabel(item.unit, t)}
                             </td>
+                            <td className={settingsListRowDeleteCellClass(isSelected)}>
+                              <SettingsListRowDeleteButton
+                                label={t("surcharges.delete")}
+                                disabled={pending}
+                                onClick={() => {
+                                  setSelectedId(item.id);
+                                  setConfirmDelete(true);
+                                  setErrorMessage(null);
+                                }}
+                              />
+                            </td>
                           </tr>
                         );
                       })}
@@ -334,17 +351,6 @@ export function CompensationSurchargeTypesModal({
                       }}
                     />
                   </>
-                }
-                destructive={
-                  <SettingsIconActionButton
-                    label={t("surcharges.delete")}
-                    icon={<TrashIcon />}
-                    disabled={pending || !selected}
-                    onClick={() => {
-                      setConfirmDelete(true);
-                      setErrorMessage(null);
-                    }}
-                  />
                 }
               />
             </div>

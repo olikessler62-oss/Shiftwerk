@@ -29,7 +29,7 @@ type AssignShiftWithTimesInput = {
   shiftDate: string;
   startTime: string;
   endTime: string;
-  shiftTypeId: string | null;
+  areaShiftTemplateId: string | null;
   locationId: string;
   locationAreaId: string;
 };
@@ -38,7 +38,7 @@ export type AssignShiftBatchRowInput = {
   employeeId: string;
   startTime: string;
   endTime: string;
-  shiftTypeId: string | null;
+  areaShiftTemplateId: string | null;
 };
 
 export type AssignShiftBatchRowResult =
@@ -57,7 +57,7 @@ function toUndoSnapshot(row: EmployeeShiftRecord): ShiftUndoSnapshot {
   return {
     id: row.id,
     employee_id: row.employee_id,
-    shift_type_id: row.shift_type_id,
+    area_shift_template_id: row.area_shift_template_id,
     location_id: row.location_id,
     location_area_id: row.location_area_id,
     shift_date: row.shift_date,
@@ -102,7 +102,7 @@ async function persistShiftWithTimes(
   const overlapping = findOverlappingShifts(existing, starts_at, ends_at);
 
   const payload = {
-    shift_type_id: input.shiftTypeId,
+    area_shift_template_id: input.areaShiftTemplateId,
     location_id: input.locationId,
     location_area_id: input.locationAreaId,
     starts_at,
@@ -189,16 +189,6 @@ export async function assignShiftWithTimes(
     if (!context.ok) return context;
 
     const db = await getDatabase();
-
-    if (input.shiftTypeId) {
-      const shiftType = await db.getShiftTypeForAssign(
-        input.shiftTypeId,
-        organizationId
-      );
-      if (!shiftType) {
-        return { ok: false, error: "Schichttyp nicht gefunden" };
-      }
-    }
 
     const areaServiceHours = await db.listLocationAreaServiceHoursForArea(
       input.locationAreaId,
@@ -292,17 +282,6 @@ export async function assignShiftBatch(input: {
         continue;
       }
 
-      if (row.shiftTypeId) {
-        const shiftType = await db.getShiftTypeForAssign(
-          row.shiftTypeId,
-          organizationId
-        );
-        if (!shiftType) {
-          results.push({ rowIndex, ok: false, error: "Schichttyp nicht gefunden" });
-          continue;
-        }
-      }
-
       const serviceHoursCheck = validateDashboardShiftServiceHours(
         areaServiceHours,
         input.locationAreaId,
@@ -372,7 +351,7 @@ export async function assignShiftBatch(input: {
             shiftDate: input.shiftDate,
             startTime: row.startTime,
             endTime: row.endTime,
-            shiftTypeId: row.shiftTypeId,
+            areaShiftTemplateId: row.areaShiftTemplateId,
             locationId: input.locationId,
             locationAreaId: input.locationAreaId,
           },
@@ -415,7 +394,7 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
 
     for (const snapshot of batch.replacements) {
       await db.updateShift(snapshot.id, {
-        shift_type_id: snapshot.shift_type_id,
+        area_shift_template_id: snapshot.area_shift_template_id,
         location_id: snapshot.location_id ?? "",
         location_area_id: snapshot.location_area_id,
         starts_at: snapshot.starts_at,
@@ -434,7 +413,7 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
       await db.insertShift({
         organization_id: organizationId,
         employee_id: snapshot.employee_id,
-        shift_type_id: snapshot.shift_type_id,
+        area_shift_template_id: snapshot.area_shift_template_id,
         location_id: snapshot.location_id,
         location_area_id: snapshot.location_area_id,
         shift_date: snapshot.shift_date,
@@ -450,75 +429,6 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Rückgängig fehlgeschlagen",
-    };
-  }
-}
-
-export async function assignShift(
-  employeeId: string,
-  shiftDate: string,
-  shiftTypeId: string,
-  locationId: string
-): Promise<ShiftActionResult> {
-  try {
-    const { organizationId, userId } = await requireManager();
-    const db = await getDatabase();
-
-    if (isPastShiftDate(shiftDate)) {
-      return { ok: false, error: "Vergangene Tage können nicht mehr geplant werden." };
-    }
-
-    const locations = await db.listLocations(organizationId);
-    if (!locations.some((l) => l.id === locationId)) {
-      return { ok: false, error: "Standort nicht gefunden" };
-    }
-
-    const shiftType = await db.getShiftTypeForAssign(shiftTypeId, organizationId);
-    if (!shiftType) {
-      return { ok: false, error: "Schichttyp nicht gefunden" };
-    }
-
-    const profile = await db.getProfileById(employeeId);
-    if (!profileCanReceiveShiftAssignment(profile, organizationId)) {
-      return { ok: false, error: "Mitarbeiter nicht gefunden" };
-    }
-
-    const { starts_at, ends_at } = buildShiftTimestamps(
-      shiftDate,
-      shiftType.start_time,
-      shiftType.end_time
-    );
-
-    const existing = await db.findShiftByEmployeeDate(employeeId, shiftDate);
-
-    if (existing) {
-      await db.updateShift(existing.id, {
-        shift_type_id: shiftTypeId,
-        location_id: existing.location_id ?? locationId,
-        starts_at,
-        ends_at,
-        created_by: userId,
-      });
-    } else {
-      await db.insertShift({
-        organization_id: organizationId,
-        employee_id: employeeId,
-        shift_type_id: shiftTypeId,
-        location_id: locationId,
-        shift_date: shiftDate,
-        starts_at,
-        ends_at,
-        created_by: userId,
-      });
-    }
-
-    revalidateShiftPaths();
-
-    return { ok: true };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Unbekannter Fehler",
     };
   }
 }

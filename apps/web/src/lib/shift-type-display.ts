@@ -1,5 +1,4 @@
-import { shiftHours } from "@/lib/planning-utils";
-import type { ShiftTypeBreak } from "@schichtwerk/types";
+import { shiftHoursFromWindow } from "@/lib/planning-utils";
 
 export function formatClock(time: string): string {
   const [h, m] = time.slice(0, 5).split(":");
@@ -17,9 +16,7 @@ export function formatDurationHours(hours: number): string {
 }
 
 export function shiftTypeDuration(startTime: string, endTime: string): string {
-  return formatDurationHours(
-    shiftHours({ start_time: startTime, end_time: endTime })
-  );
+  return formatDurationHours(shiftHoursFromWindow(startTime, endTime));
 }
 
 function breakMinutes(start: string, end: string): number {
@@ -31,7 +28,9 @@ function breakMinutes(start: string, end: string): number {
   return Math.max(0, endM - startM);
 }
 
-export function formatBreakTotal(breaks: Pick<ShiftTypeBreak, "break_start" | "break_end">[]): string {
+export function formatBreakTotal(
+  breaks: readonly { break_start: string; break_end: string }[]
+): string {
   const total = breaks.reduce(
     (sum, b) => sum + breakMinutes(b.break_start, b.break_end),
     0

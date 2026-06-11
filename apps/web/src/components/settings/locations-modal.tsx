@@ -17,6 +17,7 @@ import {
   reorderLocationAreas,
 } from "@/app/actions/location-areas";
 import type {
+  AreaQualificationTemplateEntry,
   AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
@@ -24,6 +25,7 @@ import type {
   LocationAreaStaffing,
 } from "@schichtwerk/types";
 import { fetchAreaShiftTemplates } from "@/app/actions/area-shift-templates";
+import { fetchAreaQualificationTemplates } from "@/app/actions/area-qualification-templates";
 import { fetchLocationStaffingEditor } from "@/app/actions/location-staffing";
 import { fetchLocationAreaServiceHours } from "@/app/actions/location-service-hours";
 import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
@@ -31,9 +33,11 @@ import { LocationFormModal } from "./location-form-modal";
 import { LocationAreaFormModal } from "./location-area-form-modal";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { LocationDetailActions } from "./location-detail-actions";
+import { areaPlanningModeLabel } from "./area-planning-mode-field";
 import { LocationServiceHoursPanelModal } from "./location-service-hours-panel-modal";
 import { LocationStaffingPanelModal } from "./location-staffing-panel-modal";
 import { AreaShiftTemplatesPanelModal } from "./area-shift-templates-panel-modal";
+import { AreaQualificationTemplatesPanelModal } from "./area-qualification-templates-panel-modal";
 import {
   SETTINGS_LIST_SCROLL_COMPACT_CLASS,
   SETTINGS_MODAL_MAX_WIDTH,
@@ -49,9 +53,11 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
+  SettingsListRowDeleteButton,
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
+  settingsListRowDeleteCellClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -63,7 +69,6 @@ import {
   CloseIcon,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -91,7 +96,12 @@ type AreaFormMode =
   | { type: "create" }
   | { type: "edit"; area: LocationArea };
 
-type DetailPanel = null | "serviceHours" | "staffing" | "shiftTemplates";
+type DetailPanel =
+  | null
+  | "qualificationTemplates"
+  | "serviceHours"
+  | "staffing"
+  | "shiftTemplates";
 
 const COLUMN_GAP_PX = 20;
 const MAX_NAME_DISPLAY = 25;
@@ -118,6 +128,7 @@ function buildInitialDetailCaches(
     serviceHoursCache: { [areaId]: filterByArea(serviceHours, areaId) },
     staffingCache: { [areaId]: filterByArea(staffing, areaId) },
     shiftTemplatesCache: { [areaId]: filterByArea(shiftTemplates, areaId) },
+    qualificationTemplatesCache: {} as Record<string, AreaQualificationTemplateEntry[]>,
   };
 }
 
@@ -299,6 +310,10 @@ export function LocationsModal({
   const [shiftTemplatesCache, setShiftTemplatesCache] = useState<
     Record<string, AreaShiftTemplateWithBreaks[]>
   >(() => initialDetailCaches?.shiftTemplatesCache ?? {});
+  const [qualificationTemplatesCache, setQualificationTemplatesCache] =
+    useState<Record<string, AreaQualificationTemplateEntry[]>>(
+      () => initialDetailCaches?.qualificationTemplatesCache ?? {}
+    );
 
   const [locationFormMode, setLocationFormMode] = useState<LocationFormMode>(null);
   const [areaFormMode, setAreaFormMode] = useState<AreaFormMode>(null);
@@ -543,6 +558,13 @@ export function LocationsModal({
     []
   );
 
+  const handleQualificationTemplatesCacheUpdate = useCallback(
+    (areaId: string, templates: AreaQualificationTemplateEntry[]) => {
+      setQualificationTemplatesCache((prev) => ({ ...prev, [areaId]: templates }));
+    },
+    []
+  );
+
   const refreshStaffingCache = useCallback(
     (locationId: string, areaId: string) => {
       void fetchLocationStaffingEditor(locationId, areaId).then((result) => {
@@ -560,7 +582,10 @@ export function LocationsModal({
     const hoursReady = areaId in serviceHoursCache;
     const staffingReady = areaId in staffingCache;
     const templatesReady = areaId in shiftTemplatesCache;
-    if (hoursReady && staffingReady && templatesReady) return;
+    const qualificationTemplatesReady = areaId in qualificationTemplatesCache;
+    if (hoursReady && staffingReady && templatesReady && qualificationTemplatesReady) {
+      return;
+    }
 
     let cancelled = false;
 
@@ -574,7 +599,10 @@ export function LocationsModal({
       templatesReady
         ? Promise.resolve(null)
         : fetchAreaShiftTemplates(selectedLocationId, areaId),
-    ]).then(([hoursResult, staffingResult, templatesResult]) => {
+      qualificationTemplatesReady
+        ? Promise.resolve(null)
+        : fetchAreaQualificationTemplates(selectedLocationId, areaId),
+    ]).then(([hoursResult, staffingResult, templatesResult, qualificationResult]) => {
       if (cancelled) return;
       const hours =
         hoursResult?.ok === true ? (hoursResult.hours ?? []) : [];
@@ -582,6 +610,10 @@ export function LocationsModal({
         staffingResult?.ok === true ? (staffingResult.staffing ?? []) : [];
       const templates =
         templatesResult?.ok === true ? (templatesResult.templates ?? []) : [];
+      const qualificationTemplates =
+        qualificationResult?.ok === true
+          ? (qualificationResult.templates ?? [])
+          : [];
       setServiceHoursCache((prev) => {
         if (areaId in prev) return prev;
         return { ...prev, [areaId]: hours };
@@ -594,6 +626,10 @@ export function LocationsModal({
         if (areaId in prev) return prev;
         return { ...prev, [areaId]: templates };
       });
+      setQualificationTemplatesCache((prev) => {
+        if (areaId in prev) return prev;
+        return { ...prev, [areaId]: qualificationTemplates };
+      });
     });
 
     return () => {
@@ -605,6 +641,7 @@ export function LocationsModal({
     serviceHoursCache,
     staffingCache,
     shiftTemplatesCache,
+    qualificationTemplatesCache,
   ]);
 
   function selectLocation(id: string) {
@@ -797,17 +834,6 @@ export function LocationsModal({
                         />
                       </>
                     }
-                    destructive={
-                      <ColumnActionButton
-                        label={t("locations.delete")}
-                        icon={<TrashIcon />}
-                        disabled={pending || !selectedLocation}
-                        onClick={() => {
-                          setConfirmDeleteLocation(true);
-                          setErrorMessage(null);
-                        }}
-                      />
-                    }
                   />
                 }
               >
@@ -844,6 +870,17 @@ export function LocationsModal({
                               title={item.name}
                             >
                               {truncateLabel(item.name)}
+                            </td>
+                            <td className={settingsListRowDeleteCellClass(isSelected)}>
+                              <SettingsListRowDeleteButton
+                                label={t("locations.delete")}
+                                disabled={pending}
+                                onClick={() => {
+                                  selectLocation(item.id);
+                                  setConfirmDeleteLocation(true);
+                                  setErrorMessage(null);
+                                }}
+                              />
                             </td>
                           </tr>
                         );
@@ -904,19 +941,6 @@ export function LocationsModal({
                         />
                       </>
                     }
-                    destructive={
-                      <ColumnActionButton
-                        label={t("locations.areaDelete")}
-                        icon={<TrashIcon />}
-                        disabled={
-                          pending || areaDetailSwitching || !selectedArea
-                        }
-                        onClick={() => {
-                          setConfirmDeleteArea(true);
-                          setErrorMessage(null);
-                        }}
-                      />
-                    }
                   />
                 }
               >
@@ -958,6 +982,17 @@ export function LocationsModal({
                             >
                               {truncateLabel(area.name)}
                             </td>
+                            <td className={settingsListRowDeleteCellClass(isSelected)}>
+                              <SettingsListRowDeleteButton
+                                label={t("locations.areaDelete")}
+                                disabled={pending || areaDetailSwitching}
+                                onClick={() => {
+                                  selectArea(area.id);
+                                  setConfirmDeleteArea(true);
+                                  setErrorMessage(null);
+                                }}
+                              />
+                            </td>
                           </tr>
                         );
                       })}
@@ -968,10 +1003,17 @@ export function LocationsModal({
             </div>
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
-              <h3 className={settingsPanelHeaderClass()}>
-                {displayedArea
-                  ? t("locations.panelSelected")
-                  : t("locations.panelDetails")}
+              <h3 className={settingsPanelHeaderClass()} title={displayedArea?.name}>
+                {displayedArea ? (
+                  <>
+                    {t("locations.panelSelected")}: {displayedArea.name}{" "}
+                    <span className="text-xs font-normal text-muted">
+                      {areaPlanningModeLabel(displayedArea.planning_mode, t)}
+                    </span>
+                  </>
+                ) : (
+                  t("locations.panelDetails")
+                )}
               </h3>
               {displayedArea && displayedPanelReady ? (
                 <LocationDetailActions
@@ -980,6 +1022,9 @@ export function LocationsModal({
                   serviceHours={serviceHoursCache[displayedArea.id]}
                   staffing={staffingCache[displayedArea.id]}
                   shiftTemplates={shiftTemplatesCache[displayedArea.id]}
+                  qualificationTemplates={
+                    qualificationTemplatesCache[displayedArea.id]
+                  }
                   disabled={
                     pending || areasLoading || areaDetailSwitching
                   }
@@ -1113,6 +1158,18 @@ export function LocationsModal({
             onCacheUpdate={handleShiftTemplatesCacheUpdate}
           />
         )}
+        {detailPanel === "qualificationTemplates" &&
+          selectedLocation &&
+          selectedArea && (
+            <AreaQualificationTemplatesPanelModal
+              location={selectedLocation}
+              area={selectedArea}
+              onClose={() => {
+                setDetailPanel(null);
+              }}
+              onCacheUpdate={handleQualificationTemplatesCacheUpdate}
+            />
+          )}
       </div>
       ) : null}
     </div>

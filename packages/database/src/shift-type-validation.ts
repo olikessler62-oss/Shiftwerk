@@ -1,4 +1,3 @@
-import type { ShiftType } from "@schichtwerk/types";
 import { normalizeTime } from "./utils";
 
 export type ShiftTypeUniquenessInput = {
@@ -8,12 +7,19 @@ export type ShiftTypeUniquenessInput = {
   excludeId?: string;
 };
 
+type ShiftTemplateUniquenessRef = {
+  id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+};
+
 function normalizeNameKey(name: string): string {
   return name.trim().toLocaleLowerCase("de-DE");
 }
 
 export function validateShiftTypeUniqueness(
-  existing: Pick<ShiftType, "id" | "name" | "start_time" | "end_time">[],
+  existing: ShiftTemplateUniquenessRef[],
   input: ShiftTypeUniquenessInput
 ): { ok: true } | { ok: false; error: string } {
   const nameKey = normalizeNameKey(input.name);
@@ -27,7 +33,7 @@ export function validateShiftTypeUniqueness(
   if (others.some((t) => normalizeNameKey(t.name) === nameKey)) {
     return {
       ok: false,
-      error: "Eine Schichtart mit dieser Bezeichnung existiert bereits.",
+      error: "Eine Schichtvorlage mit dieser Bezeichnung existiert bereits.",
     };
   }
 
@@ -38,7 +44,7 @@ export function validateShiftTypeUniqueness(
   if (timeConflict) {
     return {
       ok: false,
-      error: `Eine Schichtart mit diesen Uhrzeiten existiert bereits („${timeConflict.name.trim()}“).`,
+      error: `Eine Schichtvorlage mit diesen Uhrzeiten existiert bereits („${timeConflict.name.trim()}“).`,
     };
   }
 

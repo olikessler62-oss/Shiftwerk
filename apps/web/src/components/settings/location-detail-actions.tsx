@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  AreaQualificationTemplateEntry,
   AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
@@ -8,10 +9,14 @@ import type {
   LocationAreaStaffing,
 } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
-import { areaPlanningModeLabel } from "./area-planning-mode-field";
+import { cn } from "@/lib/cn";
 import { SettingsActionRow } from "./settings-list-ui";
 
-type DetailPanel = "serviceHours" | "staffing" | "shiftTemplates";
+type DetailPanel =
+  | "qualificationTemplates"
+  | "serviceHours"
+  | "staffing"
+  | "shiftTemplates";
 
 type Props = {
   selectedLocation: Location | null;
@@ -22,6 +27,8 @@ type Props = {
   staffing?: LocationAreaStaffing[];
   /** Geladen: [] = keine Schichtvorlagen; undefined = noch nicht geladen */
   shiftTemplates?: AreaShiftTemplateWithBreaks[];
+  /** Geladen: [] = keine Funktionsvorlagen; undefined = noch nicht geladen */
+  qualificationTemplates?: AreaQualificationTemplateEntry[];
   disabled?: boolean;
   onOpen: (panel: DetailPanel) => void;
 };
@@ -75,6 +82,26 @@ function StaffingIcon({ className }: { className?: string }) {
   );
 }
 
+function QualificationTemplateIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+    </svg>
+  );
+}
+
 function ShiftTemplateIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -95,35 +122,13 @@ function ShiftTemplateIcon({ className }: { className?: string }) {
   );
 }
 
-function AreaSummary({
-  location,
-  area,
-}: {
-  location: Location;
-  area: LocationArea;
-}) {
-  const t = useTranslations();
-
-  return (
-    <div className="rounded-lg border border-border/80 bg-background px-3 py-3">
-      <p className="min-w-0 truncate text-sm font-semibold text-foreground">
-        {area.name}
-      </p>
-      <p className="mt-0.5 truncate text-xs text-muted">{location.name}</p>
-      <p className="mt-1 text-xs text-muted">
-        {t("locations.planningModeLabel")}:{" "}
-        {areaPlanningModeLabel(area.planning_mode, t)}
-      </p>
-    </div>
-  );
-}
-
 export function LocationDetailActions({
   selectedLocation,
   selectedArea,
   serviceHours,
   staffing,
   shiftTemplates,
+  qualificationTemplates,
   disabled = false,
   onOpen,
 }: Props) {
@@ -132,6 +137,7 @@ export function LocationDetailActions({
   const serviceHoursLoaded = serviceHours !== undefined;
   const staffingLoaded = staffing !== undefined;
   const shiftTemplatesLoaded = shiftTemplates !== undefined;
+  const qualificationTemplatesLoaded = qualificationTemplates !== undefined;
   const hasServiceHours = serviceHoursLoaded && serviceHours.length > 0;
   const hasStaffing =
     staffingLoaded &&
@@ -153,18 +159,36 @@ export function LocationDetailActions({
     : hasShiftTemplates
       ? configuredHint(t("locations.actionShiftTemplatesConfigured"))
       : t("locations.actionShiftTemplatesHint");
+  const hasQualificationTemplates =
+    qualificationTemplatesLoaded && (qualificationTemplates?.length ?? 0) > 0;
+  const qualificationTemplatesHint = !qualificationTemplatesLoaded
+    ? null
+    : hasQualificationTemplates
+      ? configuredHint(t("locations.actionQualificationTemplatesConfigured"))
+      : t("locations.actionQualificationTemplatesHint");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2">
-      {selectedLocation && selectedArea ? (
-        <AreaSummary location={selectedLocation} area={selectedArea} />
-      ) : (
+      {!selectedArea ? (
         <p className="rounded-lg border border-dashed border-border bg-background px-3 py-6 text-center text-sm text-muted">
           {t("locations.selectAreaHint")}
         </p>
-      )}
+      ) : null}
 
-      <div className="mt-2 rounded-lg border border-border/80 bg-background px-1 py-1">
+      <div
+        className={cn(
+          "rounded-lg border border-border/80 bg-background px-1 py-1",
+          !selectedArea && "mt-2"
+        )}
+      >
+        <SettingsActionRow
+          icon={<QualificationTemplateIcon />}
+          label={t("locations.panelQualificationTemplates")}
+          hint={qualificationTemplatesHint}
+          disabled={areaActionsDisabled}
+          onClick={() => onOpen("qualificationTemplates")}
+        />
+        <div className="mx-2 border-t border-border/60" />
         <SettingsActionRow
           icon={<ShiftTemplateIcon />}
           label={t("locations.panelShiftTemplates")}

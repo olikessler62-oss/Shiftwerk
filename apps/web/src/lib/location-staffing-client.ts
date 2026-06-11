@@ -167,6 +167,28 @@ export function formatServiceHourStaffingListLabel(
   return templateName ? `${base} (${templateName})` : base;
 }
 
+export function formatServiceHourStaffingDayLabel(
+  hour: Pick<AreaServiceHourRef, "weekday">,
+  weekdayLabel: (weekday: number) => string
+): string {
+  return hour.weekday === STAFFING_HOLIDAY_WEEKDAY
+    ? weekdayLabel(STAFFING_HOLIDAY_WEEKDAY)
+    : weekdayLabel(hour.weekday);
+}
+
+export function formatServiceHourStaffingTimeLabel(
+  hour: Pick<AreaServiceHourRef, "start_time" | "end_time">,
+  templates?: readonly ServiceHourShiftTemplateRef[]
+): string {
+  const from = (hour.start_time ?? "00:00").slice(0, 5);
+  const to = (hour.end_time ?? "00:00").slice(0, 5);
+  const base = formatTimeRange(from, to);
+  const templateName = templates
+    ? shiftTemplateNameForServiceHour(hour, templates)
+    : null;
+  return templateName ? `${base} (${templateName})` : base;
+}
+
 export function staffingQualificationLabelsForHour(
   serviceHourId: string,
   staffing: readonly { service_hour_id: string; qualification_id: string; required_count: number }[],

@@ -3,6 +3,17 @@ import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
 
 export const SERVICE_HOUR_WEEKDAY_COUNT = 8;
 
+/** Mo=0 … So=6, Feiertage=7 */
+export const SERVICE_HOUR_WEEKDAY_PRESETS = {
+  monFri: [0, 1, 2, 3, 4],
+  monSat: [0, 1, 2, 3, 4, 5],
+  monSun: [0, 1, 2, 3, 4, 5, 6],
+  satSun: [5, 6],
+  all: [0, 1, 2, 3, 4, 5, 6, 7],
+} as const;
+
+export type ServiceHourWeekdayPresetKey = keyof typeof SERVICE_HOUR_WEEKDAY_PRESETS;
+
 export type ServiceHourEntry = {
   id: string;
   weekdays: Set<number>;

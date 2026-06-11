@@ -145,3 +145,27 @@ export function validateNoOverlappingAvailability(
   }
   return { ok: true };
 }
+
+type ProfileRecurringAvailabilitySortable = {
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  id?: string;
+};
+
+export function compareProfileRecurringAvailabilityBySchedule<
+  T extends ProfileRecurringAvailabilitySortable,
+>(a: T, b: T): number {
+  if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+  const startCmp = a.start_time.localeCompare(b.start_time);
+  if (startCmp !== 0) return startCmp;
+  const endCmp = a.end_time.localeCompare(b.end_time);
+  if (endCmp !== 0) return endCmp;
+  return (a.id ?? "").localeCompare(b.id ?? "");
+}
+
+export function sortProfileRecurringAvailabilityBySchedule<
+  T extends ProfileRecurringAvailabilitySortable,
+>(items: readonly T[]): T[] {
+  return [...items].sort(compareProfileRecurringAvailabilityBySchedule);
+}

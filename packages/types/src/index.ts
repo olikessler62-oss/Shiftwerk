@@ -1,4 +1,3 @@
-export { DEFAULT_SHIFT_TYPES } from "./default-shift-types";
 export { DEFAULT_LOCATION_AREAS } from "./default-location-areas";
 export { DEFAULT_ORG_ROLES } from "./default-roles";
 
@@ -120,34 +119,9 @@ export interface ProfileRecurringAvailability {
   weekday: number;
   start_time: string;
   end_time: string;
-  shift_type_id: string | null;
-  shift_type_name: string | null;
   sort_order: number;
   created_at: string;
 }
-
-export interface ShiftType {
-  id: string;
-  organization_id: string;
-  name: string;
-  color: string;
-  start_time: string;
-  end_time: string;
-  sort_order: number;
-  archived_at: string | null;
-}
-
-export interface ShiftTypeBreak {
-  id: string;
-  shift_type_id: string;
-  break_start: string;
-  break_end: string;
-  sort_order: number;
-}
-
-export type ShiftTypeWithBreaks = ShiftType & {
-  shift_type_breaks?: ShiftTypeBreak[];
-};
 
 export interface Qualification {
   id: string;
@@ -219,11 +193,23 @@ export type AreaShiftTemplateWithBreaks = AreaShiftTemplate & {
   area_shift_template_breaks?: AreaShiftTemplateBreak[];
 };
 
+/** Funktionsvorlage pro Bereich (Verknüpfung Bereich ↔ Qualifikation) */
+export interface AreaQualificationTemplate {
+  id: string;
+  location_area_id: string;
+  qualification_id: string;
+  sort_order: number;
+}
+
+export type AreaQualificationTemplateEntry = AreaQualificationTemplate & {
+  qualification: Qualification;
+};
+
 export interface Shift {
   id: string;
   organization_id: string;
   employee_id: string;
-  shift_type_id: string;
+  area_shift_template_id: string | null;
   location_id: string | null;
   location_area_id: string | null;
   shift_date: string;

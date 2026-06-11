@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import {
+  copyAreaShiftTemplatesFromArea,
   deleteAreaShiftTemplate,
+  fetchAreaShiftTemplateSources,
   fetchAreaShiftTemplates,
   reorderAreaShiftTemplates,
+  type AreaShiftTemplateSourceArea,
 } from "@/app/actions/area-shift-templates";
 import { MAX_AREA_SHIFT_TEMPLATES_PER_AREA, resolveShiftTemplateStoredColor } from "@schichtwerk/database";
 import type { AreaShiftTemplateWithBreaks, Location, LocationArea } from "@schichtwerk/types";
@@ -25,8 +28,11 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
+  SettingsListRowDeleteButton,
   applyCreatedListSelection,
   settingsScrollableTableListClass,
+  settingsListRowDeleteCellClass,
+  settingsListRowDeleteHeaderClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
@@ -46,9 +52,10 @@ import {
   IconButton,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
+  Select,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { areaShiftTemplatesSetsEqual } from "@/lib/location-area-copy-compare";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type FormMode =
@@ -95,6 +102,10 @@ export function AreaShiftTemplatesPanelModal({
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
+  const [sourceAreas, setSourceAreas] = useState<AreaShiftTemplateSourceArea[]>(
+    []
+  );
+  const [selectedSourceAreaId, setSelectedSourceAreaId] = useState("");
 
   const applyTemplates = useCallback(
     (templates: AreaShiftTemplateWithBreaks[]) => {
@@ -137,6 +148,20 @@ export function AreaShiftTemplatesPanelModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch only when area/location changes
+  }, [location.id, area.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchAreaShiftTemplateSources(location.id, area.id).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) return;
+      const sources = result.sources ?? [];
+      setSourceAreas(sources);
+      setSelectedSourceAreaId(sources[0]?.id ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [location.id, area.id]);
 
   useEffect(() => {
@@ -187,6 +212,22 @@ export function AreaShiftTemplatesPanelModal({
   });
 
   const selected = sortedList.find((entry) => entry.id === selectedId) ?? null;
+  const selectedSourceArea =
+    sourceAreas.find((entry) => entry.id === selectedSourceAreaId) ?? null;
+  const copySourceSelectStyle = useMemo(() => {
+    const longestChars = sourceAreas.reduce(
+      (max, source) => Math.max(max, source.name.length),
+      0
+    );
+    return {
+      width: `calc(${Math.max(longestChars, 4)}ch + 2.25rem)`,
+      maxWidth: "100%",
+    };
+  }, [sourceAreas]);
+  const copyFromSourceIsNoOp = useMemo(() => {
+    if (!selectedSourceArea) return true;
+    return areaShiftTemplatesSetsEqual(list, selectedSourceArea.templates);
+  }, [list, selectedSourceArea]);
   const atTemplateLimit = list.length >= MAX_AREA_SHIFT_TEMPLATES_PER_AREA;
   const anyOverlayOpen = !!formMode || confirmDelete;
   const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
@@ -196,6 +237,27 @@ export function AreaShiftTemplatesPanelModal({
     applyCreatedListSelection(createdId, setSelectedId, setScrollToItemId);
     void fetchAreaShiftTemplates(location.id, area.id).then((result) => {
       if (result.ok && result.templates) {
+        applyTemplates(result.templates);
+      }
+    });
+  }
+
+  function handleCopyFromSourceArea() {
+    if (!selectedSourceArea) return;
+    setErrorMessage(null);
+    setConfirmDelete(false);
+    setFormMode(null);
+    startTransition(async () => {
+      const result = await copyAreaShiftTemplatesFromArea({
+        locationId: location.id,
+        targetAreaId: area.id,
+        sourceAreaId: selectedSourceArea.id,
+      });
+      if (!result.ok) {
+        setErrorMessage(result.error);
+        return;
+      }
+      if (result.templates) {
         applyTemplates(result.templates);
       }
     });
@@ -311,6 +373,10 @@ export function AreaShiftTemplatesPanelModal({
                         {t(label)}
                       </th>
                     ))}
+                    <th
+                      className={settingsListRowDeleteHeaderClass()}
+                      aria-hidden
+                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -362,6 +428,17 @@ export function AreaShiftTemplatesPanelModal({
                         </td>
                         <td className={settingsDataCellClass(isSelected, { align: "center" })}>
                           {breaks.length > 0 ? formatBreakTotal(breaks) : "—"}
+                        </td>
+                        <td className={settingsListRowDeleteCellClass(isSelected)}>
+                          <SettingsListRowDeleteButton
+                            label={t("locations.delete")}
+                            disabled={pending || initialLoading}
+                            onClick={() => {
+                              setSelectedId(template.id);
+                              setConfirmDelete(true);
+                              setErrorMessage(null);
+                            }}
+                          />
                         </td>
                       </tr>
                     );
@@ -423,16 +500,40 @@ export function AreaShiftTemplatesPanelModal({
                 />
               </>
             }
-            destructive={
-              <SettingsIconActionButton
-                label={t("locations.delete")}
-                icon={<TrashIcon />}
-                disabled={pending || initialLoading || !selected}
-                onClick={() => {
-                  setConfirmDelete(true);
-                  setErrorMessage(null);
-                }}
-              />
+            trailing={
+              sourceAreas.length > 0 ? (
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      pending ||
+                      initialLoading ||
+                      !selectedSourceArea ||
+                      copyFromSourceIsNoOp
+                    }
+                    onClick={handleCopyFromSourceArea}
+                    className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
+                  >
+                    {t("locations.areaShiftTemplatesCopyApply")}
+                  </Button>
+                  <Select
+                    className="h-8 shrink-0 px-2 text-xs"
+                    style={copySourceSelectStyle}
+                    value={selectedSourceAreaId}
+                    disabled={pending || initialLoading}
+                    aria-label={t("locations.areaShiftTemplatesCopySelectArea")}
+                    onChange={(event) => setSelectedSourceAreaId(event.target.value)}
+                  >
+                    {sourceAreas.map((source) => (
+                      <option key={source.id} value={source.id}>
+                        {source.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              ) : undefined
             }
           />
         </div>

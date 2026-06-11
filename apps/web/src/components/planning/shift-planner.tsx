@@ -1,8 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-import { assignShift, removeShift } from "@/app/actions/shifts";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { assignShiftWithTimes, removeShift } from "@/app/actions/shifts";
 import { toISODate, startOfWeek, parseISODate } from "@/lib/dates";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { useTranslations } from "@/i18n/locale-provider";
@@ -17,7 +17,27 @@ import {
   shiftHours,
   weeklySummary,
 } from "@/lib/planning-utils";
-import type { AvailabilityStatus, Profile, Shift, ShiftType } from "@schichtwerk/types";
+import {
+  areaShiftTemplatesForArea,
+  dashboardAssignmentPresetsForArea,
+  resolvePresetIdFromTimes,
+  areaShiftTemplateIdForAssign,
+  type DashboardAssignmentPreset,
+} from "@/lib/dashboard-assignment-presets";
+import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
+import { areDashboardShiftTimesComplete } from "@/lib/available-employees-for-shift";
+import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
+import type {
+  AreaShiftTemplateWithBreaks,
+  AvailabilityStatus,
+  Location,
+  LocationArea,
+  Profile,
+} from "@schichtwerk/types";
+import { LocationSelect } from "@/components/dashboard/location-select";
+import {
+  DashboardShiftTypeCombobox,
+} from "@/components/dashboard/dashboard-add-shift-modal";
 import {
   Alert,
   Button,
@@ -26,10 +46,18 @@ import {
   IconButton,
   Select,
   Textarea,
+  TimeInput,
+  LabelMuted,
 } from "@/components/ui";
 
-export type ShiftWithType = Shift & {
-  shift_types: { name: string; color: string; start_time?: string; end_time?: string } | null;
+export type PlanningShift = {
+  id: string;
+  employee_id: string;
+  shift_date: string;
+  shiftName: string;
+  color: string;
+  startTime: string;
+  endTime: string;
 };
 
 type AvailabilityRow = {
@@ -42,39 +70,66 @@ type Props = {
   weekStart: string;
   dates: string[];
   employees: Profile[];
-  shiftTypes: ShiftType[];
-  shifts: ShiftWithType[];
+  shifts: PlanningShift[];
   availability: AvailabilityRow[];
-  orgName: string;
-  defaultLocationId: string | null;
+  locations: Location[];
+  selectedLocationId: string | null;
+  areas: LocationArea[];
+  selectedAreaId: string | null;
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
+  serviceHours: AreaServiceHourRef[];
   readOnlyWeek?: boolean;
 };
 
 type Picker = { employeeId: string; date: string };
 
+function timeFieldValue(time: string): string {
+  return time.slice(0, 5);
+}
+
 export function ShiftPlanner({
   weekStart,
   dates,
   employees,
-  shiftTypes,
   shifts,
   availability,
-  orgName,
-  defaultLocationId,
+  locations,
+  selectedLocationId,
+  areas,
+  selectedAreaId,
+  areaShiftTemplates,
+  serviceHours,
   readOnlyWeek = false,
 }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useTranslations();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
-  const [selectedTypeId, setSelectedTypeId] = useState<string>(
-    shiftTypes[0]?.id ?? ""
-  );
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [startTime, setStartTime] = useState("00:00");
+  const [endTime, setEndTime] = useState("00:00");
   const [note, setNote] = useState("");
+  const skipPresetFromTimesSyncRef = useRef(false);
+
+  const templatesForArea = useMemo(
+    () =>
+      selectedAreaId
+        ? areaShiftTemplatesForArea(selectedAreaId, areaShiftTemplates)
+        : [],
+    [areaShiftTemplates, selectedAreaId]
+  );
+
+  const assignmentPresets = useMemo(
+    () => dashboardAssignmentPresetsForArea(templatesForArea),
+    [templatesForArea]
+  );
+
+  const timesComplete = areDashboardShiftTimesComplete(startTime, endTime);
 
   const shiftMap = useMemo(() => {
-    const map = new Map<string, ShiftWithType>();
+    const map = new Map<string, PlanningShift>();
     for (const s of shifts) map.set(`${s.employee_id}:${s.shift_date}`, s);
     return map;
   }, [shifts]);
@@ -88,43 +143,62 @@ export function ShiftPlanner({
   }, [availability]);
 
   const summary = useMemo(
-    () => weeklySummary(shifts, shiftTypes, employees),
-    [shifts, shiftTypes, employees]
+    () => weeklySummary(shifts, employees),
+    [shifts, employees]
   );
 
   const warnings = useMemo(
-    () => buildPlanningWarnings(employees, shifts, shiftTypes, dates),
-    [employees, shifts, shiftTypes, dates]
+    () => buildPlanningWarnings(employees, shifts, dates),
+    [employees, shifts, dates]
   );
 
   const dailyCounts = useMemo(() => {
     return dates.map((date) => {
       const dayShifts = shifts.filter((s) => s.shift_date === date);
-      const byType = shiftTypes.map((type) => ({
-        type,
-        count: dayShifts.filter((s) => s.shift_type_id === type.id).length,
+      const byPreset = assignmentPresets.map((preset) => ({
+        preset,
+        count: dayShifts.filter(
+          (shift) =>
+            resolvePresetIdFromTimes(
+              shift.startTime,
+              shift.endTime,
+              assignmentPresets
+            ) === preset.id
+        ).length,
       }));
-      return { date, total: dayShifts.length, byType };
+      return { date, total: dayShifts.length, byPreset };
     });
-  }, [dates, shifts, shiftTypes]);
+  }, [dates, shifts, assignmentPresets]);
 
   const pickerEmployee = picker
     ? employees.find((e) => e.id === picker.employeeId)
     : null;
 
+  const pushPlanungQuery = useCallback(
+    (updates: Record<string, string>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        params.set(key, value);
+      }
+      router.push(`/planung?${params.toString()}`);
+    },
+    [router, searchParams]
+  );
+
   function navigateWeek(delta: number) {
     const d = parseISODate(weekStart);
     d.setDate(d.getDate() + delta * 7);
-    router.push(`/planung?week=${toISODate(d)}`);
+    pushPlanungQuery({ week: toISODate(d) });
   }
 
   function isDayReadOnly(date: string) {
     return readOnlyWeek || isPastShiftDate(date);
   }
 
-  function shiftTypeDisplayName(type: ShiftType) {
-    if (!type.archived_at) return type.name;
-    return `${type.name} (${t("common.archived")})`;
+  function applyPreset(preset: DashboardAssignmentPreset) {
+    setSelectedPresetId(preset.id);
+    setStartTime(timeFieldValue(preset.start_time));
+    setEndTime(timeFieldValue(preset.end_time));
   }
 
   function openPicker(employeeId: string, date: string) {
@@ -132,24 +206,92 @@ export function ShiftPlanner({
     if (isDayReadOnly(date) && !existing) return;
     setPicker({ employeeId, date });
     setError(null);
-    if (existing) setSelectedTypeId(existing.shift_type_id);
-    else if (shiftTypes[0]) setSelectedTypeId(shiftTypes[0].id);
+    if (existing) {
+      setStartTime(existing.startTime);
+      setEndTime(existing.endTime);
+      const matchedPresetId =
+        resolvePresetIdFromTimes(
+          existing.startTime,
+          existing.endTime,
+          assignmentPresets
+        ) ?? "";
+      setSelectedPresetId(matchedPresetId);
+    } else if (assignmentPresets[0]) {
+      applyPreset(assignmentPresets[0]);
+    } else {
+      setSelectedPresetId("");
+      setStartTime("00:00");
+      setEndTime("00:00");
+    }
+  }
+
+  useEffect(() => {
+    if (skipPresetFromTimesSyncRef.current) {
+      skipPresetFromTimesSyncRef.current = false;
+      return;
+    }
+    if (!timesComplete) {
+      if (selectedPresetId) setSelectedPresetId("");
+      return;
+    }
+    const matchedPresetId = resolvePresetIdFromTimes(
+      startTime,
+      endTime,
+      assignmentPresets
+    );
+    if (matchedPresetId !== selectedPresetId) {
+      setSelectedPresetId(matchedPresetId ?? "");
+    }
+  }, [startTime, endTime, assignmentPresets, selectedPresetId, timesComplete]);
+
+  function handlePresetChange(presetId: string) {
+    const preset = assignmentPresets.find((entry) => entry.id === presetId);
+    if (preset) {
+      skipPresetFromTimesSyncRef.current = true;
+      applyPreset(preset);
+    } else {
+      setSelectedPresetId(presetId);
+    }
   }
 
   function handleAssign() {
-    if (!picker || !selectedTypeId || isDayReadOnly(picker.date)) return;
-    if (!defaultLocationId) {
-      setError("Bitte zuerst einen Standort unter Einstellungen anlegen.");
+    if (!picker || isDayReadOnly(picker.date)) return;
+    if (!selectedLocationId) {
+      setError(t("dashboard.noLocations"));
       return;
     }
+    if (!selectedAreaId) {
+      setError(t("planning.noAreas"));
+      return;
+    }
+    if (!timesComplete) {
+      setError(t("dashboard.bulkShiftValidationTimesRequired"));
+      return;
+    }
+
+    const serviceHoursCheck = validateDashboardShiftServiceHours(
+      serviceHours,
+      selectedAreaId,
+      picker.date,
+      startTime,
+      endTime
+    );
+    if (!serviceHoursCheck.ok) {
+      setError(serviceHoursCheck.error);
+      return;
+    }
+
     setError(null);
     startTransition(async () => {
-      const result = await assignShift(
-        picker.employeeId,
-        picker.date,
-        selectedTypeId,
-        defaultLocationId
-      );
+      const result = await assignShiftWithTimes({
+        employeeId: picker.employeeId,
+        shiftDate: picker.date,
+        startTime,
+        endTime,
+        areaShiftTemplateId: areaShiftTemplateIdForAssign(selectedPresetId),
+        locationId: selectedLocationId,
+        locationAreaId: selectedAreaId,
+      });
       if (!result.ok) setError(result.error);
       else {
         setPicker(null);
@@ -186,9 +328,13 @@ export function ShiftPlanner({
     );
   }
 
+  const canAssign =
+    Boolean(selectedLocationId) &&
+    Boolean(selectedAreaId) &&
+    assignmentPresets.length > 0;
+
   return (
     <div className="-m-4 flex min-h-[calc(100vh-4.5rem)] flex-col bg-subtle md:-m-6">
-      {/* Header */}
       <header className="border-b border-border bg-surface px-4 py-4 md:px-6 md:py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -246,7 +392,9 @@ export function ShiftPlanner({
                 size="sm"
                 className="ml-1"
                 onClick={() =>
-                  router.push(`/planung?week=${toISODate(startOfWeek(new Date()))}`)
+                  pushPlanungQuery({
+                    week: toISODate(startOfWeek(new Date())),
+                  })
                 }
                 disabled={pending}
               >
@@ -254,8 +402,37 @@ export function ShiftPlanner({
               </Button>
             </div>
           </Field>
-          <Field label="Standort" mutedLabel>
-            <ControlDisplay className="min-w-[200px] py-2">{orgName}</ControlDisplay>
+          <Field label={t("dashboard.location")} mutedLabel>
+            <LocationSelect
+              locations={locations}
+              selectedLocationId={selectedLocationId}
+              basePath="/planung"
+              className="min-w-[200px] py-2"
+            />
+          </Field>
+          <Field label={t("planning.area")} mutedLabel>
+            {areas.length === 0 ? (
+              <ControlDisplay className="min-w-[200px] py-2 text-muted">
+                {t("planning.noAreas")}
+              </ControlDisplay>
+            ) : (
+              <Select
+                value={selectedAreaId ?? areas[0].id}
+                disabled={pending || areas.length === 0}
+                aria-label={t("planning.selectArea")}
+                className="min-w-[200px]"
+                onChange={(event) =>
+                  pushPlanungQuery({ area: event.target.value })
+                }
+              >
+                {areas.map((area) => (
+                  <option key={area.id} value={area.id}>
+                    {area.name}
+                    {area.archived_at ? ` (${t("common.archived")})` : ""}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
         </div>
       </header>
@@ -272,44 +449,41 @@ export function ShiftPlanner({
         </Alert>
       )}
 
-      {/* Main layout */}
       <div className="flex flex-1 flex-col gap-0 overflow-hidden xl:flex-row">
-        {/* Left sidebar */}
         <aside className="hidden shrink-0 overflow-y-auto border-b border-border bg-surface p-4 xl:block xl:w-56 xl:border-b-0 xl:border-r">
-          <SidebarSection title="Schichten">
-            <ul className="space-y-2">
-              {shiftTypes.map((type) => (
-                <li
-                  key={type.id}
-                  className="rounded-lg border border-border bg-background p-2.5"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: type.color }}
-                    />
-                    <span className="text-sm font-medium">
-                      {shiftTypeDisplayName(type)}
-                    </span>
-                  </div>
-                  <p className="mt-1 pl-4.5 text-xs text-muted">
-                    {formatTimeRange(type.start_time, type.end_time)}
-                  </p>
-                  <p className="pl-4.5 text-xs text-muted">
-                    {shiftHours(type)} h · Pause 30 Min
-                  </p>
-                </li>
-              ))}
-            </ul>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled
-              className="mt-3 w-full border-dashed text-xs opacity-60"
-            >
-              + Schicht hinzufügen
-            </Button>
+          <SidebarSection title={t("dashboard.shiftTemplateLabel")}>
+            {assignmentPresets.length === 0 ? (
+              <p className="text-xs text-muted">
+                {t("dashboard.noShiftTemplatesForArea")}
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {assignmentPresets.map((preset) => (
+                  <li
+                    key={preset.id}
+                    className="rounded-lg border border-border bg-background p-2.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: preset.color }}
+                      />
+                      <span className="text-sm font-medium">{preset.name}</span>
+                    </div>
+                    <p className="mt-1 pl-4.5 text-xs text-muted">
+                      {formatTimeRange(preset.start_time, preset.end_time)}
+                    </p>
+                    <p className="pl-4.5 text-xs text-muted">
+                      {shiftHours({
+                        start_time: preset.start_time,
+                        end_time: preset.end_time,
+                      })}{" "}
+                      h
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </SidebarSection>
 
           <SidebarSection title="Verfügbarkeit" className="mt-6">
@@ -320,7 +494,6 @@ export function ShiftPlanner({
           </SidebarSection>
         </aside>
 
-        {/* Grid */}
         <main className="min-w-0 flex-1 overflow-auto p-3 md:p-4">
           <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-sm">
             <table className="w-full min-w-[900px] border-collapse text-sm">
@@ -347,7 +520,7 @@ export function ShiftPlanner({
               </thead>
               <tbody>
                 {employees.map((emp) => {
-                  const weekH = employeeWeekHours(emp.id, shifts, shiftTypes);
+                  const weekH = employeeWeekHours(emp.id, shifts);
                   const targetH = emp.weekly_hours ?? 40;
                   const overHours = weekH > targetH;
 
@@ -385,10 +558,7 @@ export function ShiftPlanner({
                           picker?.employeeId === emp.id && picker?.date === date;
                         const dayReadOnly = isDayReadOnly(date);
 
-                        if (shift?.shift_types) {
-                          const type = shiftTypes.find(
-                            (st) => st.id === shift.shift_type_id
-                          );
+                        if (shift) {
                           return (
                             <td key={date} className="p-1.5 align-top">
                               <button
@@ -396,20 +566,14 @@ export function ShiftPlanner({
                                 disabled={pending || (dayReadOnly && !shift)}
                                 onClick={() => openPicker(emp.id, date)}
                                 className={`w-full rounded-lg px-2 py-2 text-left text-white transition hover:opacity-90 disabled:opacity-50 ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""}`}
-                                style={{
-                                  backgroundColor: shift.shift_types.color,
-                                }}
+                                style={{ backgroundColor: shift.color }}
                               >
                                 <div className="text-xs font-semibold leading-tight">
-                                  {type
-                                    ? shiftTypeDisplayName(type)
-                                    : shift.shift_types.name}
+                                  {shift.shiftName || formatTimeRange(shift.startTime, shift.endTime)}
                                 </div>
-                                {type && (
-                                  <div className="mt-0.5 text-[10px] opacity-90">
-                                    {formatTimeRange(type.start_time, type.end_time)}
-                                  </div>
-                                )}
+                                <div className="mt-0.5 text-[10px] opacity-90">
+                                  {formatTimeRange(shift.startTime, shift.endTime)}
+                                </div>
                               </button>
                             </td>
                           );
@@ -439,11 +603,7 @@ export function ShiftPlanner({
                           <td key={date} className="p-1.5 align-top">
                             <button
                               type="button"
-                              disabled={
-                                pending ||
-                                shiftTypes.length === 0 ||
-                                dayReadOnly
-                              }
+                              disabled={pending || !canAssign || dayReadOnly}
                               onClick={() => openPicker(emp.id, date)}
                               className={`flex h-[52px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40 ${isSelected ? "border-primary bg-primary/5 text-primary" : ""}`}
                             >
@@ -457,12 +617,11 @@ export function ShiftPlanner({
                   );
                 })}
 
-                {/* Tagesbedarf row */}
                 <tr className="border-t-2 border-border bg-background">
                   <td className="sticky left-0 z-10 bg-background px-4 py-3 text-xs font-semibold text-muted">
                     Tagesbedarf
                   </td>
-                  {dailyCounts.map(({ date, total, byType }) => {
+                  {dailyCounts.map(({ date, total, byPreset }) => {
                     const staffed = total >= Math.min(employees.length, 3);
                     return (
                       <td key={date} className="px-2 py-2 text-center">
@@ -471,9 +630,9 @@ export function ShiftPlanner({
                             className={`inline-block h-2 w-2 rounded-full ${staffed ? "bg-green-500" : "bg-red-500"}`}
                           />
                           <span className="text-xs font-medium">{total}</span>
-                          {byType.slice(0, 2).map(({ type, count }) => (
-                            <span key={type.id} className="text-[10px] text-muted">
-                              {type.name.slice(0, 4)} {count}
+                          {byPreset.slice(0, 2).map(({ preset, count }) => (
+                            <span key={preset.id} className="text-[10px] text-muted">
+                              {preset.name.slice(0, 4)} {count}
                             </span>
                           ))}
                         </div>
@@ -486,7 +645,6 @@ export function ShiftPlanner({
           </div>
         </main>
 
-        {/* Right sidebar — assign panel */}
         <aside className="w-full shrink-0 overflow-y-auto border-t border-border bg-surface p-4 xl:w-72 xl:border-t-0 xl:border-l">
           <h2 className="text-sm font-semibold">Schicht zuweisen</h2>
 
@@ -495,6 +653,10 @@ export function ShiftPlanner({
               {isDayReadOnly(picker.date) && (
                 <p className="text-xs text-muted">{t("planning.readOnlyDay")}</p>
               )}
+              {assignmentPresets.length === 0 ? (
+                <Alert variant="info">{t("dashboard.noShiftTemplatesForArea")}</Alert>
+              ) : null}
+
               <div className="rounded-[var(--radius-control)] bg-subtle px-3 py-2 text-sm">
                 <span className="text-muted">Datum: </span>
                 <span className="font-medium">
@@ -506,20 +668,39 @@ export function ShiftPlanner({
                 </span>
               </div>
 
-              <Field label="Schicht">
-                <Select
-                  value={selectedTypeId}
-                  onChange={(e) => setSelectedTypeId(e.target.value)}
-                  disabled={isDayReadOnly(picker.date)}
-                >
-                  {shiftTypes.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {shiftTypeDisplayName(st)} (
-                      {formatTimeRange(st.start_time, st.end_time)})
-                    </option>
-                  ))}
-                </Select>
-              </Field>
+              <div>
+                <LabelMuted>{t("dashboard.shiftTemplateLabel")}</LabelMuted>
+                <DashboardShiftTypeCombobox
+                  value={selectedPresetId}
+                  presets={assignmentPresets}
+                  placeholder={t("dashboard.selectShiftTemplate")}
+                  disabled={
+                    isDayReadOnly(picker.date) || assignmentPresets.length === 0
+                  }
+                  onChange={handlePresetChange}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <LabelMuted>{t("shiftTypes.timeFrom")}</LabelMuted>
+                  <TimeInput
+                    className="mt-1"
+                    value={startTime}
+                    disabled={isDayReadOnly(picker.date)}
+                    onChange={(event) => setStartTime(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <LabelMuted>{t("shiftTypes.timeTo")}</LabelMuted>
+                  <TimeInput
+                    className="mt-1"
+                    value={endTime}
+                    disabled={isDayReadOnly(picker.date)}
+                    onChange={(event) => setEndTime(event.target.value)}
+                  />
+                </div>
+              </div>
 
               <Field label="Mitarbeiter">
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-border">
@@ -554,7 +735,7 @@ export function ShiftPlanner({
                 <Button
                   type="button"
                   className="w-full"
-                  disabled={pending || !selectedTypeId}
+                  disabled={pending || !timesComplete || !canAssign}
                   onClick={handleAssign}
                 >
                   Schicht zuweisen
@@ -594,7 +775,6 @@ export function ShiftPlanner({
         </aside>
       </div>
 
-      {/* Footer panels */}
       <footer className="grid gap-4 border-t border-border bg-surface p-4 lg:grid-cols-3">
         <FooterPanel title="Wochenzusammenfassung">
           <div className="grid grid-cols-2 gap-3">

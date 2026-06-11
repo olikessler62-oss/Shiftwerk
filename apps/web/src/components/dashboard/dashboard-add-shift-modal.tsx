@@ -9,6 +9,7 @@ import {
   type DashboardShiftAssignEmployee,
 } from "@/app/actions/dashboard-shift-assign";
 import { assignShiftWithTimes } from "@/app/actions/shifts";
+import { resolveShiftTemplateStoredColor } from "@schichtwerk/database";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
 } from "@/components/settings/settings-list-ui";
@@ -32,8 +33,7 @@ import {
   areaShiftTemplatesForArea,
   dashboardAssignmentPresetsForArea,
   resolvePresetIdFromTimes,
-  shiftTypeIdForAssign,
-  usesAreaShiftTemplatesForAssign,
+  areaShiftTemplateIdForAssign,
   type DashboardAssignmentPreset,
 } from "@/lib/dashboard-assignment-presets";
 import { formatDayHeader } from "@/lib/planning-utils";
@@ -51,13 +51,13 @@ import {
   type MousePoint,
 } from "@/lib/mouse-tooltip-position";
 import { cn } from "@/lib/cn";
+import { shiftColorStyle } from "@/lib/shift-color-style";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type {
   AreaShiftTemplateWithBreaks,
   LocationArea,
-  ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
 
 const EMPTY_EMPLOYEE_ID = "";
@@ -127,14 +127,6 @@ function useCloseOnOutsideClick(
 
 type MenuPosition = MousePoint;
 
-function availabilityShiftLabel(
-  entry: DashboardEmployeeAvailabilityEntry,
-  timesOnlyLabel: string
-): string {
-  const name = entry.shift_type_name?.trim();
-  return name || timesOnlyLabel;
-}
-
 function availabilityTimeLabel(
   entry: DashboardEmployeeAvailabilityEntry,
   locale: "de" | "en"
@@ -149,10 +141,9 @@ function availabilityTimeLabel(
 function formatAvailabilityMenuLabel(
   entry: DashboardEmployeeAvailabilityEntry,
   locale: "de" | "en",
-  timesOnlyLabel: string,
   weekdayStyle: WeekdayLabelStyle
 ): string {
-  return `${weekdayLabel(entry.weekday, locale, weekdayStyle)}: ${availabilityShiftLabel(entry, timesOnlyLabel)} ${availabilityTimeLabel(entry, locale)}`;
+  return `${weekdayLabel(entry.weekday, locale, weekdayStyle)}: ${availabilityTimeLabel(entry, locale)}`;
 }
 
 type EmployeeAvailabilityHintProps = {
@@ -184,8 +175,6 @@ function EmployeeAvailabilityHint({
     );
   }, [anchorRef, tooltipRef, availabilities, localeKey, t]);
 
-  const timesOnlyLabel = t("profiles.availabilityInputTimes");
-
   return createPortal(
     <div
       ref={tooltipRef}
@@ -200,23 +189,14 @@ function EmployeeAvailabilityHint({
         <p className="text-xs text-muted">{t("profiles.emptyAvailability")}</p>
       ) : (
         <ul
-          className="grid grid-cols-[auto_auto_auto] items-baseline gap-x-3 gap-y-1 text-xs"
+          className="space-y-1 text-xs"
           role="list"
         >
           {availabilities.map((entry, index) => (
             <li
-              key={`${entry.weekday}-${entry.shift_type_id ?? "times"}-${entry.start_time}-${entry.end_time}-${index}`}
-              className="contents"
+              key={`${entry.weekday}-${entry.start_time}-${entry.end_time}-${index}`}
             >
-              <span className="font-medium text-muted">
-                {weekdayLabel(entry.weekday, localeKey, weekdayLabelStyle)}
-              </span>
-              <span className="whitespace-nowrap text-left text-foreground">
-                {availabilityShiftLabel(entry, timesOnlyLabel)}:
-              </span>
-              <span className="whitespace-nowrap text-left tabular-nums text-muted">
-                {availabilityTimeLabel(entry, localeKey)}
-              </span>
+              {formatAvailabilityMenuLabel(entry, localeKey, weekdayLabelStyle)}
             </li>
           ))}
         </ul>
@@ -276,8 +256,6 @@ function EmployeeAvailabilityContextMenu({
     };
   }, [onClose]);
 
-  const timesOnlyLabel = t("profiles.availabilityInputTimes");
-
   return createPortal(
     <div
       ref={menuRef}
@@ -301,7 +279,7 @@ function EmployeeAvailabilityContextMenu({
         ) : (
           availabilities.map((entry, index) => (
             <button
-              key={`${entry.weekday}-${entry.shift_type_id ?? "times"}-${entry.start_time}-${entry.end_time}-${index}`}
+              key={`${entry.weekday}-${entry.start_time}-${entry.end_time}-${index}`}
               type="button"
               role="menuitem"
               className="block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs text-foreground hover:bg-subtle"
@@ -313,7 +291,6 @@ function EmployeeAvailabilityContextMenu({
               {formatAvailabilityMenuLabel(
                 entry,
                 localeKey,
-                timesOnlyLabel,
                 weekdayLabelStyle
               )}
             </button>
@@ -505,12 +482,15 @@ export function DashboardShiftEmployeeCombobox({
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
-          "box-border flex w-full items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
+          "box-border flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
           rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
           value === EMPTY_EMPLOYEE_ID ? "text-[silver]" : "text-black",
           disabled && "cursor-not-allowed opacity-60",
           triggerClassName
         )}
+        title={
+          selected && value !== EMPTY_EMPLOYEE_ID ? selected.full_name : undefined
+        }
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
         }}
@@ -539,7 +519,7 @@ export function DashboardShiftEmployeeCombobox({
             <ul
               ref={listRef}
               role="listbox"
-              className="fixed max-h-48 overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg"
+              className="fixed max-h-48 overflow-y-auto rounded-lg border border-border bg-surface py-0.5 shadow-lg"
               style={{
                 top: dropdownPosition.top,
                 left: dropdownPosition.left,
@@ -551,7 +531,7 @@ export function DashboardShiftEmployeeCombobox({
                 <li key={employee.id || "empty"} role="option" aria-selected={value === employee.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-subtle"
+                    className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm hover:bg-subtle"
                     onMouseEnter={() => {
                       if (!employee.id) return;
                       showHint(availabilitiesForWeekday(employee, weekday));
@@ -601,7 +581,38 @@ type ShiftTypeComboboxProps = {
   placeholder: string;
   disabled?: boolean;
   rootClassName?: string;
+  triggerClassName?: string;
 };
+
+export const DASHBOARD_TABLE_COMBO_TRIGGER_CLASS = "gap-1.5 px-2";
+export const DASHBOARD_COMBO_EMPTY_LABEL = "—";
+
+function ShiftPresetColorSwatch({
+  name,
+  color,
+  empty = false,
+}: {
+  name?: string;
+  color?: string;
+  empty?: boolean;
+}) {
+  if (empty || !color) {
+    return (
+      <span
+        className="box-border inline-block h-3 w-3 shrink-0 border border-border bg-transparent"
+        aria-hidden
+      />
+    );
+  }
+
+  return (
+    <span
+      className="box-border inline-block h-3 w-3 shrink-0 border border-black"
+      style={shiftColorStyle(resolveShiftTemplateStoredColor(name ?? "", color))}
+      aria-hidden
+    />
+  );
+}
 
 export function DashboardShiftTypeCombobox({
   value,
@@ -610,6 +621,7 @@ export function DashboardShiftTypeCombobox({
   placeholder,
   disabled = false,
   rootClassName,
+  triggerClassName,
 }: ShiftTypeComboboxProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -636,15 +648,25 @@ export function DashboardShiftTypeCombobox({
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
-          "box-border flex w-full items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
+          "box-border flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
           rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
           isPlaceholder ? "text-[silver]" : "text-black",
-          disabled && "cursor-not-allowed opacity-60"
+          disabled && "cursor-not-allowed opacity-60",
+          triggerClassName
         )}
+        title={selectedType ? selectedType.name : undefined}
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
         }}
       >
+        {selectedType ? (
+          <ShiftPresetColorSwatch
+            name={selectedType.name}
+            color={selectedType.color}
+          />
+        ) : (
+          <ShiftPresetColorSwatch empty />
+        )}
         <span className="min-w-0 flex-1 truncate">{displayText}</span>
         <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
       </button>
@@ -653,7 +675,7 @@ export function DashboardShiftTypeCombobox({
             <ul
               ref={listRef}
               role="listbox"
-              className="fixed max-h-48 overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg"
+              className="fixed max-h-48 overflow-y-auto rounded-lg border border-border bg-surface py-0.5 shadow-lg"
               style={{
                 top: dropdownPosition.top,
                 left: dropdownPosition.left,
@@ -661,36 +683,17 @@ export function DashboardShiftTypeCombobox({
                 zIndex: DASHBOARD_COMBOBOX_DROPDOWN_Z,
               }}
             >
-              <li role="option" aria-selected={isPlaceholder}>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[silver] hover:bg-subtle"
-                  onClick={() => {
-                    onChange("");
-                    setOpen(false);
-                  }}
-                >
-                  <span className="min-w-0 flex-1 truncate">{placeholder}</span>
-                  {isPlaceholder ? (
-                    <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
-                  ) : null}
-                </button>
-              </li>
               {presets.map((type) => (
                 <li key={type.id} role="option" aria-selected={value === type.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-black hover:bg-subtle"
+                    className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm text-black hover:bg-subtle"
                     onClick={() => {
                       onChange(type.id);
                       setOpen(false);
                     }}
                   >
-                    <span
-                      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-border/60"
-                      style={{ backgroundColor: type.color }}
-                      aria-hidden
-                    />
+                    <ShiftPresetColorSwatch name={type.name} color={type.color} />
                     <span className="min-w-0 flex-1 truncate">{type.name}</span>
                     {value === type.id ? (
                       <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
@@ -698,6 +701,136 @@ export function DashboardShiftTypeCombobox({
                   </button>
                 </li>
               ))}
+              <li role="option" aria-selected={isPlaceholder}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm text-[silver] hover:bg-subtle"
+                  onClick={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                >
+                  <ShiftPresetColorSwatch empty />
+                  <span className="min-w-0 flex-1 truncate">{placeholder}</span>
+                  {isPlaceholder ? (
+                    <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
+                  ) : null}
+                </button>
+              </li>
+            </ul>,
+            document.body
+          )
+        : null}
+    </div>
+  );
+}
+
+type QualificationComboboxProps = {
+  value: string;
+  onChange: (qualificationId: string) => void;
+  options: { id: string; name: string }[];
+  placeholder: string;
+  disabled?: boolean;
+  rootClassName?: string;
+  triggerClassName?: string;
+};
+
+export function DashboardQualificationCombobox({
+  value,
+  onChange,
+  options,
+  placeholder,
+  disabled = false,
+  rootClassName,
+  triggerClassName,
+}: QualificationComboboxProps) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
+  const closeDropdown = useCallback(() => setOpen(false), []);
+  useCloseOnOutsideClick(open, closeDropdown, [triggerRef, listRef]);
+  const selectedOption = options.find((option) => option.id === value) ?? null;
+  const isPlaceholder = !value;
+  const displayText = selectedOption?.name ?? placeholder;
+
+  return (
+    <div
+      className={cn(
+        "relative",
+        rootClassName ? "h-9" : "mt-1",
+        rootClassName
+      )}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          "box-border flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
+          rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
+          isPlaceholder ? "text-[silver]" : "text-black",
+          disabled && "cursor-not-allowed opacity-60",
+          triggerClassName
+        )}
+        title={selectedOption ? selectedOption.name : undefined}
+        onClick={() => {
+          if (!disabled) setOpen((prev) => !prev);
+        }}
+      >
+        <EmployeeColorSwatch hex={null} />
+        <span className="min-w-0 flex-1 truncate">{displayText}</span>
+        <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
+      </button>
+      {open && dropdownPosition
+        ? createPortal(
+            <ul
+              ref={listRef}
+              role="listbox"
+              className="fixed max-h-48 overflow-y-auto rounded-lg border border-border bg-surface py-0.5 shadow-lg"
+              style={{
+                top: dropdownPosition.top,
+                left: dropdownPosition.left,
+                width: dropdownPosition.width,
+                zIndex: DASHBOARD_COMBOBOX_DROPDOWN_Z,
+              }}
+            >
+              {options.map((option) => (
+                <li key={option.id} role="option" aria-selected={value === option.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm text-black hover:bg-subtle"
+                    onClick={() => {
+                      onChange(option.id);
+                      setOpen(false);
+                    }}
+                  >
+                    <EmployeeColorSwatch hex={null} />
+                    <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                    {value === option.id ? (
+                      <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+              <li role="option" aria-selected={isPlaceholder}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm text-[silver] hover:bg-subtle"
+                  onClick={() => {
+                    onChange("");
+                    setOpen(false);
+                  }}
+                >
+                  <EmployeeColorSwatch hex={null} />
+                  <span className="min-w-0 flex-1 truncate">{placeholder}</span>
+                  {isPlaceholder ? (
+                    <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
+                  ) : null}
+                </button>
+              </li>
             </ul>,
             document.body
           )
@@ -714,7 +847,6 @@ type AddShiftModalProps = {
   dialog: DashboardAddShiftDialogState;
   locationId: string;
   areas: LocationArea[];
-  shiftTypes: ShiftTypeWithBreaks[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   serviceHours: AreaServiceHourRef[];
   onClose: () => void;
@@ -725,7 +857,6 @@ export function DashboardAddShiftModal({
   dialog,
   locationId,
   areas,
-  shiftTypes,
   areaShiftTemplates,
   serviceHours,
   onClose,
@@ -746,16 +877,11 @@ export function DashboardAddShiftModal({
     [areaShiftTemplates, dialog.areaId]
   );
   const assignmentPresets = useMemo(
-    () => dashboardAssignmentPresetsForArea(templatesForArea, shiftTypes),
-    [templatesForArea, shiftTypes]
+    () => dashboardAssignmentPresetsForArea(templatesForArea),
+    [templatesForArea]
   );
-  const usesAreaTemplates = usesAreaShiftTemplatesForAssign(templatesForArea);
-  const presetPlaceholder = usesAreaTemplates
-    ? t("dashboard.selectShiftTemplate")
-    : t("dashboard.selectShiftType");
-  const presetLabel = usesAreaTemplates
-    ? t("dashboard.shiftTemplateLabel")
-    : t("shiftTypes.designation");
+  const presetPlaceholder = t("dashboard.selectShiftTemplate");
+  const presetLabel = t("dashboard.shiftTemplateLabel");
 
   const [shiftTypeId, setShiftTypeId] = useState("");
   const [startTime, setStartTime] = useState("00:00");
@@ -776,10 +902,9 @@ export function DashboardAddShiftModal({
         employees,
         weekday,
         startTime,
-        endTime,
-        shiftTypes
+        endTime
       ),
-    [employees, weekday, startTime, endTime, shiftTypes]
+    [employees, weekday, startTime, endTime]
   );
 
   useEffect(() => {
@@ -869,11 +994,6 @@ export function DashboardAddShiftModal({
       setEndTime(nextEnd);
       setEmployeeManuallySelected(true);
 
-      if (entry.shift_type_id && !usesAreaTemplates) {
-        setShiftTypeId(entry.shift_type_id);
-        return;
-      }
-
       const matchedPresetId = resolvePresetIdFromTimes(
         nextStart,
         nextEnd,
@@ -881,11 +1001,9 @@ export function DashboardAddShiftModal({
       );
       if (matchedPresetId) {
         setShiftTypeId(matchedPresetId);
-      } else if (entry.shift_type_id) {
-        setShiftTypeId(entry.shift_type_id);
       }
     },
-    [assignmentPresets, usesAreaTemplates]
+    [assignmentPresets]
   );
 
   const handleOk = useCallback(async () => {
@@ -917,7 +1035,7 @@ export function DashboardAddShiftModal({
       shiftDate: dialog.date,
       startTime,
       endTime,
-      shiftTypeId: shiftTypeIdForAssign(shiftTypeId, assignmentPresets),
+      areaShiftTemplateId: areaShiftTemplateIdForAssign(shiftTypeId),
       locationId,
       locationAreaId: dialog.areaId,
     });
@@ -999,6 +1117,9 @@ export function DashboardAddShiftModal({
 
         <div className="space-y-4 px-5 py-4">
           {error ? <Alert variant="error">{error}</Alert> : null}
+          {assignmentPresets.length === 0 ? (
+            <Alert variant="info">{t("dashboard.noShiftTemplatesForArea")}</Alert>
+          ) : null}
 
           <div>
             <LabelMuted>{presetLabel}</LabelMuted>

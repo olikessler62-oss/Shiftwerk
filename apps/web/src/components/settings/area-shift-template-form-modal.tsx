@@ -37,6 +37,8 @@ import {
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
   settingsResponsiveTableWrapClass,
+  SettingsListRowDeleteButton,
+  settingsListRowDeleteHeaderClass,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -46,7 +48,6 @@ import {
   IconButton,
   Input,
   PlusIcon,
-  TrashIcon,
   LabelMuted,
   TimeInput,
 } from "@/components/ui";
@@ -161,10 +162,9 @@ export function AreaShiftTemplateFormModal({
     setSelectedBreakKey(draft.key);
   }
 
-  function removeSelectedBreak() {
-    if (!selectedBreakKey) return;
-    setBreaks((prev) => prev.filter((entry) => entry.key !== selectedBreakKey));
-    setSelectedBreakKey(null);
+  function removeBreak(key: string) {
+    setBreaks((prev) => prev.filter((entry) => entry.key !== key));
+    setSelectedBreakKey((current) => (current === key ? null : current));
   }
 
   function handleSubmit() {
@@ -324,27 +324,17 @@ export function AreaShiftTemplateFormModal({
             <div className="mb-2 h-4" aria-hidden />
             <div className="mb-2 flex items-center justify-between gap-2">
               <LabelMuted className="mb-0">{t("locations.areaShiftTemplateBreaksLabel")}</LabelMuted>
-              <div className="flex gap-1">
-                <IconButton
-                  size="sm"
-                  aria-label={t("shiftTypes.addBreak")}
-                  onClick={addBreak}
-                  disabled={
-                    pending ||
-                    (breakRule.kind === "required" && breaks.length >= 1)
-                  }
-                >
-                  <PlusIcon />
-                </IconButton>
-                <IconButton
-                  size="sm"
-                  aria-label={t("shiftTypes.removeBreak")}
-                  onClick={removeSelectedBreak}
-                  disabled={pending || !selectedBreakKey}
-                >
-                  <TrashIcon />
-                </IconButton>
-              </div>
+              <IconButton
+                size="sm"
+                aria-label={t("shiftTypes.addBreak")}
+                onClick={addBreak}
+                disabled={
+                  pending ||
+                  (breakRule.kind === "required" && breaks.length >= 1)
+                }
+              >
+                <PlusIcon />
+              </IconButton>
             </div>
 
             <div className={settingsResponsiveTableWrapClass()}>
@@ -353,12 +343,13 @@ export function AreaShiftTemplateFormModal({
                 <tr className="border-b border-border">
                   <th className={settingsColumnHeaderClass()}>{t("shiftTypes.breakFrom")}</th>
                   <th className={settingsColumnHeaderClass()}>{t("shiftTypes.breakTo")}</th>
+                  <th className={settingsListRowDeleteHeaderClass()} aria-hidden />
                 </tr>
               </thead>
               <tbody>
                 {breaks.length === 0 ? (
                   <tr>
-                    <td colSpan={2} className="py-4 text-center text-xs text-muted">
+                    <td colSpan={3} className="py-4 text-center text-xs text-muted">
                       {t("shiftTypes.noBreaksHint")}
                     </td>
                   </tr>
@@ -400,6 +391,13 @@ export function AreaShiftTemplateFormModal({
                                 )
                               )
                             }
+                          />
+                        </td>
+                        <td className="py-2 w-8 align-middle">
+                          <SettingsListRowDeleteButton
+                            label={t("shiftTypes.removeBreak")}
+                            disabled={pending}
+                            onClick={() => removeBreak(entry.key)}
                           />
                         </td>
                       </tr>

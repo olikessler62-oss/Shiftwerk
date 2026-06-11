@@ -2,7 +2,6 @@ export { Schema, SCHEMA_SQL_PATH } from "./schema";
 export type {
   SchichtwerkDatabase,
   ShiftTypeBreakInput,
-  ShiftWithTypeRow,
   DashboardShiftRow,
   EmployeeShiftRecord,
   AvailabilityRow,
@@ -102,6 +101,8 @@ export {
   timeToMinutes,
   toProfileAvailabilitySaveError,
   validateNoOverlappingAvailability,
+  compareProfileRecurringAvailabilityBySchedule,
+  sortProfileRecurringAvailabilityBySchedule,
 } from "./profile-availability-validation";
 export {
   requiredStaffForAreaOnDate,
@@ -122,6 +123,9 @@ export {
   validateShiftAgainstServiceHours,
   shiftTimesWithinServiceHours,
   parseServiceHourTimeToMinutes,
+  normalizeServiceHourTimeComparable,
+  serviceHoursSameWindow,
+  serviceHourIntervalsOverlap,
   SHIFT_OUTSIDE_SERVICE_HOURS_ERROR,
   NO_SERVICE_HOURS_FOR_DAY_ERROR,
   type ServiceHourInput,
@@ -138,14 +142,16 @@ export {
   type ServiceHourStaffingRuleInput,
 } from "./location-service-hour-staffing-validation";
 export {
-  MAX_SHIFT_TYPES_PER_ORGANIZATION,
+  qualificationsForArea,
+  areaHasQualificationTemplates,
+} from "./area-qualification-templates";
+export {
   MAX_AREA_SHIFT_TEMPLATES_PER_AREA,
   centeredBreakForShift,
   getBreakDurationRule,
   getSuggestedBreakMinutes,
   breakRuleHint,
   validateShiftTypeBreaks,
-  validateShiftTypeCount,
   validateAreaShiftTemplateCount,
 } from "./shift-type-break-rules";
 export {

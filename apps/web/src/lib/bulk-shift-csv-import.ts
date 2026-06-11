@@ -1,8 +1,9 @@
-import type { Profile, ShiftTypeWithBreaks } from "@schichtwerk/types";
+import type { Profile } from "@schichtwerk/types";
+import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
 
 export type CsvImportRow = {
   employeeId: string;
-  shiftTypeId: string | null;
+  areaShiftTemplateId: string | null;
   startTime: string;
   endTime: string;
 };
@@ -73,40 +74,43 @@ function resolveEmployee(
   );
 }
 
-function resolveShiftType(
+function resolveShiftTemplate(
   token: string,
-  shiftTypes: readonly ShiftTypeWithBreaks[]
+  presets: readonly DashboardAssignmentPreset[]
 ): string | null {
   const needle = token.trim().toLowerCase();
   if (!needle) return null;
-  return shiftTypes.find((t) => t.name.trim().toLowerCase() === needle)?.id ?? null;
+  return presets.find((preset) => preset.name.trim().toLowerCase() === needle)?.id ?? null;
 }
 
 export function parseBulkShiftCsv(
-  text: string,
+  csvText: string,
   profiles: readonly Profile[],
-  shiftTypes: readonly ShiftTypeWithBreaks[]
+  presets: readonly DashboardAssignmentPreset[]
 ): CsvImportParseOutcome {
-  const lines = text
+  const lines = csvText
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-
-  if (!lines.length) {
-    return { rows: [], errors: ["CSV ist leer."] };
+  if (lines.length < 2) {
+    return { rows: [], errors: ["CSV enthält keine Datenzeilen."] };
   }
 
   const delimiter = detectDelimiter(lines[0]);
-  const headers = parseCsvLine(lines[0], delimiter).map(normalizeHeader);
-  const employeeIdx = headers.indexOf("employee");
-  const startIdx = headers.indexOf("start_time");
-  const endIdx = headers.indexOf("end_time");
-  const typeIdx = headers.indexOf("shift_type");
+  const header = parseCsvLine(lines[0], delimiter).map(normalizeHeader);
+  const employeeIdx = header.findIndex((h) =>
+    ["mitarbeiter", "employee", "name"].includes(h)
+  );
+  const typeIdx = header.findIndex((h) =>
+    ["schicht", "schichtvorlage", "template", "type"].includes(h)
+  );
+  const fromIdx = header.findIndex((h) => ["von", "from", "start"].includes(h));
+  const toIdx = header.findIndex((h) => ["bis", "to", "end"].includes(h));
 
-  if (employeeIdx < 0 || startIdx < 0 || endIdx < 0) {
+  if (employeeIdx < 0 || fromIdx < 0 || toIdx < 0) {
     return {
       rows: [],
-      errors: ["Header muss employee, start_time, end_time enthalten."],
+      errors: ["Erforderliche Spalten: Mitarbeiter, Von, Bis."],
     };
   }
 
@@ -116,39 +120,32 @@ export function parseBulkShiftCsv(
   for (let lineNo = 1; lineNo < lines.length; lineNo++) {
     const cells = parseCsvLine(lines[lineNo], delimiter);
     const employeeToken = cells[employeeIdx] ?? "";
-    const startRaw = cells[startIdx] ?? "";
-    const endRaw = cells[endIdx] ?? "";
-    const typeToken = typeIdx >= 0 ? (cells[typeIdx] ?? "") : "";
-
-    const startTime = normalizeTime(startRaw);
-    const endTime = normalizeTime(endRaw);
-    const profile = resolveEmployee(employeeToken, profiles);
-
-    if (!profile) {
-      errors.push(`Zeile ${lineNo + 1}: Mitarbeiter „${employeeToken}“ unbekannt.`);
+    const employee = resolveEmployee(employeeToken, profiles);
+    if (!employee) {
+      errors.push(`Zeile ${lineNo + 1}: Mitarbeiter „${employeeToken}“ nicht gefunden.`);
       continue;
     }
+
+    const startTime = normalizeTime(cells[fromIdx] ?? "");
+    const endTime = normalizeTime(cells[toIdx] ?? "");
     if (!startTime || !endTime) {
-      errors.push(`Zeile ${lineNo + 1}: Ungültige Uhrzeit.`);
-      continue;
-    }
-    if (startTime === endTime) {
-      errors.push(`Zeile ${lineNo + 1}: Von und Bis dürfen nicht gleich sein.`);
+      errors.push(`Zeile ${lineNo + 1}: Ungültige Von-/Bis-Zeit.`);
       continue;
     }
 
-    let shiftTypeId: string | null = null;
-    if (typeToken.trim()) {
-      shiftTypeId = resolveShiftType(typeToken, shiftTypes);
-      if (!shiftTypeId) {
-        errors.push(`Zeile ${lineNo + 1}: Schichttyp „${typeToken}“ unbekannt.`);
+    let areaShiftTemplateId: string | null = null;
+    if (typeIdx >= 0) {
+      const typeToken = cells[typeIdx] ?? "";
+      areaShiftTemplateId = resolveShiftTemplate(typeToken, presets);
+      if (typeToken.trim() && !areaShiftTemplateId) {
+        errors.push(`Zeile ${lineNo + 1}: Schichtvorlage „${typeToken}“ nicht gefunden.`);
         continue;
       }
     }
 
     rows.push({
-      employeeId: profile.id,
-      shiftTypeId,
+      employeeId: employee.id,
+      areaShiftTemplateId,
       startTime,
       endTime,
     });

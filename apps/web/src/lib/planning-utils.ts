@@ -1,8 +1,10 @@
-import type { Shift, ShiftType } from "@schichtwerk/types";
 import { buildShiftTimestamps, getISOWeek, parseISODate } from "@/lib/dates";
 
-type ShiftWithType = Shift & {
-  shift_types: { name: string; color: string } | null;
+export type PlanningShiftRef = {
+  employee_id: string;
+  shift_date: string;
+  startTime: string;
+  endTime: string;
 };
 
 export function formatTime(time: string): string {
@@ -13,11 +15,18 @@ export function formatTimeRange(start: string, end: string): string {
   return `${formatTime(start)} – ${formatTime(end)}`;
 }
 
-export function shiftHours(shiftType: Pick<ShiftType, "start_time" | "end_time">): number {
+export function shiftHours(timeWindow: {
+  start_time: string;
+  end_time: string;
+}): number {
+  return shiftHoursFromWindow(timeWindow.start_time, timeWindow.end_time);
+}
+
+export function shiftHoursFromWindow(startTime: string, endTime: string): number {
   const { starts_at, ends_at } = buildShiftTimestamps(
     "2000-01-01",
-    shiftType.start_time,
-    shiftType.end_time
+    startTime,
+    endTime
   );
   const ms = new Date(ends_at).getTime() - new Date(starts_at).getTime();
   return Math.round((ms / 3_600_000) * 10) / 10;
@@ -25,15 +34,12 @@ export function shiftHours(shiftType: Pick<ShiftType, "start_time" | "end_time">
 
 export function employeeWeekHours(
   employeeId: string,
-  shifts: ShiftWithType[],
-  shiftTypes: ShiftType[]
+  shifts: PlanningShiftRef[]
 ): number {
-  const typeMap = new Map(shiftTypes.map((t) => [t.id, t]));
   let total = 0;
   for (const shift of shifts) {
     if (shift.employee_id !== employeeId) continue;
-    const type = typeMap.get(shift.shift_type_id);
-    if (type) total += shiftHours(type);
+    total += shiftHoursFromWindow(shift.startTime, shift.endTime);
   }
   return Math.round(total * 10) / 10;
 }
@@ -119,14 +125,13 @@ export type PlanningWarning = {
 
 export function buildPlanningWarnings(
   employees: { id: string; full_name: string; weekly_hours: number | null }[],
-  shifts: ShiftWithType[],
-  shiftTypes: ShiftType[],
+  shifts: PlanningShiftRef[],
   dates: string[]
 ): PlanningWarning[] {
   const warnings: PlanningWarning[] = [];
 
   for (const emp of employees) {
-    const hours = employeeWeekHours(emp.id, shifts, shiftTypes);
+    const hours = employeeWeekHours(emp.id, shifts);
     const target = emp.weekly_hours ?? 40;
     if (hours > target) {
       warnings.push({
@@ -157,14 +162,13 @@ export function buildPlanningWarnings(
 }
 
 export function weeklySummary(
-  shifts: ShiftWithType[],
-  shiftTypes: ShiftType[],
+  shifts: PlanningShiftRef[],
   employees: { weekly_hours: number | null }[]
 ) {
-  const plannedHours = shifts.reduce((sum, shift) => {
-    const type = shiftTypes.find((t) => t.id === shift.shift_type_id);
-    return sum + (type ? shiftHours(type) : 0);
-  }, 0);
+  const plannedHours = shifts.reduce(
+    (sum, shift) => sum + shiftHoursFromWindow(shift.startTime, shift.endTime),
+    0
+  );
 
   const targetHours = employees.reduce((sum, e) => sum + (e.weekly_hours ?? 40), 0);
   const openSlots = Math.max(0, employees.length * 5 - shifts.length);

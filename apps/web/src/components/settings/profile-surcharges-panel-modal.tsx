@@ -1,24 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import {
-  deleteProfileHourlyRate,
-  fetchProfileHourlyRates,
-} from "@/app/actions/profile-hourly-rates";
+import { fetchProfileHourlyRates } from "@/app/actions/profile-hourly-rates";
 import { isMutableHourlyRate } from "@schichtwerk/database";
 import type {
   Profile,
-  ProfileHourlyRate,
   ProfileCompensationSurcharge,
-  EffectiveProfileCompensationSurcharge,
+  CompensationSurchargeType,
 } from "@schichtwerk/types";
+import { fetchCompensationSurchargeTypes } from "@/app/actions/compensation-surcharge-types";
+import { deleteProfileCompensationSurcharge } from "@/app/actions/profile-compensation-surcharges";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
+import { formatDateLabel } from "@/lib/profile-hourly-rate-display";
+import { ProfileCompensationSurchargeFormModal } from "./profile-compensation-surcharge-form-modal";
+import type { ProfileCompensationCacheEntry } from "./profile-compensation-panel-modal";
+import { formatSurchargeAmountLabel } from "@/lib/profile-compensation-calculation";
 import {
-  formatAmountLabel,
-  formatDateLabel,
-} from "@/lib/profile-hourly-rate-display";
-import { ProfileHourlyRateFormModal } from "./profile-hourly-rate-form-modal";
+  formatSurchargeTriggerLabel,
+  resolveProfileSurchargeAmount,
+} from "@/lib/profile-surcharge-display";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
@@ -51,31 +52,26 @@ import {
   PlusIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 
 const MAX_NAME_DISPLAY = 25;
 const EMPTY_STATE_CLASS = "min-h-full";
 
-export type ProfileCompensationCacheEntry = {
-  currentRate: ProfileHourlyRate | null;
-  rates: ProfileHourlyRate[];
-  currentSurcharges: EffectiveProfileCompensationSurcharge[];
-  surchargeEntries: ProfileCompensationSurcharge[];
-  serverToday: string;
-};
-
-type HourlyRateFormMode =
+type SurchargeFormMode =
   | null
   | { type: "create" }
-  | { type: "edit"; rate: ProfileHourlyRate };
+  | { type: "edit"; entry: ProfileCompensationSurcharge };
 
 function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
   if (name.length <= max) return name;
   return `${name.slice(0, max - 1)}…`;
 }
 
-function resolveDefaultSelectedRateId(rates: ProfileHourlyRate[]): string | null {
-  const openRate = rates.find((rate) => rate.valid_to === null);
-  return openRate?.id ?? rates[0]?.id ?? null;
+function resolveDefaultSelectedSurchargeId(
+  entries: ProfileCompensationSurcharge[]
+): string | null {
+  const openEntry = entries.find((entry) => entry.valid_to === null);
+  return openEntry?.id ?? entries[0]?.id ?? null;
 }
 
 type Props = {
@@ -85,7 +81,7 @@ type Props = {
   onCacheUpdate: (profileId: string, entry: ProfileCompensationCacheEntry) => void;
 };
 
-export function ProfileCompensationPanelModal({
+export function ProfileSurchargesPanelModal({
   profile,
   cachedCompensation,
   onClose,
@@ -96,82 +92,95 @@ export function ProfileCompensationPanelModal({
   const [pending, startTransition] = useTransition();
   const [loading, setLoading] = useState(cachedCompensation === undefined);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [rates, setRates] = useState<ProfileHourlyRate[]>(
-    cachedCompensation?.rates ?? []
-  );
-  const [currentRate, setCurrentRate] = useState<ProfileHourlyRate | null>(
+  const [currentRate, setCurrentRate] = useState(
     cachedCompensation?.currentRate ?? null
   );
-  const [currentSurcharges, setCurrentSurcharges] = useState<
-    EffectiveProfileCompensationSurcharge[]
-  >(cachedCompensation?.currentSurcharges ?? []);
+  const [rates, setRates] = useState(cachedCompensation?.rates ?? []);
+  const [currentSurcharges, setCurrentSurcharges] = useState(
+    cachedCompensation?.currentSurcharges ?? []
+  );
   const [surchargeEntries, setSurchargeEntries] = useState<
     ProfileCompensationSurcharge[]
   >(cachedCompensation?.surchargeEntries ?? []);
-  const [selectedRateId, setSelectedRateId] = useState<string | null>(() =>
-    cachedCompensation
-      ? resolveDefaultSelectedRateId(cachedCompensation.rates)
-      : null
+  const [availableSurchargeTypes, setAvailableSurchargeTypes] = useState<
+    CompensationSurchargeType[]
+  >([]);
+  const [selectedSurchargeId, setSelectedSurchargeId] = useState<string | null>(
+    () =>
+      cachedCompensation
+        ? resolveDefaultSelectedSurchargeId(cachedCompensation.surchargeEntries)
+        : null
   );
   const [serverToday, setServerToday] = useState(
     cachedCompensation?.serverToday ?? ""
   );
-  const [formMode, setFormMode] = useState<HourlyRateFormMode>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
+  const [surchargeFormMode, setSurchargeFormMode] =
+    useState<SurchargeFormMode>(null);
+  const [confirmDeleteSurcharge, setConfirmDeleteSurcharge] = useState(false);
+  const [scrollToSurchargeId, setScrollToSurchargeId] = useState<string | null>(
+    null
+  );
 
   const syncLocalCompensation = useCallback(
-    (entry: ProfileCompensationCacheEntry, preferredSelectedId?: string | null) => {
-      setRates(entry.rates);
+    (entry: ProfileCompensationCacheEntry) => {
       setCurrentRate(entry.currentRate);
+      setRates(entry.rates);
       setCurrentSurcharges(entry.currentSurcharges);
       setSurchargeEntries(entry.surchargeEntries);
       setServerToday(entry.serverToday);
-      setSelectedRateId((current) => {
-        const nextId =
-          preferredSelectedId ??
-          (current && entry.rates.some((rate) => rate.id === current)
-            ? current
-            : resolveDefaultSelectedRateId(entry.rates));
-        return nextId;
+      setSelectedSurchargeId((current) => {
+        if (
+          current &&
+          entry.surchargeEntries.some((entryRow) => entryRow.id === current)
+        ) {
+          return current;
+        }
+        return resolveDefaultSelectedSurchargeId(entry.surchargeEntries);
       });
     },
     []
   );
 
   const applyCompensation = useCallback(
-    (entry: ProfileCompensationCacheEntry, preferredSelectedId?: string | null) => {
-      syncLocalCompensation(entry, preferredSelectedId);
+    (entry: ProfileCompensationCacheEntry) => {
+      syncLocalCompensation(entry);
       onCacheUpdate(profile.id, entry);
     },
     [onCacheUpdate, profile.id, syncLocalCompensation]
   );
 
-  const selectedRate = useMemo(
-    () => rates.find((rate) => rate.id === selectedRateId) ?? null,
-    [rates, selectedRateId]
+  const selectedSurcharge = useMemo(
+    () =>
+      surchargeEntries.find((entry) => entry.id === selectedSurchargeId) ?? null,
+    [surchargeEntries, selectedSurchargeId]
   );
-  const openRate = useMemo(
-    () => rates.find((rate) => rate.valid_to === null) ?? null,
-    [rates]
-  );
-  const defaultCurrency = rates[0]?.currency ?? "EUR";
-  const openRateMutable =
-    !!openRate && !!serverToday && isMutableHourlyRate(openRate.valid_from, serverToday);
-  const selectedRateMutable =
-    !!selectedRate &&
+  const selectedSurchargeMutable =
+    !!selectedSurcharge &&
     !!serverToday &&
-    isMutableHourlyRate(selectedRate.valid_from, serverToday);
-  const canCreate =
+    isMutableHourlyRate(selectedSurcharge.valid_from, serverToday);
+  const canCreateSurcharge =
+    COMPENSATION_SURCHARGES_UI_ENABLED &&
     !!serverToday &&
-    (rates.length === 0 ||
-      !openRate ||
-      (!!openRate && !isMutableHourlyRate(openRate.valid_from, serverToday)));
-  const canEdit = selectedRateMutable;
-  const canDelete = selectedRateMutable;
+    availableSurchargeTypes.length > 0;
+  const canEditSurcharge =
+    COMPENSATION_SURCHARGES_UI_ENABLED && selectedSurchargeMutable;
+  const canDeleteSurcharge =
+    COMPENSATION_SURCHARGES_UI_ENABLED && selectedSurchargeMutable;
 
-  useScrollToSettingsListItem(rates, scrollToItemId, () =>
-    setScrollToItemId(null)
+  const localeKey = locale === "en" ? "en" : "de";
+  const currentCompensationEntry = useMemo(
+    (): ProfileCompensationCacheEntry => ({
+      currentRate,
+      rates,
+      currentSurcharges,
+      surchargeEntries,
+      serverToday,
+    }),
+    [currentRate, currentSurcharges, rates, serverToday, surchargeEntries]
+  );
+
+  useScrollToSettingsListItem(surchargeEntries, scrollToSurchargeId, () =>
+    setScrollToSurchargeId(null)
   );
 
   useEffect(() => {
@@ -212,62 +221,75 @@ export function ProfileCompensationPanelModal({
   }, [applyCompensation, cachedCompensation, profile.id, syncLocalCompensation]);
 
   useEffect(() => {
+    if (!COMPENSATION_SURCHARGES_UI_ENABLED) return;
+    let cancelled = false;
+    void fetchCompensationSurchargeTypes().then((result) => {
+      if (cancelled || !result.ok) return;
+      setAvailableSurchargeTypes(result.types);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile.id]);
+
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      if (formMode) {
-        setFormMode(null);
+      if (surchargeFormMode) {
+        setSurchargeFormMode(null);
         return;
       }
-      if (confirmDelete) {
-        setConfirmDelete(false);
+      if (confirmDeleteSurcharge) {
+        setConfirmDeleteSurcharge(false);
         return;
       }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDelete, formMode, onClose]);
+  }, [confirmDeleteSurcharge, onClose, surchargeFormMode]);
 
-  const anyFormOpen = !!formMode || confirmDelete;
+  const anyFormOpen = !!surchargeFormMode || confirmDeleteSurcharge;
 
-  function handleSaved(
+  function handleSurchargeSaved(
     entry: ProfileCompensationCacheEntry,
     selectedId: string,
     scrollToSelection = false
   ) {
-    applyCompensation(entry, selectedId);
-    if (scrollToSelection && selectedId) setScrollToItemId(selectedId);
+    applyCompensation(entry);
+    if (selectedId) setSelectedSurchargeId(selectedId);
+    if (scrollToSelection && selectedId) setScrollToSurchargeId(selectedId);
   }
 
-  function handleDelete() {
-    if (!selectedRate || !canDelete) return;
+  function handleDeleteSurcharge() {
+    if (!selectedSurcharge || !canDeleteSurcharge) return;
     setErrorMessage(null);
     startTransition(async () => {
-      const result = await deleteProfileHourlyRate({
+      const result = await deleteProfileCompensationSurcharge({
         profileId: profile.id,
-        rateId: selectedRate.id,
+        entryId: selectedSurcharge.id,
       });
       if (!result.ok) {
         setErrorMessage(result.error);
         return;
       }
       applyCompensation({
-        currentRate: result.currentRate ?? null,
-        rates: result.rates ?? [],
-        currentSurcharges: result.currentSurcharges ?? currentSurcharges,
-        surchargeEntries: result.surchargeEntries ?? surchargeEntries,
+        currentRate,
+        rates,
+        currentSurcharges: result.currentSurcharges ?? [],
+        surchargeEntries: result.surchargeEntries ?? [],
         serverToday: result.serverToday ?? serverToday,
       });
-      setConfirmDelete(false);
+      setConfirmDeleteSurcharge(false);
     });
   }
 
-  const deleteConfirmLabel =
-    selectedRate && serverToday
-      ? `${formatAmountLabel(selectedRate.amount, selectedRate.currency, locale)} (${formatDateLabel(selectedRate.valid_from, locale)})`
+  const deleteSurchargeConfirmLabel =
+    selectedSurcharge && serverToday
+      ? `${selectedSurcharge.surcharge_type_name} (${formatDateLabel(selectedSurcharge.valid_from, locale)})`
       : "";
 
-  const title = t("profiles.panelCompensationOf", {
+  const title = t("profiles.panelSurchargesOf", {
     name: truncateLabel(profile.full_name, 40),
   });
 
@@ -282,7 +304,7 @@ export function ProfileCompensationPanelModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="profile-compensation-panel-title"
+        aria-labelledby="profile-surcharges-panel-title"
         aria-busy={loading || pending}
         aria-hidden={anyFormOpen}
         className={cn(
@@ -299,7 +321,7 @@ export function ProfileCompensationPanelModal({
           )}
         >
           <h3
-            id="profile-compensation-panel-title"
+            id="profile-surcharges-panel-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
           >
             {title}
@@ -332,31 +354,34 @@ export function ProfileCompensationPanelModal({
               message={t("common.loading")}
               className={EMPTY_STATE_CLASS}
             />
-          ) : rates.length === 0 ? (
+          ) : surchargeEntries.length === 0 ? (
             <SettingsEmptyState
-              message={t("profiles.noHourlyRate")}
+              message={t("profiles.noSurcharges")}
               hint={t("common.emptyHintCreate")}
               className={EMPTY_STATE_CLASS}
             />
           ) : (
-            <table className="w-full min-w-[28rem] border-collapse">
+            <table className="w-full min-w-[36rem] border-collapse">
               <thead>
                 <tr className="border-b border-border">
                   <th
                     className={settingsStickyIndicatorHeaderClass()}
                     aria-hidden
                   />
+                  <th className={settingsStickyColumnHeaderClass()}>
+                    {t("profiles.surchargeColumnName")}
+                  </th>
+                  <th className={settingsStickyColumnHeaderClass()}>
+                    {t("profiles.surchargeColumnTrigger")}
+                  </th>
                   <th className={settingsStickyColumnHeaderClass("right")}>
-                    {t("profiles.hourlyRateColumnAmount")}
+                    {t("profiles.surchargeColumnAmount")}
                   </th>
                   <th className={settingsStickyColumnHeaderClass()}>
                     {t("profiles.hourlyRateColumnValidFrom")}
                   </th>
                   <th className={settingsStickyColumnHeaderClass()}>
                     {t("profiles.hourlyRateColumnValidTo")}
-                  </th>
-                  <th className={settingsStickyColumnHeaderClass()}>
-                    {t("profiles.hourlyRateColumnCreatedBy")}
                   </th>
                   <th
                     className={settingsListRowDeleteHeaderClass()}
@@ -365,29 +390,32 @@ export function ProfileCompensationPanelModal({
                 </tr>
               </thead>
               <tbody>
-                {rates.map((rate) => {
-                  const isSelected = rate.id === selectedRateId;
-                  const rateMutable =
+                {surchargeEntries.map((entry) => {
+                  const isSelected = entry.id === selectedSurchargeId;
+                  const resolvedAmount = resolveProfileSurchargeAmount(entry);
+                  const entryMutable =
+                    COMPENSATION_SURCHARGES_UI_ENABLED &&
                     !!serverToday &&
-                    isMutableHourlyRate(rate.valid_from, serverToday);
+                    isMutableHourlyRate(entry.valid_from, serverToday);
                   return (
                     <tr
-                      key={rate.id}
-                      {...settingsListItemAttrs(rate.id)}
+                      key={entry.id}
+                      {...settingsListItemAttrs(entry.id)}
                       onClick={() => {
-                        setSelectedRateId(rate.id);
-                        setFormMode(null);
+                        setSelectedSurchargeId(entry.id);
+                        setSurchargeFormMode(null);
                       }}
                       onDoubleClick={(e) => {
                         e.preventDefault();
                         window.getSelection()?.removeAllRanges();
+                        if (!COMPENSATION_SURCHARGES_UI_ENABLED) return;
                         if (
                           !serverToday ||
-                          !isMutableHourlyRate(rate.valid_from, serverToday)
+                          !isMutableHourlyRate(entry.valid_from, serverToday)
                         ) {
                           return;
                         }
-                        setFormMode({ type: "edit", rate });
+                        setSurchargeFormMode({ type: "edit", entry });
                       }}
                       className={settingsDataRowClass(isSelected)}
                     >
@@ -397,39 +425,47 @@ export function ProfileCompensationPanelModal({
                       />
                       <td
                         className={settingsDataCellClass(isSelected, {
+                          className: "font-medium",
+                        })}
+                      >
+                        {entry.surcharge_type_name}
+                      </td>
+                      <td className={settingsDataCellClass(isSelected)}>
+                        {formatSurchargeTriggerLabel(entry.trigger, t)}
+                      </td>
+                      <td
+                        className={settingsDataCellClass(isSelected, {
                           align: "right",
                           className: "whitespace-nowrap tabular-nums",
                         })}
                       >
-                        {formatAmountLabel(rate.amount, rate.currency, locale)}
+                        {formatSurchargeAmountLabel(
+                          resolvedAmount,
+                          entry.type_default_unit,
+                          localeKey
+                        )}
+                        {entry.amount === null ? (
+                          <span className="ml-1 text-xs text-muted">
+                            ({t("profiles.orgDefaultShort")})
+                          </span>
+                        ) : null}
                       </td>
                       <td className={settingsDataCellClass(isSelected)}>
-                        {formatDateLabel(rate.valid_from, locale)}
+                        {formatDateLabel(entry.valid_from, locale)}
                       </td>
                       <td className={settingsDataCellClass(isSelected)}>
-                        {rate.valid_to
-                          ? formatDateLabel(rate.valid_to, locale)
+                        {entry.valid_to
+                          ? formatDateLabel(entry.valid_to, locale)
                           : t("profiles.hourlyRateOpen")}
-                      </td>
-                      <td
-                        className={settingsDataCellClass(isSelected, {
-                          className: "max-w-[8rem] truncate text-muted",
-                        })}
-                        title={rate.created_by_name ?? undefined}
-                      >
-                        {rate.created_by_name
-                          ? truncateLabel(rate.created_by_name, 18)
-                          : "—"}
                       </td>
                       <td className={settingsListRowDeleteCellClass(isSelected)}>
                         <SettingsListRowDeleteButton
                           label={t("profiles.delete")}
-                          disabled={loading || pending || !rateMutable}
+                          disabled={loading || pending || !entryMutable}
                           onClick={() => {
-                            setSelectedRateId(rate.id);
-                            setFormMode(null);
-                            setConfirmDelete(true);
-                            setErrorMessage(null);
+                            setSelectedSurchargeId(entry.id);
+                            setSurchargeFormMode(null);
+                            setConfirmDeleteSurcharge(true);
                           }}
                         />
                       </td>
@@ -445,11 +481,12 @@ export function ProfileCompensationPanelModal({
           <SettingsActionBar
             primary={
               <SettingsPrimaryActionButton
-                label={t("profiles.new")}
+                label={t("profiles.assignSurcharge")}
                 icon={<PlusIcon />}
-                disabled={loading || pending || !canCreate}
+                disabled={loading || pending || !canCreateSurcharge}
                 onClick={() => {
-                  setFormMode({ type: "create" });
+                  if (!COMPENSATION_SURCHARGES_UI_ENABLED) return;
+                  setSurchargeFormMode({ type: "create" });
                   setErrorMessage(null);
                 }}
               />
@@ -458,11 +495,17 @@ export function ProfileCompensationPanelModal({
               <SettingsIconActionButton
                 label={t("profiles.edit")}
                 icon={<PencilIcon />}
-                disabled={loading || pending || !selectedRate || !canEdit}
+                disabled={
+                  loading || pending || !selectedSurcharge || !canEditSurcharge
+                }
                 onClick={() => {
-                  if (!selectedRate || !canEdit) return;
-                  setFormMode({ type: "edit", rate: selectedRate });
-                  setConfirmDelete(false);
+                  if (!COMPENSATION_SURCHARGES_UI_ENABLED) return;
+                  if (!selectedSurcharge || !canEditSurcharge) return;
+                  setSurchargeFormMode({
+                    type: "edit",
+                    entry: selectedSurcharge,
+                  });
+                  setConfirmDeleteSurcharge(false);
                   setErrorMessage(null);
                 }}
               />
@@ -484,36 +527,43 @@ export function ProfileCompensationPanelModal({
         </div>
       </div>
 
-      {formMode?.type === "create" && serverToday && (
-        <ProfileHourlyRateFormModal
-          mode="create"
-          profileId={profile.id}
-          serverToday={serverToday}
-          currentOpenRate={openRateMutable ? null : currentRate}
-          defaultCurrency={defaultCurrency}
-          onClose={() => setFormMode(null)}
-          onSaved={handleSaved}
-        />
-      )}
-      {formMode?.type === "edit" && serverToday && (
-        <ProfileHourlyRateFormModal
-          mode="edit"
-          profileId={profile.id}
-          serverToday={serverToday}
-          editingRate={formMode.rate}
-          defaultCurrency={defaultCurrency}
-          onClose={() => setFormMode(null)}
-          onSaved={handleSaved}
-        />
-      )}
-      {confirmDelete && selectedRate && (
-        <DeleteConfirmModal
-          name={deleteConfirmLabel}
-          pending={pending}
-          onCancel={() => setConfirmDelete(false)}
-          onConfirm={handleDelete}
-        />
-      )}
+      {COMPENSATION_SURCHARGES_UI_ENABLED &&
+        surchargeFormMode?.type === "create" &&
+        serverToday && (
+          <ProfileCompensationSurchargeFormModal
+            mode="create"
+            profileId={profile.id}
+            serverToday={serverToday}
+            currentEntry={currentCompensationEntry}
+            availableTypes={availableSurchargeTypes}
+            onClose={() => setSurchargeFormMode(null)}
+            onSaved={handleSurchargeSaved}
+          />
+        )}
+      {COMPENSATION_SURCHARGES_UI_ENABLED &&
+        surchargeFormMode?.type === "edit" &&
+        serverToday && (
+          <ProfileCompensationSurchargeFormModal
+            mode="edit"
+            profileId={profile.id}
+            serverToday={serverToday}
+            currentEntry={currentCompensationEntry}
+            availableTypes={availableSurchargeTypes}
+            editingEntry={surchargeFormMode.entry}
+            onClose={() => setSurchargeFormMode(null)}
+            onSaved={handleSurchargeSaved}
+          />
+        )}
+      {COMPENSATION_SURCHARGES_UI_ENABLED &&
+        confirmDeleteSurcharge &&
+        selectedSurcharge && (
+          <DeleteConfirmModal
+            name={deleteSurchargeConfirmLabel}
+            pending={pending}
+            onCancel={() => setConfirmDeleteSurcharge(false)}
+            onConfirm={handleDeleteSurcharge}
+          />
+        )}
     </div>
   );
 }

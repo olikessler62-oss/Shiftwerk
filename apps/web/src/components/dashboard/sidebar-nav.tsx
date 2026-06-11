@@ -42,7 +42,6 @@ export function SidebarNav({ onNavigate }: Props) {
   const standorteOpen = searchParams.get("standorte") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
   const rollenOpen = searchParams.get("rollen") === "1";
-  const schichtartenOpen = searchParams.get("schichtarten") === "1";
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
   const sonderzuschlaegeOpen = searchParams.get("sonderzuschlaege") === "1";
   const abwesenheitenOpen = searchParams.get("abwesenheiten") === "1";
@@ -50,7 +49,6 @@ export function SidebarNav({ onNavigate }: Props) {
     standorteOpen ||
     profilesOpen ||
     rollenOpen ||
-    schichtartenOpen ||
     qualifikationenOpen ||
     sonderzuschlaegeOpen ||
     abwesenheitenOpen;
@@ -75,7 +73,6 @@ export function SidebarNav({ onNavigate }: Props) {
       | "standorte"
       | "profiles"
       | "rollen"
-      | "schichtarten"
       | "qualifikationen"
       | "sonderzuschlaege"
       | "abwesenheiten"
@@ -91,7 +88,6 @@ export function SidebarNav({ onNavigate }: Props) {
   }
 
   const settingsLinks = [
-    { flag: "schichtarten" as const, labelKey: "nav.shiftTypes", open: schichtartenOpen },
     { flag: "standorte" as const, labelKey: "nav.locations", open: standorteOpen },
     { flag: "profiles" as const, labelKey: "nav.profiles", open: profilesOpen },
     { flag: "rollen" as const, labelKey: "nav.roles", open: rollenOpen },

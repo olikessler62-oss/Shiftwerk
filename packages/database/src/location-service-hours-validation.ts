@@ -25,7 +25,29 @@ export function parseServiceHourTimeToMinutes(value: string): number | null {
   return h * 60 + m;
 }
 
-function serviceHourIntervalsOverlap(
+/** Kanonisches HH:MM — unabhängig von führenden Nullen oder Sekunden. */
+export function normalizeServiceHourTimeComparable(value: string): string {
+  const minutes = parseServiceHourTimeToMinutes(value);
+  if (minutes == null) return normalizeTimeField(value);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function serviceHoursSameWindow(
+  a: Pick<ServiceHourInput, "weekday" | "start_time" | "end_time">,
+  b: Pick<ServiceHourInput, "weekday" | "start_time" | "end_time">
+): boolean {
+  if (a.weekday !== b.weekday) return false;
+  return (
+    normalizeServiceHourTimeComparable(a.start_time) ===
+      normalizeServiceHourTimeComparable(b.start_time) &&
+    normalizeServiceHourTimeComparable(a.end_time) ===
+      normalizeServiceHourTimeComparable(b.end_time)
+  );
+}
+
+export function serviceHourIntervalsOverlap(
   a: ServiceHourInput,
   b: ServiceHourInput
 ): boolean {

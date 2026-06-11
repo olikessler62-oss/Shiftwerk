@@ -22,7 +22,6 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{
     week?: string;
-    schichtarten?: string;
     qualifikationen?: string;
     standorte?: string;
     profiles?: string;
@@ -45,9 +44,8 @@ export default async function DashboardPage({
   const from = dates[0];
   const to = dates[6];
 
-  let [shiftTypes, qualifications, compensationSurchargeTypes, roles, profiles, locations] =
+  let [qualifications, compensationSurchargeTypes, roles, profiles, locations] =
     await Promise.all([
-      db.loadShiftTypesWithBreaks(orgId),
       db.listQualifications(orgId),
       db.listCompensationSurchargeTypes(orgId),
       db.listRoles(orgId),
@@ -77,22 +75,18 @@ export default async function DashboardPage({
       ])
     : [[], [], [], [], []];
 
-  if (selectedLocationId) {
-    shiftTypes = await db.loadShiftTypesWithBreaksForDashboard(orgId);
-  }
-
   const cards: DashboardShiftCard[] = [];
   for (const s of shiftRows) {
-    const type = relation(s.shift_types);
+    const template = relation(s.area_shift_templates);
     const profile = relation(s.profiles);
     const startFromTs = s.starts_at
       ? s.starts_at.slice(11, 16)
-      : type?.start_time?.slice(0, 5) ?? "00:00";
+      : template?.start_time?.slice(0, 5) ?? "00:00";
     const endFromTs = s.ends_at
       ? s.ends_at.slice(11, 16)
-      : type?.end_time?.slice(0, 5) ?? "00:00";
+      : template?.end_time?.slice(0, 5) ?? "00:00";
     const areaTemplate =
-      !type && s.location_area_id
+      !template && s.location_area_id
         ? findAreaShiftTemplateByTimes(
             s.location_area_id,
             startFromTs,
@@ -105,10 +99,10 @@ export default async function DashboardPage({
       id: s.id,
       shift_date: s.shift_date,
       locationAreaId: s.location_area_id,
-      shiftTypeId: s.shift_type_id,
+      areaShiftTemplateId: s.area_shift_template_id,
       employeeId: s.employee_id,
-      shiftName: type?.name ?? areaTemplate?.name ?? "",
-      color: type?.color ?? areaTemplate?.color ?? profile?.color ?? "#64748b",
+      shiftName: template?.name ?? areaTemplate?.name ?? "",
+      color: template?.color ?? areaTemplate?.color ?? profile?.color ?? "#64748b",
       startTime: startFromTs,
       endTime: endFromTs,
       employeeName: profile?.full_name ?? "Unbekannt",
@@ -128,7 +122,6 @@ export default async function DashboardPage({
         fullStaffingRules={staffingRules}
         serviceHours={serviceHours}
         shifts={cards}
-        shiftTypes={shiftTypes}
         areaShiftTemplates={areaShiftTemplates}
         qualifications={qualifications}
         compensationSurchargeTypes={compensationSurchargeTypes}

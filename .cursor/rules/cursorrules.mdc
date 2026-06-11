@@ -1,0 +1,19 @@
+# Tech Stack
+- Next.js (App Router, Strict React Server Components)
+- TypeScript (Strict Mode, Interfaces für alle Props/APIs, kein `any`)
+- Tailwind CSS (Nutze native Utility-Classes, vermeide Inline-Styles)
+- Supabase (Asynchrone Client- & Server-Abfragen)
+
+# Performance-Architektur (App Router & RSC)
+- Server-First: Nutze standardmäßig Server Components (RSC) für den Datenabruf (Data Fetching).
+- Client-Code minimieren: Setze "use client" nur ein, wenn Zustand (useState/useReducer) oder Event-Listener benötigt werden.
+- Abfrage-Optimierung: Verhindere Wasserfall-Ladezeiten (Waterfalls). Nutze `Promise.all()` für parallele Datenbank-Abfragen.
+- Caching: Nutze Next.js `unstable_cache` oder das native Fetch-Caching für statische oder semistatische Supabase-Daten.
+- Streaming: Nutze `loading.tsx`-Dateien oder `<Suspense>`-Komponenten für granulareres Laden (Code-Splitting).
+
+# Asset- & Code-Optimierung
+- Bilder: Nutze strikt die Next.js `<Image />`-Komponente mit passenden `sizes` und `priority` für Above-the-Fold-Inhalte.
+- Dynamic Imports: Lade schwere Client-Komponenten oder Third-Party-Bibliotheken über `next/dynamic` erst bei Bedarf.
+- Schriftarten: Nutze `next/font`, um Google Fonts lokal ohne Layout-Verschiebungen (CLS) einzubinden.
+Use functional style: pure functions, immutable data, array methods (map, filter, reduce) over loops.
+Prefer named exports and async/await. 

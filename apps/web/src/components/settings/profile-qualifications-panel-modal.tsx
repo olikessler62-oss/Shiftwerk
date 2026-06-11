@@ -17,6 +17,7 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  SettingsListRowDeleteButton,
   settingsListItemAttrs,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
@@ -26,6 +27,8 @@ import {
   useScrollToSettingsListItem,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
+  settingsListRowDeleteCellClass,
+  settingsListRowDeleteHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -37,7 +40,6 @@ import {
   IconButton,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
@@ -288,6 +290,10 @@ export function ProfileQualificationsPanelModal({
                     <th className={settingsStickyColumnHeaderClass()}>
                       {t("profiles.columnQualification")}
                     </th>
+                    <th
+                      className={settingsListRowDeleteHeaderClass()}
+                      aria-hidden
+                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -321,6 +327,17 @@ export function ProfileQualificationsPanelModal({
                           title={item.name}
                         >
                           {truncateLabel(item.name)}
+                        </td>
+                        <td className={settingsListRowDeleteCellClass(isSelected)}>
+                          <SettingsListRowDeleteButton
+                            label={t("profiles.delete")}
+                            disabled={pending || loading}
+                            onClick={() => {
+                              setSelectedQualificationId(item.id);
+                              setFormMode(null);
+                              setConfirmRemove(true);
+                            }}
+                          />
                         </td>
                       </tr>
                     );
@@ -356,17 +373,6 @@ export function ProfileQualificationsPanelModal({
                   if (!selectedQualification) return;
                   setFormMode({ type: "edit", qualification: selectedQualification });
                   setConfirmRemove(false);
-                }}
-              />
-            }
-            destructive={
-              <SettingsIconActionButton
-                label={t("profiles.delete")}
-                icon={<TrashIcon />}
-                disabled={pending || loading || !selectedQualification}
-                onClick={() => {
-                  setFormMode(null);
-                  setConfirmRemove(true);
                 }}
               />
             }

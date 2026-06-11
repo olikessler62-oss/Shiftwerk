@@ -66,14 +66,6 @@ export async function signUp(formData: FormData) {
     );
   }
 
-  try {
-    await admin.seedDefaultShiftTypes(orgId);
-  } catch (seedError) {
-    const msg =
-      seedError instanceof Error ? seedError.message : "Schichttypen fehlgeschlagen";
-    redirect(`/register?error=${encodeURIComponent(msg)}`);
-  }
-
   if (!authData.session) {
     redirect(
       `/login?message=${encodeURIComponent("Konto erstellt. Bitte E-Mail bestätigen und anmelden.")}`

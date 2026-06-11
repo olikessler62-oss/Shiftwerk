@@ -1,4 +1,7 @@
-import { isOvernightAvailability } from "@schichtwerk/database";
+import {
+  isOvernightAvailability,
+  sortProfileRecurringAvailabilityBySchedule,
+} from "@schichtwerk/database";
 import type { ProfileRecurringAvailability } from "@schichtwerk/types";
 import { formatTime } from "@/lib/planning-utils";
 
@@ -93,10 +96,6 @@ export function formatProfileAvailabilitySummaryLabel(
   locale: "de" | "en" = "de"
 ): string {
   const day = `${weekdayAbbrev(item.weekday, locale)}:`;
-  if (item.shift_type_id) {
-    const name = item.shift_type_name?.trim();
-    if (name) return `${day} ${shortenShiftTypeDisplayName(name)}`;
-  }
   return `${day} ${formatAvailabilityTimeRange(item.start_time, item.end_time, locale)}`;
 }
 
@@ -104,7 +103,7 @@ export function formatProfileAvailabilitySummaryLabels(
   items: readonly ProfileRecurringAvailability[],
   locale: "de" | "en" = "de"
 ): string[] {
-  return items.map((item) =>
+  return sortProfileRecurringAvailabilityBySchedule(items).map((item) =>
     formatProfileAvailabilitySummaryLabel(item, locale)
   );
 }

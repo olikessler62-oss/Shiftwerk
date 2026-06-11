@@ -87,6 +87,8 @@ export const de = {
     selectQualification: "Funktion wählen",
     noEmployeeSelected: "—",
     shiftSaveFailed: "Speichern fehlgeschlagen",
+    noShiftTemplatesForArea:
+      "Für diesen Bereich sind noch keine Schichtvorlagen hinterlegt. Legen Sie welche unter Standorte → Bereich → Schichtvorlagen an.",
   },
   shiftTypes: {
     title: "Schichtarten",
@@ -182,6 +184,7 @@ export const de = {
     openCompensationOf: "Entgelt von {name}",
     panelCompensation: "Entgelt",
     panelCompensationOf: "Entgelt von {name}",
+    panelSurchargesOf: "Sonderzuschläge von {name}",
     inviteEmployee: "Mitarbeiter einladen",
     inviteEmployeeTitle: "Mitarbeiter einladen",
     sectionProfile: "Profil",
@@ -192,6 +195,8 @@ export const de = {
     actionAvailabilityConfigured: "zu bestimmten Zeiten verfügbar",
     actionCompensationHint: "Stundensatz und Verlauf bearbeiten",
     actionCompensationCurrent: "aktuell: {rate}",
+    actionSurchargesHint: "Zuschläge zuweisen und verwalten",
+    actionSurchargesUnavailable: "Demnächst verfügbar",
     actionInviteHint: "Per E-Mail zur App einladen",
     emptyAvailability: "Keine Verfügbarkeiten hinterlegt.",
     availabilityCreateTitle: "Verfügbarkeit anlegen",
@@ -364,6 +369,17 @@ export const de = {
     actionStaffingHint: "Personalbedarf pro Servicezeit-Fenster",
     actionShiftTemplatesHint: "Kurzwahl beim Zuweisen (optional)",
     actionShiftTemplatesConfigured: "Schichtvorlagen hinterlegt",
+    panelQualificationTemplates: "Funktionsvorlagen",
+    panelQualificationTemplatesOf: "Funktionsvorlagen — {location} | {area}",
+    actionQualificationTemplatesHint: "Funktionen für diesen Bereich festlegen",
+    actionQualificationTemplatesConfigured: "Funktionsvorlagen hinterlegt",
+    areaQualificationTemplatesHint:
+      "Welche Funktionen in diesem Bereich für Personalbedarf relevant sind.",
+    areaQualificationTemplatesEmpty:
+      "Noch keine Funktionsvorlagen für diesen Bereich.",
+    areaQualificationTemplatesCreateTitle: "Funktion hinzufügen",
+    areaQualificationTemplatesAllAssigned:
+      "Alle Funktionen der Organisation sind bereits zugewiesen.",
     areaShiftTemplatesHint:
       "Optional: Vorlagen zum schnellen Ausfüllen von Zeiten beim Zuweisen im Dashboard.",
     areaShiftTemplatesEmpty: "Noch keine Schichtvorlagen für diesen Bereich.",
@@ -371,6 +387,8 @@ export const de = {
     areaShiftTemplatesEditTitle: "Schichtvorlage bearbeiten",
     areaShiftTemplateBreaksLabel: "(inkl.) Pausen",
     areaShiftTemplatesMax: "Maximal {max} Schichtvorlagen pro Bereich.",
+    areaShiftTemplatesCopyApply: "Schichtvorlagen übernehmen von",
+    areaShiftTemplatesCopySelectArea: "Bereich mit Schichtvorlagen",
     serviceHoursColumnDay: "Tag",
     serviceHoursColumnWeekdays: "Wochentage",
     serviceHoursColumnTemplate: "Schichtvorlage",
@@ -380,6 +398,14 @@ export const de = {
     serviceHoursColumnTo: "Bis",
     serviceHoursHint:
       "Pro Zeile ein Zeitfenster: Wochentage wählen (inkl. Feiertage), optional Schichtvorlage für Zeiten, oder Von/Bis manuell. Mehrere Zeilen für mehrere Fenster am Tag.",
+    serviceHoursPresetMonFri: "Mo–Fr",
+    serviceHoursPresetMonSat: "Mo–Sa",
+    serviceHoursPresetMonSun: "Mo–So",
+    serviceHoursPresetSatSun: "Sa–So",
+    serviceHoursPresetAll: "Alle",
+    serviceHoursPresetNone: "Keine",
+    serviceHoursCopyApply: "Zeiten übernehmen von",
+    serviceHoursCopySelectArea: "Bereich mit Servicezeiten",
     serviceHoursAddRow: "Zeitfenster hinzufügen",
     serviceHoursRemoveRow: "Zeitfenster entfernen",
     serviceHoursAddSlot: "Zeitfenster hinzufügen",
@@ -387,6 +413,7 @@ export const de = {
     confirmDeleteStaffing: "wirklich entfernen?",
     staffingTitle: "Personalbedarf",
     staffingServiceWindow: "Servicezeit",
+    staffingColumnTime: "Uhrzeit",
     staffingEmpty: "Noch kein Personalbedarf angelegt.",
     staffingCreateTitle: "Personalbedarf anlegen",
     staffingEditTitle: "Personalbedarf bearbeiten",
@@ -401,6 +428,10 @@ export const de = {
       "Legen Sie zuerst Servicezeiten für diesen Bereich an.",
     staffingNoQualifications:
       "Legen Sie zuerst Funktionen unter Einstellungen an.",
+    staffingNoAreaQualificationTemplates:
+      "Für diesen Bereich sind noch keine Funktionsvorlagen hinterlegt. Bitte unter Standorte → Funktionsvorlagen mindestens eine Funktion zuweisen.",
+    staffingAllQualificationsAssigned:
+      "Alle Funktionen dieses Bereichs sind bereits eingetragen.",
     staffingNoUnconfiguredWindows:
       "Für alle Servicezeit-Fenster ist bereits Personalbedarf hinterlegt.",
     staffingDetailTitle: "Personalbedarf — {window}",
@@ -414,6 +445,14 @@ export const de = {
       "Bitte mindestens eine Funktion mit Anzahl eintragen.",
     staffingCreateDayFullyBooked:
       "Für diesen Tag sind alle Zeitfenster belegt. Bitte Zeiten manuell anpassen.",
+    staffingDuplicateWindow:
+      "Zeitfenster am selben Tag dürfen sich nicht überlappen.",
+    staffingSaveAndContinue: "Speichern und weiter",
+    staffingSelectWeekdays: "Bitte mindestens einen Wochentag auswählen.",
+    staffingCopyApply: "Personalbedarf übernehmen von",
+    staffingCopySelectArea: "Bereich mit Personalbedarf",
+    staffingListHint:
+      "Kompakte Übersicht aller Zeitfenster. Neu anlegen oder Doppelklick zum Bearbeiten.",
     staffingMatrixSumHint: "Summe aller Funktionen",
   },
   settings: {
@@ -454,8 +493,11 @@ export const de = {
   },
   planning: {
     readOnlyWeek:
-      "Diese Woche liegt in der Vergangenheit — der Plan ist nur zur Ansicht. Archivierte Schichtarten bleiben sichtbar.",
+      "Diese Woche liegt in der Vergangenheit — der Plan ist nur zur Ansicht.",
     readOnlyDay:
       "Vergangene Tage können nicht mehr geändert werden.",
+    selectArea: "Bereich auswählen",
+    area: "Bereich",
+    noAreas: "Für diesen Standort sind noch keine Bereiche angelegt.",
   },
 };

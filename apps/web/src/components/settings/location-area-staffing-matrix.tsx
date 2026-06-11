@@ -10,7 +10,8 @@ import {
 } from "react";
 import { fetchLocationStaffingEditor } from "@/app/actions/location-staffing";
 import {
-  formatServiceHourStaffingListLabel,
+  formatServiceHourStaffingDayLabel,
+  formatServiceHourStaffingTimeLabel,
   staffingQualificationLabelsForHour,
   weekdayLabelFromIndex,
 } from "@/lib/location-staffing-client";
@@ -23,9 +24,11 @@ import type {
 } from "@schichtwerk/types";
 import {
   SettingsEmptyState,
+  SettingsListRowDeleteButton,
+  SETTINGS_LIST_SCROLL_COMPACT_CLASS,
   settingsScrollableTableListClass,
-  settingsStickyColumnHeaderClass,
-  settingsStickyIndicatorHeaderClass,
+  settingsListRowDeleteCellClass,
+  settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -35,8 +38,7 @@ import { useTranslations } from "@/i18n/locale-provider";
 import { Alert } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-const LIST_SCROLL_FALLBACK =
-  "h-[calc(1.75rem+10rem)] min-h-[calc(1.75rem+10rem)] overflow-auto";
+const LIST_SCROLL_FALLBACK = SETTINGS_LIST_SCROLL_COMPACT_CLASS;
 
 export type LocationAreaStaffingMatrixHandle = {
   reload: () => void;
@@ -60,6 +62,7 @@ type Props = {
   selectedServiceHourId: string | null;
   onSelectServiceHour: (serviceHourId: string | null) => void;
   onEditServiceHour?: (serviceHourId: string) => void;
+  onDeleteServiceHour?: (serviceHourId: string) => void;
   onDataLoaded?: (data: StaffingEditorData) => void;
   embedded?: boolean;
   listScrollClassName?: string;
@@ -75,6 +78,30 @@ function buildCountsFromData(
       (next[rule.service_hour_id] ?? 0) + rule.required_count;
   }
   return next;
+}
+
+const STAFFING_MATRIX_HEADER_CLASS = "py-0 pb-0";
+const STAFFING_MATRIX_CELL_CLASS = "py-0 text-xs leading-4";
+const STAFFING_MATRIX_HEAD_STICKY_CLASS =
+  "sticky top-0 z-20 bg-subtle shadow-[inset_0_-1px_0_0_hsl(var(--border))]";
+const STAFFING_MATRIX_HEAD_INDICATOR_CLASS =
+  "sticky left-0 top-0 z-[30] border-l-4 border-l-transparent bg-subtle shadow-[inset_0_-1px_0_0_hsl(var(--border))]";
+const STAFFING_MATRIX_HEAD_DAY_CLASS =
+  "sticky top-0 z-[26] bg-subtle shadow-[inset_0_-1px_0_0_hsl(var(--border))]";
+const STAFFING_MATRIX_HEAD_DAY_STICKY_LEFT_CLASS = "sticky left-0";
+const STAFFING_MATRIX_BODY_DAY_CLASS =
+  "relative z-0 w-[6.25rem] min-w-[6.25rem] bg-background font-medium";
+const STAFFING_MATRIX_BODY_DAY_STICKY_LEFT_CLASS = "sticky left-0 z-[5]";
+const STAFFING_MATRIX_BODY_INDICATOR_CLASS = "relative z-0";
+
+function staffingMatrixDataCellClass(
+  isSelected: boolean,
+  embedded: boolean,
+  className?: string
+) {
+  return settingsDataCellClass(isSelected, {
+    className: cn(embedded && STAFFING_MATRIX_CELL_CLASS, className),
+  });
 }
 
 function sortServiceHours(hours: LocationAreaServiceHour[]): LocationAreaServiceHour[] {
@@ -95,6 +122,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
     selectedServiceHourId,
     onSelectServiceHour,
     onEditServiceHour,
+    onDeleteServiceHour,
     onDataLoaded,
     embedded = false,
     listScrollClassName,
@@ -292,37 +320,64 @@ export const LocationAreaStaffingMatrix = forwardRef<
               )
         )}
       >
-        <table className="w-full min-w-[320px] border-collapse table-fixed">
-          <thead>
+        <table className="w-full min-w-0 table-fixed border-separate border-spacing-0">
+          <thead className="relative z-20">
             <tr className="border-b border-border">
               <th
-                className={settingsStickyIndicatorHeaderClass()}
+                className={cn(STAFFING_MATRIX_HEAD_INDICATOR_CLASS, "w-1 p-0")}
                 aria-hidden
               />
               <th
                 className={cn(
-                  settingsStickyColumnHeaderClass(),
-                  "sticky left-0 z-[2] w-[42%] min-w-[160px]"
+                  settingsColumnHeaderClass(),
+                  STAFFING_MATRIX_HEAD_DAY_CLASS,
+                  !embedded && STAFFING_MATRIX_HEAD_DAY_STICKY_LEFT_CLASS,
+                  "w-[6.25rem] min-w-[6.25rem]",
+                  embedded && STAFFING_MATRIX_HEADER_CLASS
                 )}
               >
-                {t("locations.staffingServiceWindow")}
+                {t("locations.serviceHoursColumnDay")}
               </th>
               <th
                 className={cn(
-                  settingsStickyColumnHeaderClass(),
-                  "w-[58%]"
+                  settingsColumnHeaderClass(),
+                  STAFFING_MATRIX_HEAD_STICKY_CLASS,
+                  "w-[calc((42%+50px-6.25rem)/2)] min-w-[6.75rem]",
+                  embedded && STAFFING_MATRIX_HEADER_CLASS
+                )}
+              >
+                {t("locations.staffingColumnTime")}
+              </th>
+              <th
+                className={cn(
+                  settingsColumnHeaderClass(),
+                  STAFFING_MATRIX_HEAD_STICKY_CLASS,
+                  "w-[calc(58%-100px)]",
+                  embedded && STAFFING_MATRIX_HEADER_CLASS
                 )}
               >
                 {t("locations.staffingQualificationsSection")}
               </th>
+              <th
+                className={cn(
+                  settingsColumnHeaderClass("center"),
+                  STAFFING_MATRIX_HEAD_STICKY_CLASS,
+                  "w-10 px-0 py-1 pb-1 pr-2.5",
+                  embedded && STAFFING_MATRIX_HEADER_CLASS
+                )}
+                aria-hidden
+              />
             </tr>
           </thead>
           <tbody>
             {configuredServiceHours.map((hour) => {
               const isSelected = hour.id === selectedServiceHourId;
-              const label = formatServiceHourStaffingListLabel(
+              const dayLabel = formatServiceHourStaffingDayLabel(
                 hour,
-                (weekday) => weekdayLabelFromIndex(weekday, t),
+                (weekday) => weekdayLabelFromIndex(weekday, t)
+              );
+              const timeLabel = formatServiceHourStaffingTimeLabel(
+                hour,
                 shiftTemplates
               );
               const qualificationLabels = staffingQualificationLabelsForHour(
@@ -344,18 +399,42 @@ export const LocationAreaStaffingMatrix = forwardRef<
                   }}
                   className={settingsDataRowClass(isSelected)}
                 >
-                  <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
                   <td
                     className={cn(
-                      settingsDataCellClass(isSelected, {
-                        className:
-                          "sticky left-0 z-10 min-w-[160px] bg-background font-medium",
-                      })
+                      settingsIndicatorCellClass(isSelected),
+                      STAFFING_MATRIX_BODY_INDICATOR_CLASS
+                    )}
+                    aria-hidden
+                  />
+                  <td
+                    className={staffingMatrixDataCellClass(
+                      isSelected,
+                      embedded,
+                      cn(
+                        STAFFING_MATRIX_BODY_DAY_CLASS,
+                        !embedded && STAFFING_MATRIX_BODY_DAY_STICKY_LEFT_CLASS
+                      )
                     )}
                   >
-                    {label}
+                    {dayLabel}
                   </td>
-                  <td className={settingsDataCellClass(isSelected, { className: "max-w-0" })}>
+                  <td
+                    className={staffingMatrixDataCellClass(
+                      isSelected,
+                      embedded,
+                      "max-w-0 truncate whitespace-nowrap tabular-nums"
+                    )}
+                    title={timeLabel}
+                  >
+                    {timeLabel}
+                  </td>
+                  <td
+                    className={staffingMatrixDataCellClass(
+                      isSelected,
+                      embedded,
+                      "max-w-0 overflow-hidden"
+                    )}
+                  >
                     {qualificationsText ? (
                       <span
                         className="block truncate"
@@ -366,6 +445,14 @@ export const LocationAreaStaffingMatrix = forwardRef<
                     ) : (
                       "—"
                     )}
+                  </td>
+                  <td className={cn(settingsListRowDeleteCellClass(isSelected), "w-10 pr-2.5", embedded && "py-0")}>
+                    <SettingsListRowDeleteButton
+                      label={t("locations.delete")}
+                      disabled={loading || !onDeleteServiceHour}
+                      className={embedded ? "h-7 w-7" : undefined}
+                      onClick={() => onDeleteServiceHour?.(hour.id)}
+                    />
                   </td>
                 </tr>
               );

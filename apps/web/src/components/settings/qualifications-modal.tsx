@@ -17,9 +17,11 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
+  SettingsListRowDeleteButton,
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
+  settingsListRowDeleteCellClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -32,7 +34,6 @@ import {
   IconButton,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -224,6 +225,17 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                             <td className={settingsDataCellClass(isSelected, { className: "font-medium" })}>
                               {item.name}
                             </td>
+                            <td className={settingsListRowDeleteCellClass(isSelected)}>
+                              <SettingsListRowDeleteButton
+                                label={t("qualifications.delete")}
+                                disabled={pending}
+                                onClick={() => {
+                                  setSelectedId(item.id);
+                                  setConfirmDelete(true);
+                                  setErrorMessage(null);
+                                }}
+                              />
+                            </td>
                           </tr>
                         );
                       })}
@@ -271,17 +283,6 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                       }}
                     />
                   </>
-                }
-                destructive={
-                  <SettingsIconActionButton
-                    label={t("qualifications.delete")}
-                    icon={<TrashIcon />}
-                    disabled={pending || !selected}
-                    onClick={() => {
-                      setConfirmDelete(true);
-                      setErrorMessage(null);
-                    }}
-                  />
                 }
               />
             </div>

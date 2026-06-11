@@ -3,27 +3,21 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
   useTransition,
-  type Dispatch,
-  type SetStateAction,
 } from "react";
 import {
   deleteProfileRecurringAvailability,
   fetchProfileRecurringAvailability,
-  reorderProfileRecurringAvailability,
 } from "@/app/actions/profile-availability";
-import { formatActiveWeekdaysLabel } from "@schichtwerk/database";
+import { sortProfileRecurringAvailabilityBySchedule } from "@schichtwerk/database";
 import {
   formatAvailabilityTimeRange,
   formatProfileAvailabilitySummaryLabel,
-  shortenShiftTypeDisplayName,
+  weekdayLabel,
 } from "@/lib/profile-availability-label";
-import type {
-  Profile,
-  ProfileRecurringAvailability,
-  ShiftTypeWithBreaks,
-} from "@schichtwerk/types";
+import type { Profile, ProfileRecurringAvailability } from "@schichtwerk/types";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ProfileAvailabilityFormModal } from "./profile-availability-form-modal";
@@ -34,7 +28,7 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
-  SettingsReorderButtons,
+  SettingsListRowDeleteButton,
   settingsListItemAttrs,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
@@ -44,6 +38,8 @@ import {
   useScrollToSettingsListItem,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
+  settingsListRowDeleteCellClass,
+  settingsListRowDeleteHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -55,10 +51,8 @@ import {
   IconButton,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 const MAX_NAME_DISPLAY = 25;
 const EMPTY_STATE_CLASS = "min-h-full";
@@ -68,13 +62,6 @@ function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
   return `${name.slice(0, max - 1)}…`;
 }
 
-function weekdayLabel(weekday: number, locale: "de" | "en"): string {
-  const mask = Array.from({ length: 7 }, (_, i) => (i === weekday ? "1" : "0")).join(
-    ""
-  );
-  return formatActiveWeekdaysLabel(mask, locale);
-}
-
 type AvailabilityFormMode =
   | null
   | { type: "create" }
@@ -82,7 +69,6 @@ type AvailabilityFormMode =
 
 type Props = {
   profile: Profile;
-  shiftTypes: ShiftTypeWithBreaks[];
   cachedAvailability?: ProfileRecurringAvailability[];
   onClose: () => void;
   onCacheUpdate: (
@@ -93,7 +79,6 @@ type Props = {
 
 export function ProfileAvailabilityPanelModal({
   profile,
-  shiftTypes,
   cachedAvailability,
   onClose,
   onCacheUpdate,
@@ -116,51 +101,21 @@ export function ProfileAvailabilityPanelModal({
 
   const applyList = useCallback(
     (list: ProfileRecurringAvailability[]) => {
-      setProfileAvailabilities(list);
-      onCacheUpdate(profile.id, list);
+      const sorted = sortProfileRecurringAvailabilityBySchedule(list);
+      setProfileAvailabilities(sorted);
+      onCacheUpdate(profile.id, sorted);
       setSelectedAvailabilityId((current) => {
-        if (current && list.some((a) => a.id === current)) return current;
-        return list[0]?.id ?? null;
+        if (current && sorted.some((a) => a.id === current)) return current;
+        return sorted[0]?.id ?? null;
       });
     },
     [onCacheUpdate, profile.id]
   );
 
-  const setAvailabilityListWithCache = useCallback<
-    Dispatch<SetStateAction<ProfileRecurringAvailability[]>>
-  >(
-    (value) => {
-      setProfileAvailabilities((prev) => {
-        const next = typeof value === "function" ? value(prev) : value;
-        onCacheUpdate(profile.id, next);
-        return next;
-      });
-    },
-    [onCacheUpdate, profile.id]
+  const sortedAvailabilities = useMemo(
+    () => sortProfileRecurringAvailabilityBySchedule(profileAvailabilities),
+    [profileAvailabilities]
   );
-
-  const {
-    sortedList: sortedAvailabilities,
-    canMoveUp: canMoveAvailabilityUp,
-    canMoveDown: canMoveAvailabilityDown,
-    handleMove: handleMoveAvailability,
-  } = useSettingsListReorder({
-    list: profileAvailabilities,
-    setList: setAvailabilityListWithCache,
-    selectedId: selectedAvailabilityId,
-    pending,
-    startTransition,
-    reorder: async (orderedIds) => {
-      const result = await reorderProfileRecurringAvailability({
-        profileId: profile.id,
-        orderedIds,
-      });
-      if (!result.ok) return result;
-      if (result.availability) applyList(result.availability);
-      return { ok: true };
-    },
-    onError: setErrorMessage,
-  });
 
   const selectedAvailability =
     sortedAvailabilities.find((a) => a.id === selectedAvailabilityId) ?? null;
@@ -171,8 +126,12 @@ export function ProfileAvailabilityPanelModal({
 
   useEffect(() => {
     if (cachedAvailability !== undefined) {
-      setProfileAvailabilities(cachedAvailability);
-      setSelectedAvailabilityId(cachedAvailability[0]?.id ?? null);
+      const sorted = sortProfileRecurringAvailabilityBySchedule(cachedAvailability);
+      setProfileAvailabilities(sorted);
+      setSelectedAvailabilityId((current) => {
+        if (current && sorted.some((a) => a.id === current)) return current;
+        return sorted[0]?.id ?? null;
+      });
       setLoading(false);
       return;
     }
@@ -330,9 +289,10 @@ export function ProfileAvailabilityPanelModal({
                     <th className={settingsStickyColumnHeaderClass()}>
                       {t("profiles.columnTimeRange")}
                     </th>
-                    <th className={settingsStickyColumnHeaderClass()}>
-                      {t("profiles.columnShiftType")}
-                    </th>
+                    <th
+                      className={settingsListRowDeleteHeaderClass()}
+                      aria-hidden
+                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -364,11 +324,11 @@ export function ProfileAvailabilityPanelModal({
                             className: "whitespace-nowrap font-medium",
                           })}
                         >
-                          {weekdayLabel(item.weekday, localeKey)}
+                          {weekdayLabel(item.weekday, localeKey, "long")}
                         </td>
                         <td
                           className={settingsDataCellClass(isSelected, {
-                            className: "whitespace-nowrap tabular-nums text-muted",
+                            className: "whitespace-nowrap tabular-nums",
                           })}
                         >
                           {formatAvailabilityTimeRange(
@@ -377,18 +337,16 @@ export function ProfileAvailabilityPanelModal({
                             localeKey
                           )}
                         </td>
-                        <td
-                          className={settingsDataCellClass(isSelected, {
-                            className: "max-w-[10rem] truncate text-muted",
-                          })}
-                          title={item.shift_type_name ?? undefined}
-                        >
-                          {item.shift_type_name
-                            ? truncateLabel(
-                                shortenShiftTypeDisplayName(item.shift_type_name),
-                                18
-                              )
-                            : "—"}
+                        <td className={settingsListRowDeleteCellClass(isSelected)}>
+                          <SettingsListRowDeleteButton
+                            label={t("profiles.delete")}
+                            disabled={pending || loading}
+                            onClick={() => {
+                              setSelectedAvailabilityId(item.id);
+                              setFormMode(null);
+                              setConfirmRemove(true);
+                            }}
+                          />
                         </td>
                       </tr>
                     );
@@ -414,45 +372,17 @@ export function ProfileAvailabilityPanelModal({
               />
             }
             secondary={
-              <>
-                <SettingsIconActionButton
-                  label={t("profiles.edit")}
-                  icon={<PencilIcon />}
-                  disabled={pending || loading || !selectedAvailability}
-                  onClick={() => {
-                    if (!selectedAvailability) return;
-                    setFormMode({
-                      type: "edit",
-                      availability: selectedAvailability,
-                    });
-                    setConfirmRemove(false);
-                  }}
-                />
-                <SettingsReorderButtons
-                  moveUpLabel={t("common.moveUp")}
-                  moveDownLabel={t("common.moveDown")}
-                  disabled={pending || loading}
-                  canMoveUp={canMoveAvailabilityUp}
-                  canMoveDown={canMoveAvailabilityDown}
-                  onMoveUp={() => {
-                    setErrorMessage(null);
-                    handleMoveAvailability(-1);
-                  }}
-                  onMoveDown={() => {
-                    setErrorMessage(null);
-                    handleMoveAvailability(1);
-                  }}
-                />
-              </>
-            }
-            destructive={
               <SettingsIconActionButton
-                label={t("profiles.delete")}
-                icon={<TrashIcon />}
+                label={t("profiles.edit")}
+                icon={<PencilIcon />}
                 disabled={pending || loading || !selectedAvailability}
                 onClick={() => {
-                  setFormMode(null);
-                  setConfirmRemove(true);
+                  if (!selectedAvailability) return;
+                  setFormMode({
+                    type: "edit",
+                    availability: selectedAvailability,
+                  });
+                  setConfirmRemove(false);
                 }}
               />
             }
@@ -478,7 +408,6 @@ export function ProfileAvailabilityPanelModal({
           mode="create"
           profileId={profile.id}
           existingAvailability={profileAvailabilities}
-          shiftTypes={shiftTypes}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
         />
@@ -488,7 +417,6 @@ export function ProfileAvailabilityPanelModal({
           mode="edit"
           profileId={profile.id}
           currentAvailability={formMode.availability}
-          shiftTypes={shiftTypes}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
         />

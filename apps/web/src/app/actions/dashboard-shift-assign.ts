@@ -10,8 +10,6 @@ import { requireManager } from "@/lib/manager";
 
 export type DashboardEmployeeAvailabilityEntry = {
   weekday: number;
-  shift_type_id: string | null;
-  shift_type_name: string | null;
   start_time: string;
   end_time: string;
 };
@@ -111,8 +109,6 @@ export async function fetchDashboardShiftAssignEmployees(
             )
             .map((slot) => ({
               weekday: slot.weekday,
-              shift_type_id: slot.shift_type_id,
-              shift_type_name: slot.shift_type_name,
               start_time: slot.start_time,
               end_time: slot.end_time,
             })),

@@ -17,6 +17,7 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  SettingsListRowDeleteButton,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -29,6 +30,8 @@ import {
   settingsModalRootClass,
   settingsPanelHeaderClass,
   settingsScrollableTableListClass,
+  settingsListRowDeleteCellClass,
+  settingsListRowDeleteHeaderClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
   useScrollToSettingsListItem,
@@ -42,7 +45,6 @@ import {
   IconButton,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
 } from "@/components/ui";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
@@ -334,6 +336,10 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                           <th className={settingsStickyColumnHeaderClass()}>
                             {t("settings.absences.notes")}
                           </th>
+                          <th
+                            className={settingsListRowDeleteHeaderClass()}
+                            aria-hidden
+                          />
                         </tr>
                       </thead>
                     <tbody>
@@ -391,6 +397,17 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                             >
                               {truncateNotes(item.notes)}
                             </td>
+                            <td className={settingsListRowDeleteCellClass(isSelected)}>
+                              <SettingsListRowDeleteButton
+                                label={t("settings.absences.delete")}
+                                disabled={pending}
+                                onClick={() => {
+                                  setSelectedId(item.id);
+                                  setConfirmDelete(true);
+                                  setErrorMessage(null);
+                                }}
+                              />
+                            </td>
                           </tr>
                         );
                       })}
@@ -417,17 +434,6 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                     onClick={() => {
                       if (!selected) return;
                       openEdit(selected);
-                    }}
-                  />
-                }
-                destructive={
-                  <SettingsIconActionButton
-                    label={t("settings.absences.delete")}
-                    icon={<TrashIcon />}
-                    disabled={pending || !selected}
-                    onClick={() => {
-                      if (!selected) return;
-                      setConfirmDelete(true);
                     }}
                   />
                 }

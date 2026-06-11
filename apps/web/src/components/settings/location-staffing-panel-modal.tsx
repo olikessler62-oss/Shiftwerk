@@ -1,42 +1,47 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  copyLocationStaffingFromArea,
   deleteServiceHourStaffing,
   fetchLocationStaffingEditor,
+  fetchLocationStaffingSources,
+  type StaffingSourceArea,
 } from "@/app/actions/location-staffing";
+import { fetchAreaShiftTemplates } from "@/app/actions/area-shift-templates";
 import type {
   AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
   LocationAreaServiceHour,
   LocationAreaStaffing,
-  Qualification,
 } from "@schichtwerk/types";
+import { locationAreaStaffingSetsEqual } from "@/lib/location-area-copy-compare";
 import {
   formatServiceHourStaffingListLabel,
   weekdayLabelFromIndex,
 } from "@/lib/location-staffing-client";
-import { fetchAreaShiftTemplates } from "@/app/actions/area-shift-templates";
 import { useTranslations } from "@/i18n/locale-provider";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import {
   LocationAreaStaffingMatrix,
   type LocationAreaStaffingMatrixHandle,
+  type StaffingEditorData,
 } from "./location-area-staffing-matrix";
 import { LocationStaffingDetailPanelModal } from "./location-staffing-detail-panel-modal";
 import {
-  SETTINGS_LIST_SCROLL_COMPACT_CLASS,
+  SETTINGS_STAFFING_PANEL_LIST_SCROLL_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
   SettingsActionBar,
-  SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  applyCreatedListSelection,
+  settingsModalBodyPaddingClass,
   settingsModalFooterClass,
-  settingsScrollableTableListClass,
   settingsModalHeaderPaddingClass,
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
+  useScrollToSettingsListItem,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -45,18 +50,9 @@ import {
   IconButton,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
+  Select,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import {
-  applyCreatedListSelection,
-  useScrollToSettingsListItem,
-} from "@/lib/settings-list-scroll";
-
-type StaffingFormMode =
-  | null
-  | { type: "create" }
-  | { type: "edit"; serviceHourId: string };
 
 type Props = {
   location: Location;
@@ -64,78 +60,38 @@ type Props = {
   onClose: () => void;
 };
 
-type StaffingEditorData = {
-  serviceHours: LocationAreaServiceHour[];
-  qualifications: Qualification[];
-  staffing: LocationAreaStaffing[];
-  shiftTemplates: AreaShiftTemplateWithBreaks[];
-};
-
-const STAFFING_CONTENT_EMPTY_STATE_CLASS = "min-h-full";
+type FormMode = null | "create" | "edit";
 
 export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
   const t = useTranslations();
-  const staffingRef = useRef<LocationAreaStaffingMatrixHandle>(null);
+  const matrixRef = useRef<LocationAreaStaffingMatrixHandle>(null);
   const [pending, startTransition] = useTransition();
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [reloading, setReloading] = useState(false);
-  const [staffingFormMode, setStaffingFormMode] = useState<StaffingFormMode>(null);
-  const [confirmDeleteStaffing, setConfirmDeleteStaffing] = useState(false);
+  const [editorData, setEditorData] = useState<StaffingEditorData | null>(null);
   const [selectedServiceHourId, setSelectedServiceHourId] = useState<string | null>(
     null
   );
-  const [staffingEditorData, setStaffingEditorData] =
-    useState<StaffingEditorData | null>(null);
-  const [scrollToStaffingId, setScrollToStaffingId] = useState<string | null>(
-    null
-  );
+  const [formMode, setFormMode] = useState<FormMode>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
+  const [sourceAreas, setSourceAreas] = useState<StaffingSourceArea[]>([]);
+  const [selectedSourceAreaId, setSelectedSourceAreaId] = useState("");
 
-  const configuredServiceHourIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const rule of staffingEditorData?.staffing ?? []) {
-      if (rule.required_count > 0) ids.add(rule.service_hour_id);
-    }
-    return ids;
-  }, [staffingEditorData]);
-
-  const selectedServiceHour =
-    staffingEditorData?.serviceHours.find(
-      (hour) => hour.id === selectedServiceHourId
-    ) ?? null;
-
-  const selectedServiceHourLabel = selectedServiceHour
-    ? formatServiceHourStaffingListLabel(
-        selectedServiceHour,
-        (weekday) => weekdayLabelFromIndex(weekday, t),
-        staffingEditorData?.shiftTemplates
-      )
-    : "";
-
-  const anyOverlayOpen = !!staffingFormMode || confirmDeleteStaffing;
-  const listsLoading = initialLoading || reloading;
-
-  const configuredServiceHoursForScroll = useMemo(
-    () =>
-      (staffingEditorData?.serviceHours ?? []).filter((hour) =>
-        configuredServiceHourIds.has(hour.id)
-      ),
-    [staffingEditorData, configuredServiceHourIds]
-  );
-
-  useScrollToSettingsListItem(
-    configuredServiceHoursForScroll,
-    scrollToStaffingId,
-    () => setScrollToStaffingId(null)
-  );
+  const applyEditorData = useCallback((data: StaffingEditorData) => {
+    setEditorData(data);
+    matrixRef.current?.applyStaffing(data.staffing, data.serviceHours);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    setInitialLoading(true);
-    setReloading(false);
+    setLoading(true);
     setErrorMessage(null);
-    setStaffingEditorData(null);
+    setEditorData(null);
     setSelectedServiceHourId(null);
+    setFormMode(null);
+    setConfirmDeleteId(null);
 
     void Promise.all([
       fetchLocationStaffingEditor(location.id, area.id),
@@ -148,14 +104,14 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
 
       if (!editorResult.ok) {
         setErrorMessage(editorResult.error);
-        setStaffingEditorData({
+        setEditorData({
           serviceHours: [],
           qualifications: [],
           staffing: [],
           shiftTemplates,
         });
       } else {
-        setStaffingEditorData({
+        setEditorData({
           serviceHours: editorResult.serviceHours ?? [],
           qualifications: editorResult.qualifications ?? [],
           staffing: editorResult.staffing ?? [],
@@ -163,7 +119,7 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
         });
       }
 
-      setInitialLoading(false);
+      setLoading(false);
     });
 
     return () => {
@@ -172,256 +128,379 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
   }, [location.id, area.id]);
 
   useEffect(() => {
+    let cancelled = false;
+    void fetchLocationStaffingSources(location.id, area.id).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) return;
+      const sources = result.sources ?? [];
+      setSourceAreas(sources);
+      setSelectedSourceAreaId(sources[0]?.id ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [location.id, area.id]);
+
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      if (staffingFormMode) {
-        setStaffingFormMode(null);
+      if (e.key !== "Escape" || deleting || pending) return;
+      if (formMode) {
+        setFormMode(null);
         return;
       }
-      if (confirmDeleteStaffing) {
-        setConfirmDeleteStaffing(false);
+      if (confirmDeleteId) {
+        setConfirmDeleteId(null);
         return;
       }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDeleteStaffing, staffingFormMode, onClose]);
+  }, [confirmDeleteId, deleting, formMode, onClose, pending]);
 
-  function handleStaffingSaved(
-    createdServiceHourId?: string,
+  const configuredServiceHours = (editorData?.serviceHours ?? []).filter((hour) =>
+    (editorData?.staffing ?? []).some(
+      (rule) => rule.service_hour_id === hour.id && rule.required_count > 0
+    )
+  );
+
+  const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
+  useScrollToSettingsListItem(
+    configuredServiceHours.map((hour) => ({ id: hour.id })),
+    scrollToItemId,
+    clearScrollTarget
+  );
+
+  const selectedSourceArea = sourceAreas.find(
+    (entry) => entry.id === selectedSourceAreaId
+  );
+
+  const copySourceSelectStyle = useMemo(() => {
+    const longestChars = sourceAreas.reduce(
+      (max, entry) => Math.max(max, entry.name.length),
+      0
+    );
+    return {
+      width: `calc(${Math.max(longestChars, 4)}ch + 2.25rem)`,
+      maxWidth: "100%",
+    };
+  }, [sourceAreas]);
+
+  const copyFromSourceIsNoOp = useMemo(() => {
+    if (!selectedSourceArea || !editorData) return true;
+    return locationAreaStaffingSetsEqual(
+      editorData.serviceHours,
+      editorData.staffing,
+      editorData.qualifications,
+      selectedSourceArea.serviceHours,
+      selectedSourceArea.staffing
+    );
+  }, [editorData, selectedSourceArea]);
+
+  const deleteTargetHour = confirmDeleteId
+    ? editorData?.serviceHours.find((hour) => hour.id === confirmDeleteId)
+    : undefined;
+
+  const deleteTargetLabel =
+    deleteTargetHour && editorData
+      ? formatServiceHourStaffingListLabel(
+          deleteTargetHour,
+          (weekday) => weekdayLabelFromIndex(weekday, t),
+          editorData.shiftTemplates ?? []
+        )
+      : "";
+
+  const anyOverlayOpen = formMode !== null || confirmDeleteId !== null;
+  const hasQualifications = (editorData?.qualifications.length ?? 0) > 0;
+  const busy = loading || deleting || pending;
+
+  function handleSaved(
+    serviceHourId?: string,
     staffing?: LocationAreaStaffing[],
     serviceHours?: LocationAreaServiceHour[]
   ) {
-    if (createdServiceHourId) {
-      applyCreatedListSelection(
-        createdServiceHourId,
-        (id) => setSelectedServiceHourId(id),
-        setScrollToStaffingId
-      );
+    if (staffing && serviceHours && editorData) {
+      const nextData: StaffingEditorData = {
+        ...editorData,
+        staffing,
+        serviceHours,
+      };
+      applyEditorData(nextData);
     }
-    if (staffing !== undefined) {
-      setStaffingEditorData((prev) =>
-        prev
-          ? {
-              ...prev,
-              staffing,
-              ...(serviceHours !== undefined ? { serviceHours } : {}),
-            }
-          : prev
-      );
-      staffingRef.current?.applyStaffing(staffing, serviceHours);
-      return;
+
+    if (serviceHourId) {
+      applyCreatedListSelection(serviceHourId, setSelectedServiceHourId, setScrollToItemId);
     }
-    staffingRef.current?.reload();
+
+    setFormMode(null);
   }
 
-  function handleDeleteStaffing() {
-    if (!selectedServiceHourId) return;
+  function handleCopyFromSourceArea() {
+    if (!selectedSourceArea) return;
     setErrorMessage(null);
+    setConfirmDeleteId(null);
+    setFormMode(null);
     startTransition(async () => {
-      const result = await deleteServiceHourStaffing({
+      const result = await copyLocationStaffingFromArea({
         locationId: location.id,
-        serviceHourId: selectedServiceHourId,
+        targetAreaId: area.id,
+        sourceAreaId: selectedSourceArea.id,
       });
       if (!result.ok) {
         setErrorMessage(result.error);
-        setConfirmDeleteStaffing(false);
         return;
       }
-      setConfirmDeleteStaffing(false);
-      setSelectedServiceHourId(null);
-      handleStaffingSaved(undefined, result.staffing);
+      if (result.staffing && result.serviceHours && editorData) {
+        applyEditorData({
+          ...editorData,
+          staffing: result.staffing,
+          serviceHours: result.serviceHours,
+          qualifications: result.qualifications ?? editorData.qualifications,
+        });
+      } else {
+        matrixRef.current?.reload();
+      }
     });
   }
 
+  async function handleConfirmDelete() {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
+    setErrorMessage(null);
+    try {
+      const result = await deleteServiceHourStaffing({
+        locationId: location.id,
+        serviceHourId: confirmDeleteId,
+      });
+      if (!result.ok) {
+        setErrorMessage(result.error);
+        return;
+      }
+
+      if (result.staffing && editorData) {
+        applyEditorData({
+          ...editorData,
+          staffing: result.staffing,
+        });
+      } else {
+        matrixRef.current?.reload();
+      }
+
+      if (selectedServiceHourId === confirmDeleteId) {
+        setSelectedServiceHourId(null);
+      }
+      setConfirmDeleteId(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
-    <div
-      className={cn(settingsSubModalOverlayClass(), listsLoading && "cursor-wait")}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !anyOverlayOpen) onClose();
-      }}
-    >
+    <>
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="location-staffing-panel-title"
-        aria-busy={listsLoading || pending}
-        aria-hidden={anyOverlayOpen}
-        className={cn(
-          settingsSubModalDialogClass("2xl"),
-          listsLoading && "[&_*]:cursor-wait",
-          anyOverlayOpen ? "pointer-events-none" : ""
-        )}
-        onMouseDown={(e) => e.stopPropagation()}
+        className={cn(settingsSubModalOverlayClass(), busy && "cursor-wait")}
+        role="presentation"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !anyOverlayOpen && !busy) {
+            onClose();
+          }
+        }}
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="location-staffing-panel-title"
+          aria-hidden={anyOverlayOpen}
+          aria-busy={busy}
           className={cn(
-            "flex items-center justify-between border-b border-border",
-            settingsModalHeaderPaddingClass()
+            settingsSubModalDialogClass("xl"),
+            anyOverlayOpen && "pointer-events-none",
+            busy && "[&_*]:cursor-wait"
           )}
+          onMouseDown={(e) => e.stopPropagation()}
         >
-          <h3 id="location-staffing-panel-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-            {t("locations.panelStaffingOf", {
-              location: location.name,
-              area: area.name,
-            })}
-          </h3>
-          <IconButton
-            size="sm"
-            onClick={onClose}
-            disabled={pending}
-            aria-label={t("common.close")}
-            className="border-transparent bg-transparent hover:bg-subtle"
+          <div
+            className={cn(
+              "flex items-center justify-between border-b border-border",
+              settingsModalHeaderPaddingClass()
+            )}
           >
-            <CloseIcon className="h-[18px] w-[18px]" />
-          </IconButton>
-        </div>
-
-        {errorMessage && (
-          <div className="mx-4 mt-3 shrink-0">
-            <Alert variant="error">{errorMessage}</Alert>
+            <h3 id="location-staffing-panel-title" className={SETTINGS_MODAL_TITLE_CLASS}>
+              {t("locations.panelStaffingOf", {
+                location: location.name,
+                area: area.name,
+              })}
+            </h3>
+            <IconButton
+              size="sm"
+              onClick={onClose}
+              disabled={busy}
+              aria-label={t("common.close")}
+              className="border-transparent bg-transparent hover:bg-subtle"
+            >
+              <CloseIcon className="h-[18px] w-[18px]" />
+            </IconButton>
           </div>
-        )}
 
-        <div className="min-h-0 flex-1 overflow-hidden px-4 py-3">
-          {initialLoading || !staffingEditorData ? (
-            <SettingsEmptyState
-              message={t("common.loading")}
-              className={STAFFING_CONTENT_EMPTY_STATE_CLASS}
-            />
-          ) : (
-            <LocationAreaStaffingMatrix
-              ref={staffingRef}
-              embedded
-              listScrollClassName={cn(
-                settingsScrollableTableListClass(),
-                SETTINGS_LIST_SCROLL_COMPACT_CLASS
-              )}
-              locationId={location.id}
-              area={area}
-              initialEditorData={staffingEditorData}
-              selectedServiceHourId={selectedServiceHourId}
-              onSelectServiceHour={setSelectedServiceHourId}
-              onEditServiceHour={(serviceHourId) => {
-                if (pending || listsLoading) return;
-                setStaffingFormMode({ type: "edit", serviceHourId });
-                setConfirmDeleteStaffing(false);
-                setErrorMessage(null);
-              }}
-              onDataLoaded={(data) => {
-                setStaffingEditorData((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        ...data,
-                        shiftTemplates: prev.shiftTemplates,
-                      }
-                    : { ...data, shiftTemplates: [] }
-                );
-              }}
-              onLoadingChange={setReloading}
-            />
-          )}
-        </div>
-
-        <div className="shrink-0 border-t border-border px-4 py-3">
-          <SettingsActionBar
-            primary={
-              <SettingsPrimaryActionButton
-                label={t("locations.new")}
-                icon={<PlusIcon />}
-                disabled={
-                  pending ||
-                  listsLoading ||
-                  !(staffingEditorData?.qualifications.length ?? 0)
-                }
-                onClick={() => {
-                  setStaffingFormMode({ type: "create" });
-                  setConfirmDeleteStaffing(false);
-                  setErrorMessage(null);
-                }}
-              />
-            }
-            secondary={
-              <SettingsIconActionButton
-                label={t("locations.edit")}
-                icon={<PencilIcon />}
-                disabled={pending || listsLoading || !selectedServiceHourId}
-                onClick={() => {
-                  if (!selectedServiceHourId) return;
-                  setStaffingFormMode({
-                    type: "edit",
-                    serviceHourId: selectedServiceHourId,
-                  });
-                  setConfirmDeleteStaffing(false);
-                  setErrorMessage(null);
-                }}
-              />
-            }
-            destructive={
-              <SettingsIconActionButton
-                label={t("locations.delete")}
-                icon={<TrashIcon />}
-                disabled={pending || listsLoading || !selectedServiceHourId}
-                onClick={() => {
-                  setConfirmDeleteStaffing(true);
-                  setErrorMessage(null);
-                }}
-              />
-            }
-          />
-        </div>
-
-        <div className={settingsModalFooterClass("shrink-0")}>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClose}
-            className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col overflow-hidden pb-0",
+              settingsModalBodyPaddingClass()
+            )}
           >
-            <CloseIcon />
-            {t("common.close")}
-          </Button>
+            {errorMessage && (
+              <Alert variant="error" className="mb-3 shrink-0">
+                {errorMessage}
+              </Alert>
+            )}
+
+            <div className="min-h-0 flex-1">
+              {loading || !editorData ? (
+                <p className="py-6 text-center text-sm text-muted">
+                  {t("common.loading")}
+                </p>
+              ) : (
+                <LocationAreaStaffingMatrix
+                  ref={matrixRef}
+                  locationId={location.id}
+                  area={area}
+                  initialEditorData={editorData}
+                  selectedServiceHourId={selectedServiceHourId}
+                  onSelectServiceHour={setSelectedServiceHourId}
+                  onEditServiceHour={(serviceHourId) => {
+                    setSelectedServiceHourId(serviceHourId);
+                    setFormMode("edit");
+                    setConfirmDeleteId(null);
+                    setErrorMessage(null);
+                  }}
+                  onDeleteServiceHour={(serviceHourId) => {
+                    setSelectedServiceHourId(serviceHourId);
+                    setConfirmDeleteId(serviceHourId);
+                    setErrorMessage(null);
+                  }}
+                  embedded
+                  listScrollClassName={SETTINGS_STAFFING_PANEL_LIST_SCROLL_CLASS}
+                />
+              )}
+            </div>
+
+            {!loading && !hasQualifications && (
+              <p className="mt-2 shrink-0 px-1 text-xs text-muted">
+                {t("locations.staffingNoAreaQualificationTemplates")}
+              </p>
+            )}
+
+            <div className="mt-3 shrink-0 border-t border-border">
+              <SettingsActionBar
+                primary={
+                  <SettingsPrimaryActionButton
+                    label={t("locations.new")}
+                    icon={<PlusIcon />}
+                    disabled={busy}
+                    onClick={() => {
+                      setFormMode("create");
+                      setConfirmDeleteId(null);
+                      setErrorMessage(null);
+                    }}
+                  />
+                }
+                secondary={
+                  <SettingsIconActionButton
+                    label={t("locations.edit")}
+                    icon={<PencilIcon />}
+                    disabled={
+                      busy || !selectedServiceHourId || !hasQualifications
+                    }
+                    onClick={() => {
+                      if (!selectedServiceHourId) return;
+                      setFormMode("edit");
+                      setConfirmDeleteId(null);
+                      setErrorMessage(null);
+                    }}
+                  />
+                }
+                trailing={
+                  sourceAreas.length > 0 ? (
+                    <div className="flex min-w-0 items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          busy ||
+                          !selectedSourceArea ||
+                          copyFromSourceIsNoOp ||
+                          !hasQualifications
+                        }
+                        onClick={handleCopyFromSourceArea}
+                        className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
+                      >
+                        {t("locations.staffingCopyApply")}
+                      </Button>
+                      <Select
+                        className="h-8 shrink-0 px-2 text-xs"
+                        style={copySourceSelectStyle}
+                        value={selectedSourceAreaId}
+                        disabled={busy}
+                        aria-label={t("locations.staffingCopySelectArea")}
+                        onChange={(event) =>
+                          setSelectedSourceAreaId(event.target.value)
+                        }
+                      >
+                        {sourceAreas.map((source) => (
+                          <option key={source.id} value={source.id}>
+                            {source.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  ) : undefined
+                }
+              />
+            </div>
+          </div>
+
+          <div className={settingsModalFooterClass("shrink-0")}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+              disabled={busy}
+              className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
+            >
+              <CloseIcon />
+              {t("common.close")}
+            </Button>
+          </div>
         </div>
       </div>
 
-      {staffingFormMode && staffingEditorData && (
+      {formMode && editorData && (
         <LocationStaffingDetailPanelModal
-          key={
-            staffingFormMode.type === "edit"
-              ? `edit-${staffingFormMode.serviceHourId}`
-              : "create"
-          }
-          mode={staffingFormMode.type}
+          mode={formMode}
           location={location}
           area={area}
-          serviceHours={staffingEditorData.serviceHours}
-          shiftTemplates={staffingEditorData.shiftTemplates}
-          qualifications={staffingEditorData.qualifications}
-          staffing={staffingEditorData.staffing}
+          serviceHours={editorData.serviceHours}
+          shiftTemplates={editorData.shiftTemplates ?? []}
+          qualifications={editorData.qualifications}
+          staffing={editorData.staffing}
           initialServiceHourId={
-            staffingFormMode.type === "edit"
-              ? staffingFormMode.serviceHourId
-              : undefined
+            formMode === "edit" ? (selectedServiceHourId ?? undefined) : undefined
           }
-          onClose={() => setStaffingFormMode(null)}
-          onSaved={(createdServiceHourId, staffing, serviceHours) => {
-            setStaffingFormMode(null);
-            handleStaffingSaved(createdServiceHourId, staffing, serviceHours);
-          }}
+          onClose={() => setFormMode(null)}
+          onSaved={handleSaved}
         />
       )}
-      {confirmDeleteStaffing && selectedServiceHourLabel && (
+
+      {confirmDeleteId && deleteTargetLabel && (
         <DeleteConfirmModal
-          name={selectedServiceHourLabel}
-          pending={pending}
-          onCancel={() => setConfirmDeleteStaffing(false)}
-          onConfirm={handleDeleteStaffing}
+          name={deleteTargetLabel}
+          pending={deleting}
+          onCancel={() => setConfirmDeleteId(null)}
+          onConfirm={() => void handleConfirmDelete()}
         />
       )}
-    </div>
+    </>
   );
 }

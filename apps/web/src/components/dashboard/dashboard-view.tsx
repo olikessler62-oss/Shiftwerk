@@ -10,14 +10,12 @@ import type {
   Qualification,
   CompensationSurchargeType,
   Role,
-  ShiftTypeWithBreaks,
   AreaShiftTemplateWithBreaks,
 } from "@schichtwerk/types";
 import type {
   AreaServiceHourRef,
   StaffingRule,
 } from "@/lib/location-staffing-client";
-import { ShiftTypesModal } from "@/components/settings/shift-types-modal";
 import { QualificationsModal } from "@/components/settings/qualifications-modal";
 import { CompensationSurchargeTypesModal } from "@/components/settings/compensation-surcharge-types-modal";
 import { LocationsModal } from "@/components/settings/locations-modal";
@@ -41,7 +39,6 @@ type Props = {
   fullStaffingRules: LocationAreaStaffing[];
   serviceHours: AreaServiceHourRef[];
   shifts: DashboardShiftCard[];
-  shiftTypes: ShiftTypeWithBreaks[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   qualifications: Qualification[];
   compensationSurchargeTypes: CompensationSurchargeType[];
@@ -60,7 +57,6 @@ export function DashboardView({
   fullStaffingRules,
   serviceHours,
   shifts,
-  shiftTypes,
   areaShiftTemplates,
   qualifications,
   compensationSurchargeTypes,
@@ -73,7 +69,6 @@ export function DashboardView({
   const showLocations = searchParams.get("standorte") === "1";
   const showProfiles = searchParams.get("profiles") === "1";
   const showRoles = searchParams.get("rollen") === "1";
-  const showShiftTypes = searchParams.get("schichtarten") === "1";
   const showQualifications = searchParams.get("qualifikationen") === "1";
   const showSurcharges =
     COMPENSATION_SURCHARGES_UI_ENABLED &&
@@ -85,7 +80,6 @@ export function DashboardView({
       | "standorte"
       | "profiles"
       | "rollen"
-      | "schichtarten"
       | "qualifikationen"
       | "sonderzuschlaege"
       | "abwesenheiten"
@@ -115,7 +109,6 @@ export function DashboardView({
           staffingRules={staffingRules}
           serviceHours={serviceHours}
           shifts={shifts}
-          shiftTypes={shiftTypes}
           areaShiftTemplates={areaShiftTemplates}
           qualifications={qualifications}
           profiles={profiles}
@@ -136,7 +129,6 @@ export function DashboardView({
         {showProfiles && (
           <ProfilesModal
             profiles={profiles}
-            shiftTypes={shiftTypes}
             onClose={() => closeSettingsModal("profiles")}
           />
         )}
@@ -144,12 +136,6 @@ export function DashboardView({
           <RolesModal
             roles={roles}
             onClose={() => closeSettingsModal("rollen")}
-          />
-        )}
-        {showShiftTypes && (
-          <ShiftTypesModal
-            shiftTypes={shiftTypes}
-            onClose={() => closeSettingsModal("schichtarten")}
           />
         )}
         {showQualifications && (

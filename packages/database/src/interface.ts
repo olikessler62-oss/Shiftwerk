@@ -17,8 +17,6 @@ import type {
   LocationArea,
   LocationAreaStaffing,
   LocationAreaServiceHour,
-  ShiftType,
-  ShiftTypeWithBreaks,
   UserRole,
 } from "@schichtwerk/types";
 
@@ -30,24 +28,15 @@ export type ShiftTypeBreakInput = {
   break_end: string;
 };
 
-export type ShiftWithTypeRow = Shift & {
-  shift_types: {
-    name: string;
-    color: string;
-    start_time?: string;
-    end_time?: string;
-  } | null;
-};
-
 export type DashboardShiftRow = {
   id: string;
   employee_id: string;
   location_area_id: string | null;
-  shift_type_id: string | null;
+  area_shift_template_id: string | null;
   shift_date: string;
   starts_at?: string;
   ends_at?: string;
-  shift_types: {
+  area_shift_templates: {
     name: string;
     color: string;
     start_time: string;
@@ -59,7 +48,7 @@ export type DashboardShiftRow = {
 export type EmployeeShiftRecord = {
   id: string;
   employee_id: string;
-  shift_type_id: string | null;
+  area_shift_template_id: string | null;
   location_id: string | null;
   location_area_id: string | null;
   shift_date: string;
@@ -176,41 +165,6 @@ export interface SchichtwerkDatabase {
   countActiveEmployees(organizationId: string): Promise<number>;
   findProfileByEmail(organizationId: string, email: string): Promise<{ id: string } | null>;
   deactivateEmployee(organizationId: string, employeeId: string): Promise<void>;
-
-  // —— Shift types ——
-  listShiftTypes(organizationId: string): Promise<ShiftType[]>;
-  listShiftTypesForPlanning(
-    organizationId: string,
-    from: string,
-    to: string
-  ): Promise<ShiftType[]>;
-  loadShiftTypesWithBreaks(organizationId: string): Promise<ShiftTypeWithBreaks[]>;
-  loadShiftTypesWithBreaksForDashboard(
-    organizationId: string
-  ): Promise<ShiftTypeWithBreaks[]>;
-  seedDefaultShiftTypes(organizationId: string): Promise<void>;
-  getShiftTypeForAssign(
-    shiftTypeId: string,
-    organizationId: string
-  ): Promise<Pick<ShiftType, "id" | "start_time" | "end_time"> | null>;
-  getNextShiftTypeSortOrder(organizationId: string): Promise<number>;
-  insertShiftType(row: {
-    organization_id: string;
-    name: string;
-    start_time: string;
-    end_time: string;
-    color: string;
-    sort_order: number;
-  }): Promise<{ id: string }>;
-  updateShiftType(
-    id: string,
-    organizationId: string,
-    row: { name: string; start_time: string; end_time: string }
-  ): Promise<void>;
-  replaceShiftTypeBreaks(shiftTypeId: string, breaks: ShiftTypeBreakInput[]): Promise<void>;
-  countShiftsUsingType(shiftTypeId: string, organizationId: string): Promise<number>;
-  archiveShiftType(id: string, organizationId: string): Promise<void>;
-  reorderShiftTypes(organizationId: string, orderedIds: string[]): Promise<void>;
 
   // —— Qualifications ——
   listQualifications(organizationId: string): Promise<Qualification[]>;
@@ -395,7 +349,6 @@ export interface SchichtwerkDatabase {
       weekday: number;
       start_time: string;
       end_time: string;
-      shift_type_id?: string | null;
     }
   ): Promise<ProfileRecurringAvailability>;
   updateProfileRecurringAvailability(
@@ -406,7 +359,6 @@ export interface SchichtwerkDatabase {
       weekday: number;
       start_time: string;
       end_time: string;
-      shift_type_id?: string | null;
     }
   ): Promise<ProfileRecurringAvailability>;
   deleteProfileRecurringAvailability(
@@ -548,7 +500,38 @@ export interface SchichtwerkDatabase {
     locationAreaId: string,
     locationId: string
   ): Promise<void>;
+  clearAreaShiftTemplatesForArea(
+    locationAreaId: string,
+    locationId: string
+  ): Promise<void>;
   reorderAreaShiftTemplates(
+    locationAreaId: string,
+    locationId: string,
+    orderedIds: string[]
+  ): Promise<void>;
+  listAreaQualificationTemplatesForArea(
+    locationAreaId: string,
+    locationId: string
+  ): Promise<import("@schichtwerk/types").AreaQualificationTemplateEntry[]>;
+  listAreaQualificationTemplatesForLocation(
+    locationId: string
+  ): Promise<import("@schichtwerk/types").AreaQualificationTemplateEntry[]>;
+  getNextAreaQualificationTemplateSortOrder(
+    locationAreaId: string,
+    locationId: string
+  ): Promise<number>;
+  assignAreaQualificationTemplate(
+    organizationId: string,
+    locationAreaId: string,
+    locationId: string,
+    qualificationId: string
+  ): Promise<void>;
+  removeAreaQualificationTemplate(
+    locationAreaId: string,
+    locationId: string,
+    templateId: string
+  ): Promise<void>;
+  reorderAreaQualificationTemplates(
     locationAreaId: string,
     locationId: string,
     orderedIds: string[]
@@ -576,11 +559,6 @@ export interface SchichtwerkDatabase {
   // —— Shifts ——
   /** Eigene Schichten (Mitarbeiter-App, gefiltert per RLS) */
   listMyShifts(fromDate: string, toDate: string): Promise<Shift[]>;
-  listShiftsForWeek(
-    organizationId: string,
-    from: string,
-    to: string
-  ): Promise<ShiftWithTypeRow[]>;
   listDashboardShifts(
     organizationId: string,
     from: string,
@@ -591,10 +569,6 @@ export interface SchichtwerkDatabase {
     id: string,
     organizationId: string
   ): Promise<{ id: string; shift_date: string } | null>;
-  findShiftByEmployeeDate(
-    employeeId: string,
-    shiftDate: string
-  ): Promise<{ id: string; location_id: string | null } | null>;
   listShiftsForEmployeeDate(
     employeeId: string,
     shiftDate: string
@@ -609,7 +583,7 @@ export interface SchichtwerkDatabase {
   insertShift(row: {
     organization_id: string;
     employee_id: string;
-    shift_type_id: string | null;
+    area_shift_template_id?: string | null;
     location_id: string;
     location_area_id?: string | null;
     shift_date: string;
@@ -620,7 +594,7 @@ export interface SchichtwerkDatabase {
   updateShift(
     id: string,
     row: {
-      shift_type_id: string | null;
+      area_shift_template_id?: string | null;
       location_id: string;
       location_area_id?: string | null;
       starts_at: string;

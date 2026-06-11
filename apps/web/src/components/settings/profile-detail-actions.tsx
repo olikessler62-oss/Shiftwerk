@@ -11,13 +11,19 @@ import type { Profile, ProfileRecurringAvailability } from "@schichtwerk/types";
 import type { ProfileCompensationCacheEntry } from "./profile-compensation-panel-modal";
 import { formatHourlyRateLabel } from "@/lib/profile-hourly-rate-display";
 import { formatEffectiveSurchargeSummary } from "@/lib/profile-surcharge-display";
+import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { SettingsActionRow } from "./settings-list-ui";
 import { cn } from "@/lib/cn";
 
 const COMMA_LIST_SUFFIX = ", ...";
 
-type DetailPanel = "qualifications" | "availability" | "compensation" | "invite";
+type DetailPanel =
+  | "qualifications"
+  | "availability"
+  | "compensation"
+  | "surcharges"
+  | "invite";
 
 type Props = {
   selectedProfile: Profile | null;
@@ -154,6 +160,27 @@ function AvailabilityIcon({ className }: { className?: string }) {
   );
 }
 
+function SurchargesIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M12 2v20" />
+      <path d="M17 5H9.5a3.5 3.5 0 100 7h5a3.5 3.5 0 110 7H6" />
+      <path d="M19 5v4M21 7h-4" />
+    </svg>
+  );
+}
+
 function CompensationIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -268,25 +295,27 @@ export function ProfileDetailActions({
     );
   const currentHourlyRate = profileCompensation?.currentRate ?? null;
   const currentSurcharges = profileCompensation?.currentSurcharges ?? [];
-  const compensationHint =
-    currentHourlyRate || currentSurcharges.length > 0 ? (
+  const compensationHint = currentHourlyRate ? (
+    <span className="block truncate text-xs text-primary">
+      {t("profiles.actionCompensationCurrent", {
+        rate: formatHourlyRateLabel(currentHourlyRate, localeKey),
+      })}
+    </span>
+  ) : (
+    t("profiles.actionCompensationHint")
+  );
+  const surchargesHint =
+    !COMPENSATION_SURCHARGES_UI_ENABLED ? (
+      t("profiles.actionSurchargesUnavailable")
+    ) : currentSurcharges.length > 0 ? (
       <span className="block truncate text-xs text-primary">
-        {[
-          currentHourlyRate
-            ? t("profiles.actionCompensationCurrent", {
-                rate: formatHourlyRateLabel(currentHourlyRate, localeKey),
-              })
-            : null,
-          currentSurcharges.length > 0
-            ? formatEffectiveSurchargeSummary(currentSurcharges, localeKey)
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+        {formatEffectiveSurchargeSummary(currentSurcharges, localeKey)}
       </span>
     ) : (
-      t("profiles.actionCompensationHint")
+      t("profiles.actionSurchargesHint")
     );
+  const surchargesDisabled =
+    profileActionsDisabled || !COMPENSATION_SURCHARGES_UI_ENABLED;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2">
@@ -315,13 +344,22 @@ export function ProfileDetailActions({
           onClick={() => onOpen("availability")}
         />
         <div className="mx-2 border-t border-border/60" />
-        <SettingsActionRow
-          icon={<CompensationIcon />}
-          label={t("profiles.panelCompensation")}
-          hint={compensationHint}
-          disabled={profileActionsDisabled}
-          onClick={() => onOpen("compensation")}
-        />
+        <div className="grid grid-cols-2 divide-x divide-border/60">
+          <SettingsActionRow
+            icon={<CompensationIcon />}
+            label={t("profiles.panelCompensation")}
+            hint={compensationHint}
+            disabled={profileActionsDisabled}
+            onClick={() => onOpen("compensation")}
+          />
+          <SettingsActionRow
+            icon={<SurchargesIcon />}
+            label={t("profiles.surchargesSection")}
+            hint={surchargesHint}
+            disabled={surchargesDisabled}
+            onClick={() => onOpen("surcharges")}
+          />
+        </div>
       </div>
 
       <SectionLabel>{t("profiles.sectionOrganization")}</SectionLabel>

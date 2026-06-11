@@ -5,7 +5,6 @@ export const Schema = {
   tables: {
     organizations: "organizations",
     profiles: "profiles",
-    shiftTypes: "shift_types",
     qualifications: "qualifications",
     profileQualifications: "profile_qualifications",
     profileHourlyRates: "profile_hourly_rates",
@@ -19,7 +18,7 @@ export const Schema = {
     locationAreaServiceHours: "location_area_service_hours",
     areaShiftTemplates: "area_shift_templates",
     areaShiftTemplateBreaks: "area_shift_template_breaks",
-    shiftTypeBreaks: "shift_type_breaks",
+    areaQualificationTemplates: "area_qualification_templates",
     shifts: "shifts",
     availability: "availability",
     absenceRequests: "absence_requests",

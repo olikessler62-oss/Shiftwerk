@@ -11,12 +11,14 @@ type Props = {
   locations: Location[];
   selectedLocationId: string | null;
   className?: string;
+  basePath?: string;
 };
 
 export function LocationSelect({
   locations,
   selectedLocationId,
   className,
+  basePath = "/dashboard",
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -27,7 +29,7 @@ export function LocationSelect({
     const params = new URLSearchParams(searchParams.toString());
     params.set("location", locationId);
     startTransition(() => {
-      router.push(`/dashboard?${params.toString()}`);
+      router.push(`${basePath}?${params.toString()}`);
     });
   }
 

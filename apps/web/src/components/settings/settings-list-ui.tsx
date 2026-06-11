@@ -5,7 +5,9 @@ import {
   Button,
   ChevronDownIcon,
   ChevronUpIcon,
+  IconButton,
   ListIcon,
+  TrashIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 export {
@@ -42,26 +44,34 @@ export {
 } from "./settings-modal-shell";
 
 export const SETTINGS_LIST_SCROLL_CLASS =
-  "max-h-[min(calc(2rem+13.5rem),calc(100dvh-18rem))] overflow-auto";
+  "max-h-[min(calc(1.75rem+10.5rem),calc(100dvh-18rem))] overflow-auto";
+
+/** Tabellenkopf (~1.75rem) + max. 4 sichtbare Datenzeilen à ~1.75rem */
+export const SETTINGS_FOUR_ROW_TABLE_LIST_SCROLL_CLASS =
+  "h-[calc(1.75rem+7rem)] min-h-[calc(1.75rem+7rem)] max-h-[calc(1.75rem+7rem)] overflow-auto";
+
+/** Personalbedarf-Panel: Tabellenkopf (~1.25rem) + 7 kompakte Zeilen à ~1.25rem */
+export const SETTINGS_STAFFING_PANEL_LIST_SCROLL_CLASS =
+  "h-[calc(1.25rem+8.75rem)] min-h-[calc(1.25rem+8.75rem)] max-h-[calc(1.25rem+8.75rem)] overflow-y-auto overflow-x-hidden";
 
 export const SETTINGS_LIST_SCROLL_COMPACT_CLASS =
-  "h-[calc(2rem+11rem)] min-h-[calc(2rem+11rem)] max-h-[calc(2rem+11rem)] overflow-auto";
+  SETTINGS_FOUR_ROW_TABLE_LIST_SCROLL_CLASS;
 
-/** Tabellenkopf (~2.5rem) + 4 Datenzeilen à ~2.75rem — Abwesenheiten-Liste */
+/** Tabellenkopf (~1.75rem) + max. 4 sichtbare Datenzeilen à ~1.75rem */
 export const SETTINGS_ABSENCES_LIST_SCROLL_CLASS =
-  "max-h-[calc(2.5rem+11rem)] overflow-auto";
+  "max-h-[calc(1.75rem+7rem)] overflow-auto";
 
 /** Tabellenkopf + max. 6 Zeilen — Bulk-Schichtzuweisung */
 export const BULK_SHIFT_LIST_SCROLL_CLASS =
   "max-h-[calc(2.5rem+18rem)] overflow-y-auto";
 
-/** Tabellenkopf (~2.5rem) + 8 Datenzeilen à ~2.2rem — feste Höhe in beiden Profile-Spalten */
+/** Tabellenkopf (~1.75rem) + 8 Datenzeilen à ~1.75rem — Profile-Liste */
 export const SETTINGS_PROFILES_LIST_SCROLL_CLASS =
-  "h-[calc(2.5rem+17.6rem)] min-h-[calc(2.5rem+17.6rem)] max-h-[calc(2.5rem+17.6rem)]";
+  "h-[calc(1.75rem+14rem)] min-h-[calc(1.75rem+14rem)] max-h-[calc(1.75rem+14rem)]";
 
 /** Halbe Listenhöhe — Funktion / Verfügbarkeiten in der Profil-Spalte */
 export const SETTINGS_PROFILES_HALF_LIST_SCROLL_CLASS =
-  "h-[calc(2.5rem+8.8rem)] min-h-[calc(2.5rem+8.8rem)] max-h-[calc(2.5rem+8.8rem)]";
+  "h-[calc(1.75rem+7rem)] min-h-[calc(1.75rem+7rem)] max-h-[calc(1.75rem+7rem)]";
 
 export function settingsPanelHeaderClass() {
   return "shrink-0 truncate border-b border-border bg-subtle px-3 py-2.5 text-sm font-medium text-foreground";
@@ -71,7 +81,7 @@ export function settingsColumnHeaderClass(
   align: "left" | "center" | "right" = "left"
 ) {
   return cn(
-    "px-2 pb-2 text-sm font-medium text-muted",
+    "px-2 py-1 pb-1 text-xs font-medium text-muted",
     align === "center"
       ? "text-center"
       : align === "right"
@@ -106,7 +116,7 @@ export function settingsStickyColumnHeaderClass(
 export function settingsDataRowClass(isSelected: boolean) {
   return cn(
     "cursor-pointer select-none border-b border-border/70 transition-[background-color,box-shadow] last:border-0",
-    "min-h-[2.75rem] hover:cursor-pointer hover:bg-subtle hover:shadow-sm",
+    "hover:cursor-pointer hover:bg-subtle hover:shadow-sm",
     isSelected && "bg-primary/5 shadow-sm ring-1 ring-inset ring-primary/20"
   );
 }
@@ -166,6 +176,59 @@ export function settingsIndicatorCellClass(isSelected: boolean) {
   );
 }
 
+export function settingsListRowDeleteHeaderClass(className?: string) {
+  return cn(
+    settingsStickyColumnHeaderClass("center"),
+    "w-8 px-0 py-1 pb-1",
+    className
+  );
+}
+
+export function settingsListRowDeleteCellClass(
+  isSelected: boolean,
+  className?: string
+) {
+  return cn(
+    settingsDataCellClass(isSelected, { align: "center" }),
+    "w-8 px-0",
+    className
+  );
+}
+
+export function SettingsListRowDeleteButton({
+  label,
+  disabled,
+  onClick,
+  className,
+  title,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  className?: string;
+  title?: string;
+}) {
+  return (
+    <IconButton
+      size="sm"
+      type="button"
+      disabled={disabled}
+      aria-label={label}
+      title={title ?? label}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "mb-0 shrink-0 border-transparent bg-transparent hover:bg-subtle disabled:opacity-40",
+        className
+      )}
+    >
+      <TrashIcon className="h-4 w-4" />
+    </IconButton>
+  );
+}
+
 export function settingsDataCellClass(
   isSelected: boolean,
   opts?: {
@@ -177,7 +240,7 @@ export function settingsDataCellClass(
   const align = opts?.align ?? "left";
   const withIndicator = opts?.withIndicator ?? false;
   return cn(
-    "min-h-[2.75rem] px-2 py-2 text-sm tabular-nums text-foreground",
+    "min-h-0 px-2 py-0.5 text-sm leading-tight tabular-nums text-foreground",
     align === "center"
       ? "text-center"
       : align === "right"
@@ -337,20 +400,23 @@ type SettingsActionBarProps = {
   primary: ReactNode;
   secondary?: ReactNode;
   destructive?: ReactNode;
+  trailing?: ReactNode;
 };
 
 export function SettingsActionBar({
   primary,
   secondary,
   destructive,
+  trailing,
 }: SettingsActionBarProps) {
+  const rightSlot = trailing ?? destructive;
   return (
     <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-1.5 border-t border-border bg-subtle px-2 py-1.5 sm:h-11 sm:flex-nowrap sm:py-0">
       {primary}
       {secondary}
-      {destructive ? (
+      {rightSlot ? (
         <div className="ml-auto flex shrink-0 items-center gap-1.5 border-l border-border pl-2">
-          {destructive}
+          {rightSlot}
         </div>
       ) : null}
     </div>

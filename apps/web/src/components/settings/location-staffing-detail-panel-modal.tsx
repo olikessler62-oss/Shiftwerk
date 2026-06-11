@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { saveServiceHourStaffing } from "@/app/actions/location-staffing";
 import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
 import { SERVICE_HOUR_WEEKDAY_COUNT } from "@/lib/location-service-hour-entries";
@@ -22,13 +22,17 @@ import type {
 } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { WeekdayChipPicker } from "./weekday-chip-picker";
+import { SettingsMessageModal } from "./settings-message-modal";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
+  SettingsListRowDeleteButton,
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
+  settingsResponsiveWindowFieldsClass,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -40,8 +44,19 @@ import {
   LabelMuted,
   Select,
   TimeInput,
-  TrashIcon,
 } from "@/components/ui";
+
+const STAFFING_FIELD_CLASS = "h-8 min-h-8 py-0 text-sm leading-8";
+const STAFFING_TIME_INPUT_CLASS =
+  "h-8 w-full min-w-[9.5rem] shrink-0 px-2 tabular-nums";
+
+const staffingDesktopGridClass = (mode: "create" | "edit") =>
+  mode === "edit"
+    ? "hidden lg:grid lg:grid-cols-[minmax(7.5rem,auto)_minmax(0,15.5rem)_minmax(9.5rem,1fr)_minmax(9.5rem,1fr)] lg:items-end lg:gap-x-2 lg:gap-y-2"
+    : "hidden lg:grid lg:grid-cols-[max-content_minmax(0,15.5rem)_minmax(9.5rem,1fr)_minmax(9.5rem,1fr)] lg:items-end lg:gap-x-2 lg:gap-y-2";
+
+const staffingMobileFieldsClass = () =>
+  settingsResponsiveWindowFieldsClass("lg:gap-y-2");
 
 type QualRow = {
   key: string;
@@ -145,6 +160,7 @@ export function LocationStaffingDetailPanelModal({
   const t = useTranslations();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const initialWindow = useMemo(
     () =>
@@ -159,6 +175,9 @@ export function LocationStaffingDetailPanelModal({
   );
 
   const [weekday, setWeekday] = useState(initialWindow.weekday);
+  const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(
+    () => new Set([initialWindow.weekday])
+  );
   const [templateId, setTemplateId] = useState(initialWindow.templateId);
   const [startTime, setStartTime] = useState(initialWindow.start_time);
   const [endTime, setEndTime] = useState(initialWindow.end_time);
@@ -190,21 +209,39 @@ export function LocationStaffingDetailPanelModal({
       ? t("locations.staffingCreateTitle")
       : t("locations.staffingDetailTitle", { window: windowLabel });
 
-  function handleWeekdayChange(nextWeekday: number) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape" || saving) return;
+      if (infoMessage) {
+        setInfoMessage(null);
+        return;
+      }
+      onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [infoMessage, onClose, saving]);
+
+  function handleEditWeekdayChange(nextWeekday: number) {
     setWeekday(nextWeekday);
     setError(null);
-    if (mode !== "create") return;
+  }
 
-    const suggestion = suggestStaffingCreateWindow(
-      serviceHours,
-      staffing,
-      shiftTemplates,
-      { weekday: nextWeekday, searchAllWeekdays: false }
-    );
-    setStartTime(suggestion.start_time);
-    setEndTime(suggestion.end_time);
-    setTemplateId(suggestion.templateId);
-    setDayFullyBooked(suggestion.dayFullyBooked);
+  function toggleWeekday(nextWeekday: number) {
+    setSelectedWeekdays((prev) => {
+      const next = new Set(prev);
+      if (next.has(nextWeekday)) next.delete(nextWeekday);
+      else next.add(nextWeekday);
+      return next;
+    });
+    setDayFullyBooked(false);
+    setError(null);
+  }
+
+  function applyWeekdayPreset(weekdays: number[]) {
+    setSelectedWeekdays(new Set(weekdays));
+    setDayFullyBooked(false);
+    setError(null);
   }
 
   function handleTemplateChange(nextTemplateId: string) {
@@ -237,9 +274,17 @@ export function LocationStaffingDetailPanelModal({
   }
 
   function addRow() {
+    if (!qualifications.length) {
+      setError(t("locations.staffingNoAreaQualificationTemplates"));
+      return;
+    }
     const usedIds = new Set(rows.map((row) => row.qualification_id));
     const defaultQual = qualifications.find((qual) => !usedIds.has(qual.id));
-    if (!defaultQual) return;
+    if (!defaultQual) {
+      setInfoMessage(t("locations.staffingAllQualificationsAssigned"));
+      return;
+    }
+    setError(null);
     setRows((prev) => [
       ...prev,
       {
@@ -272,7 +317,7 @@ export function LocationStaffingDetailPanelModal({
   async function handleSubmit() {
     setError(null);
     if (!qualifications.length) {
-      setError(t("locations.staffingNoQualifications"));
+      setError(t("locations.staffingNoAreaQualificationTemplates"));
       return;
     }
 
@@ -313,25 +358,49 @@ export function LocationStaffingDetailPanelModal({
       return;
     }
 
+    const weekdaysToSave =
+      mode === "create"
+        ? [...selectedWeekdays].sort((a, b) => a - b)
+        : [weekday];
+
+    if (mode === "create" && weekdaysToSave.length === 0) {
+      setError(t("locations.staffingSelectWeekdays"));
+      return;
+    }
+
     setSaving(true);
     try {
-      const result = await saveServiceHourStaffing({
-        locationId: location.id,
-        locationAreaId: area.id,
-        window: {
-          weekday,
-          start_time: startTime,
-          end_time: endTime,
-        },
-        previousServiceHourId:
-          mode === "edit" ? initialServiceHourId : undefined,
-        rules,
-      });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      let lastServiceHourId: string | undefined;
+      let nextServiceHours = serviceHours;
+      let nextStaffing = staffing;
+
+      for (const saveWeekday of weekdaysToSave) {
+        const result = await saveServiceHourStaffing({
+          locationId: location.id,
+          locationAreaId: area.id,
+          window: {
+            weekday: saveWeekday,
+            start_time: startTime,
+            end_time: endTime,
+          },
+          previousServiceHourId:
+            mode === "edit" ? initialServiceHourId : undefined,
+          rules,
+        });
+        if (!result.ok) {
+          setError(
+            mode === "create" && weekdaysToSave.length > 1
+              ? `${weekdayLabelFromIndex(saveWeekday, t)}: ${result.error}`
+              : result.error
+          );
+          return;
+        }
+        lastServiceHourId = result.serviceHourId;
+        nextServiceHours = result.serviceHours ?? nextServiceHours;
+        nextStaffing = result.staffing ?? nextStaffing;
       }
-      onSaved(result.serviceHourId, result.staffing, result.serviceHours);
+
+      onSaved(lastServiceHourId, nextStaffing, nextServiceHours);
     } catch {
       setError("Speichern fehlgeschlagen");
     } finally {
@@ -340,7 +409,41 @@ export function LocationStaffingDetailPanelModal({
   }
 
   const usedIds = new Set(rows.map((row) => row.qualification_id));
-  const canAdd = qualifications.some((qual) => !usedIds.has(qual.id));
+
+  const templateSelect = (
+    <Select
+      className={cn(
+        STAFFING_FIELD_CLASS,
+        "w-full min-w-0",
+        !templateId && "text-[silver]"
+      )}
+      value={templateId}
+      disabled={saving || shiftTemplates.length === 0}
+      aria-label={t("locations.serviceHoursColumnTemplate")}
+      onChange={(event) => handleTemplateChange(event.target.value)}
+    >
+      <option value="">{t("locations.serviceHoursSelectTemplate")}</option>
+      {shiftTemplates.map((template) => (
+        <option
+          key={template.id}
+          value={template.id}
+          disabled={
+            mode === "create" &&
+            [...selectedWeekdays].some((entry) =>
+              isShiftTemplateBlockedOnWeekday(
+                template,
+                entry,
+                serviceHours,
+                staffing
+              )
+            )
+          }
+        >
+          {template.name}
+        </option>
+      ))}
+    </Select>
+  );
 
   return (
     <div
@@ -354,7 +457,10 @@ export function LocationStaffingDetailPanelModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="location-staffing-detail-title"
-        className={settingsNestedModalDialogClass("2xl")}
+        className={settingsNestedModalDialogClass(
+          "5xl",
+          "max-w-[min(64rem,calc(100vw-1rem))]"
+        )}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div
@@ -393,21 +499,45 @@ export function LocationStaffingDetailPanelModal({
             </Alert>
           )}
 
-          <div
-            className={cn(
-              "mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(8.5rem,auto)_minmax(0,1fr)_9rem_9rem] lg:items-end"
-            )}
-          >
-            <div className="w-full shrink-0 lg:w-auto">
-              <LabelMuted className="mb-1 block">
+          <div className={cn(staffingDesktopGridClass(mode), "mb-[20px]")}>
+            <div className="flex justify-center">
+              <LabelMuted className="mb-0 block text-center">
                 {t("locations.serviceHoursColumnWeekdays")}
               </LabelMuted>
+            </div>
+            <div className="min-w-0">
+              <LabelMuted className="mb-0 block">
+                {t("locations.serviceHoursColumnTemplate")}
+              </LabelMuted>
+            </div>
+            <div className="text-center">
+              <LabelMuted className="mb-0 block text-center">
+                {t("locations.serviceHoursColumnFrom")}
+              </LabelMuted>
+            </div>
+            <div className="text-center">
+              <LabelMuted className="mb-0 block text-center">
+                {t("locations.serviceHoursColumnTo")}
+              </LabelMuted>
+            </div>
+
+            {mode === "create" ? (
+              <div className="flex justify-center">
+                <WeekdayChipPicker
+                  selected={selectedWeekdays}
+                  disabled={saving}
+                  onToggle={toggleWeekday}
+                  onApplyPreset={applyWeekdayPreset}
+                />
+              </div>
+            ) : (
               <Select
-                className="h-8 min-h-8 w-full py-0 text-sm lg:w-auto lg:min-w-[8.5rem]"
+                className={cn(STAFFING_FIELD_CLASS, "w-full min-w-[7.5rem]")}
                 value={String(weekday)}
                 disabled={saving}
+                aria-label={t("locations.serviceHoursColumnWeekdays")}
                 onChange={(event) => {
-                  handleWeekdayChange(Number.parseInt(event.target.value, 10));
+                  handleEditWeekdayChange(Number.parseInt(event.target.value, 10));
                 }}
               >
                 {Array.from({ length: SERVICE_HOUR_WEEKDAY_COUNT }, (_, index) => (
@@ -416,156 +546,189 @@ export function LocationStaffingDetailPanelModal({
                   </option>
                 ))}
               </Select>
-            </div>
-            <div className="min-w-0">
-              <LabelMuted className="mb-1 block">
-                {t("locations.serviceHoursColumnTemplate")}
-              </LabelMuted>
-              <Select
-                className={cn(
-                  "h-8 min-h-8 py-0 text-xs",
-                  !templateId && "text-[silver]"
-                )}
-                value={templateId}
-                disabled={saving || shiftTemplates.length === 0}
-                onChange={(event) => handleTemplateChange(event.target.value)}
-              >
-                <option value="">
-                  {t("locations.serviceHoursSelectTemplate")}
-                </option>
-                {shiftTemplates.map((template) => (
-                  <option
-                    key={template.id}
-                    value={template.id}
-                    disabled={
-                      mode === "create" &&
-                      isShiftTemplateBlockedOnWeekday(
-                        template,
-                        weekday,
-                        serviceHours,
-                        staffing
-                      )
-                    }
+            )}
+
+            <div className="min-w-0">{templateSelect}</div>
+
+            <TimeInput
+              value={startTime}
+              disabled={saving}
+              aria-label={t("locations.serviceHoursColumnFrom")}
+              onChange={(event) => handleStartTimeChange(event.target.value)}
+              className={STAFFING_TIME_INPUT_CLASS}
+            />
+
+            <TimeInput
+              value={endTime}
+              disabled={saving}
+              aria-label={t("locations.serviceHoursColumnTo")}
+              onChange={(event) => handleEndTimeChange(event.target.value)}
+              className={STAFFING_TIME_INPUT_CLASS}
+            />
+          </div>
+
+          <div className="mb-[20px] space-y-3 lg:hidden">
+            <div className={staffingMobileFieldsClass()}>
+              <div className="min-w-0 text-center sm:col-span-2">
+                <LabelMuted className="mb-1 block text-center">
+                  {t("locations.serviceHoursColumnWeekdays")}
+                </LabelMuted>
+                {mode === "create" ? (
+                  <WeekdayChipPicker
+                    selected={selectedWeekdays}
+                    disabled={saving}
+                    onToggle={toggleWeekday}
+                    onApplyPreset={applyWeekdayPreset}
+                  />
+                ) : (
+                  <Select
+                    className={cn(STAFFING_FIELD_CLASS, "w-full")}
+                    value={String(weekday)}
+                    disabled={saving}
+                    onChange={(event) => {
+                      handleEditWeekdayChange(Number.parseInt(event.target.value, 10));
+                    }}
                   >
-                    {template.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="shrink-0 min-w-[9rem]">
-              <LabelMuted className="mb-1 block">
-                {t("locations.serviceHoursColumnFrom")}
-              </LabelMuted>
-              <TimeInput
-                value={startTime}
-                disabled={saving}
-                onChange={(event) => handleStartTimeChange(event.target.value)}
-                className="h-8 min-w-[9rem] w-full tabular-nums"
-              />
-            </div>
-            <div className="shrink-0 min-w-[9rem]">
-              <LabelMuted className="mb-1 block">
-                {t("locations.serviceHoursColumnTo")}
-              </LabelMuted>
-              <TimeInput
-                value={endTime}
-                disabled={saving}
-                onChange={(event) => handleEndTimeChange(event.target.value)}
-                className="h-8 min-w-[9rem] w-full tabular-nums"
-              />
+                    {Array.from({ length: SERVICE_HOUR_WEEKDAY_COUNT }, (_, index) => (
+                      <option key={index} value={String(index)}>
+                        {weekdayLabelFromIndex(index, t)}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </div>
+              <div className="min-w-0 text-center">
+                <LabelMuted className="mb-1 block text-center">
+                  {t("locations.serviceHoursColumnTemplate")}
+                </LabelMuted>
+                {templateSelect}
+              </div>
+              <div className="flex justify-center">
+                <div>
+                  <LabelMuted className="mb-1 block text-center">
+                    {t("locations.serviceHoursColumnFrom")}
+                  </LabelMuted>
+                  <TimeInput
+                    value={startTime}
+                    disabled={saving}
+                    onChange={(event) => handleStartTimeChange(event.target.value)}
+                    className={STAFFING_TIME_INPUT_CLASS}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-center">
+                <div>
+                  <LabelMuted className="mb-1 block text-center">
+                    {t("locations.serviceHoursColumnTo")}
+                  </LabelMuted>
+                  <TimeInput
+                    value={endTime}
+                    disabled={saving}
+                    onChange={(event) => handleEndTimeChange(event.target.value)}
+                    className={STAFFING_TIME_INPUT_CLASS}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          {qualifications.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted">
-              {t("locations.staffingNoQualifications")}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-foreground">
-                  {t("locations.staffingQualificationsSection")}
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={saving || !canAdd}
-                  className="h-7 shrink-0 text-xs"
-                  onClick={addRow}
-                >
-                  {t("locations.staffingAddQualification")}
-                </Button>
-              </div>
-              {rows.length === 0 ? (
-                <p className="text-xs text-muted">
-                  {t("locations.staffingWindowEmpty")}
-                </p>
-              ) : (
-                <div className="space-y-1.5">
-                  {rows.map((row) => (
-                    <div key={row.key} className="flex items-center gap-2">
-                      <select
-                        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                        value={row.qualification_id}
-                        disabled={saving}
-                        onChange={(e) => setQualification(row.key, e.target.value)}
-                      >
-                        {qualifications.map((qual) => (
-                          <option
-                            key={qual.id}
-                            value={qual.id}
-                            disabled={
-                              usedIds.has(qual.id) &&
-                              qual.id !== row.qualification_id
-                            }
-                          >
-                            {qual.name}
-                          </option>
-                        ))}
-                      </select>
-                      <Input
-                        value={row.count}
-                        disabled={saving}
-                        onChange={(e) => setCount(row.key, e.target.value)}
-                        inputMode="numeric"
-                        maxLength={2}
-                        className={COUNT_INPUT_CLASS}
-                        aria-label={t("locations.staffingFormColumnCount")}
-                      />
-                      <IconButton
-                        size="sm"
-                        disabled={saving}
-                        className="border border-border"
-                        aria-label={t("common.delete")}
-                        onClick={() => removeRow(row.key)}
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </IconButton>
-                    </div>
-                  ))}
-                </div>
-              )}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">
+                {t("locations.staffingQualificationsSection")}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={saving}
+                className="h-7 shrink-0 text-xs"
+                onClick={addRow}
+              >
+                {t("locations.staffingAddQualification")}
+              </Button>
             </div>
-          )}
+
+            {!qualifications.length ? (
+              <Alert variant="info">
+                {t("locations.staffingNoAreaQualificationTemplates")}
+              </Alert>
+            ) : rows.length === 0 ? (
+              <p className="text-xs text-muted">
+                {t("locations.staffingWindowEmpty")}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+                {rows.map((row) => (
+                  <div
+                    key={row.key}
+                    className="flex min-w-0 items-center gap-1.5 rounded-md border border-border/60 bg-background/50 px-1.5 py-1"
+                  >
+                    <select
+                      className="h-8 min-w-0 flex-1 truncate rounded-md border border-border bg-background px-2 text-sm"
+                      value={row.qualification_id}
+                      disabled={saving}
+                      title={
+                        qualifications.find((qual) => qual.id === row.qualification_id)
+                          ?.name
+                      }
+                      onChange={(e) => setQualification(row.key, e.target.value)}
+                    >
+                      {qualifications.map((qual) => (
+                        <option
+                          key={qual.id}
+                          value={qual.id}
+                          disabled={
+                            usedIds.has(qual.id) && qual.id !== row.qualification_id
+                          }
+                        >
+                          {qual.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      value={row.count}
+                      disabled={saving}
+                      onChange={(e) => setCount(row.key, e.target.value)}
+                      inputMode="numeric"
+                      maxLength={2}
+                      className={COUNT_INPUT_CLASS}
+                      aria-label={t("locations.staffingFormColumnCount")}
+                    />
+                    <SettingsListRowDeleteButton
+                      label={t("common.delete")}
+                      disabled={saving}
+                      onClick={() => removeRow(row.key)}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className={settingsModalFooterClass()}>
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            <CloseIcon />
-            {t("common.cancel")}
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={() => void handleSubmit()}
-            disabled={saving || !qualifications.length}
-          >
-            <CheckIcon />
-            {t("common.ok")}
-          </Button>
+          <div className="flex w-full flex-col-reverse gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              <CloseIcon />
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => void handleSubmit()}
+              disabled={saving}
+            >
+              <CheckIcon />
+              {t("common.ok")}
+            </Button>
+          </div>
         </div>
       </div>
+
+      {infoMessage && (
+        <SettingsMessageModal message={infoMessage} onClose={() => setInfoMessage(null)} />
+      )}
     </div>
   );
 }

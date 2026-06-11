@@ -38,7 +38,6 @@ export async function createProfileRecurringAvailability(input: {
   weekday: number;
   start_time: string;
   end_time: string;
-  shift_type_id?: string | null;
 }): Promise<ProfileAvailabilityActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -47,7 +46,6 @@ export async function createProfileRecurringAvailability(input: {
       weekday: input.weekday,
       start_time: input.start_time,
       end_time: input.end_time,
-      shift_type_id: input.shift_type_id ?? null,
     });
     const availability = await db.listProfileRecurringAvailability(
       organizationId,
@@ -67,7 +65,6 @@ export async function updateProfileRecurringAvailability(input: {
   weekday: number;
   start_time: string;
   end_time: string;
-  shift_type_id?: string | null;
 }): Promise<ProfileAvailabilityActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -80,7 +77,6 @@ export async function updateProfileRecurringAvailability(input: {
         weekday: input.weekday,
         start_time: input.start_time,
         end_time: input.end_time,
-        shift_type_id: input.shift_type_id ?? null,
       }
     );
     const availability = await db.listProfileRecurringAvailability(

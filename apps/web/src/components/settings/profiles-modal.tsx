@@ -10,7 +10,6 @@ import type {
   Profile,
   ProfileRecurringAvailability,
   Qualification,
-  ShiftTypeWithBreaks,
 } from "@schichtwerk/types";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ProfileAvailabilityPanelModal } from "./profile-availability-panel-modal";
@@ -18,6 +17,7 @@ import {
   ProfileCompensationPanelModal,
   type ProfileCompensationCacheEntry,
 } from "./profile-compensation-panel-modal";
+import { ProfileSurchargesPanelModal } from "./profile-surcharges-panel-modal";
 import { ProfileFormModal } from "./profile-form-modal";
 import { ProfileInvitePanelModal } from "./profile-invite-panel-modal";
 import { ProfileDetailActions } from "./profile-detail-actions";
@@ -36,8 +36,11 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
+  SettingsListRowDeleteButton,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
+  settingsListRowDeleteCellClass,
+  settingsListRowDeleteHeaderClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
@@ -52,7 +55,6 @@ import {
   CloseIcon,
   PencilIcon,
   PlusIcon,
-  TrashIcon,
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -60,7 +62,6 @@ import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
   profiles: Profile[];
-  shiftTypes: ShiftTypeWithBreaks[];
   onClose: () => void;
   initialSelectedProfileId?: string | null;
 };
@@ -75,6 +76,7 @@ type DetailPanel =
   | "qualifications"
   | "availability"
   | "compensation"
+  | "surcharges"
   | "invite";
 
 const COLUMN_GAP_PX = 20;
@@ -143,7 +145,6 @@ export function ProfilesModal({
   profiles,
   onClose,
   initialSelectedProfileId,
-  shiftTypes,
 }: Props) {
   const router = useRouter();
   const t = useTranslations();
@@ -515,19 +516,6 @@ export function ProfilesModal({
                       />
                     </>
                   }
-                  destructive={
-                    <SettingsIconActionButton
-                      label={t("profiles.delete")}
-                      icon={<TrashIcon />}
-                      disabled={pending || !selectedProfile}
-                      onClick={() => {
-                        setConfirmDeleteProfile(true);
-                        setProfileFormMode(null);
-                        setDetailPanel(null);
-                        setErrorMessage(null);
-                      }}
-                    />
-                  }
                 />
               }
             >
@@ -557,6 +545,10 @@ export function ProfilesModal({
                       <th className={settingsStickyColumnHeaderClass()}>
                         {t("profiles.columnRole")}
                       </th>
+                      <th
+                        className={settingsListRowDeleteHeaderClass()}
+                        aria-hidden
+                      />
                     </tr>
                   </thead>
                   <tbody>
@@ -613,6 +605,19 @@ export function ProfilesModal({
                           >
                             {item.role_name ? truncateLabel(item.role_name, 20) : "—"}
                           </td>
+                          <td className={settingsListRowDeleteCellClass(isSelected)}>
+                            <SettingsListRowDeleteButton
+                              label={t("profiles.delete")}
+                              disabled={pending}
+                              onClick={() => {
+                                selectProfile(item.id);
+                                setConfirmDeleteProfile(true);
+                                setProfileFormMode(null);
+                                setDetailPanel(null);
+                                setErrorMessage(null);
+                              }}
+                            />
+                          </td>
                         </tr>
                       );
                     })}
@@ -646,33 +651,26 @@ export function ProfilesModal({
                   t("profiles.panelDetails")
                 )}
               </h3>
-              {actionDetailsLoading ? (
-                <div
-                  className="min-h-0 flex-1 bg-background"
-                  aria-label={t("common.loading")}
-                />
-              ) : (
-                <ProfileDetailActions
-                  selectedProfile={selectedProfile}
-                  profileQualifications={
-                    selectedProfile
-                      ? qualificationsCache[selectedProfile.id]
-                      : undefined
-                  }
-                  profileAvailability={
-                    selectedProfile
-                      ? availabilityCache[selectedProfile.id]
-                      : undefined
-                  }
-                  profileCompensation={
-                    selectedProfile
-                      ? compensationCache[selectedProfile.id]
-                      : undefined
-                  }
-                  disabled={pending}
-                  onOpen={setDetailPanel}
-                />
-              )}
+              <ProfileDetailActions
+                selectedProfile={selectedProfile}
+                profileQualifications={
+                  selectedProfile
+                    ? qualificationsCache[selectedProfile.id]
+                    : undefined
+                }
+                profileAvailability={
+                  selectedProfile
+                    ? availabilityCache[selectedProfile.id]
+                    : undefined
+                }
+                profileCompensation={
+                  selectedProfile
+                    ? compensationCache[selectedProfile.id]
+                    : undefined
+                }
+                disabled={pending || actionDetailsLoading}
+                onOpen={setDetailPanel}
+              />
             </div>
           </div>
 
@@ -732,7 +730,6 @@ export function ProfilesModal({
         {detailPanel === "availability" && selectedProfile && (
           <ProfileAvailabilityPanelModal
             profile={selectedProfile}
-            shiftTypes={shiftTypes}
             cachedAvailability={
               selectedProfile.id in availabilityCache
                 ? availabilityCache[selectedProfile.id]
@@ -746,6 +743,20 @@ export function ProfilesModal({
         )}
         {detailPanel === "compensation" && selectedProfile && (
           <ProfileCompensationPanelModal
+            profile={selectedProfile}
+            cachedCompensation={
+              selectedProfile.id in compensationCache
+                ? compensationCache[selectedProfile.id]
+                : undefined
+            }
+            onClose={() => setDetailPanel(null)}
+            onCacheUpdate={(profileId, entry) => {
+              setCompensationCache((prev) => ({ ...prev, [profileId]: entry }));
+            }}
+          />
+        )}
+        {detailPanel === "surcharges" && selectedProfile && (
+          <ProfileSurchargesPanelModal
             profile={selectedProfile}
             cachedCompensation={
               selectedProfile.id in compensationCache
