@@ -19,10 +19,15 @@ const SHIFT_ASSIGN_EXACT_KEYS: Record<string, string> = {
   "Ungültige Schichtzeiten.": "shiftAssign.invalidShiftTimes",
   "Speichern fehlgeschlagen": "shiftAssign.saveFailed",
   "Unbekannter Fehler": "shiftAssign.unknownError",
+  "Überschneidung mit anderer Zeile im Batch.": "shiftAssign.batchRowOverlap",
 };
 
 const QUALIFICATION_MISSING_PREFIX =
   "Personal erfüllt die erforderliche Qualifikation nicht (";
+
+const MIN_REST_PERIOD_PREFIX = "Mindestruhezeit von ";
+const MIN_REST_PERIOD_SUFFIX =
+  " Stunden zwischen Schichten nicht eingehalten.";
 
 export function translateActionError(message: string, t: Translator): string {
   if (message.startsWith("organization.errors.")) {
@@ -38,6 +43,17 @@ export function translateActionError(message: string, t: Translator): string {
       message.length - 2
     );
     return t("shiftAssign.qualificationMissing", { names });
+  }
+
+  if (
+    message.startsWith(MIN_REST_PERIOD_PREFIX) &&
+    message.endsWith(MIN_REST_PERIOD_SUFFIX)
+  ) {
+    const hours = message.slice(
+      MIN_REST_PERIOD_PREFIX.length,
+      message.length - MIN_REST_PERIOD_SUFFIX.length
+    );
+    return t("shiftAssign.minRestPeriod", { hours });
   }
 
   return message;

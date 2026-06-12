@@ -74,7 +74,8 @@ export const en = {
     bulkShiftQualificationOk: "Job matches",
     bulkShiftQualificationMissing: "Missing job: {names}",
     bulkShiftQualificationNeutral: "—",
-    bulkShiftPartialSuccess: "Some rows could not be saved.",
+    bulkShiftPartialSuccess: "Some rows could not be saved:",
+    bulkShiftPartialSuccessEntry: "{name}, {start}–{end}\n{error}",
     bulkShiftErrorOverlap: "Overlaps with another row.",
     bulkShiftImportErrors: "Import notes",
     bulkShiftImportTemplate: "CSV template",
@@ -612,6 +613,8 @@ export const en = {
     invalidShiftTimes: "Invalid shift times.",
     saveFailed: "Save failed",
     unknownError: "Unknown error",
+    batchRowOverlap: "Overlaps with another row in this entry.",
+    minRestPeriod: "Minimum rest period of {hours} hours between shifts not met.",
   },
   organization: {
     planningModeTitle: "Planning mode",

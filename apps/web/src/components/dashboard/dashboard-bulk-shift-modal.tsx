@@ -39,7 +39,6 @@ import {
   PlusIcon,
   TimeInput,
   TrashIcon,
-  tooltipContentClassName,
 } from "@/components/ui";
 import {
   areDashboardShiftTimesComplete,
@@ -100,6 +99,10 @@ import {
 } from "@/lib/shift-overlap";
 import { cn } from "@/lib/cn";
 import { translateActionError } from "@/lib/translate-action-error";
+import {
+  formatBulkShiftPartialSaveMessage,
+  resolveBulkShiftPartialSaveOutcome,
+} from "@/lib/bulk-shift-partial-save";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type {
@@ -249,7 +252,12 @@ export type BulkModalExistingShift = {
 };
 
 type BulkModalPrompt =
-  | { kind: "alert"; message: string; blocking?: boolean }
+  | {
+      kind: "alert";
+      message: string;
+      blocking?: boolean;
+      refreshOnDismiss?: boolean;
+    }
   | { kind: "confirm-add-row" }
   | { kind: "confirm-overstaff-save" };
 
@@ -766,7 +774,6 @@ type BulkShiftRowEditorProps = {
   disabled?: boolean;
   presetPlaceholder: string;
   qualificationPlaceholder: string;
-  validationHint?: string | null;
 };
 
 function BulkShiftRowEditor({
@@ -790,7 +797,6 @@ function BulkShiftRowEditor({
   disabled = false,
   presetPlaceholder,
   qualificationPlaceholder,
-  validationHint = null,
 }: BulkShiftRowEditorProps) {
   const t = useTranslations();
   const skipSyncRef = useRef(false);
@@ -1127,15 +1133,7 @@ function BulkShiftRowEditor({
           weekdayLabelStyle="long"
         />
       </td>
-      <td className="relative w-10 shrink-0 px-1 py-2 align-middle">
-        {validationHint ? (
-          <div
-            className={cn(tooltipContentClassName, "pointer-events-none absolute bottom-full right-1 z-20 mb-1 max-w-[11rem] text-right")}
-            role="tooltip"
-          >
-            {validationHint}
-          </div>
-        ) : null}
+      <td className="w-10 shrink-0 px-1 py-2 align-middle">
         <div className="flex h-9 items-center justify-center">
           <IconButton
             size="sm"
@@ -1234,9 +1232,6 @@ export function DashboardBulkShiftModal({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [prompt, setPrompt] = useState<BulkModalPrompt | null>(null);
-  const [rowValidationHints, setRowValidationHints] = useState<
-    Record<string, string>
-  >({});
 
   const staffingEntries = useMemo(
     () =>
@@ -1310,12 +1305,6 @@ export function DashboardBulkShiftModal({
   }, [dialog.date]);
 
   const updateRow = useCallback((id: string, patch: Partial<BulkRow>) => {
-    setRowValidationHints((current) => {
-      if (!current[id]) return current;
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
     setRows((current) =>
       current.map((row) => (row.id === id ? { ...row, ...patch } : row))
     );
@@ -1323,13 +1312,6 @@ export function DashboardBulkShiftModal({
 
   const deleteRow = useCallback(
     (id: string) => {
-      setRowValidationHints((current) => {
-        if (!current[id]) return current;
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
-
       setRows((current) => {
         const index = current.findIndex((row) => row.id === id);
         if (index === -1) return current;
@@ -1503,14 +1485,14 @@ export function DashboardBulkShiftModal({
     );
 
     const payloadRows = sorted
-      .map((row, rowIndex) => ({ row, rowIndex }))
       .filter(
-        ({ row }) =>
+        (row) =>
           !row.existingShiftId &&
           row.employeeId !== DASHBOARD_EMPTY_EMPLOYEE_ID &&
           row.qualificationId.length > 0 &&
           areDashboardShiftTimesComplete(row.startTime, row.endTime)
-      );
+      )
+      .map((row, payloadIndex) => ({ row, payloadIndex }));
 
     if (payloadRows.length === 0) {
       if (rows.some((row) => row.existingShiftId)) {
@@ -1563,29 +1545,30 @@ export function DashboardBulkShiftModal({
       return;
     }
 
-    const errorByRowIndex = new Map<number, string>();
-    for (const entry of failed) {
-      if (!entry.ok) {
-        errorByRowIndex.set(entry.rowIndex, entry.error);
-      }
-    }
+    const failedResults = failed.flatMap((entry) =>
+      entry.ok ? [] : [{ rowIndex: entry.rowIndex, error: entry.error }]
+    );
 
-    const remainingRows: BulkRow[] = [];
-    for (const { row, rowIndex } of payloadRows) {
-      if (errorByRowIndex.has(rowIndex)) {
-        remainingRows.push(row);
-      }
-    }
+    const partialSaveOutcome = resolveBulkShiftPartialSaveOutcome({
+      currentRows: rows,
+      payloadRows,
+      failedResults,
+      resolveEmployeeName: (employeeId) =>
+        employeeNameById.get(employeeId) ?? employeeId,
+      createEmptyRow,
+    });
 
-    setRows(remainingRows.length ? remainingRows : [createEmptyRow()]);
+    const saveFailures = partialSaveOutcome.failures.map((failure) => ({
+      ...failure,
+      error: translateActionError(failure.error, t),
+    }));
+
+    setRows(partialSaveOutcome.remainingRows);
     setPrompt({
       kind: "alert",
-      message: t("dashboard.bulkShiftPartialSuccess"),
+      message: formatBulkShiftPartialSaveMessage(saveFailures, t),
+      refreshOnDismiss: result.undoAvailable,
     });
-    if (result.undoAvailable) {
-      onSaved?.();
-      router.refresh();
-    }
   }, [
     rows,
     employees,
@@ -1604,7 +1587,6 @@ export function DashboardBulkShiftModal({
   const handleOk = useCallback(async () => {
     const validation = validateBulkShiftRowsForOk(rows, t);
     if (!validation.valid) {
-      setRowValidationHints(validation.rowHints);
       setPrompt({
         kind: "alert",
         message: validation.summary!,
@@ -1612,7 +1594,6 @@ export function DashboardBulkShiftModal({
       });
       return;
     }
-    setRowValidationHints({});
 
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
       const row = rows[rowIndex]!;
@@ -1673,6 +1654,17 @@ export function DashboardBulkShiftModal({
     locationDayAssignments,
     employeeNameById,
   ]);
+
+  const dismissPrompt = useCallback(() => {
+    if (!prompt) return;
+    const refreshOnDismiss =
+      prompt.kind === "alert" && prompt.refreshOnDismiss === true;
+    setPrompt(null);
+    if (refreshOnDismiss) {
+      onSaved?.();
+      router.refresh();
+    }
+  }, [prompt, onSaved, router]);
 
   const handlePromptConfirm = useCallback(() => {
     if (!prompt) return;
@@ -1809,7 +1801,6 @@ export function DashboardBulkShiftModal({
                     onDelete={() => deleteRow(row.id)}
                     presetPlaceholder={presetPlaceholder}
                     qualificationPlaceholder={qualificationPlaceholder}
-                    validationHint={rowValidationHints[row.id] ?? null}
                   />
                 ))}
               </tbody>
@@ -1859,7 +1850,7 @@ export function DashboardBulkShiftModal({
                 !promptIsConfirm &&
                 !modalLocked
               ) {
-                setPrompt(null);
+                dismissPrompt();
               }
             }}
           >
@@ -1872,7 +1863,7 @@ export function DashboardBulkShiftModal({
             >
               <p
                 id="dashboard-bulk-shift-validation-message"
-                className="text-sm text-foreground"
+                className="whitespace-pre-line text-sm text-foreground"
               >
                 {promptMessage}
               </p>
@@ -1894,7 +1885,7 @@ export function DashboardBulkShiftModal({
                   <Button
                     type="button"
                     variant="primary"
-                    onClick={() => setPrompt(null)}
+                    onClick={dismissPrompt}
                   >
                     {t("common.ok")}
                   </Button>

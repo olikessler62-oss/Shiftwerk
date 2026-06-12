@@ -72,7 +72,8 @@ export const de = {
     bulkShiftQualificationOk: "Job passt",
     bulkShiftQualificationMissing: "Fehlender Job: {names}",
     bulkShiftQualificationNeutral: "—",
-    bulkShiftPartialSuccess: "Einige Zeilen konnten nicht gespeichert werden.",
+    bulkShiftPartialSuccess: "Einige Zeilen konnten nicht gespeichert werden:",
+    bulkShiftPartialSuccessEntry: "{name}, {start}–{end}\n{error}",
     bulkShiftErrorOverlap: "Überschneidung mit anderer Zeile.",
     bulkShiftImportErrors: "Import-Hinweise",
     bulkShiftImportTemplate: "CSV-Vorlage",
@@ -613,6 +614,9 @@ export const de = {
     invalidShiftTimes: "Ungültige Schichtzeiten.",
     saveFailed: "Speichern fehlgeschlagen",
     unknownError: "Unbekannter Fehler",
+    batchRowOverlap: "Überschneidung mit einer anderen Zeile in dieser Eingabe.",
+    minRestPeriod:
+      "Mindestruhezeit von {hours} Stunden zwischen Schichten nicht eingehalten.",
   },
   organization: {
     planningModeTitle: "Planungsmodus",
