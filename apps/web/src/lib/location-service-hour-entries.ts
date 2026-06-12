@@ -1,4 +1,9 @@
 import type { AreaShiftTemplateWithBreaks, LocationAreaServiceHour } from "@schichtwerk/types";
+import {
+  weekdayAbbrevFromIndex,
+  weekdayAbbrevFromTranslatedName,
+  type WeekdayLabelLocale,
+} from "@schichtwerk/i18n";
 import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
 
 export const SERVICE_HOUR_WEEKDAY_COUNT = 8;
@@ -104,8 +109,13 @@ export function buildHoursFromEntries(
   );
 }
 
-export function weekdayChipLabel(weekday: number, t: (key: string) => string): string {
+export function weekdayChipLabel(
+  weekday: number,
+  t: (key: string) => string,
+  locale: WeekdayLabelLocale = "de"
+): string {
   if (weekday === 7) return "FT";
+  if (locale === "en") return weekdayAbbrevFromIndex(weekday, "en");
   const keys = [
     "monday",
     "tuesday",
@@ -117,7 +127,7 @@ export function weekdayChipLabel(weekday: number, t: (key: string) => string): s
   ] as const;
   const key = keys[weekday];
   if (!key) return String(weekday);
-  return t(`locations.weekdays.${key}`).slice(0, 2);
+  return weekdayAbbrevFromTranslatedName(t(`locations.weekdays.${key}`), "de");
 }
 
 export function weekdayChipTooltipLabel(

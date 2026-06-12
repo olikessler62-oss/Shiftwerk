@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   copyLocationStaffingFromArea,
   deleteServiceHourStaffing,
@@ -48,21 +48,39 @@ import {
   Button,
   CloseIcon,
   IconButton,
+  ListIcon,
   PencilIcon,
   PlusIcon,
   Select,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 
 type Props = {
   location: Location;
   area: LocationArea;
+  cachedServiceHours?: LocationAreaServiceHour[];
+  cachedStaffing?: LocationAreaStaffing[];
+  cachedShiftTemplates?: AreaShiftTemplateWithBreaks[];
   onClose: () => void;
+  onCacheUpdate?: (
+    areaId: string,
+    staffing: LocationAreaStaffing[],
+    serviceHours: LocationAreaServiceHour[]
+  ) => void;
 };
 
-type FormMode = null | "create" | "edit";
+type FormMode = null | "create" | "edit" | "bulk-edit";
 
-export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
+export function LocationStaffingPanelModal({
+  location,
+  area,
+  cachedServiceHours,
+  cachedStaffing,
+  cachedShiftTemplates,
+  onClose,
+  onCacheUpdate,
+}: Props) {
   const t = useTranslations();
   const matrixRef = useRef<LocationAreaStaffingMatrixHandle>(null);
   const [pending, startTransition] = useTransition();
@@ -87,17 +105,29 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setErrorMessage(null);
     setEditorData(null);
+    setErrorMessage(null);
     setSelectedServiceHourId(null);
     setFormMode(null);
     setConfirmDeleteId(null);
 
     void Promise.all([
       fetchLocationStaffingEditor(location.id, area.id),
-      fetchAreaShiftTemplates(location.id, area.id),
-    ]).then(([editorResult, templatesResult]) => {
+      cachedShiftTemplates !== undefined
+        ? Promise.resolve({ ok: true as const, templates: cachedShiftTemplates })
+        : fetchAreaShiftTemplates(location.id, area.id),
+      fetchLocationStaffingSources(location.id, area.id),
+    ]).then(([editorResult, templatesResult, sourcesResult]) => {
       if (cancelled) return;
+
+      if (sourcesResult.ok) {
+        const sources = sourcesResult.sources ?? [];
+        setSourceAreas(sources);
+        setSelectedSourceAreaId(sources[0]?.id ?? "");
+      } else {
+        setSourceAreas([]);
+        setSelectedSourceAreaId("");
+      }
 
       const shiftTemplates =
         templatesResult.ok === true ? (templatesResult.templates ?? []) : [];
@@ -111,12 +141,18 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
           shiftTemplates,
         });
       } else {
-        setEditorData({
+        const nextData: StaffingEditorData = {
           serviceHours: editorResult.serviceHours ?? [],
           qualifications: editorResult.qualifications ?? [],
           staffing: editorResult.staffing ?? [],
           shiftTemplates,
-        });
+        };
+        setEditorData(nextData);
+        onCacheUpdate?.(
+          area.id,
+          nextData.staffing,
+          nextData.serviceHours
+        );
       }
 
       setLoading(false);
@@ -125,21 +161,17 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [location.id, area.id]);
+  }, [
+    area.id,
+    cachedShiftTemplates,
+    location.id,
+    onCacheUpdate,
+  ]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetchLocationStaffingSources(location.id, area.id).then((result) => {
-      if (cancelled) return;
-      if (!result.ok) return;
-      const sources = result.sources ?? [];
-      setSourceAreas(sources);
-      setSelectedSourceAreaId(sources[0]?.id ?? "");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [location.id, area.id]);
+  useLayoutEffect(() => {
+    if (!editorData || loading) return;
+    matrixRef.current?.applyStaffing(editorData.staffing, editorData.serviceHours);
+  }, [editorData, loading]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -212,7 +244,7 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
 
   const anyOverlayOpen = formMode !== null || confirmDeleteId !== null;
   const hasQualifications = (editorData?.qualifications.length ?? 0) > 0;
-  const busy = loading || deleting || pending;
+  const busy = deleting || pending;
 
   function handleSaved(
     serviceHourId?: string,
@@ -295,6 +327,9 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
     }
   }
 
+  const showModal = useDeferredSettingsModalRender(loading, onClose);
+  if (!showModal || !editorData) return null;
+
   return (
     <>
       <div
@@ -313,7 +348,10 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
           aria-hidden={anyOverlayOpen}
           aria-busy={busy}
           className={cn(
-            settingsSubModalDialogClass("xl"),
+            settingsSubModalDialogClass(
+              "5xl",
+              "max-w-[min(48.64rem,calc(100vw-2rem))] max-h-[min(90dvh,calc(720px+100px))]"
+            ),
             anyOverlayOpen && "pointer-events-none",
             busy && "[&_*]:cursor-wait"
           )}
@@ -326,10 +364,10 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
             )}
           >
             <h3 id="location-staffing-panel-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("locations.panelStaffingOf", {
-                location: location.name,
-                area: area.name,
-              })}
+              <span className="text-foreground">{t("locations.panelStaffingOfPrefix")} </span>
+              <span className="text-cyan-600">
+                {location.name} | {area.name}
+              </span>
             </h3>
             <IconButton
               size="sm"
@@ -355,109 +393,119 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
             )}
 
             <div className="min-h-0 flex-1">
-              {loading || !editorData ? (
-                <p className="py-6 text-center text-sm text-muted">
-                  {t("common.loading")}
-                </p>
-              ) : (
-                <LocationAreaStaffingMatrix
-                  ref={matrixRef}
-                  locationId={location.id}
-                  area={area}
-                  initialEditorData={editorData}
-                  selectedServiceHourId={selectedServiceHourId}
-                  onSelectServiceHour={setSelectedServiceHourId}
-                  onEditServiceHour={(serviceHourId) => {
-                    setSelectedServiceHourId(serviceHourId);
-                    setFormMode("edit");
-                    setConfirmDeleteId(null);
-                    setErrorMessage(null);
-                  }}
-                  onDeleteServiceHour={(serviceHourId) => {
-                    setSelectedServiceHourId(serviceHourId);
-                    setConfirmDeleteId(serviceHourId);
-                    setErrorMessage(null);
-                  }}
-                  embedded
-                  listScrollClassName={SETTINGS_STAFFING_PANEL_LIST_SCROLL_CLASS}
-                />
-              )}
-            </div>
-
-            {!loading && !hasQualifications && (
-              <p className="mt-2 shrink-0 px-1 text-xs text-muted">
-                {t("locations.staffingNoAreaQualificationTemplates")}
-              </p>
-            )}
-
-            <div className="mt-3 shrink-0 border-t border-border">
-              <SettingsActionBar
-                primary={
-                  <SettingsPrimaryActionButton
-                    label={t("locations.new")}
-                    icon={<PlusIcon />}
-                    disabled={busy}
-                    onClick={() => {
-                      setFormMode("create");
-                      setConfirmDeleteId(null);
-                      setErrorMessage(null);
-                    }}
-                  />
-                }
-                secondary={
-                  <SettingsIconActionButton
-                    label={t("locations.edit")}
-                    icon={<PencilIcon />}
-                    disabled={
-                      busy || !selectedServiceHourId || !hasQualifications
-                    }
-                    onClick={() => {
-                      if (!selectedServiceHourId) return;
+              <LocationAreaStaffingMatrix
+                    key={`${location.id}:${area.id}`}
+                    ref={matrixRef}
+                    locationId={location.id}
+                    area={area}
+                    initialEditorData={editorData}
+                    selectedServiceHourId={selectedServiceHourId}
+                    onSelectServiceHour={setSelectedServiceHourId}
+                    onEditServiceHour={(serviceHourId) => {
+                      setSelectedServiceHourId(serviceHourId);
                       setFormMode("edit");
                       setConfirmDeleteId(null);
                       setErrorMessage(null);
                     }}
+                    onDeleteServiceHour={(serviceHourId) => {
+                      setSelectedServiceHourId(serviceHourId);
+                      setConfirmDeleteId(serviceHourId);
+                      setErrorMessage(null);
+                    }}
+                    embedded
+                    listScrollClassName={SETTINGS_STAFFING_PANEL_LIST_SCROLL_CLASS}
                   />
-                }
-                trailing={
-                  sourceAreas.length > 0 ? (
-                    <div className="flex min-w-0 items-center justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={
-                          busy ||
-                          !selectedSourceArea ||
-                          copyFromSourceIsNoOp ||
-                          !hasQualifications
-                        }
-                        onClick={handleCopyFromSourceArea}
-                        className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
-                      >
-                        {t("locations.staffingCopyApply")}
-                      </Button>
-                      <Select
-                        className="h-8 shrink-0 px-2 text-xs"
-                        style={copySourceSelectStyle}
-                        value={selectedSourceAreaId}
+                </div>
+
+                {!hasQualifications && (
+                  <p className="mt-2 shrink-0 px-1 text-xs text-muted">
+                    {t("locations.staffingNoAreaQualificationTemplates")}
+                  </p>
+                )}
+
+                <div className="mt-3 shrink-0 border-t border-border">
+                  <SettingsActionBar
+                    primary={
+                      <SettingsPrimaryActionButton
+                        label={t("locations.new")}
+                        icon={<PlusIcon />}
                         disabled={busy}
-                        aria-label={t("locations.staffingCopySelectArea")}
-                        onChange={(event) =>
-                          setSelectedSourceAreaId(event.target.value)
-                        }
-                      >
-                        {sourceAreas.map((source) => (
-                          <option key={source.id} value={source.id}>
-                            {source.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  ) : undefined
-                }
-              />
-            </div>
+                        onClick={() => {
+                          setFormMode("create");
+                          setConfirmDeleteId(null);
+                          setErrorMessage(null);
+                        }}
+                      />
+                    }
+                    secondary={
+                      <>
+                        <SettingsIconActionButton
+                          label={t("locations.edit")}
+                          icon={<PencilIcon />}
+                          disabled={
+                            busy || !selectedServiceHourId || !hasQualifications
+                          }
+                          onClick={() => {
+                            if (!selectedServiceHourId) return;
+                            setFormMode("edit");
+                            setConfirmDeleteId(null);
+                            setErrorMessage(null);
+                          }}
+                        />
+                        <SettingsIconActionButton
+                          label={t("locations.staffingBulkEdit")}
+                          icon={<ListIcon />}
+                          disabled={
+                            busy || !selectedServiceHourId || !hasQualifications
+                          }
+                          onClick={() => {
+                            if (!selectedServiceHourId) return;
+                            setFormMode("bulk-edit");
+                            setConfirmDeleteId(null);
+                            setErrorMessage(null);
+                          }}
+                        />
+                      </>
+                    }
+                    trailing={
+                      sourceAreas.length > 0 ? (
+                        <div className="flex min-w-0 items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={
+                              busy ||
+                              !selectedSourceArea ||
+                              copyFromSourceIsNoOp ||
+                              !hasQualifications
+                            }
+                            onClick={handleCopyFromSourceArea}
+                            className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
+                          >
+                            {t("locations.staffingCopyApply")}
+                          </Button>
+                          <Select
+                            className="h-8 shrink-0 px-2 text-xs"
+                            style={copySourceSelectStyle}
+                            value={selectedSourceAreaId}
+                            disabled={busy}
+                            aria-label={t("locations.staffingCopySelectArea")}
+                            onChange={(event) =>
+                              setSelectedSourceAreaId(event.target.value)
+                            }
+                          >
+                            {sourceAreas.map((source) => (
+                              <option key={source.id} value={source.id}>
+                                {source.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      ) : undefined
+                    }
+                  />
+                </div>
           </div>
 
           <div className={settingsModalFooterClass("shrink-0")}>
@@ -486,7 +534,9 @@ export function LocationStaffingPanelModal({ location, area, onClose }: Props) {
           qualifications={editorData.qualifications}
           staffing={editorData.staffing}
           initialServiceHourId={
-            formMode === "edit" ? (selectedServiceHourId ?? undefined) : undefined
+            formMode === "edit" || formMode === "bulk-edit"
+              ? (selectedServiceHourId ?? undefined)
+              : undefined
           }
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}

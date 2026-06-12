@@ -11,8 +11,10 @@ import {
 import { assignShiftWithTimes } from "@/app/actions/shifts";
 import { resolveShiftTemplateStoredColor } from "@schichtwerk/database";
 import {
+  MODAL_SCROLLBAR_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
 } from "@/components/settings/settings-list-ui";
+import { cn } from "@/lib/cn";
 import {
   Alert,
   Button,
@@ -22,11 +24,14 @@ import {
   IconButton,
   LabelMuted,
   TimeInput,
+  tooltipContentClassName,
 } from "@/components/ui";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   areDashboardShiftTimesComplete,
   filterDashboardShiftAssignEmployeesByWindow,
   pickEmployeeLongestWithoutShift,
+  profileAvailabilitiesForWeekday,
   profileAvailabilityWeekdayFromDashboardDate,
 } from "@/lib/available-employees-for-shift";
 import {
@@ -46,13 +51,14 @@ import {
 import {
   COMBOBOX_TOOLTIP_CLOSE_DISTANCE_PX,
   distanceFromPointToRect,
-  resolveComboboxAnchorTooltipPosition,
   resolveMouseTooltipPosition,
+  resolveNameHoverTooltipPosition,
   type MousePoint,
 } from "@/lib/mouse-tooltip-position";
-import { cn } from "@/lib/cn";
 import { shiftColorStyle } from "@/lib/shift-color-style";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useOrgFeatures } from "@/lib/org-features-provider";
+import { translateActionError } from "@/lib/translate-action-error";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type {
@@ -147,15 +153,19 @@ function formatAvailabilityMenuLabel(
 }
 
 type EmployeeAvailabilityHintProps = {
+  employeeName: string;
   availabilities: DashboardEmployeeAvailabilityEntry[];
-  anchorRef: RefObject<HTMLElement | null>;
+  anchorEl: HTMLElement | null;
+  comboboxRef: RefObject<HTMLElement | null>;
   tooltipRef: RefObject<HTMLDivElement | null>;
   weekdayLabelStyle: WeekdayLabelStyle;
 };
 
 function EmployeeAvailabilityHint({
+  employeeName,
   availabilities,
-  anchorRef,
+  anchorEl,
+  comboboxRef,
   tooltipRef,
   weekdayLabelStyle,
 }: EmployeeAvailabilityHintProps) {
@@ -165,23 +175,44 @@ function EmployeeAvailabilityHint({
   const [position, setPosition] = useState<MenuPosition>({ x: 0, y: 0 });
 
   useLayoutEffect(() => {
-    const anchor = anchorRef.current;
     const node = tooltipRef.current;
-    if (!anchor || !node) return;
-    const anchorRect = anchor.getBoundingClientRect();
-    const { width, height } = node.getBoundingClientRect();
-    setPosition(
-      resolveComboboxAnchorTooltipPosition(anchorRect, width, height)
-    );
-  }, [anchorRef, tooltipRef, availabilities, localeKey, t]);
+    const comboboxEl = comboboxRef.current;
+    if (!anchorEl || !comboboxEl || !node) return;
+
+    const updatePosition = () => {
+      const nameRect = anchorEl.getBoundingClientRect();
+      const comboboxRect = comboboxEl.getBoundingClientRect();
+      const { width, height } = node.getBoundingClientRect();
+      setPosition(
+        resolveNameHoverTooltipPosition(
+          nameRect,
+          comboboxRect,
+          width,
+          height,
+          { offsetX: -80 }
+        )
+      );
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [anchorEl, comboboxRef, tooltipRef, availabilities, employeeName, localeKey, t]);
 
   return createPortal(
     <div
       ref={tooltipRef}
-      className="fixed z-[120] w-max max-w-[calc(100vw-1rem)] rounded-lg border border-border bg-surface px-3 py-2 shadow-lg"
+      className={cn(tooltipContentClassName, "fixed z-[120] w-max max-w-[calc(100vw-1rem)]")}
       style={{ top: position.y, left: position.x }}
       role="tooltip"
     >
+      <p className="mb-1.5 border-b border-border/60 pb-1.5 text-xs font-semibold text-foreground">
+        {employeeName}
+      </p>
       <p className="mb-1.5 text-xs font-semibold text-foreground">
         {t("profiles.panelAvailability")}
       </p>
@@ -303,6 +334,11 @@ function EmployeeAvailabilityContextMenu({
 }
 
 export type DashboardAddShiftDialogState = {
+  areaId: string | null;
+  date: string;
+};
+
+export type DashboardBulkShiftDialogState = {
   areaId: string;
   date: string;
 };
@@ -344,7 +380,7 @@ function availabilitiesForWeekday(
   employee: DashboardShiftAssignEmployee,
   weekday: number
 ): DashboardEmployeeAvailabilityEntry[] {
-  return employee.availabilities.filter((slot) => slot.weekday === weekday);
+  return profileAvailabilitiesForWeekday(employee.availabilities, weekday);
 }
 
 export function DashboardShiftEmployeeCombobox({
@@ -365,6 +401,8 @@ export function DashboardShiftEmployeeCombobox({
   const [hintAvailabilities, setHintAvailabilities] = useState<
     DashboardEmployeeAvailabilityEntry[] | null
   >(null);
+  const [hintAnchorEl, setHintAnchorEl] = useState<HTMLElement | null>(null);
+  const [hintEmployeeName, setHintEmployeeName] = useState("");
   const [availabilityMenuAnchor, setAvailabilityMenuAnchor] =
     useState<MousePoint | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -386,7 +424,13 @@ export function DashboardShiftEmployeeCombobox({
     value !== EMPTY_EMPLOYEE_ID;
 
   const showHint = useCallback(
-    (availabilities: DashboardEmployeeAvailabilityEntry[]) => {
+    (
+      availabilities: DashboardEmployeeAvailabilityEntry[],
+      anchorEl: HTMLElement,
+      employeeName: string
+    ) => {
+      setHintAnchorEl(anchorEl);
+      setHintEmployeeName(employeeName);
       setHintAvailabilities(availabilities);
     },
     []
@@ -394,6 +438,8 @@ export function DashboardShiftEmployeeCombobox({
 
   const hideHint = useCallback(() => {
     setHintAvailabilities(null);
+    setHintAnchorEl(null);
+    setHintEmployeeName("");
   }, []);
 
   const closeAvailabilityMenu = useCallback(() => {
@@ -470,10 +516,6 @@ export function DashboardShiftEmployeeCombobox({
         rootClassName ? "h-9" : !triggerClassName && "mt-1",
         rootClassName
       )}
-      onMouseEnter={() => {
-        if (!canShowSelectedEmployeeHint || open) return;
-        showHint(dayAvailabilities);
-      }}
     >
       <button
         ref={triggerRef}
@@ -488,9 +530,13 @@ export function DashboardShiftEmployeeCombobox({
           disabled && "cursor-not-allowed opacity-60",
           triggerClassName
         )}
-        title={
-          selected && value !== EMPTY_EMPLOYEE_ID ? selected.full_name : undefined
-        }
+        onMouseEnter={(event) => {
+          if (!canShowSelectedEmployeeHint || open || !selected) return;
+          const nameEl = event.currentTarget.querySelector<HTMLElement>(
+            "[data-employee-name]"
+          );
+          if (nameEl) showHint(dayAvailabilities, nameEl, selected.full_name);
+        }}
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
         }}
@@ -509,7 +555,7 @@ export function DashboardShiftEmployeeCombobox({
         }}
       >
         <EmployeeColorSwatch hex={selected?.color ?? null} />
-        <span className="min-w-0 flex-1 truncate">
+        <span className="min-w-0 flex-1 truncate" data-employee-name>
           {selected?.full_name ?? emptyLabel}
         </span>
         <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
@@ -532,9 +578,17 @@ export function DashboardShiftEmployeeCombobox({
                   <button
                     type="button"
                     className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm hover:bg-subtle"
-                    onMouseEnter={() => {
+                    onMouseEnter={(event) => {
                       if (!employee.id) return;
-                      showHint(availabilitiesForWeekday(employee, weekday));
+                      const nameEl = event.currentTarget.querySelector<HTMLElement>(
+                        "[data-employee-name]"
+                      );
+                      if (!nameEl) return;
+                      showHint(
+                        availabilitiesForWeekday(employee, weekday),
+                        nameEl,
+                        employee.full_name
+                      );
                     }}
                     onClick={() => {
                       onChange(employee.id);
@@ -542,7 +596,9 @@ export function DashboardShiftEmployeeCombobox({
                     }}
                   >
                     <EmployeeColorSwatch hex={employee.color} />
-                    <span className="min-w-0 flex-1 truncate">{employee.full_name}</span>
+                    <span className="min-w-0 flex-1 truncate" data-employee-name>
+                      {employee.full_name}
+                    </span>
                     {value === employee.id ? (
                       <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
                     ) : null}
@@ -555,8 +611,10 @@ export function DashboardShiftEmployeeCombobox({
         : null}
       {hintAvailabilities ? (
         <EmployeeAvailabilityHint
+          employeeName={hintEmployeeName}
           availabilities={hintAvailabilities}
-          anchorRef={rootRef}
+          anchorEl={hintAnchorEl}
+          comboboxRef={rootRef}
           tooltipRef={hintTooltipRef}
           weekdayLabelStyle={weekdayLabelStyle}
         />
@@ -641,24 +699,28 @@ export function DashboardShiftTypeCombobox({
         rootClassName
       )}
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={cn(
-          "box-border flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
-          rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
-          isPlaceholder ? "text-[silver]" : "text-black",
-          disabled && "cursor-not-allowed opacity-60",
-          triggerClassName
-        )}
-        title={selectedType ? selectedType.name : undefined}
-        onClick={() => {
-          if (!disabled) setOpen((prev) => !prev);
-        }}
+      <Tooltip
+        content={selectedType?.name}
+        className="h-full w-full min-w-0"
+        disabled={!selectedType || open}
       >
+        <button
+          ref={triggerRef}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className={cn(
+            "box-border flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
+            rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
+            isPlaceholder ? "text-[silver]" : "text-black",
+            disabled && "cursor-not-allowed opacity-60",
+            triggerClassName
+          )}
+          onClick={() => {
+            if (!disabled) setOpen((prev) => !prev);
+          }}
+        >
         {selectedType ? (
           <ShiftPresetColorSwatch
             name={selectedType.name}
@@ -670,6 +732,7 @@ export function DashboardShiftTypeCombobox({
         <span className="min-w-0 flex-1 truncate">{displayText}</span>
         <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
       </button>
+      </Tooltip>
       {open && dropdownPosition
         ? createPortal(
             <ul
@@ -762,28 +825,33 @@ export function DashboardQualificationCombobox({
         rootClassName
       )}
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={cn(
-          "box-border flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
-          rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
-          isPlaceholder ? "text-[silver]" : "text-black",
-          disabled && "cursor-not-allowed opacity-60",
-          triggerClassName
-        )}
-        title={selectedOption ? selectedOption.name : undefined}
-        onClick={() => {
-          if (!disabled) setOpen((prev) => !prev);
-        }}
+      <Tooltip
+        content={selectedOption?.name}
+        className="h-full w-full min-w-0"
+        disabled={!selectedOption || open}
       >
+        <button
+          ref={triggerRef}
+          type="button"
+          disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className={cn(
+            "box-border flex w-full min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-surface px-3 text-left text-sm",
+            rootClassName ? "h-full min-h-0 max-h-full py-0" : "h-9 min-h-9 py-0",
+            isPlaceholder ? "text-[silver]" : "text-black",
+            disabled && "cursor-not-allowed opacity-60",
+            triggerClassName
+          )}
+          onClick={() => {
+            if (!disabled) setOpen((prev) => !prev);
+          }}
+        >
         <EmployeeColorSwatch hex={null} />
         <span className="min-w-0 flex-1 truncate">{displayText}</span>
         <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
       </button>
+      </Tooltip>
       {open && dropdownPosition
         ? createPortal(
             <ul
@@ -865,15 +933,22 @@ export function DashboardAddShiftModal({
   const router = useRouter();
   const { locale } = useLocale();
   const t = useTranslations();
+  const features = useOrgFeatures();
+  const simplePlanning = !features.areas;
   const intlLocale = toIntlLocale(locale);
   const weekday = profileAvailabilityWeekdayFromDashboardDate(dialog.date);
 
   const areaName =
-    areas.find((area) => area.id === dialog.areaId)?.name ?? "";
+    dialog.areaId != null
+      ? (areas.find((area) => area.id === dialog.areaId)?.name ?? "")
+      : "";
   const dayHeader = formatDayHeader(dialog.date, intlLocale);
 
   const templatesForArea = useMemo(
-    () => areaShiftTemplatesForArea(dialog.areaId, areaShiftTemplates),
+    () =>
+      dialog.areaId
+        ? areaShiftTemplatesForArea(dialog.areaId, areaShiftTemplates)
+        : [],
     [areaShiftTemplates, dialog.areaId]
   );
   const assignmentPresets = useMemo(
@@ -892,6 +967,7 @@ export function DashboardAddShiftModal({
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [complianceNotice, setComplianceNotice] = useState<string | null>(null);
   const skipShiftTypeFromTimesSyncRef = useRef(false);
 
   const timesComplete = areDashboardShiftTimesComplete(startTime, endTime);
@@ -916,7 +992,7 @@ export function DashboardAddShiftModal({
       const result = await fetchDashboardShiftAssignEmployees(dialog.date);
       if (cancelled) return;
       if (!result.ok) {
-        setError(result.error);
+        setError(translateActionError(result.error, t));
         setEmployees([]);
       } else {
         setEmployees(result.employees);
@@ -1012,20 +1088,29 @@ export function DashboardAddShiftModal({
       employeeId === EMPTY_EMPLOYEE_ID ||
       !timesComplete
     ) {
-      onClose();
+      const message =
+        employeeId && employeeId !== EMPTY_EMPLOYEE_ID && !timesComplete
+          ? t("dashboard.bulkShiftValidationTimesRequired")
+          : timesComplete &&
+              (!employeeId || employeeId === EMPTY_EMPLOYEE_ID)
+            ? t("dashboard.bulkShiftValidationEmployeeRequired")
+            : t("dashboard.bulkShiftValidationEmployeeOrTimesRequired");
+      setError(message);
       return;
     }
 
-    const serviceHoursCheck = validateDashboardShiftServiceHours(
-      serviceHours,
-      dialog.areaId,
-      dialog.date,
-      startTime,
-      endTime
-    );
-    if (!serviceHoursCheck.ok) {
-      setError(serviceHoursCheck.error);
-      return;
+    if (!simplePlanning) {
+      const serviceHoursCheck = validateDashboardShiftServiceHours(
+        serviceHours,
+        dialog.areaId ?? "",
+        dialog.date,
+        startTime,
+        endTime
+      );
+      if (!serviceHoursCheck.ok) {
+        setError(translateActionError(serviceHoursCheck.error, t));
+        return;
+      }
     }
 
     setSaving(true);
@@ -1035,19 +1120,29 @@ export function DashboardAddShiftModal({
       shiftDate: dialog.date,
       startTime,
       endTime,
-      areaShiftTemplateId: areaShiftTemplateIdForAssign(shiftTypeId),
+      areaShiftTemplateId: simplePlanning
+        ? null
+        : areaShiftTemplateIdForAssign(shiftTypeId),
       locationId,
-      locationAreaId: dialog.areaId,
+      locationAreaId: simplePlanning ? null : dialog.areaId,
     });
     setSaving(false);
 
     if (!result.ok) {
-      setError(result.error);
+      setError(translateActionError(result.error, t));
+      setComplianceNotice(null);
       return;
     }
 
+    setError(null);
     onSaved?.();
     router.refresh();
+
+    if (result.warnings?.length) {
+      setComplianceNotice(result.warnings.join(" "));
+      return;
+    }
+
     onClose();
   }, [
     employeeId,
@@ -1057,12 +1152,13 @@ export function DashboardAddShiftModal({
     startTime,
     endTime,
     shiftTypeId,
-    assignmentPresets,
     locationId,
     serviceHours,
+    simplePlanning,
     onClose,
     onSaved,
     router,
+    t,
   ]);
 
   const selectedEmployee = useMemo(
@@ -1092,7 +1188,10 @@ export function DashboardAddShiftModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="dashboard-add-shift-title"
-        className="relative z-[111] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={cn(
+          "relative z-[111] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          MODAL_SCROLLBAR_CLASS
+        )}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
@@ -1101,7 +1200,9 @@ export function DashboardAddShiftModal({
               {t("dashboard.addShiftTitle")}
             </h3>
             <p className="mt-0.5 text-sm text-muted">
-              {areaName} · {dayHeader.weekday}, {dayHeader.label}
+              {simplePlanning
+                ? `${dayHeader.weekday}, ${dayHeader.label}`
+                : `${areaName} · ${dayHeader.weekday}, ${dayHeader.label}`}
             </p>
           </div>
           <IconButton
@@ -1117,20 +1218,25 @@ export function DashboardAddShiftModal({
 
         <div className="space-y-4 px-5 py-4">
           {error ? <Alert variant="error">{error}</Alert> : null}
-          {assignmentPresets.length === 0 ? (
+          {complianceNotice ? (
+            <Alert variant="info">{complianceNotice}</Alert>
+          ) : null}
+          {!simplePlanning && assignmentPresets.length === 0 ? (
             <Alert variant="info">{t("dashboard.noShiftTemplatesForArea")}</Alert>
           ) : null}
 
-          <div>
-            <LabelMuted>{presetLabel}</LabelMuted>
-            <DashboardShiftTypeCombobox
-              value={shiftTypeId}
-              presets={assignmentPresets}
-              placeholder={presetPlaceholder}
-              disabled={assignmentPresets.length === 0 || saving}
-              onChange={handleShiftTypeChange}
-            />
-          </div>
+          {!simplePlanning ? (
+            <div>
+              <LabelMuted>{presetLabel}</LabelMuted>
+              <DashboardShiftTypeCombobox
+                value={shiftTypeId}
+                presets={assignmentPresets}
+                placeholder={presetPlaceholder}
+                disabled={assignmentPresets.length === 0 || saving}
+                onChange={handleShiftTypeChange}
+              />
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

@@ -13,7 +13,9 @@ import { formatHourlyRateLabel } from "@/lib/profile-hourly-rate-display";
 import { formatEffectiveSurchargeSummary } from "@/lib/profile-surcharge-display";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useOrgFeatures } from "@/lib/org-features-provider";
 import { SettingsActionRow } from "./settings-list-ui";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 
 const COMMA_LIST_SUFFIX = ", ...";
@@ -44,29 +46,46 @@ function FittingCommaList({
   items: string[];
   className?: string;
 }) {
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const measureRef = useRef<HTMLSpanElement>(null);
-  const [display, setDisplay] = useState(() => items.join(", "));
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wrapMeasureRef = useRef<HTMLSpanElement>(null);
+  const singleMeasureRef = useRef<HTMLSpanElement>(null);
+  const fullText = items.join(", ");
+  const [display, setDisplay] = useState(fullText);
+  const [isTruncated, setIsTruncated] = useState(false);
 
   const recompute = useCallback(() => {
     const container = containerRef.current;
-    const measureEl = measureRef.current;
-    if (!container || !measureEl || items.length === 0) {
+    const wrapMeasure = wrapMeasureRef.current;
+    const singleMeasure = singleMeasureRef.current;
+    if (!container || !wrapMeasure || !singleMeasure || items.length === 0) {
       setDisplay("");
+      setIsTruncated(false);
       return;
     }
 
     const maxWidth = container.clientWidth;
     if (maxWidth <= 0) return;
 
+    wrapMeasure.style.width = `${maxWidth}px`;
+    wrapMeasure.textContent = fullText;
+    const lineHeight =
+      Number.parseFloat(getComputedStyle(wrapMeasure).lineHeight) || 16;
+    const maxWrappedHeight = lineHeight * 2 + 1;
+
+    if (wrapMeasure.scrollHeight <= maxWrappedHeight) {
+      setDisplay(fullText);
+      setIsTruncated(false);
+      return;
+    }
+
     const measure = (text: string) => {
-      measureEl.textContent = text;
-      return measureEl.offsetWidth;
+      singleMeasure.textContent = text;
+      return singleMeasure.offsetWidth;
     };
 
-    const full = items.join(", ");
-    if (measure(full) <= maxWidth) {
-      setDisplay(full);
+    if (measure(fullText) <= maxWidth) {
+      setDisplay(fullText);
+      setIsTruncated(false);
       return;
     }
 
@@ -74,13 +93,15 @@ function FittingCommaList({
       const candidate = items.slice(0, count).join(", ") + COMMA_LIST_SUFFIX;
       if (measure(candidate) <= maxWidth) {
         setDisplay(candidate);
+        setIsTruncated(true);
         return;
       }
     }
 
-    const first = items[0];
+    const first = items[0] ?? "";
     if (items.length > 1 && measure(first + COMMA_LIST_SUFFIX) <= maxWidth) {
       setDisplay(first + COMMA_LIST_SUFFIX);
+      setIsTruncated(true);
       return;
     }
 
@@ -89,7 +110,8 @@ function FittingCommaList({
       trimmed = trimmed.slice(0, -1);
     }
     setDisplay(trimmed.length > 0 ? `${trimmed}…` : first);
-  }, [items]);
+    setIsTruncated(true);
+  }, [fullText, items]);
 
   useLayoutEffect(() => {
     recompute();
@@ -100,23 +122,32 @@ function FittingCommaList({
     return () => observer.disconnect();
   }, [recompute]);
 
-  const fullTitle = items.join(", ");
-
   return (
-    <span className="relative block min-w-0">
+    <div ref={containerRef} className="relative min-w-0">
+      <Tooltip content={fullText} disabled={!isTruncated}>
+        <span
+          className={cn(
+            "block min-w-0 text-xs",
+            isTruncated
+              ? "truncate"
+              : "whitespace-normal break-words leading-snug",
+            className
+          )}
+        >
+          {display}
+        </span>
+      </Tooltip>
       <span
-        ref={containerRef}
-        className={cn("block truncate text-xs", className)}
-        title={fullTitle}
-      >
-        {display}
-      </span>
+        ref={wrapMeasureRef}
+        className="pointer-events-none invisible absolute left-0 top-0 block text-xs leading-snug"
+        aria-hidden
+      />
       <span
-        ref={measureRef}
+        ref={singleMeasureRef}
         className="pointer-events-none invisible absolute left-0 top-0 whitespace-nowrap text-xs"
         aria-hidden
       />
-    </span>
+    </div>
   );
 }
 
@@ -273,6 +304,7 @@ export function ProfileDetailActions({
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
+  const features = useOrgFeatures();
   const profileActionsDisabled = disabled || !selectedProfile;
   const qualificationNames =
     profileQualifications?.map((item) => item.name) ?? [];
@@ -328,14 +360,18 @@ export function ProfileDetailActions({
       )}
 
       <div className="mt-2 rounded-lg border border-border/80 bg-background px-1 py-1">
-        <SettingsActionRow
-          icon={<QualificationsIcon />}
-          label={t("profiles.panelQualifications")}
-          hint={qualificationsHint}
-          disabled={profileActionsDisabled}
-          onClick={() => onOpen("qualifications")}
-        />
-        <div className="mx-2 border-t border-border/60" />
+        {features.qualifications ? (
+          <>
+            <SettingsActionRow
+              icon={<QualificationsIcon />}
+              label={t("profiles.panelQualifications")}
+              hint={qualificationsHint}
+              disabled={profileActionsDisabled}
+              onClick={() => onOpen("qualifications")}
+            />
+            <div className="mx-2 border-t border-border/60" />
+          </>
+        ) : null}
         <SettingsActionRow
           icon={<AvailabilityIcon />}
           label={t("profiles.panelAvailability")}
@@ -344,7 +380,13 @@ export function ProfileDetailActions({
           onClick={() => onOpen("availability")}
         />
         <div className="mx-2 border-t border-border/60" />
-        <div className="grid grid-cols-2 divide-x divide-border/60">
+        <div
+          className={cn(
+            features.qualifications && COMPENSATION_SURCHARGES_UI_ENABLED
+              ? "grid grid-cols-2 divide-x divide-border/60"
+              : undefined
+          )}
+        >
           <SettingsActionRow
             icon={<CompensationIcon />}
             label={t("profiles.panelCompensation")}
@@ -352,13 +394,15 @@ export function ProfileDetailActions({
             disabled={profileActionsDisabled}
             onClick={() => onOpen("compensation")}
           />
-          <SettingsActionRow
-            icon={<SurchargesIcon />}
-            label={t("profiles.surchargesSection")}
-            hint={surchargesHint}
-            disabled={surchargesDisabled}
-            onClick={() => onOpen("surcharges")}
-          />
+          {features.qualifications && COMPENSATION_SURCHARGES_UI_ENABLED ? (
+            <SettingsActionRow
+              icon={<SurchargesIcon />}
+              label={t("profiles.surchargesSection")}
+              hint={surchargesHint}
+              disabled={surchargesDisabled}
+              onClick={() => onOpen("surcharges")}
+            />
+          ) : null}
         </div>
       </div>
 

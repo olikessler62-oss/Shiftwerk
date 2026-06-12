@@ -21,8 +21,10 @@ import { CompensationSurchargeTypesModal } from "@/components/settings/compensat
 import { LocationsModal } from "@/components/settings/locations-modal";
 import { RolesModal } from "@/components/settings/roles-modal";
 import { AbsencesModal } from "@/components/settings/absences-modal";
+import { OrganizationPlanningModeModal } from "@/components/settings/organization-planning-mode-modal";
 import { ProfilesModal } from "@/components/settings/profiles-modal";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
+import { useOrgFeatures } from "@/lib/org-features-provider";
 import { DashboardHeader } from "./dashboard-header";
 import {
   DashboardCalendar,
@@ -44,6 +46,7 @@ type Props = {
   compensationSurchargeTypes: CompensationSurchargeType[];
   roles: Role[];
   profiles: Profile[];
+  profileQualificationIds: Record<string, string[]>;
   locations: Location[];
 };
 
@@ -62,18 +65,24 @@ export function DashboardView({
   compensationSurchargeTypes,
   roles,
   profiles,
+  profileQualificationIds,
   locations,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const showLocations = searchParams.get("standorte") === "1";
+  const features = useOrgFeatures();
+  const showLocations =
+    features.areas && searchParams.get("standorte") === "1";
   const showProfiles = searchParams.get("profiles") === "1";
   const showRoles = searchParams.get("rollen") === "1";
-  const showQualifications = searchParams.get("qualifikationen") === "1";
+  const showQualifications =
+    features.qualifications && searchParams.get("qualifikationen") === "1";
   const showSurcharges =
+    features.qualifications &&
     COMPENSATION_SURCHARGES_UI_ENABLED &&
     searchParams.get("sonderzuschlaege") === "1";
   const showAbsences = searchParams.get("abwesenheiten") === "1";
+  const showPlanningMode = searchParams.get("planungsmodus") === "1";
 
   function closeSettingsModal(
     flag:
@@ -83,6 +92,7 @@ export function DashboardView({
       | "qualifikationen"
       | "sonderzuschlaege"
       | "abwesenheiten"
+      | "planungsmodus"
   ) {
     const params = new URLSearchParams(searchParams.toString());
     params.delete(flag);
@@ -102,6 +112,7 @@ export function DashboardView({
       />
       <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-2 pt-2 md:px-4 md:pt-4">
         <DashboardCalendar
+          weekStart={weekStart}
           dates={dates}
           locationId={selectedLocationId}
           locationName={selectedLocation?.name ?? ""}
@@ -111,7 +122,7 @@ export function DashboardView({
           shifts={shifts}
           areaShiftTemplates={areaShiftTemplates}
           qualifications={qualifications}
-          profiles={profiles}
+          profileQualificationIds={profileQualificationIds}
           fullStaffingRules={fullStaffingRules}
         />
         {showLocations && (
@@ -154,6 +165,11 @@ export function DashboardView({
           <AbsencesModal
             profiles={profiles}
             onClose={() => closeSettingsModal("abwesenheiten")}
+          />
+        )}
+        {showPlanningMode && (
+          <OrganizationPlanningModeModal
+            onClose={() => closeSettingsModal("planungsmodus")}
           />
         )}
       </section>

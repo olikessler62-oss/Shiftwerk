@@ -267,10 +267,6 @@ export function ProfileCompensationPanelModal({
       ? `${formatAmountLabel(selectedRate.amount, selectedRate.currency, locale)} (${formatDateLabel(selectedRate.valid_from, locale)})`
       : "";
 
-  const title = t("profiles.panelCompensationOf", {
-    name: truncateLabel(profile.full_name, 40),
-  });
-
   return (
     <div
       className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
@@ -302,7 +298,10 @@ export function ProfileCompensationPanelModal({
             id="profile-compensation-panel-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
           >
-            {title}
+            <span className="text-foreground">
+              {t("profiles.panelCompensationOfPrefix")}{" "}
+            </span>
+            <span className="text-cyan-600">{profile.full_name}</span>
           </h3>
           <IconButton
             size="sm"
@@ -415,16 +414,18 @@ export function ProfileCompensationPanelModal({
                         className={settingsDataCellClass(isSelected, {
                           className: "max-w-[8rem] truncate text-muted",
                         })}
-                        title={rate.created_by_name ?? undefined}
                       >
-                        {rate.created_by_name
-                          ? truncateLabel(rate.created_by_name, 18)
-                          : "—"}
+                        <span className="block max-w-full truncate">
+                          {rate.created_by_name
+                            ? truncateLabel(rate.created_by_name, 18)
+                            : "—"}
+                        </span>
                       </td>
                       <td className={settingsListRowDeleteCellClass(isSelected)}>
                         <SettingsListRowDeleteButton
                           label={t("profiles.delete")}
                           disabled={loading || pending || !rateMutable}
+                          showTooltip={false}
                           onClick={() => {
                             setSelectedRateId(rate.id);
                             setFormMode(null);

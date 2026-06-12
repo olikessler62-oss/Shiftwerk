@@ -16,6 +16,7 @@ import {
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { CompensationSurchargeTypeFormModal } from "./compensation-surcharge-type-form-modal";
 import {
+  MODAL_SCROLLBAR_CLASS,
   SETTINGS_LIST_SCROLL_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
   SettingsActionBar,
@@ -178,6 +179,7 @@ export function CompensationSurchargeTypesModal({
           aria-hidden={!!formMode}
           className={cn(
             "flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
+            MODAL_SCROLLBAR_CLASS,
             formMode ? "pointer-events-none" : ""
           )}
         >

@@ -4,6 +4,11 @@ export { ControlDisplay, Input, Select, Textarea, TimeInput } from "./input";
 export { Field } from "./field";
 export { IconButton } from "./icon-button";
 export {
+  Tooltip,
+  tooltipContentClassName,
+  TOOLTIP_Z_INDEX,
+} from "./tooltip";
+export {
   CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,

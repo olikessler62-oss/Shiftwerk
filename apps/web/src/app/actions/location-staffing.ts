@@ -308,7 +308,7 @@ export async function copyLocationStaffingFromArea(input: {
       return {
         ok: false,
         error:
-          "Personalbedarf konnte nicht übernommen werden (keine passenden Funktionen im Zielbereich).",
+          "Personalbedarf konnte nicht übernommen werden (keine passenden Jobs im Zielbereich).",
       };
     }
 

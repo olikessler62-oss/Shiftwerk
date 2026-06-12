@@ -64,7 +64,7 @@ function segmentsOverlap(a: TimeSegment[], b: TimeSegment[]): boolean {
 export function parseAvailabilityWeekday(
   raw: number
 ): { ok: true; weekday: number } | { ok: false; error: string } {
-  if (!Number.isInteger(raw) || raw < 0 || raw > 6) {
+  if (!Number.isInteger(raw) || raw < 0 || raw > 7) {
     return { ok: false, error: "Bitte einen gültigen Wochentag wählen." };
   }
   return { ok: true, weekday: raw };

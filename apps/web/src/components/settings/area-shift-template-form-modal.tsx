@@ -62,6 +62,7 @@ type Props = {
   mode: "create" | "edit";
   locationId: string;
   locationAreaId: string;
+  countryCode?: string;
   template?: AreaShiftTemplateWithBreaks;
   existingTemplates: AreaShiftTemplateWithBreaks[];
   onClose: () => void;
@@ -76,8 +77,12 @@ function breaksToDrafts(breaks: AreaShiftTemplateBreak[]): BreakDraft[] {
   }));
 }
 
-function newCenteredBreakDraft(startTime: string, endTime: string): BreakDraft {
-  const minutes = getSuggestedBreakMinutes(startTime, endTime);
+function newCenteredBreakDraft(
+  startTime: string,
+  endTime: string,
+  countryCode: string
+): BreakDraft {
+  const minutes = getSuggestedBreakMinutes(startTime, endTime, countryCode);
   const { break_start, break_end } = centeredBreakForShift(startTime, endTime, minutes);
   return { key: crypto.randomUUID(), break_start, break_end };
 }
@@ -86,6 +91,7 @@ export function AreaShiftTemplateFormModal({
   mode,
   locationId,
   locationAreaId,
+  countryCode = "DE",
   template,
   existingTemplates,
   onClose,
@@ -127,8 +133,8 @@ export function AreaShiftTemplateFormModal({
   );
 
   const breakRule = useMemo(
-    () => getBreakDurationRule(startTime, endTime),
-    [startTime, endTime]
+    () => getBreakDurationRule(startTime, endTime, countryCode),
+    [startTime, endTime, countryCode]
   );
 
   useEffect(() => {
@@ -140,7 +146,7 @@ export function AreaShiftTemplateFormModal({
   useEffect(() => {
     setBreaks((prev) => {
       if (prev.length === 0) return prev;
-      const minutes = getSuggestedBreakMinutes(startTime, endTime);
+      const minutes = getSuggestedBreakMinutes(startTime, endTime, countryCode);
       const { break_start, break_end } = centeredBreakForShift(
         startTime,
         endTime,
@@ -155,7 +161,7 @@ export function AreaShiftTemplateFormModal({
   }, [startTime, endTime, breakRule.kind]);
 
   function addBreak() {
-    const draft = newCenteredBreakDraft(startTime, endTime);
+    const draft = newCenteredBreakDraft(startTime, endTime, countryCode);
     setBreaks((prev) =>
       breakRule.kind === "required" ? [draft] : [...prev, draft]
     );
@@ -212,7 +218,8 @@ export function AreaShiftTemplateFormModal({
     const breaksCheck = validateShiftTypeBreaks(
       payload.start_time,
       payload.end_time,
-      payload.breaks
+      payload.breaks,
+      countryCode
     );
     if (!breaksCheck.ok) {
       setError(breaksCheck.error);

@@ -46,6 +46,7 @@ import {
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
@@ -393,9 +394,13 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                               className={settingsDataCellClass(isSelected, {
                                 className: "max-w-[10rem] truncate text-muted",
                               })}
-                              title={item.notes ?? undefined}
                             >
-                              {truncateNotes(item.notes)}
+                              <Tooltip
+                                content={item.notes}
+                                className="block max-w-full truncate"
+                              >
+                                {truncateNotes(item.notes)}
+                              </Tooltip>
                             </td>
                             <td className={settingsListRowDeleteCellClass(isSelected)}>
                               <SettingsListRowDeleteButton

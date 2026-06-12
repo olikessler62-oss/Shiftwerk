@@ -1,7 +1,10 @@
-"use server";
-
 import { redirect } from "next/navigation";
 import { getAdminDatabase, getDatabase } from "@/lib/db";
+import {
+  getIndustryTemplate,
+  isIndustry,
+} from "@schichtwerk/database";
+import type { Industry } from "@schichtwerk/types";
 
 export async function signIn(formData: FormData) {
   const email = String(formData.get("email") ?? "");
@@ -20,6 +23,10 @@ export async function signUp(formData: FormData) {
   const password = String(formData.get("password") ?? "");
   const fullName = String(formData.get("fullName") ?? "");
   const orgName = String(formData.get("orgName") ?? "Mein Betrieb");
+  const countryCode = String(formData.get("countryCode") ?? "DE").trim().toUpperCase();
+  const industryRaw = String(formData.get("industry") ?? "other");
+  const industry: Industry = isIndustry(industryRaw) ? industryRaw : "other";
+  const industryTemplate = getIndustryTemplate(industry);
 
   const db = await getDatabase();
   const admin = getAdminDatabase();
@@ -29,27 +36,25 @@ export async function signUp(formData: FormData) {
   });
 
   if (signUpError || !authData) {
-    redirect(
-      `/register?error=${encodeURIComponent(signUpError ?? "Registrierung fehlgeschlagen")}`
-    );
+    redirect("/register?error=registrationFailed");
   }
 
   const userId = authData.user.id;
 
   let orgId: string;
   try {
-    const org = await admin.createOrganization(orgName);
+    const org = await admin.createOrganization(orgName, countryCode, {
+      planningMode: industryTemplate.planningMode,
+      industry,
+    });
     orgId = org.id;
-  } catch (e) {
-    redirect(
-      `/register?error=${encodeURIComponent(
-        e instanceof Error ? e.message : "Organisation konnte nicht angelegt werden"
-      )}`
-    );
+  } catch {
+    redirect("/register?error=organizationCreateFailed");
   }
 
   try {
     await admin.seedDefaultRoles(orgId);
+    await admin.seedOrganizationFromIndustryTemplate(orgId, orgName, industry);
     await admin.insertProfile({
       id: userId,
       organization_id: orgId,
@@ -57,13 +62,9 @@ export async function signUp(formData: FormData) {
       full_name: fullName,
       email,
     });
-  } catch (e) {
+  } catch {
     await admin.deleteOrganization(orgId);
-    redirect(
-      `/register?error=${encodeURIComponent(
-        e instanceof Error ? e.message : "Profil fehlgeschlagen"
-      )}`
-    );
+    redirect("/register?error=profileCreateFailed");
   }
 
   if (!authData.session) {

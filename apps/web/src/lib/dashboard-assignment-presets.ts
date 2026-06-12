@@ -59,6 +59,46 @@ export function resolvePresetIdFromTimes(
   );
 }
 
+/** Nur Schichtvorlagen, deren Von/Bis exakt den Bedarfszeiten entsprechen. */
+export function filterAssignmentPresetsMatchingTimes(
+  startTime: string,
+  endTime: string,
+  presets: readonly DashboardAssignmentPreset[]
+): DashboardAssignmentPreset[] {
+  if (!areDashboardShiftTimesComplete(startTime, endTime)) return [];
+
+  const start = dashboardTimeKey(startTime);
+  const end = dashboardTimeKey(endTime);
+
+  return presets.filter(
+    (preset) =>
+      dashboardTimeKey(preset.start_time) === start &&
+      dashboardTimeKey(preset.end_time) === end
+  );
+}
+
+/** Eine passende Vorlage vorauswählen; bei mehreren Treffern leer lassen. */
+export function resolvePresetShiftTemplateForDemandTimes(
+  startTime: string,
+  endTime: string,
+  presets: readonly DashboardAssignmentPreset[],
+  currentPresetId = ""
+): string {
+  const matching = filterAssignmentPresetsMatchingTimes(
+    startTime,
+    endTime,
+    presets
+  );
+  if (matching.length === 1) return matching[0]!.id;
+  if (
+    currentPresetId &&
+    matching.some((preset) => preset.id === currentPresetId)
+  ) {
+    return currentPresetId;
+  }
+  return "";
+}
+
 export function findAreaShiftTemplateByTimes(
   areaId: string,
   startTime: string,

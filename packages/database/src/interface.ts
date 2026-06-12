@@ -18,6 +18,9 @@ import type {
   LocationAreaStaffing,
   LocationAreaServiceHour,
   UserRole,
+  Organization,
+  PlanningMode,
+  Industry,
 } from "@schichtwerk/types";
 
 export type { Shift };
@@ -109,9 +112,22 @@ export interface SchichtwerkDatabase {
   authDeleteUser(userId: string): Promise<void>;
 
   // —— Organizations ——
-  createOrganization(name: string): Promise<{ id: string }>;
+  createOrganization(
+    name: string,
+    countryCode?: string,
+    options?: {
+      planningMode?: PlanningMode;
+      industry?: Industry | null;
+    }
+  ): Promise<{ id: string }>;
   deleteOrganization(id: string): Promise<void>;
+  getOrganization(id: string): Promise<Organization | null>;
   getOrganizationName(id: string): Promise<string | null>;
+  getOrganizationCountryCode(id: string): Promise<string | null>;
+  updateOrganizationPlanningMode(
+    organizationId: string,
+    planningMode: PlanningMode
+  ): Promise<void>;
   getOrganizationIdByProfileEmail(email: string): Promise<string | null>;
   getFirstOrganization(): Promise<{ id: string; name: string } | null>;
 
@@ -375,6 +391,11 @@ export interface SchichtwerkDatabase {
   // —— Roles ——
   listRoles(organizationId: string): Promise<Role[]>;
   seedDefaultRoles(organizationId: string): Promise<void>;
+  seedOrganizationFromIndustryTemplate(
+    organizationId: string,
+    orgName: string,
+    industry: Industry
+  ): Promise<void>;
   getNextRoleSortOrder(organizationId: string): Promise<number>;
   insertRole(row: {
     organization_id: string;
@@ -572,6 +593,10 @@ export interface SchichtwerkDatabase {
   listShiftsForEmployeeDate(
     employeeId: string,
     shiftDate: string
+  ): Promise<EmployeeShiftRecord[]>;
+  listShiftsForEmployeeOnDates(
+    employeeId: string,
+    shiftDates: string[]
   ): Promise<EmployeeShiftRecord[]>;
   getShiftRecordById(
     id: string,

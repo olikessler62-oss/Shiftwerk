@@ -37,28 +37,15 @@ export function isPastCalendarDate(
   return dateISO < todayISO;
 }
 
-/** Zeitstempel für Schicht (Europe/Berlin, Standardzeit +01:00) */
-export function buildShiftTimestamps(
-  shiftDate: string,
-  startTime: string,
-  endTime: string
-): { starts_at: string; ends_at: string } {
-  const norm = (t: string) => (t.length >= 8 ? t.slice(0, 8) : `${t.slice(0, 5)}:00`);
-  const startH = parseInt(norm(startTime).slice(0, 2), 10);
-  const endH = parseInt(norm(endTime).slice(0, 2), 10);
-
-  let endDate = shiftDate;
-  if (endH < startH || (endH === startH && norm(endTime) < norm(startTime))) {
-    const d = parseISODate(shiftDate);
-    d.setDate(d.getDate() + 1);
-    endDate = toISODate(d);
-  }
-
-  return {
-    starts_at: `${shiftDate}T${norm(startTime)}+01:00`,
-    ends_at: `${endDate}T${norm(endTime)}+01:00`,
-  };
-}
+/** Schicht-Zeitstempel — Zeitzone aus Organisation (`resolveOrganizationTimeZone`). */
+export {
+  buildShiftTimestamps,
+  shiftTimeFromTimestamp,
+  zonedWallClockToUtc,
+  resolveOrganizationTimeZone,
+  DEFAULT_ORGANIZATION_TIME_ZONE,
+  type OrganizationTimeZoneInput,
+} from "@schichtwerk/database";
 
 export function formatWeekLabel(weekStartISO: string): string {
   const start = parseISODate(weekStartISO);

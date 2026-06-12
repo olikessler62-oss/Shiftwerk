@@ -7,6 +7,7 @@ import {
   ChevronUpIcon,
   IconButton,
   ListIcon,
+  Tooltip,
   TrashIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -21,6 +22,7 @@ export {
 export const SETTINGS_MODAL_TITLE_CLASS = "text-xl font-semibold text-foreground";
 
 export {
+  MODAL_SCROLLBAR_CLASS,
   SETTINGS_MODAL_MAX_WIDTH,
   settingsConfirmDialogClass,
   settingsMasterDetailLayoutClass,
@@ -50,9 +52,9 @@ export const SETTINGS_LIST_SCROLL_CLASS =
 export const SETTINGS_FOUR_ROW_TABLE_LIST_SCROLL_CLASS =
   "h-[calc(1.75rem+7rem)] min-h-[calc(1.75rem+7rem)] max-h-[calc(1.75rem+7rem)] overflow-auto";
 
-/** Personalbedarf-Panel: Tabellenkopf (~1.25rem) + 7 kompakte Zeilen à ~1.25rem */
+/** Personalbedarf-Panel: Tabellenkopf (~1.25rem) + 7 Zeilen à 25px + 100px */
 export const SETTINGS_STAFFING_PANEL_LIST_SCROLL_CLASS =
-  "h-[calc(1.25rem+8.75rem)] min-h-[calc(1.25rem+8.75rem)] max-h-[calc(1.25rem+8.75rem)] overflow-y-auto overflow-x-hidden";
+  "h-[calc(1.25rem+7*25px+100px)] min-h-[calc(1.25rem+7*25px+100px)] max-h-[calc(1.25rem+7*25px+100px)] overflow-y-auto overflow-x-hidden";
 
 export const SETTINGS_LIST_SCROLL_COMPACT_CLASS =
   SETTINGS_FOUR_ROW_TABLE_LIST_SCROLL_CLASS;
@@ -68,6 +70,13 @@ export const BULK_SHIFT_LIST_SCROLL_CLASS =
 /** Tabellenkopf (~1.75rem) + 8 Datenzeilen à ~1.75rem — Profile-Liste */
 export const SETTINGS_PROFILES_LIST_SCROLL_CLASS =
   "h-[calc(1.75rem+14rem)] min-h-[calc(1.75rem+14rem)] max-h-[calc(1.75rem+14rem)]";
+
+/**
+ * Profile master-detail: Spaltenkopf + Listenpadding + 8 Tabellenzeilen + Action-Bar.
+ * Verhindert Größenänderungen der Maske beim Profilwechsel.
+ */
+export const SETTINGS_PROFILES_MASTER_DETAIL_MIN_HEIGHT_CLASS =
+  "min-h-[calc(2.75rem+1rem+1.75rem+14rem+2.75rem)]";
 
 /** Halbe Listenhöhe — Funktion / Verfügbarkeiten in der Profil-Spalte */
 export const SETTINGS_PROFILES_HALF_LIST_SCROLL_CLASS =
@@ -140,7 +149,7 @@ export function SettingsActionRow({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors",
+        "group flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left transition-colors",
         disabled
           ? "cursor-not-allowed opacity-45"
           : "cursor-pointer hover:cursor-pointer hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
@@ -148,7 +157,7 @@ export function SettingsActionRow({
     >
       <span
         className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background text-muted transition-colors",
+          "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background text-muted transition-colors",
           !disabled &&
             "group-hover:border-primary/25 group-hover:bg-primary/5 group-hover:text-primary"
         )}
@@ -159,11 +168,13 @@ export function SettingsActionRow({
         <span className="block truncate text-sm font-medium text-foreground">
           {label}
         </span>
-        {typeof hint === "string" ? (
-          <span className="block truncate text-xs text-muted">{hint}</span>
-        ) : (
-          hint
-        )}
+        <span className="block min-h-5 min-w-0">
+          {typeof hint === "string" ? (
+            <span className="block truncate text-xs text-muted">{hint}</span>
+          ) : (
+            hint
+          )}
+        </span>
       </span>
     </button>
   );
@@ -201,20 +212,21 @@ export function SettingsListRowDeleteButton({
   onClick,
   className,
   title,
+  showTooltip = true,
 }: {
   label: string;
   disabled?: boolean;
   onClick: () => void;
   className?: string;
   title?: string;
+  showTooltip?: boolean;
 }) {
-  return (
+  const button = (
     <IconButton
       size="sm"
       type="button"
       disabled={disabled}
       aria-label={label}
-      title={title ?? label}
       onClick={(event) => {
         event.stopPropagation();
         onClick();
@@ -227,6 +239,10 @@ export function SettingsListRowDeleteButton({
       <TrashIcon className="h-4 w-4" />
     </IconButton>
   );
+
+  if (!showTooltip) return button;
+
+  return <Tooltip content={title ?? label}>{button}</Tooltip>;
 }
 
 export function settingsDataCellClass(
@@ -278,6 +294,34 @@ export function SettingsEmptyState({ message, hint, className }: EmptyStateProps
   );
 }
 
+/** Platzhalter bis alle Modal-Daten geladen sind — verhindert Layout-Sprünge. */
+export function SettingsModalLoadingBody({
+  message,
+  variant = "list-panel",
+  className,
+}: {
+  message: string;
+  variant?: "list-panel" | "form" | "staffing-panel";
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-1 items-center justify-center px-4 py-6",
+        variant === "list-panel" &&
+          "min-h-[calc(1.75rem+7rem+3.5rem)]",
+        variant === "form" && "min-h-[12rem]",
+        variant === "staffing-panel" &&
+          "min-h-[calc(1.25rem+8.75rem+3.5rem)]",
+        className
+      )}
+      aria-live="polite"
+    >
+      <p className="text-sm text-muted">{message}</p>
+    </div>
+  );
+}
+
 type StatusDotProps = {
   variant: "success" | "danger" | "inactive";
   label: string;
@@ -286,22 +330,25 @@ type StatusDotProps = {
 export function StatusDot({ variant, label }: StatusDotProps) {
   if (variant === "inactive") {
     return (
-      <span className="text-sm text-muted" title={label} aria-label={label}>
-        —
-      </span>
+      <Tooltip content={label}>
+        <span className="text-sm text-muted" aria-label={label}>
+          —
+        </span>
+      </Tooltip>
     );
   }
 
   return (
-    <span
-      className={cn(
-        "inline-block size-2.5 rounded-full",
-        variant === "success" && "bg-emerald-600",
-        variant === "danger" && "bg-red-600"
-      )}
-      title={label}
-      aria-label={label}
-    />
+    <Tooltip content={label}>
+      <span
+        className={cn(
+          "inline-block size-2.5 rounded-full",
+          variant === "success" && "bg-emerald-600",
+          variant === "danger" && "bg-red-600"
+        )}
+        aria-label={label}
+      />
+    </Tooltip>
   );
 }
 
@@ -309,18 +356,19 @@ export function SettingsPrimaryActionButton({
   label,
   icon,
   className,
+  tooltip,
   ...props
 }: Omit<ComponentProps<typeof Button>, "children"> & {
   label: string;
   icon: ReactNode;
+  tooltip?: string;
 }) {
-  return (
+  const button = (
     <Button
       type="button"
       variant="outline"
       size="sm"
       aria-label={label}
-      title={label}
       className={cn(
         "h-8 cursor-pointer gap-1.5 px-2.5 text-sm hover:cursor-pointer",
         className
@@ -331,6 +379,10 @@ export function SettingsPrimaryActionButton({
       {label}
     </Button>
   );
+
+  if (!tooltip) return button;
+
+  return <Tooltip content={tooltip}>{button}</Tooltip>;
 }
 
 export function SettingsReorderButtons({
@@ -373,26 +425,29 @@ export function SettingsIconActionButton({
   icon,
   className,
   variant = "outline",
+  tooltip,
   ...props
 }: Omit<ComponentProps<typeof Button>, "children"> & {
   label: string;
   icon: ReactNode;
+  tooltip?: string;
 }) {
   return (
-    <Button
-      type="button"
-      variant={variant}
-      size="sm"
-      aria-label={label}
-      title={label}
-      className={cn(
-        "h-8 w-8 shrink-0 cursor-pointer gap-0 p-0 text-sm hover:cursor-pointer",
-        className
-      )}
-      {...props}
-    >
-      {icon}
-    </Button>
+    <Tooltip content={tooltip ?? label}>
+      <Button
+        type="button"
+        variant={variant}
+        size="sm"
+        aria-label={label}
+        className={cn(
+          "h-8 w-8 shrink-0 cursor-pointer gap-0 p-0 text-sm hover:cursor-pointer",
+          className
+        )}
+        {...props}
+      >
+        {icon}
+      </Button>
+    </Tooltip>
   );
 }
 

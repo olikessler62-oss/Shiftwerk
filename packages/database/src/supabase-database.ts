@@ -18,6 +18,7 @@ import type {
   Role,
   RolePermissionLevel,
   Shift,
+  Organization,
 } from "@schichtwerk/types";
 import type { Session } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -34,6 +35,8 @@ import type {
 import {
   isDateWithinAbsenceRange,
 } from "./absence-validation";
+import { normalizeIndustry } from "./industry";
+import { normalizePlanningMode } from "./org-planning-mode";
 import { validateProfileEmail } from "./profile-contact-validation";
 import {
   dayBefore,
@@ -63,6 +66,7 @@ import {
   seedDefaultLocationAreas,
   seedDefaultRoles,
 } from "./utils";
+import { seedOrganizationFromIndustryTemplate } from "./seed-organization-from-template";
 
 const T = Schema.tables;
 const PROFILE_SELECT = "*, roles!inner(permission_level, name)";
@@ -341,14 +345,50 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (admin?.deleteUser) await admin.deleteUser(userId);
   }
 
-  async createOrganization(name: string) {
+  async createOrganization(
+    name: string,
+    countryCode = "DE",
+    options?: {
+      planningMode?: import("@schichtwerk/types").PlanningMode;
+      industry?: import("@schichtwerk/types").Industry | null;
+    }
+  ) {
+    const code = countryCode.trim().toUpperCase().slice(0, 2) || "DE";
+    const row: Record<string, unknown> = { name, country_code: code };
+    if (options?.planningMode !== undefined) {
+      row.planning_mode = options.planningMode;
+    }
+    if (options?.industry !== undefined) {
+      row.industry = options.industry;
+    }
     const { data, error } = await this.client
       .from(T.organizations)
-      .insert({ name })
+      .insert(row)
       .select("id")
       .single();
     if (error || !data) throw new Error(error?.message ?? "Organisation fehlgeschlagen");
     return { id: data.id as string };
+  }
+
+  async getOrganization(id: string): Promise<Organization | null> {
+    const { data, error } = await this.client
+      .from(T.organizations)
+      .select(
+        "id, name, timezone, country_code, planning_mode, industry, created_at"
+      )
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return {
+      id: data.id as string,
+      name: data.name as string,
+      timezone: data.timezone as string,
+      country_code: data.country_code as string,
+      planning_mode: normalizePlanningMode(data.planning_mode),
+      industry: normalizeIndustry(data.industry),
+      created_at: data.created_at as string,
+    };
   }
 
   async deleteOrganization(id: string) {
@@ -363,6 +403,26 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("id", id)
       .single();
     return (data?.name as string) ?? null;
+  }
+
+  async getOrganizationCountryCode(id: string) {
+    const { data } = await this.client
+      .from(T.organizations)
+      .select("country_code")
+      .eq("id", id)
+      .single();
+    return (data?.country_code as string) ?? null;
+  }
+
+  async updateOrganizationPlanningMode(
+    organizationId: string,
+    planningMode: import("@schichtwerk/types").PlanningMode
+  ) {
+    const { error } = await this.client
+      .from(T.organizations)
+      .update({ planning_mode: planningMode })
+      .eq("id", organizationId);
+    if (error) throw new Error(error.message);
   }
 
   async getOrganizationIdByProfileEmail(email: string) {
@@ -771,7 +831,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       qual.organization_id !== organizationId ||
       qual.archived_at != null
     ) {
-      throw new Error("Funktion nicht gefunden");
+      throw new Error("Job nicht gefunden");
     }
 
     const { error } = await this.client.from(T.profileQualifications).insert({
@@ -1916,6 +1976,19 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     await seedDefaultRoles(this.client, organizationId);
   }
 
+  async seedOrganizationFromIndustryTemplate(
+    organizationId: string,
+    orgName: string,
+    industry: import("@schichtwerk/types").Industry
+  ) {
+    await seedOrganizationFromIndustryTemplate(
+      this.client,
+      organizationId,
+      orgName,
+      industry
+    );
+  }
+
   async getNextRoleSortOrder(organizationId: string) {
     const { data } = await this.client
       .from(T.roles)
@@ -2646,7 +2719,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       qualification.organization_id !== organizationId ||
       qualification.archived_at != null
     ) {
-      throw new Error("Funktion nicht gefunden");
+      throw new Error("Job nicht gefunden");
     }
 
     const sortOrder = await this.getNextAreaQualificationTemplateSortOrder(
@@ -2676,7 +2749,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("location_area_id", locationAreaId)
       .maybeSingle();
     if (linkError) throw new Error(linkError.message);
-    if (!link) throw new Error("Funktionsvorlage nicht gefunden");
+    if (!link) throw new Error("Jobvorlage nicht gefunden");
 
     const staffing = await this.listLocationAreaStaffingForArea(
       locationAreaId,
@@ -2689,7 +2762,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           rule.required_count > 0
       )
     ) {
-      throw new Error("Funktion wird noch im Personalbedarf verwendet.");
+      throw new Error("Job wird noch im Personalbedarf verwendet.");
     }
 
     const { error } = await this.client
@@ -2905,10 +2978,26 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, employee_id, area_shift_template_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+        "id, employee_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
       )
       .eq("employee_id", employeeId)
       .eq("shift_date", shiftDate)
+      .order("starts_at");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as EmployeeShiftRecord[];
+  }
+
+  async listShiftsForEmployeeOnDates(employeeId: string, shiftDates: string[]) {
+    const uniqueDates = [...new Set(shiftDates.filter(Boolean))];
+    if (!uniqueDates.length) return [];
+
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, employee_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+      )
+      .eq("employee_id", employeeId)
+      .in("shift_date", uniqueDates)
       .order("starts_at");
     if (error) throw new Error(error.message);
     return (data ?? []) as EmployeeShiftRecord[];
@@ -2918,7 +3007,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, employee_id, area_shift_template_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+        "id, employee_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
       )
       .eq("id", id)
       .eq("organization_id", organizationId)
@@ -2965,9 +3054,14 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     ends_at: string;
     created_by: string;
   }) {
+    const { area_shift_template_id, ...rest } = row;
+    const payload =
+      area_shift_template_id != null && area_shift_template_id !== ""
+        ? { ...rest, area_shift_template_id }
+        : rest;
     const { data, error } = await this.client
       .from(T.shifts)
-      .insert(row)
+      .insert(payload)
       .select("id")
       .single();
     if (error) throw new Error(error.message);
@@ -2985,7 +3079,12 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       created_by: string;
     }
   ) {
-    const { error } = await this.client.from(T.shifts).update(row).eq("id", id);
+    const { area_shift_template_id, ...rest } = row;
+    const payload =
+      area_shift_template_id != null && area_shift_template_id !== ""
+        ? { ...rest, area_shift_template_id }
+        : rest;
+    const { error } = await this.client.from(T.shifts).update(payload).eq("id", id);
     if (error) throw new Error(error.message);
   }
 

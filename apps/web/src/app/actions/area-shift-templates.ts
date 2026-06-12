@@ -5,10 +5,12 @@ import {
   validateAreaShiftTemplateCount,
   validateShiftTypeBreaks,
   validateShiftTypeUniqueness,
+  validateShiftDurationForCountry,
+  DEFAULT_COUNTRY_CODE,
   resolveShiftTemplateSaveColor,
 } from "@schichtwerk/database";
 import { getDatabase } from "@/lib/db";
-import type { ShiftTypeBreakInput } from "@/lib/db";
+import type { ShiftTypeBreakInput, SchichtwerkDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 import type { AreaShiftTemplateWithBreaks } from "@schichtwerk/types";
 
@@ -55,6 +57,53 @@ async function assertLocationArea(
     return { ok: false as const, error: "Bereich nicht gefunden" };
   }
   return { ok: true as const, db };
+}
+
+async function validateTemplateLaborCompliance(
+  db: SchichtwerkDatabase,
+  organizationId: string,
+  start_time: string,
+  end_time: string,
+  breaks: ShiftTypeBreakInput[]
+): Promise<AreaShiftTemplateActionResult | { ok: true }> {
+  const countryCode =
+    (await db.getOrganizationCountryCode(organizationId)) ?? DEFAULT_COUNTRY_CODE;
+
+  const durationCheck = validateShiftDurationForCountry({
+    countryCode,
+    start_time,
+    end_time,
+    weekday: 0,
+    point: "shift_template",
+  });
+  if (!durationCheck.ok) return durationCheck;
+
+  const breaksCheck = validateShiftTypeBreaks(
+    start_time,
+    end_time,
+    breaks,
+    countryCode
+  );
+  if (!breaksCheck.ok) return breaksCheck;
+
+  return { ok: true };
+}
+
+export async function fetchOrganizationCountryCode(): Promise<
+  { ok: true; countryCode: string } | { ok: false; error: string }
+> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    const countryCode =
+      (await db.getOrganizationCountryCode(organizationId)) ?? DEFAULT_COUNTRY_CODE;
+    return { ok: true, countryCode };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Laden fehlgeschlagen",
+    };
+  }
 }
 
 export async function fetchAreaShiftTemplateSources(
@@ -231,12 +280,14 @@ export async function createAreaShiftTemplate(input: {
     });
     if (!unique.ok) return unique;
 
-    const breaksCheck = validateShiftTypeBreaks(
+    const complianceCheck = await validateTemplateLaborCompliance(
+      areaCheck.db,
+      organizationId,
       input.start_time,
       input.end_time,
       input.breaks
     );
-    if (!breaksCheck.ok) return breaksCheck;
+    if (!complianceCheck.ok) return complianceCheck;
 
     const sortOrder = await areaCheck.db.getNextAreaShiftTemplateSortOrder(
       input.locationAreaId,
@@ -302,12 +353,14 @@ export async function updateAreaShiftTemplate(input: {
     });
     if (!unique.ok) return unique;
 
-    const breaksCheck = validateShiftTypeBreaks(
+    const complianceCheck = await validateTemplateLaborCompliance(
+      areaCheck.db,
+      organizationId,
       input.start_time,
       input.end_time,
       input.breaks
     );
-    if (!breaksCheck.ok) return breaksCheck;
+    if (!complianceCheck.ok) return complianceCheck;
 
     await areaCheck.db.updateAreaShiftTemplate(
       input.id,

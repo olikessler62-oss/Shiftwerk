@@ -3,6 +3,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 
 export const controlBase =
@@ -58,9 +59,8 @@ export function ControlDisplay({
   title?: string;
   children: React.ReactNode;
 }) {
-  return (
+  const display = (
     <div
-      title={title}
       className={cn(
         controlBase,
         "flex select-none items-center bg-background py-2 font-medium",
@@ -69,5 +69,13 @@ export function ControlDisplay({
     >
       {children}
     </div>
+  );
+
+  if (!title) return display;
+
+  return (
+    <Tooltip content={title} className="w-full">
+      {display}
+    </Tooltip>
   );
 }

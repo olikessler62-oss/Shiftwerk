@@ -1,11 +1,17 @@
+import {
+  ENGLISH_WEEKDAY_ABBREVS,
+  GERMAN_WEEKDAY_ABBREVS,
+  type WeekdayLabelLocale,
+} from "@schichtwerk/i18n";
+
 /** Mo=0 … So=6, 7 Zeichen aus '0' und '1'. */
 export const ACTIVE_WEEKDAYS_LENGTH = 7;
 
-export type WeekdayAbbrevLocale = "de" | "en";
+export type WeekdayAbbrevLocale = WeekdayLabelLocale;
 
 const WEEKDAY_ABBREVS: Record<WeekdayAbbrevLocale, readonly string[]> = {
-  de: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
-  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  de: GERMAN_WEEKDAY_ABBREVS,
+  en: ENGLISH_WEEKDAY_ABBREVS,
 };
 
 export function isValidActiveWeekdays(mask: string): boolean {

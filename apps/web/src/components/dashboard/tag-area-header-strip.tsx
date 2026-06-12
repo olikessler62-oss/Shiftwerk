@@ -9,17 +9,17 @@ type Props = {
   showDaytimesGradient: boolean;
   entries: TagAreaHeaderStaffingEntry[];
   overlayBackgroundColor?: string;
-  staffingTone?: "default" | "past" | "inactive";
+  staffingLabelsDimmed?: boolean;
   className?: string;
   style?: React.CSSProperties;
 };
 
-/** Tag-Bereich-Header: Tageszeit-Verlauf (24h) + Personalbedarf-Overlay. */
+/** Tag-Bereich-Header: Tageszeit-Verlauf (4px oben) + Personalbedarf-Overlay. */
 export function TagAreaHeaderStrip({
   showDaytimesGradient,
   entries,
   overlayBackgroundColor,
-  staffingTone = "default",
+  staffingLabelsDimmed = false,
   className,
   style,
 }: Props) {
@@ -39,21 +39,32 @@ export function TagAreaHeaderStrip({
     >
       {showDaytimesGradient ? (
         <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 w-full"
+          className="pointer-events-none absolute inset-x-0 top-0 w-full"
           style={{
             height: DAYTIMES_HEADER_IMAGE_HEIGHT_PX,
             backgroundImage: `url(${DAYTIMES_HEADER_IMAGE_SRC})`,
             backgroundRepeat: "no-repeat",
-            backgroundPosition: "bottom center",
+            backgroundPosition: "top center",
             backgroundSize: `100% ${DAYTIMES_HEADER_IMAGE_HEIGHT_PX}px`,
           }}
           aria-hidden
         />
       ) : null}
-      <div className="relative z-[1] flex h-full w-full min-w-0 -translate-y-[3px] items-center justify-center px-1">
+      <div
+        className={cn(
+          "relative z-[1] flex h-full w-full min-w-0 items-center justify-center px-1",
+          showDaytimesGradient && "translate-y-px"
+        )}
+      >
         <TagAreaHeaderStaffingOverlay
+          key={entries
+            .map(
+              (entry) =>
+                `${entry.serviceHourId}:${entry.assigned}/${entry.required}`
+            )
+            .join("|")}
           entries={entries}
-          tone={staffingTone}
+          dimmed={staffingLabelsDimmed}
         />
       </div>
     </div>

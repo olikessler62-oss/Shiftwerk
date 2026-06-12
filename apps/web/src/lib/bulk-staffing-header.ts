@@ -1,0 +1,437 @@
+import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
+import { availabilityRangeContainedInWindow } from "@/lib/available-employees-for-shift";
+import { personalbedarfDemandTimesForEntry } from "@/lib/bulk-shift-staffing";
+import {
+  serviceWeekdayForDate,
+  tagAreaHeaderStaffingEntries,
+  type AreaServiceHourRef,
+  type StaffingQualificationCoverage,
+  type TagAreaHeaderStaffingEntry,
+} from "@/lib/location-staffing-client";
+import type { LocationAreaStaffing, Qualification } from "@schichtwerk/types";
+
+export type StaffingAssignmentRef = {
+  startTime: string;
+  endTime: string;
+  employeeId?: string;
+  qualificationId?: string;
+};
+
+export type DemandWindowRef = {
+  serviceHourId: string;
+  startTime: string;
+  endTime: string;
+};
+
+function normalizeRequiredCount(value: number | string): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
+function qualificationRulesForServiceHour(
+  rules: readonly LocationAreaStaffing[],
+  areaId: string,
+  serviceHourId: string
+): LocationAreaStaffing[] {
+  return rules.filter(
+    (rule) =>
+      rule.location_area_id === areaId &&
+      rule.service_hour_id === serviceHourId &&
+      normalizeRequiredCount(rule.required_count) > 0
+  );
+}
+
+function parseShiftTimeToMinutes(value: string): number | null {
+  const trimmed = value.trim().slice(0, 5);
+  if (!/^\d{1,2}:\d{2}$/.test(trimmed)) return null;
+  const [hours, minutes] = trimmed.split(":").map(Number);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function normalizeMinuteRange(
+  startTime: string,
+  endTime: string
+): { start: number; end: number } | null {
+  const start = parseShiftTimeToMinutes(startTime);
+  let end = parseShiftTimeToMinutes(endTime);
+  if (start == null || end == null) return null;
+  if (end <= start) end += 24 * 60;
+  return { start, end };
+}
+
+/** Echte Zeitüberlappung in Minuten — ohne „Bedarf liegt in breiter Schicht“. */
+export function shiftClockRangesOverlapMinutes(
+  startA: string,
+  endA: string,
+  startB: string,
+  endB: string
+): number {
+  const a = normalizeMinuteRange(startA, endA);
+  const b = normalizeMinuteRange(startB, endB);
+  if (!a || !b) return 0;
+  return Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+}
+
+function shiftFitsInDemandWindow(
+  assignmentStart: string,
+  assignmentEnd: string,
+  demandStart: string,
+  demandEnd: string
+): boolean {
+  return availabilityRangeContainedInWindow(
+    assignmentStart,
+    assignmentEnd,
+    demandStart,
+    demandEnd
+  );
+}
+
+/**
+ * Ordnet jede Zuweisung höchstens einem Bedarf-Fenster zu (beste Übereinstimmung).
+ * Zuweisungen haben Vorrang — breite Schichten werden nicht doppelt gezählt.
+ */
+export function allocateAssignmentsToDemandWindows(
+  assignments: readonly StaffingAssignmentRef[],
+  demandWindows: readonly DemandWindowRef[]
+): Map<string, number[]> {
+  const byHour = new Map<string, number[]>();
+  type ScoredPair = {
+    assignmentIndex: number;
+    serviceHourId: string;
+    score: number;
+  };
+  const pairs: ScoredPair[] = [];
+
+  for (let i = 0; i < assignments.length; i++) {
+    const assignment = assignments[i]!;
+    for (const demand of demandWindows) {
+      const overlapMin = shiftClockRangesOverlapMinutes(
+        assignment.startTime,
+        assignment.endTime,
+        demand.startTime,
+        demand.endTime
+      );
+      if (overlapMin <= 0) continue;
+      const fits = shiftFitsInDemandWindow(
+        assignment.startTime,
+        assignment.endTime,
+        demand.startTime,
+        demand.endTime
+      );
+      pairs.push({
+        assignmentIndex: i,
+        serviceHourId: demand.serviceHourId,
+        score: (fits ? 1_000_000 : 0) + overlapMin,
+      });
+    }
+  }
+
+  pairs.sort(
+    (a, b) =>
+      b.score - a.score ||
+      a.assignmentIndex - b.assignmentIndex ||
+      a.serviceHourId.localeCompare(b.serviceHourId)
+  );
+
+  const usedAssignments = new Set<number>();
+  for (const pair of pairs) {
+    if (usedAssignments.has(pair.assignmentIndex)) continue;
+    const list = byHour.get(pair.serviceHourId) ?? [];
+    list.push(pair.assignmentIndex);
+    byHour.set(pair.serviceHourId, list);
+    usedAssignments.add(pair.assignmentIndex);
+  }
+
+  return byHour;
+}
+
+export function resolveBestDemandServiceHourForAssignment(
+  startTime: string,
+  endTime: string,
+  demandWindows: readonly DemandWindowRef[]
+): string | null {
+  let best: { serviceHourId: string; score: number } | null = null;
+
+  for (const demand of demandWindows) {
+    const overlapMin = shiftClockRangesOverlapMinutes(
+      startTime,
+      endTime,
+      demand.startTime,
+      demand.endTime
+    );
+    if (overlapMin <= 0) continue;
+    const fits = shiftFitsInDemandWindow(
+      startTime,
+      endTime,
+      demand.startTime,
+      demand.endTime
+    );
+    const score = (fits ? 1_000_000 : 0) + overlapMin;
+    if (!best || score > best.score) {
+      best = { serviceHourId: demand.serviceHourId, score };
+    }
+  }
+
+  return best?.serviceHourId ?? null;
+}
+
+export function buildDemandWindowsForAreaDay(
+  baseEntries: readonly TagAreaHeaderStaffingEntry[],
+  serviceHours: readonly AreaServiceHourRef[],
+  assignmentPresets: readonly DashboardAssignmentPreset[],
+  staffingRules: readonly LocationAreaStaffing[],
+  areaId: string
+): DemandWindowRef[] {
+  return baseEntries.flatMap((entry) => {
+    const hour = serviceHours.find((item) => item.id === entry.serviceHourId);
+    const demandTimes =
+      personalbedarfDemandTimesForEntry(
+        entry.serviceHourId,
+        serviceHours,
+        assignmentPresets,
+        staffingRules,
+        areaId
+      ) ??
+      (hour?.start_time && hour?.end_time
+        ? {
+            startTime: hour.start_time.slice(0, 5),
+            endTime: hour.end_time.slice(0, 5),
+            serviceHourId: entry.serviceHourId,
+          }
+        : null);
+    if (!demandTimes) return [];
+    return [
+      {
+        serviceHourId: entry.serviceHourId,
+        startTime: demandTimes.startTime,
+        endTime: demandTimes.endTime,
+      },
+    ];
+  });
+}
+
+/** Verteilt Schichten ohne Doppelzählung auf Funktions-Bedarfe (größtes Defizit zuerst). */
+export function countQualificationCoverage(
+  hourAssignments: readonly StaffingAssignmentRef[],
+  qualRules: readonly LocationAreaStaffing[],
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>
+): Map<string, number> {
+  const assignedByQual = new Map<string, number>();
+  for (const rule of qualRules) {
+    assignedByQual.set(rule.qualification_id, 0);
+  }
+  if (qualRules.length === 0) return assignedByQual;
+
+  const used = new Set<number>();
+
+  hourAssignments.forEach((assignment, index) => {
+    const qualId = assignment.qualificationId?.trim();
+    if (!qualId || !assignedByQual.has(qualId)) return;
+    const required = normalizeRequiredCount(
+      qualRules.find((rule) => rule.qualification_id === qualId)?.required_count ?? 0
+    );
+    const assigned = assignedByQual.get(qualId) ?? 0;
+    if (assigned >= required) return;
+    assignedByQual.set(qualId, assigned + 1);
+    used.add(index);
+  });
+
+  hourAssignments.forEach((assignment, index) => {
+    if (used.has(index)) return;
+    const employeeId = assignment.employeeId?.trim();
+    if (!employeeId) return;
+    const employeeQuals = profileQualificationIds.get(employeeId);
+    if (!employeeQuals?.size) return;
+
+    let bestQualId: string | null = null;
+    let bestGap = -Infinity;
+    for (const rule of qualRules) {
+      if (!employeeQuals.has(rule.qualification_id)) continue;
+      const required = normalizeRequiredCount(rule.required_count);
+      const assigned = assignedByQual.get(rule.qualification_id) ?? 0;
+      if (assigned >= required) continue;
+      const gap = required - assigned;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestQualId = rule.qualification_id;
+      }
+    }
+
+    if (bestQualId) {
+      assignedByQual.set(
+        bestQualId,
+        (assignedByQual.get(bestQualId) ?? 0) + 1
+      );
+      used.add(index);
+    }
+  });
+
+  return assignedByQual;
+}
+
+export function buildStaffingQualificationBreakdown(
+  hourAssignments: readonly StaffingAssignmentRef[],
+  qualRules: readonly LocationAreaStaffing[],
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>,
+  qualificationNameById: ReadonlyMap<string, string>,
+  qualificationSortOrder: ReadonlyMap<string, number>
+): StaffingQualificationCoverage[] {
+  const assignedByQual = countQualificationCoverage(
+    hourAssignments,
+    qualRules,
+    profileQualificationIds
+  );
+
+  return qualRules
+    .slice()
+    .sort(
+      (a, b) =>
+        (qualificationSortOrder.get(a.qualification_id) ?? 0) -
+          (qualificationSortOrder.get(b.qualification_id) ?? 0) ||
+        (qualificationNameById.get(a.qualification_id) ?? a.qualification_id).localeCompare(
+          qualificationNameById.get(b.qualification_id) ?? b.qualification_id,
+          "de"
+        )
+    )
+    .map((rule) => ({
+      qualificationId: rule.qualification_id,
+      name:
+        qualificationNameById.get(rule.qualification_id) ?? rule.qualification_id,
+      assigned: assignedByQual.get(rule.qualification_id) ?? 0,
+      required: normalizeRequiredCount(rule.required_count),
+    }));
+}
+
+export function computeBulkStaffingHeaderEntries(input: {
+  staffingRules: readonly LocationAreaStaffing[];
+  areaId: string;
+  dateISO: string;
+  serviceHours: readonly AreaServiceHourRef[];
+  assignments: readonly StaffingAssignmentRef[];
+  assignmentPresets: readonly DashboardAssignmentPreset[];
+  qualifications: readonly Qualification[];
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
+  formatTimeLabel: (weekdayLabel: string, startTime: string, endTime: string) => string;
+  weekdayLabel: (weekday: number) => string;
+  formatCalendarTimeLabel?: (startTime: string, endTime: string) => string;
+}): TagAreaHeaderStaffingEntry[] {
+  const {
+    staffingRules,
+    areaId,
+    dateISO,
+    serviceHours,
+    assignments,
+    assignmentPresets,
+    qualifications,
+    profileQualificationIds,
+    formatTimeLabel,
+    weekdayLabel,
+    formatCalendarTimeLabel,
+  } = input;
+
+  const weekday = serviceWeekdayForDate(dateISO);
+  const weekdayName = weekdayLabel(weekday);
+
+  const qualificationNameById = new Map(
+    qualifications.map((qualification) => [qualification.id, qualification.name])
+  );
+  const qualificationSortOrder = new Map(
+    qualifications.map((qualification) => [qualification.id, qualification.sort_order])
+  );
+
+  const baseEntries = tagAreaHeaderStaffingEntries(
+    [...staffingRules],
+    areaId,
+    dateISO,
+    [...serviceHours],
+    [...assignments]
+  );
+
+  const demandWindows = buildDemandWindowsForAreaDay(
+    baseEntries,
+    serviceHours,
+    assignmentPresets,
+    staffingRules,
+    areaId
+  );
+  const allocation = allocateAssignmentsToDemandWindows(
+    assignments,
+    demandWindows
+  );
+
+  return baseEntries.map((entry) => {
+    const hour = serviceHours.find((item) => item.id === entry.serviceHourId);
+    const demandTimes =
+      personalbedarfDemandTimesForEntry(
+        entry.serviceHourId,
+        serviceHours,
+        assignmentPresets,
+        staffingRules,
+        areaId
+      ) ??
+      (hour?.start_time && hour?.end_time
+        ? {
+            startTime: hour.start_time.slice(0, 5),
+            endTime: hour.end_time.slice(0, 5),
+            serviceHourId: entry.serviceHourId,
+          }
+        : null);
+
+    const qualRules = qualificationRulesForServiceHour(
+      staffingRules,
+      areaId,
+      entry.serviceHourId
+    );
+    const hourAssignments = (allocation.get(entry.serviceHourId) ?? []).map(
+      (index) => assignments[index]!
+    );
+
+    return {
+      ...entry,
+      assigned: hourAssignments.length,
+      timeLabel: demandTimes
+        ? formatTimeLabel(weekdayName, demandTimes.startTime, demandTimes.endTime)
+        : entry.label,
+      calendarTimeLabel: demandTimes
+        ? formatCalendarTimeLabel?.(demandTimes.startTime, demandTimes.endTime)
+        : undefined,
+      qualifications: buildStaffingQualificationBreakdown(
+        hourAssignments,
+        qualRules,
+        profileQualificationIds,
+        qualificationNameById,
+        qualificationSortOrder
+      ),
+    };
+  });
+}
+
+export function formatStaffingEntryTooltipContent(
+  entry: TagAreaHeaderStaffingEntry,
+  formatQualLine: (name: string, assigned: number, required: number) => string
+): string {
+  const header = entry.timeLabel ?? entry.label;
+  const qualLines = entry.qualifications
+    ?.filter((qualification) => qualification.required > 0)
+    .map((qualification) =>
+      formatQualLine(
+        qualification.name,
+        qualification.assigned,
+        qualification.required
+      )
+    );
+  if (qualLines?.length) {
+    return [header, ...qualLines].join("\n");
+  }
+  return `${header}\n${entry.assigned}/${entry.required}`;
+}
+
+export function formatStaffingEntriesTooltipContent(
+  entries: readonly TagAreaHeaderStaffingEntry[],
+  formatQualLine: (name: string, assigned: number, required: number) => string
+): string {
+  return entries
+    .map((entry) => formatStaffingEntryTooltipContent(entry, formatQualLine))
+    .join("\n\n");
+}

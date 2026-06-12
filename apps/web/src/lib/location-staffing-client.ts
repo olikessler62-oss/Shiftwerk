@@ -4,6 +4,10 @@ import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
 import { isPastCalendarDate } from "@/lib/dates";
 import { isGermanPublicHoliday } from "@/lib/german-public-holidays";
 import { formatTimeRange } from "@/lib/planning-utils";
+import {
+  weekdayAbbrevFromIndex,
+  type WeekdayLabelLocale,
+} from "@schichtwerk/i18n";
 import type { AreaShiftTemplate } from "@schichtwerk/types";
 
 export const STAFFING_HOLIDAY_WEEKDAY = 7;
@@ -24,6 +28,12 @@ export function weekdayIndexFromDate(isoDate: string): number {
   return day === 0 ? 6 : day - 1;
 }
 
+export function normalizeServiceHourWeekday(value: number | string): number {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isInteger(parsed) ? parsed : -1;
+}
+
 export type AreaServiceHourRef = {
   id?: string;
   location_area_id: string;
@@ -33,9 +43,7 @@ export type AreaServiceHourRef = {
 };
 
 function normalizeWeekday(value: number | string): number {
-  if (typeof value === "number" && Number.isInteger(value)) return value;
-  const parsed = Number.parseInt(String(value), 10);
-  return Number.isInteger(parsed) ? parsed : -1;
+  return normalizeServiceHourWeekday(value);
 }
 
 function normalizeRequiredCount(value: number | string): number {
@@ -374,11 +382,24 @@ export type ServiceHourStaffingRef = {
   end_time: string;
 };
 
+export type StaffingQualificationCoverage = {
+  qualificationId: string;
+  name: string;
+  assigned: number;
+  required: number;
+};
+
 export type TagAreaHeaderStaffingEntry = {
   serviceHourId: string;
   label: string;
   assigned: number;
   required: number;
+  /** Ausführliches Zeitlabel (Bulk-Modal). */
+  timeLabel?: string;
+  /** Zeitlabel ohne Wochentag (Kalender-Overlay). */
+  calendarTimeLabel?: string;
+  /** Bedarf und Einsatz je Funktion (Bulk-Modal-Tooltip). */
+  qualifications?: StaffingQualificationCoverage[];
 };
 
 /** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header (Dashboard). */
@@ -388,7 +409,10 @@ export function tagAreaHeaderStaffingEntriesInCalendar(
   dateISO: string,
   serviceHours: AreaServiceHourRef[],
   assignedShifts: { startTime: string; endTime: string }[],
-  options: { formatLabel?: (hour: ServiceHourStaffingRef) => string } = {}
+  options: {
+    formatLabel?: (hour: ServiceHourStaffingRef) => string;
+    locale?: WeekdayLabelLocale;
+  } = {}
 ): TagAreaHeaderStaffingEntry[] {
   return tagAreaHeaderStaffingEntries(
     rules,
@@ -431,12 +455,29 @@ export function requiredStaffForAreaOnDate(
     .reduce((sum, rule) => sum + normalizeRequiredCount(rule.required_count), 0);
 }
 
-function defaultServiceHourLabel(hour: ServiceHourStaffingRef): string {
-  const day =
-    hour.weekday === STAFFING_HOLIDAY_WEEKDAY
-      ? "FT"
-      : WEEKDAY_KEYS[hour.weekday]?.slice(0, 2).toUpperCase() ?? "?";
-  return `${day} ${formatTimeRange(hour.start_time, hour.end_time)}`;
+/** Entfernt Wochentags-Kürzel aus dem kompakten Servicezeit-Label (z. B. „Do 08:00–10:00“). */
+export function staffingLabelWithoutWeekday(label: string): string {
+  const trimmed = label.trim();
+  const spaceIndex = trimmed.indexOf(" ");
+  return spaceIndex > 0 ? trimmed.slice(spaceIndex + 1).trim() : trimmed;
+}
+
+export function resolveCalendarStaffingTimeLabel(
+  entry: Pick<TagAreaHeaderStaffingEntry, "calendarTimeLabel" | "label">
+): string {
+  return entry.calendarTimeLabel ?? staffingLabelWithoutWeekday(entry.label);
+}
+
+export function createServiceHourStaffingLabel(
+  locale: WeekdayLabelLocale = "de"
+): (hour: ServiceHourStaffingRef) => string {
+  return (hour) => {
+    const day =
+      hour.weekday === STAFFING_HOLIDAY_WEEKDAY
+        ? "FT"
+        : weekdayAbbrevFromIndex(hour.weekday, locale);
+    return `${day} ${formatTimeRange(hour.start_time, hour.end_time)}`;
+  };
 }
 
 /** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header. */
@@ -446,9 +487,14 @@ export function tagAreaHeaderStaffingEntries(
   dateISO: string,
   serviceHours: AreaServiceHourRef[],
   assignedShifts: { startTime: string; endTime: string }[],
-  options: { formatLabel?: (hour: ServiceHourStaffingRef) => string } = {}
+  options: {
+    formatLabel?: (hour: ServiceHourStaffingRef) => string;
+    locale?: WeekdayLabelLocale;
+  } = {}
 ): TagAreaHeaderStaffingEntry[] {
-  const formatLabel = options.formatLabel ?? defaultServiceHourLabel;
+  const formatLabel =
+    options.formatLabel ??
+    createServiceHourStaffingLabel(options.locale ?? "de");
   const weekday = serviceWeekdayForDate(dateISO);
   const dayHours = serviceHours
     .filter(
@@ -510,6 +556,22 @@ export function tagAreaHeaderStaffingEntries(
   return entries;
 }
 
+/** Kräftige Farben als Hex — Tailwind-Klassen aus Maps werden sonst nicht generiert. */
+const STAFFING_WEEKDAY_COLOR: Record<number, string> = {
+  0: "#06b6d4", // Montag — Türkis
+  1: "#2563eb", // Dienstag — Blau
+  2: "#7c3aed", // Mittwoch — Violett
+  3: "#f97316", // Donnerstag — Orange
+  4: "#ef4444", // Freitag — Rot
+  5: "#d97706", // Samstag — Ocker
+  6: "#65a30d", // Sonntag — Kräftiges Grün
+  [STAFFING_HOLIDAY_WEEKDAY]: "#db2777", // Feiertag — Pink
+};
+
+export function staffingWeekdayColor(weekday: number): string {
+  return STAFFING_WEEKDAY_COLOR[weekday] ?? "#2563eb";
+}
+
 export function weekdayLabelFromIndex(
   weekday: number,
   t: (key: string) => string
@@ -518,4 +580,61 @@ export function weekdayLabelFromIndex(
     return t("locations.weekdays.holiday");
   }
   return t(`locations.weekdays.${WEEKDAY_KEYS[weekday]!}`);
+}
+
+function serviceHourTimeFieldValue(time: string): string {
+  return time.slice(0, 5);
+}
+
+/** Wochentage mit Personalbedarf für dasselbe Uhrzeit-Fenster (Bulk-Ändern). */
+export function staffedWeekdaysMatchingWindow(
+  startTime: string,
+  endTime: string,
+  serviceHours: readonly {
+    id: string;
+    weekday: number;
+    start_time: string;
+    end_time: string;
+  }[],
+  staffing: readonly { service_hour_id: string; required_count: number }[]
+): number[] {
+  const start = serviceHourTimeFieldValue(startTime);
+  const end = serviceHourTimeFieldValue(endTime);
+  const staffedIds = new Set(
+    staffing
+      .filter((rule) => rule.required_count > 0)
+      .map((rule) => rule.service_hour_id)
+  );
+  const weekdays = new Set<number>();
+  for (const hour of serviceHours) {
+    if (
+      staffedIds.has(hour.id) &&
+      serviceHourTimeFieldValue(hour.start_time) === start &&
+      serviceHourTimeFieldValue(hour.end_time) === end
+    ) {
+      weekdays.add(hour.weekday);
+    }
+  }
+  return [...weekdays].sort((a, b) => a - b);
+}
+
+export function findServiceHourByWeekdayAndWindow(
+  weekday: number,
+  startTime: string,
+  endTime: string,
+  serviceHours: readonly {
+    id: string;
+    weekday: number;
+    start_time: string;
+    end_time: string;
+  }[]
+) {
+  const start = serviceHourTimeFieldValue(startTime);
+  const end = serviceHourTimeFieldValue(endTime);
+  return serviceHours.find(
+    (hour) =>
+      hour.weekday === weekday &&
+      serviceHourTimeFieldValue(hour.start_time) === start &&
+      serviceHourTimeFieldValue(hour.end_time) === end
+  );
 }

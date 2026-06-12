@@ -1,4 +1,10 @@
 import { buildShiftTimestamps, getISOWeek, parseISODate } from "@/lib/dates";
+import { weekdayIndexFromDate } from "@schichtwerk/database";
+import {
+  isEnglishIntlLocale,
+  isGermanIntlLocale,
+  weekdayAbbrevFromIndex,
+} from "@schichtwerk/i18n";
 
 export type PlanningShiftRef = {
   employee_id: string;
@@ -80,7 +86,7 @@ export function formatWeekRange(weekStartISO: string): string {
   return `${fmt.format(start)} – ${fmt.format(end)}`;
 }
 
-/** Datumszeile im Dashboard-Header (Skizze: „1. Juni – 7. Juni“, Jahr, KW). */
+/** Datumszeile im Dashboard-Header (Monat/Jahr + KW; rangeLabel für Tooltip). */
 export function getDashboardWeekHeaderParts(
   weekStartISO: string,
   intlLocale = "de-DE"
@@ -92,9 +98,30 @@ export function getDashboardWeekHeaderParts(
     day: "numeric",
     month: "long",
   });
+  const monthFmt = new Intl.DateTimeFormat(intlLocale, { month: "long" });
+  const monthYearFmt = new Intl.DateTimeFormat(intlLocale, {
+    month: "long",
+    year: "numeric",
+  });
+
+  const startYear = start.getFullYear();
+  const endYear = end.getFullYear();
+  const sameMonth = start.getMonth() === end.getMonth();
+  const sameYear = startYear === endYear;
+
+  let monthYearLabel: string;
+  if (sameMonth && sameYear) {
+    monthYearLabel = monthYearFmt.format(start);
+  } else if (sameYear) {
+    monthYearLabel = `${monthFmt.format(start)}/${monthFmt.format(end)} ${startYear}`;
+  } else {
+    monthYearLabel = `${monthYearFmt.format(start)}/${monthYearFmt.format(end)}`;
+  }
+
   return {
     rangeLabel: `${dayMonthFmt.format(start)} – ${dayMonthFmt.format(end)}`,
-    year: start.getFullYear(),
+    monthYearLabel,
+    year: startYear,
     calendarWeek: getISOWeek(start),
   };
 }
@@ -107,9 +134,16 @@ export function formatDayHeader(
   weekdayStyle: DayHeaderWeekdayStyle = "short"
 ): { weekday: string; label: string } {
   const d = parseISODate(dateISO);
-  const weekday = new Intl.DateTimeFormat(intlLocale, {
-    weekday: weekdayStyle === "long" ? "long" : "short",
-  }).format(d);
+  let weekday: string;
+  if (weekdayStyle === "long") {
+    weekday = new Intl.DateTimeFormat(intlLocale, { weekday: "long" }).format(d);
+  } else if (isEnglishIntlLocale(intlLocale)) {
+    weekday = weekdayAbbrevFromIndex(weekdayIndexFromDate(dateISO), "en");
+  } else if (isGermanIntlLocale(intlLocale)) {
+    weekday = weekdayAbbrevFromIndex(weekdayIndexFromDate(dateISO), "de");
+  } else {
+    weekday = new Intl.DateTimeFormat(intlLocale, { weekday: "short" }).format(d);
+  }
   const label = new Intl.DateTimeFormat(intlLocale, {
     day: "numeric",
     month: "short",

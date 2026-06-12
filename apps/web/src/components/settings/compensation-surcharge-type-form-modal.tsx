@@ -18,7 +18,8 @@ import {
   formatSurchargeUnitLabel,
 } from "@/lib/profile-surcharge-display";
 import { formatAmountForInput } from "@/lib/profile-hourly-rate-display";
-import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { cn } from "@/lib/cn";
 import {
   Alert,
   Button,
@@ -118,7 +119,10 @@ export function CompensationSurchargeTypeFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="compensation-surcharge-type-form-title"
-        className="relative z-[71] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={cn(
+          "relative z-[71] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          MODAL_SCROLLBAR_CLASS
+        )}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">

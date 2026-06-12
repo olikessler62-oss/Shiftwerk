@@ -1,5 +1,8 @@
 import { cn } from "@/lib/cn";
 
+/** Scrollbar-Farbe in Modals/Sub-Modals — siehe globals.css (.modal-scrollbar). */
+export const MODAL_SCROLLBAR_CLASS = "modal-scrollbar";
+
 /** Max. Breite für Master-Detail-Modals (Standorte, Profile). */
 export const SETTINGS_MODAL_MAX_WIDTH = "calc(54rem + 120px)";
 
@@ -16,6 +19,7 @@ export function settingsModalBackdropClass(className?: string) {
 export function settingsModalDialogClass(className?: string) {
   return cn(
     "flex w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
+    MODAL_SCROLLBAR_CLASS,
     "max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)]",
     "max-sm:max-h-dvh max-sm:rounded-none max-sm:border-x-0",
     className
@@ -50,6 +54,7 @@ export function settingsSubModalDialogClass(
 ) {
   return cn(
     "relative z-[61] flex w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+    MODAL_SCROLLBAR_CLASS,
     SUB_MODAL_MAX_WIDTH[size],
     "max-h-[min(90dvh,720px)]",
     "max-sm:h-full max-sm:max-h-none max-sm:rounded-none max-sm:border-0",
@@ -73,6 +78,7 @@ export function settingsNestedModalDialogClass(
 ) {
   return cn(
     "relative z-[71] flex w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+    MODAL_SCROLLBAR_CLASS,
     SUB_MODAL_MAX_WIDTH[size],
     "max-h-[min(90dvh,720px)]",
     "max-sm:h-full max-sm:max-h-none max-sm:rounded-none max-sm:border-0",
@@ -84,6 +90,7 @@ export function settingsNestedModalDialogClass(
 export function settingsConfirmDialogClass(className?: string) {
   return cn(
     "relative z-[71] w-full min-w-0 max-w-md rounded-2xl border border-border bg-surface p-4 shadow-2xl sm:p-5",
+    MODAL_SCROLLBAR_CLASS,
     "max-sm:h-auto max-sm:max-h-none max-sm:rounded-none max-sm:border-0",
     className
   );
@@ -151,6 +158,7 @@ export function dashboardModalDialogClass(
 ) {
   return cn(
     "relative z-[111] flex w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+    MODAL_SCROLLBAR_CLASS,
     SUB_MODAL_MAX_WIDTH[size],
     "max-h-[90dvh]",
     "max-sm:h-full max-sm:max-h-none max-sm:rounded-none max-sm:border-0",

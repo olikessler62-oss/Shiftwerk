@@ -6,7 +6,8 @@ import {
   weekdayChipLabel,
   weekdayChipTooltipLabel,
 } from "@/lib/location-service-hour-entries";
-import { useTranslations } from "@/i18n/locale-provider";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 
 const presetButtonClass =
@@ -15,6 +16,8 @@ const presetButtonClass =
 type Props = {
   selected: Set<number>;
   disabled?: boolean;
+  /** Mo–So (7); mit Feiertag (8, Standard wie Servicezeiten). */
+  weekdayCount?: number;
   onToggle: (weekday: number) => void;
   onApplyPreset: (weekdays: number[]) => void;
 };
@@ -22,10 +25,13 @@ type Props = {
 export function WeekdayChipPicker({
   selected,
   disabled,
+  weekdayCount = SERVICE_HOUR_WEEKDAY_COUNT,
   onToggle,
   onApplyPreset,
 }: Props) {
   const t = useTranslations();
+  const { locale } = useLocale();
+  const localeKey = locale === "en" ? "en" : "de";
 
   const presets: { key: string; label: string; days: readonly number[] }[] = [
     {
@@ -51,7 +57,7 @@ export function WeekdayChipPicker({
     {
       key: "all",
       label: t("locations.serviceHoursPresetAll"),
-      days: SERVICE_HOUR_WEEKDAY_PRESETS.all,
+      days: SERVICE_HOUR_WEEKDAY_PRESETS.all.slice(0, weekdayCount),
     },
     {
       key: "none",
@@ -64,32 +70,31 @@ export function WeekdayChipPicker({
     <div className="flex flex-col items-center gap-1">
       <div className="flex flex-wrap justify-center gap-0.5">
         {presets.map((preset) => (
-          <button
-            key={preset.key}
-            type="button"
-            disabled={disabled}
-            title={preset.label}
-            onClick={() => onApplyPreset([...preset.days])}
-            className={presetButtonClass}
-          >
-            {preset.label}
-          </button>
+          <Tooltip key={preset.key} content={preset.label}>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onApplyPreset([...preset.days])}
+              className={presetButtonClass}
+            >
+              {preset.label}
+            </button>
+          </Tooltip>
         ))}
       </div>
       <div className="flex flex-wrap justify-center gap-1">
-        {Array.from({ length: SERVICE_HOUR_WEEKDAY_COUNT }, (_, weekday) => {
+        {Array.from({ length: weekdayCount }, (_, weekday) => {
           const active = selected.has(weekday);
           const tooltip = weekdayChipTooltipLabel(weekday, t);
           return (
-            <button
-              key={weekday}
-              type="button"
-              disabled={disabled}
-              aria-pressed={active}
-              aria-label={tooltip}
-              title={tooltip}
-              onClick={() => onToggle(weekday)}
-              className={cn(
+            <Tooltip key={weekday} content={tooltip}>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-pressed={active}
+                aria-label={tooltip}
+                onClick={() => onToggle(weekday)}
+                className={cn(
                 "min-w-[2rem] rounded-md border px-1.5 py-0.5 text-xs font-medium transition-colors",
                 active
                   ? "border-primary bg-primary/10 text-foreground"
@@ -97,8 +102,9 @@ export function WeekdayChipPicker({
                 disabled && "cursor-not-allowed opacity-50"
               )}
             >
-              {weekdayChipLabel(weekday, t)}
+              {weekdayChipLabel(weekday, t, localeKey)}
             </button>
+            </Tooltip>
           );
         })}
       </div>

@@ -2,15 +2,14 @@ import {
   isOvernightAvailability,
   sortProfileRecurringAvailabilityBySchedule,
 } from "@schichtwerk/database";
+import {
+  weekdayAbbrevFromIndex,
+  type WeekdayLabelLocale,
+} from "@schichtwerk/i18n";
 import type { ProfileRecurringAvailability } from "@schichtwerk/types";
 import { formatTime } from "@/lib/planning-utils";
 
 export const PROFILE_AVAILABILITY_HOLIDAY_WEEKDAY = 7;
-
-const WEEKDAY_ABBREVS = {
-  de: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
-  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-} as const;
 
 const WEEKDAY_LONG = {
   de: [
@@ -62,18 +61,37 @@ export function shiftTypeNameWithSchicht(name: string): string {
 
 export function weekdayLabel(
   weekday: number,
-  locale: "de" | "en",
+  locale: WeekdayLabelLocale,
   style: WeekdayLabelStyle = "short"
 ): string {
   if (weekday === PROFILE_AVAILABILITY_HOLIDAY_WEEKDAY) {
     return style === "long" ? HOLIDAY_LONG[locale] : HOLIDAY_ABBREV;
   }
-  const labels = style === "long" ? WEEKDAY_LONG : WEEKDAY_ABBREVS;
-  return labels[locale][weekday] ?? "?";
+  if (style === "short") {
+    return weekdayAbbrevFromIndex(weekday, locale);
+  }
+  return WEEKDAY_LONG[locale][weekday] ?? "?";
 }
 
-export function weekdayAbbrev(weekday: number, locale: "de" | "en"): string {
+export function weekdayAbbrev(weekday: number, locale: WeekdayLabelLocale): string {
   return weekdayLabel(weekday, locale, "short");
+}
+
+/** z. B. Montag 22:00 bis Dienstag 06:00 (über Mitternacht). */
+export function formatOvernightAvailabilitySpan(
+  weekday: number,
+  start_time: string,
+  end_time: string,
+  locale: "de" | "en" = "de"
+): string {
+  const startDay = weekdayLabel(weekday, locale, "long");
+  const endDay = weekdayLabel((weekday + 1) % 7, locale, "long");
+  const start = formatTime(start_time);
+  const end = formatTime(end_time);
+  if (locale === "en") {
+    return `${startDay} ${start} to ${endDay} ${end}`;
+  }
+  return `${startDay} ${start} bis ${endDay} ${end}`;
 }
 
 /** z. B. 08:00 – 17:00 oder 22:00 – 06:00 (+1) */

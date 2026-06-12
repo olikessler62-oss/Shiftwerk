@@ -30,7 +30,7 @@ export function InviteForm({ employeeCount, embedded = false, onSuccess }: Props
       )}
     >
       {!embedded ? (
-        <h2 className="text-lg font-medium">Mitarbeiter einladen</h2>
+        <h2 className="text-lg font-medium">Personal einladen</h2>
       ) : null}
       <p className={cn("text-sm text-muted", embedded ? "" : "mt-1")}>
         {employeeCount}/20 aktiv · Einladung per E-Mail (App-Login)

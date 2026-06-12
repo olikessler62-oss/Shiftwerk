@@ -33,6 +33,7 @@ import {
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
 } from "./settings-list-ui";
+import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 import {
   Alert,
   Button,
@@ -78,9 +79,7 @@ export function LocationServiceHoursPanelModal({
 }: Props) {
   const t = useTranslations();
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(
-    cachedHours === undefined || cachedShiftTemplates === undefined
-  );
+  const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [shiftTemplates, setShiftTemplates] = useState<AreaShiftTemplateWithBreaks[]>(
     () => cachedShiftTemplates ?? []
@@ -99,28 +98,6 @@ export function LocationServiceHoursPanelModal({
   );
 
   useEffect(() => {
-    if (cachedHours === undefined || cachedShiftTemplates === undefined) return;
-    setShiftTemplates(cachedShiftTemplates);
-    syncEntriesFromHours(cachedHours, cachedShiftTemplates);
-    setLoading(false);
-  }, [cachedHours, cachedShiftTemplates, syncEntriesFromHours]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchLocationServiceHourSources(location.id, area.id).then((result) => {
-      if (cancelled) return;
-      if (!result.ok) return;
-      const sources = result.sources ?? [];
-      setSourceAreas(sources);
-      setSelectedSourceAreaId(sources[0]?.id ?? "");
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [location.id, area.id]);
-
-  useEffect(() => {
-
     let cancelled = false;
     setLoading(true);
     setErrorMessage(null);
@@ -132,17 +109,27 @@ export function LocationServiceHoursPanelModal({
       cachedShiftTemplates !== undefined
         ? Promise.resolve({ ok: true as const, templates: cachedShiftTemplates })
         : fetchAreaShiftTemplates(location.id, area.id),
-    ]).then(([hoursResult, templatesResult]) => {
+      fetchLocationServiceHourSources(location.id, area.id),
+    ]).then(([hoursResult, templatesResult, sourcesResult]) => {
       if (cancelled) return;
-      setLoading(false);
 
       const templates =
         templatesResult.ok === true ? (templatesResult.templates ?? []) : [];
       setShiftTemplates(templates);
 
+      if (sourcesResult.ok) {
+        const sources = sourcesResult.sources ?? [];
+        setSourceAreas(sources);
+        setSelectedSourceAreaId(sources[0]?.id ?? "");
+      } else {
+        setSourceAreas([]);
+        setSelectedSourceAreaId("");
+      }
+
       if (!hoursResult.ok) {
         setErrorMessage(hoursResult.error);
         syncEntriesFromHours([], templates);
+        setLoading(false);
         return;
       }
 
@@ -151,6 +138,7 @@ export function LocationServiceHoursPanelModal({
       if (cachedHours === undefined) {
         onCacheUpdate(area.id, hours);
       }
+      setLoading(false);
     });
 
     return () => {
@@ -256,9 +244,12 @@ export function LocationServiceHoursPanelModal({
     }
   }
 
+  const showModal = useDeferredSettingsModalRender(loading, onClose);
+  if (!showModal) return null;
+
   return (
     <div
-      className={settingsSubModalOverlayClass()}
+      className={cn(settingsSubModalOverlayClass(), saving && "cursor-wait")}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !saving) onClose();
@@ -268,7 +259,11 @@ export function LocationServiceHoursPanelModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="location-service-hours-title"
-        className={settingsSubModalDialogClass("3xl", "max-w-[calc(48rem+60px)]")}
+        aria-busy={saving}
+        className={cn(
+          settingsSubModalDialogClass("3xl", "max-w-[calc(48rem+60px)]"),
+          saving && "cursor-wait"
+        )}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div
@@ -279,10 +274,10 @@ export function LocationServiceHoursPanelModal({
         >
           <div className="min-w-0">
             <h3 id="location-service-hours-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("locations.panelServiceHoursOf", {
-                location: location.name,
-                area: area.name,
-              })}
+              <span className="text-foreground">{t("locations.panelServiceHoursOfPrefix")} </span>
+              <span className="text-cyan-600">
+                {location.name} | {area.name}
+              </span>
             </h3>
           </div>
           <IconButton
@@ -302,11 +297,8 @@ export function LocationServiceHoursPanelModal({
               {errorMessage}
             </Alert>
           ) : null}
-          {loading ? (
-            <p className="py-6 text-center text-sm text-muted">{t("common.loading")}</p>
-          ) : (
-            <>
-              <div className={serviceHoursDesktopGridClass}>
+          <>
+            <div className={serviceHoursDesktopGridClass}>
                 <div className="flex justify-center">
                   <LabelMuted className="mb-0 block text-center">
                     {t("locations.serviceHoursColumnWeekdays")}
@@ -619,8 +611,7 @@ export function LocationServiceHoursPanelModal({
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted">{t("locations.serviceHoursHint")}</p>
-            </>
-          )}
+          </>
         </div>
 
         <div className={settingsModalFooterClass()}>
@@ -632,7 +623,7 @@ export function LocationServiceHoursPanelModal({
             type="button"
             variant="primary"
             onClick={handleSave}
-            disabled={saving || loading}
+            disabled={saving}
           >
             <CheckIcon />
             {t("common.ok")}

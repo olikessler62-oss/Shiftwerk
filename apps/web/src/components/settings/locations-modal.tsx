@@ -63,6 +63,7 @@ import {
   settingsIndicatorCellClass,
   settingsPanelHeaderClass,
 } from "./settings-list-ui";
+import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 import {
   Alert,
   Button,
@@ -70,6 +71,7 @@ import {
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
@@ -122,26 +124,18 @@ function buildInitialDetailCaches(
   areaId: string,
   serviceHours: LocationAreaServiceHour[],
   staffing: LocationAreaStaffing[],
-  shiftTemplates: AreaShiftTemplateWithBreaks[]
+  shiftTemplates: AreaShiftTemplateWithBreaks[],
+  qualificationTemplates?: AreaQualificationTemplateEntry[]
 ) {
   return {
     serviceHoursCache: { [areaId]: filterByArea(serviceHours, areaId) },
     staffingCache: { [areaId]: filterByArea(staffing, areaId) },
     shiftTemplatesCache: { [areaId]: filterByArea(shiftTemplates, areaId) },
-    qualificationTemplatesCache: {} as Record<string, AreaQualificationTemplateEntry[]>,
+    qualificationTemplatesCache:
+      qualificationTemplates !== undefined
+        ? { [areaId]: filterByArea(qualificationTemplates, areaId) }
+        : {},
   };
-}
-
-function shouldDeferLocationsModalRender(
-  locationId: string | null,
-  hasPrefetchedAreas: boolean,
-  selectedAreaId: string | null,
-  detailPrefetched: boolean
-): boolean {
-  if (!locationId) return false;
-  if (!hasPrefetchedAreas) return true;
-  if (selectedAreaId && !detailPrefetched) return true;
-  return false;
 }
 
 function ColumnActionButton({
@@ -159,7 +153,7 @@ function ColumnActionButton({
     <SettingsIconActionButton
       label={label}
       icon={icon}
-      title={title}
+      tooltip={title}
       variant={variant}
       className={className}
       {...props}
@@ -193,8 +187,10 @@ function ColumnShell({
 }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
-      <h3 className={settingsPanelHeaderClass()} title={title}>
-        {title}
+      <h3 className={settingsPanelHeaderClass()}>
+        <Tooltip content={title} className="block min-w-0 w-full truncate">
+          <span className="block truncate">{title}</span>
+        </Tooltip>
       </h3>
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 bg-background px-2 py-2">
@@ -229,13 +225,42 @@ function isAreaDetailCached(
   areaId: string,
   serviceHoursCache: Record<string, LocationAreaServiceHour[]>,
   staffingCache: Record<string, LocationAreaStaffing[]>,
-  shiftTemplatesCache: Record<string, AreaShiftTemplateWithBreaks[]>
+  shiftTemplatesCache: Record<string, AreaShiftTemplateWithBreaks[]>,
+  qualificationTemplatesCache: Record<string, AreaQualificationTemplateEntry[]>
 ): boolean {
   return (
     areaId in serviceHoursCache &&
     areaId in staffingCache &&
-    areaId in shiftTemplatesCache
+    areaId in shiftTemplatesCache &&
+    areaId in qualificationTemplatesCache
   );
+}
+
+function isLocationsModalReady(
+  locationId: string | null,
+  areasLoading: boolean,
+  selectedAreaId: string | null,
+  displayedAreaId: string | null,
+  serviceHoursCache: Record<string, LocationAreaServiceHour[]>,
+  staffingCache: Record<string, LocationAreaStaffing[]>,
+  shiftTemplatesCache: Record<string, AreaShiftTemplateWithBreaks[]>,
+  qualificationTemplatesCache: Record<string, AreaQualificationTemplateEntry[]>
+): boolean {
+  if (!locationId) return true;
+  if (areasLoading) return false;
+  if (!selectedAreaId) return true;
+  if (
+    !isAreaDetailCached(
+      selectedAreaId,
+      serviceHoursCache,
+      staffingCache,
+      shiftTemplatesCache,
+      qualificationTemplatesCache
+    )
+  ) {
+    return false;
+  }
+  return displayedAreaId === selectedAreaId;
 }
 
 export function LocationsModal({
@@ -275,14 +300,7 @@ export function LocationsModal({
   const skipInitialAreasFetch = useRef(hasPrefetchedAreas);
 
   const [pending, startTransition] = useTransition();
-  const [initialLoading, setInitialLoading] = useState(() =>
-    shouldDeferLocationsModalRender(
-      initialLocationId,
-      hasPrefetchedAreas,
-      initialSelectedAreaId,
-      detailPrefetched
-    )
-  );
+  const [hasInitiallyShown, setHasInitiallyShown] = useState(false);
   const [list, setList] = useState(locations);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
     initialLocationId
@@ -298,9 +316,7 @@ export function LocationsModal({
       ? resolveInitialAreaId(initialAreas, initialSelectedAreaId)
       : null
   );
-  const [displayedAreaId, setDisplayedAreaId] = useState<string | null>(() =>
-    detailPrefetched && initialSelectedAreaId ? initialSelectedAreaId : null
-  );
+  const [displayedAreaId, setDisplayedAreaId] = useState<string | null>(null);
   const [serviceHoursCache, setServiceHoursCache] = useState<
     Record<string, LocationAreaServiceHour[]>
   >(() => initialDetailCaches?.serviceHoursCache ?? {});
@@ -378,7 +394,8 @@ export function LocationsModal({
       selectedAreaId,
       serviceHoursCache,
       staffingCache,
-      shiftTemplatesCache
+      shiftTemplatesCache,
+      qualificationTemplatesCache
     );
   const displayedPanelReady =
     !!displayedAreaId &&
@@ -386,8 +403,20 @@ export function LocationsModal({
       displayedAreaId,
       serviceHoursCache,
       staffingCache,
-      shiftTemplatesCache
+      shiftTemplatesCache,
+      qualificationTemplatesCache
     );
+  const modalReady = isLocationsModalReady(
+    selectedLocationId,
+    areasLoading,
+    selectedAreaId,
+    displayedAreaId,
+    serviceHoursCache,
+    staffingCache,
+    shiftTemplatesCache,
+    qualificationTemplatesCache
+  );
+  const deferInitialRender = !hasInitiallyShown && !modalReady;
   const areaDetailSwitching =
     !!selectedAreaId && selectedAreaId !== displayedAreaId;
   const clearLocationScrollTarget = useCallback(
@@ -425,11 +454,10 @@ export function LocationsModal({
   }, []);
 
   useEffect(() => {
-    if (!initialLoading) return;
-    if (areasLoading) return;
-    if (selectedAreaId && !panelAreaReady) return;
-    setInitialLoading(false);
-  }, [initialLoading, areasLoading, selectedAreaId, panelAreaReady]);
+    if (modalReady && !hasInitiallyShown) {
+      setHasInitiallyShown(true);
+    }
+  }, [hasInitiallyShown, modalReady]);
 
   useEffect(() => {
     if (!selectedAreaId) {
@@ -545,8 +573,13 @@ export function LocationsModal({
   );
 
   const handleStaffingCacheUpdate = useCallback(
-    (areaId: string, staffing: LocationAreaStaffing[]) => {
+    (
+      areaId: string,
+      staffing: LocationAreaStaffing[],
+      serviceHours: LocationAreaServiceHour[]
+    ) => {
       setStaffingCache((prev) => ({ ...prev, [areaId]: staffing }));
+      setServiceHoursCache((prev) => ({ ...prev, [areaId]: serviceHours }));
     },
     []
   );
@@ -569,7 +602,11 @@ export function LocationsModal({
     (locationId: string, areaId: string) => {
       void fetchLocationStaffingEditor(locationId, areaId).then((result) => {
         if (!result.ok) return;
-        handleStaffingCacheUpdate(areaId, result.staffing ?? []);
+        handleStaffingCacheUpdate(
+          areaId,
+          result.staffing ?? [],
+          result.serviceHours ?? []
+        );
       });
     },
     [handleStaffingCacheUpdate]
@@ -630,6 +667,7 @@ export function LocationsModal({
         if (areaId in prev) return prev;
         return { ...prev, [areaId]: qualificationTemplates };
       });
+      setDisplayedAreaId(areaId);
     });
 
     return () => {
@@ -665,7 +703,8 @@ export function LocationsModal({
         id,
         serviceHoursCache,
         staffingCache,
-        shiftTemplatesCache
+        shiftTemplatesCache,
+        qualificationTemplatesCache
       )
     ) {
       setDisplayedAreaId(id);
@@ -729,17 +768,17 @@ export function LocationsModal({
     });
   }
 
+  const showModal = useDeferredSettingsModalRender(deferInitialRender, onClose);
+  if (!showModal) return null;
+
   return (
     <div
       className={cn(
         settingsModalBackdropClass(),
-        (initialLoading || pending || areasLoading || areaDetailSwitching) &&
-          "cursor-wait"
+        (pending || areasLoading || areaDetailSwitching) && "cursor-wait"
       )}
       role="presentation"
-      aria-busy={
-        initialLoading || pending || areasLoading || areaDetailSwitching
-      }
+      aria-busy={pending || areasLoading || areaDetailSwitching}
       onMouseDown={(e) => {
         if (
           e.target === e.currentTarget &&
@@ -751,7 +790,6 @@ export function LocationsModal({
         }
       }}
     >
-      {!initialLoading ? (
       <div
         className="relative flex w-full min-w-0 flex-col"
         style={{ maxWidth: SETTINGS_MODAL_MAX_WIDTH }}
@@ -867,14 +905,16 @@ export function LocationsModal({
                               className={settingsDataCellClass(isSelected, {
                                 className: "max-w-[8rem] truncate font-medium",
                               })}
-                              title={item.name}
                             >
-                              {truncateLabel(item.name)}
+                              <span className="block max-w-full truncate">
+                                {truncateLabel(item.name)}
+                              </span>
                             </td>
                             <td className={settingsListRowDeleteCellClass(isSelected)}>
                               <SettingsListRowDeleteButton
                                 label={t("locations.delete")}
                                 disabled={pending}
+                                showTooltip={false}
                                 onClick={() => {
                                   selectLocation(item.id);
                                   setConfirmDeleteLocation(true);
@@ -978,14 +1018,16 @@ export function LocationsModal({
                               className={settingsDataCellClass(isSelected, {
                                 className: "max-w-[8rem] truncate font-medium",
                               })}
-                              title={area.name}
                             >
-                              {truncateLabel(area.name)}
+                              <span className="block max-w-full truncate">
+                                {truncateLabel(area.name)}
+                              </span>
                             </td>
                             <td className={settingsListRowDeleteCellClass(isSelected)}>
                               <SettingsListRowDeleteButton
                                 label={t("locations.areaDelete")}
                                 disabled={pending || areaDetailSwitching}
+                                showTooltip={false}
                                 onClick={() => {
                                   selectArea(area.id);
                                   setConfirmDeleteArea(true);
@@ -1003,14 +1045,19 @@ export function LocationsModal({
             </div>
 
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
-              <h3 className={settingsPanelHeaderClass()} title={displayedArea?.name}>
+              <h3 className={settingsPanelHeaderClass()}>
                 {displayedArea ? (
-                  <>
-                    {t("locations.panelSelected")}: {displayedArea.name}{" "}
-                    <span className="text-xs font-normal text-muted">
-                      {areaPlanningModeLabel(displayedArea.planning_mode, t)}
+                  <Tooltip
+                    content={displayedArea.name}
+                    className="block min-w-0 w-full truncate"
+                  >
+                    <span className="block truncate">
+                      {t("locations.panelSelected")}: {displayedArea.name}{" "}
+                      <span className="text-xs font-normal text-muted">
+                        {areaPlanningModeLabel(displayedArea.planning_mode, t)}
+                      </span>
                     </span>
-                  </>
+                  </Tooltip>
                 ) : (
                   t("locations.panelDetails")
                 )}
@@ -1034,9 +1081,7 @@ export function LocationsModal({
                 <LocationDetailActions
                   selectedLocation={selectedLocation ?? null}
                   selectedArea={null}
-                  disabled={
-                    pending || areasLoading || areaDetailSwitching
-                  }
+                  disabled={pending || areasLoading}
                   onOpen={setDetailPanel}
                 />
               )}
@@ -1142,10 +1187,26 @@ export function LocationsModal({
           <LocationStaffingPanelModal
             location={selectedLocation}
             area={selectedArea}
+            cachedServiceHours={
+              selectedArea.id in serviceHoursCache
+                ? serviceHoursCache[selectedArea.id]
+                : undefined
+            }
+            cachedStaffing={
+              selectedArea.id in staffingCache
+                ? staffingCache[selectedArea.id]
+                : undefined
+            }
+            cachedShiftTemplates={
+              selectedArea.id in shiftTemplatesCache
+                ? shiftTemplatesCache[selectedArea.id]
+                : undefined
+            }
             onClose={() => {
               setDetailPanel(null);
               refreshStaffingCache(selectedLocation.id, selectedArea.id);
             }}
+            onCacheUpdate={handleStaffingCacheUpdate}
           />
         )}
         {detailPanel === "shiftTemplates" && selectedLocation && selectedArea && (
@@ -1171,7 +1232,6 @@ export function LocationsModal({
             />
           )}
       </div>
-      ) : null}
     </div>
   );
 }

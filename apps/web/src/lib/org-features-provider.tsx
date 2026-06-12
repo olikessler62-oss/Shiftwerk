@@ -1,0 +1,54 @@
+"use client";
+
+import {
+  createContext,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from "react";
+import type { Organization } from "@schichtwerk/types";
+import { getOrgFeatures, type OrgFeatures } from "@/lib/org-features";
+
+type OrgFeaturesContextValue = {
+  organization: Organization;
+  features: OrgFeatures;
+};
+
+const OrgFeaturesContext = createContext<OrgFeaturesContextValue | null>(null);
+
+type Props = {
+  organization: Organization;
+  children: ReactNode;
+};
+
+export function OrgFeaturesProvider({ organization, children }: Props) {
+  const value = useMemo(
+    () => ({
+      organization,
+      features: getOrgFeatures(organization),
+    }),
+    [organization]
+  );
+
+  return (
+    <OrgFeaturesContext.Provider value={value}>
+      {children}
+    </OrgFeaturesContext.Provider>
+  );
+}
+
+export function useOrgFeatures(): OrgFeatures {
+  const ctx = useContext(OrgFeaturesContext);
+  if (!ctx) {
+    throw new Error("useOrgFeatures must be used within OrgFeaturesProvider");
+  }
+  return ctx.features;
+}
+
+export function useOrganization(): Organization {
+  const ctx = useContext(OrgFeaturesContext);
+  if (!ctx) {
+    throw new Error("useOrganization must be used within OrgFeaturesProvider");
+  }
+  return ctx.organization;
+}

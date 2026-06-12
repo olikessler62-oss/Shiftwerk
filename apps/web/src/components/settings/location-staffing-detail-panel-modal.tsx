@@ -9,7 +9,9 @@ import {
   suggestStaffingCreateWindow,
 } from "@/lib/location-staffing-create-suggest";
 import {
+  findServiceHourByWeekdayAndWindow,
   formatServiceHourStaffingListLabel,
+  staffedWeekdaysMatchingWindow,
   weekdayLabelFromIndex,
 } from "@/lib/location-staffing-client";
 import type {
@@ -45,12 +47,13 @@ import {
   Select,
   TimeInput,
 } from "@/components/ui";
+import { Tooltip } from "@/components/ui/tooltip";
 
 const STAFFING_FIELD_CLASS = "h-8 min-h-8 py-0 text-sm leading-8";
 const STAFFING_TIME_INPUT_CLASS =
   "h-8 w-full min-w-[9.5rem] shrink-0 px-2 tabular-nums";
 
-const staffingDesktopGridClass = (mode: "create" | "edit") =>
+const staffingDesktopGridClass = (mode: StaffingDetailMode) =>
   mode === "edit"
     ? "hidden lg:grid lg:grid-cols-[minmax(7.5rem,auto)_minmax(0,15.5rem)_minmax(9.5rem,1fr)_minmax(9.5rem,1fr)] lg:items-end lg:gap-x-2 lg:gap-y-2"
     : "hidden lg:grid lg:grid-cols-[max-content_minmax(0,15.5rem)_minmax(9.5rem,1fr)_minmax(9.5rem,1fr)] lg:items-end lg:gap-x-2 lg:gap-y-2";
@@ -88,13 +91,16 @@ function timeFieldValue(time: string): string {
 }
 
 function initialWindowState(
-  mode: "create" | "edit",
+  mode: StaffingDetailMode,
   serviceHours: LocationAreaServiceHour[],
   initialServiceHourId: string | undefined,
   shiftTemplates: readonly AreaShiftTemplateWithBreaks[],
   staffing: LocationAreaStaffing[]
 ) {
-  if (mode === "edit" && initialServiceHourId) {
+  if (
+    (mode === "edit" || mode === "bulk-edit") &&
+    initialServiceHourId
+  ) {
     const hour = serviceHours.find((entry) => entry.id === initialServiceHourId);
     if (hour) {
       const start_time = timeFieldValue(hour.start_time);
@@ -128,8 +134,10 @@ function initialWindowState(
 const COUNT_INPUT_CLASS =
   "h-8 !w-[3.25rem] shrink-0 px-0 text-center text-sm tabular-nums";
 
+type StaffingDetailMode = "create" | "edit" | "bulk-edit";
+
 type Props = {
-  mode: "create" | "edit";
+  mode: StaffingDetailMode;
   location: Location;
   area: LocationArea;
   serviceHours: LocationAreaServiceHour[];
@@ -175,9 +183,23 @@ export function LocationStaffingDetailPanelModal({
   );
 
   const [weekday, setWeekday] = useState(initialWindow.weekday);
-  const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(
-    () => new Set([initialWindow.weekday])
-  );
+  const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(() => {
+    if (mode === "bulk-edit" && initialServiceHourId) {
+      const referenceHour = serviceHours.find(
+        (entry) => entry.id === initialServiceHourId
+      );
+      if (referenceHour) {
+        const matching = staffedWeekdaysMatchingWindow(
+          referenceHour.start_time,
+          referenceHour.end_time,
+          serviceHours,
+          staffing
+        );
+        return new Set(matching.length > 0 ? matching : [referenceHour.weekday]);
+      }
+    }
+    return new Set([initialWindow.weekday]);
+  });
   const [templateId, setTemplateId] = useState(initialWindow.templateId);
   const [startTime, setStartTime] = useState(initialWindow.start_time);
   const [endTime, setEndTime] = useState(initialWindow.end_time);
@@ -207,7 +229,20 @@ export function LocationStaffingDetailPanelModal({
   const title =
     mode === "create"
       ? t("locations.staffingCreateTitle")
-      : t("locations.staffingDetailTitle", { window: windowLabel });
+      : mode === "bulk-edit"
+        ? t("locations.staffingBulkEditTitle")
+        : t("locations.staffingDetailTitle", { window: windowLabel });
+
+  const usesMultiDayPicker = mode === "create" || mode === "bulk-edit";
+
+  useEffect(() => {
+    if (!saving) return;
+    const previous = document.body.style.cursor;
+    document.body.style.cursor = "wait";
+    return () => {
+      document.body.style.cursor = previous;
+    };
+  }, [saving]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -358,12 +393,11 @@ export function LocationStaffingDetailPanelModal({
       return;
     }
 
-    const weekdaysToSave =
-      mode === "create"
-        ? [...selectedWeekdays].sort((a, b) => a - b)
-        : [weekday];
+    const weekdaysToSave = usesMultiDayPicker
+      ? [...selectedWeekdays].sort((a, b) => a - b)
+      : [weekday];
 
-    if (mode === "create" && weekdaysToSave.length === 0) {
+    if (usesMultiDayPicker && weekdaysToSave.length === 0) {
       setError(t("locations.staffingSelectWeekdays"));
       return;
     }
@@ -375,6 +409,27 @@ export function LocationStaffingDetailPanelModal({
       let nextStaffing = staffing;
 
       for (const saveWeekday of weekdaysToSave) {
+        let previousServiceHourId: string | undefined;
+        if (mode === "edit") {
+          previousServiceHourId = initialServiceHourId;
+        } else if (mode === "bulk-edit") {
+          const existingHour = findServiceHourByWeekdayAndWindow(
+            saveWeekday,
+            startTime,
+            endTime,
+            nextServiceHours
+          );
+          if (!existingHour) {
+            setError(
+              t("locations.staffingBulkEditMissingWindow", {
+                weekday: weekdayLabelFromIndex(saveWeekday, t),
+              })
+            );
+            return;
+          }
+          previousServiceHourId = existingHour.id;
+        }
+
         const result = await saveServiceHourStaffing({
           locationId: location.id,
           locationAreaId: area.id,
@@ -383,13 +438,12 @@ export function LocationStaffingDetailPanelModal({
             start_time: startTime,
             end_time: endTime,
           },
-          previousServiceHourId:
-            mode === "edit" ? initialServiceHourId : undefined,
+          previousServiceHourId,
           rules,
         });
         if (!result.ok) {
           setError(
-            mode === "create" && weekdaysToSave.length > 1
+            usesMultiDayPicker && weekdaysToSave.length > 1
               ? `${weekdayLabelFromIndex(saveWeekday, t)}: ${result.error}`
               : result.error
           );
@@ -447,7 +501,7 @@ export function LocationStaffingDetailPanelModal({
 
   return (
     <div
-      className={settingsNestedModalOverlayClass()}
+      className={cn(settingsNestedModalOverlayClass(), saving && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !saving) onClose();
@@ -457,9 +511,13 @@ export function LocationStaffingDetailPanelModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="location-staffing-detail-title"
-        className={settingsNestedModalDialogClass(
-          "5xl",
-          "max-w-[min(64rem,calc(100vw-1rem))]"
+        aria-busy={saving}
+        className={cn(
+          settingsNestedModalDialogClass(
+            "5xl",
+            "max-w-[min(64rem,calc(100vw-1rem))]"
+          ),
+          saving && "[&_*]:cursor-wait"
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -521,7 +579,7 @@ export function LocationStaffingDetailPanelModal({
               </LabelMuted>
             </div>
 
-            {mode === "create" ? (
+            {usesMultiDayPicker ? (
               <div className="flex justify-center">
                 <WeekdayChipPicker
                   selected={selectedWeekdays}
@@ -573,7 +631,7 @@ export function LocationStaffingDetailPanelModal({
                 <LabelMuted className="mb-1 block text-center">
                   {t("locations.serviceHoursColumnWeekdays")}
                 </LabelMuted>
-                {mode === "create" ? (
+                {usesMultiDayPicker ? (
                   <WeekdayChipPicker
                     selected={selectedWeekdays}
                     disabled={saving}
@@ -664,16 +722,19 @@ export function LocationStaffingDetailPanelModal({
                     key={row.key}
                     className="flex min-w-0 items-center gap-1.5 rounded-md border border-border/60 bg-background/50 px-1.5 py-1"
                   >
-                    <select
-                      className="h-8 min-w-0 flex-1 truncate rounded-md border border-border bg-background px-2 text-sm"
-                      value={row.qualification_id}
-                      disabled={saving}
-                      title={
+                    <Tooltip
+                      content={
                         qualifications.find((qual) => qual.id === row.qualification_id)
                           ?.name
                       }
-                      onChange={(e) => setQualification(row.key, e.target.value)}
+                      className="min-w-0 flex-1"
                     >
+                      <select
+                        className="h-8 min-w-0 flex-1 truncate rounded-md border border-border bg-background px-2 text-sm"
+                        value={row.qualification_id}
+                        disabled={saving}
+                        onChange={(e) => setQualification(row.key, e.target.value)}
+                      >
                       {qualifications.map((qual) => (
                         <option
                           key={qual.id}
@@ -686,6 +747,7 @@ export function LocationStaffingDetailPanelModal({
                         </option>
                       ))}
                     </select>
+                    </Tooltip>
                     <Input
                       value={row.count}
                       disabled={saving}
@@ -708,7 +770,12 @@ export function LocationStaffingDetailPanelModal({
         </div>
 
         <div className={settingsModalFooterClass()}>
-          <div className="flex w-full flex-col-reverse gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:gap-2">
+          <div className="flex w-full flex-col-reverse items-stretch gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:items-center sm:gap-2">
+            {saving ? (
+              <p className="text-center text-xs text-muted sm:mr-auto sm:text-left">
+                {t("common.saving")}
+              </p>
+            ) : null}
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
               <CloseIcon />
               {t("common.cancel")}

@@ -1,5 +1,10 @@
 import { normalizeTime } from "./utils";
 import type { ShiftTypeBreakInput } from "./interface";
+import {
+  getBreakDurationRuleForCountry,
+  validateShiftTypeBreaksForCountry,
+  DEFAULT_COUNTRY_CODE,
+} from "./labor-compliance-validation";
 
 export const MAX_SHIFT_TYPES_PER_ORGANIZATION = 6;
 export const MAX_AREA_SHIFT_TEMPLATES_PER_AREA = 6;
@@ -41,31 +46,27 @@ export function shiftDurationHours(start_time: string, end_time: string): number
 }
 
 export type BreakDurationRule = {
-  kind: "max";
+  kind: "max" | "required" | "none";
   minutes: number;
-} | {
-  kind: "required";
-  minutes: number;
+  minSegmentMinutes?: number;
 };
 
-/** Pausenregeln nach Schichtdauer (Stunden). */
+/** Pausenregeln nach Schichtdauer (Stunden) — abhängig vom Organisations-Land. */
 export function getBreakDurationRule(
   start_time: string,
-  end_time: string
+  end_time: string,
+  countryCode: string | null = DEFAULT_COUNTRY_CODE
 ): BreakDurationRule {
-  const hours = shiftDurationHours(start_time, end_time);
-  if (hours <= 6) {
-    return { kind: "max", minutes: 15 };
-  }
-  if (hours <= 9) {
-    return { kind: "required", minutes: 30 };
-  }
-  return { kind: "required", minutes: 45 };
+  return getBreakDurationRuleForCountry(countryCode, start_time, end_time);
 }
 
-export function getSuggestedBreakMinutes(start_time: string, end_time: string): number {
-  const rule = getBreakDurationRule(start_time, end_time);
-  return rule.kind === "max" ? rule.minutes : rule.minutes;
+export function getSuggestedBreakMinutes(
+  start_time: string,
+  end_time: string,
+  countryCode: string | null = DEFAULT_COUNTRY_CODE
+): number {
+  const rule = getBreakDurationRule(start_time, end_time, countryCode);
+  return rule.kind === "none" ? 0 : rule.minutes;
 }
 
 /** Pause mittig in der Schicht, Dauer gemäß Vorgabe (begrenzt auf Schichtlänge). */
@@ -96,118 +97,18 @@ export function centeredBreakForShift(
   };
 }
 
-function breakIntervalOnShiftTimeline(
-  break_start: string,
-  break_end: string,
-  startM: number,
-  endM: number
-): { start: number; end: number } | null {
-  let bs = timeToMinutes(break_start);
-  let be = timeToMinutes(break_end);
-  if (be <= bs) be += MINUTES_PER_DAY;
-
-  for (const offset of [0, MINUTES_PER_DAY, -MINUTES_PER_DAY]) {
-    const bStart = bs + offset;
-    const bEnd = be + offset;
-    if (bStart >= startM - 1 && bEnd <= endM + 1 && bEnd > bStart) {
-      return { start: bStart, end: bEnd };
-    }
-  }
-  return null;
-}
-
-function totalBreakMinutesOnTimeline(
-  breaks: ShiftTypeBreakInput[],
-  startM: number,
-  endM: number
-): number {
-  let total = 0;
-  for (const b of breaks) {
-    const interval = breakIntervalOnShiftTimeline(b.break_start, b.break_end, startM, endM);
-    if (!interval) continue;
-    total += interval.end - interval.start;
-  }
-  return Math.round(total);
-}
-
-function breaksCenteredOnShift(
-  breaks: ShiftTypeBreakInput[],
-  startM: number,
-  endM: number
-): boolean {
-  const midShift = (startM + endM) / 2;
-  let weightedMid = 0;
-  let total = 0;
-
-  for (const b of breaks) {
-    const interval = breakIntervalOnShiftTimeline(b.break_start, b.break_end, startM, endM);
-    if (!interval) return false;
-    const len = interval.end - interval.start;
-    weightedMid += ((interval.start + interval.end) / 2) * len;
-    total += len;
-  }
-
-  if (total <= 0) return true;
-  return Math.abs(weightedMid / total - midShift) <= 2;
-}
-
 export function validateShiftTypeBreaks(
   start_time: string,
   end_time: string,
-  breaks: ShiftTypeBreakInput[]
+  breaks: ShiftTypeBreakInput[],
+  countryCode: string | null = DEFAULT_COUNTRY_CODE
 ): { ok: true } | { ok: false; error: string } {
-  const durationMin = shiftDurationMinutes(start_time, end_time);
-  if (durationMin <= 0) {
-    return { ok: false, error: "Uhrzeit bis muss nach Uhrzeit von liegen." };
-  }
-
-  const { startM, endM } = shiftWindowMinutes(start_time, end_time);
-  const rule = getBreakDurationRule(start_time, end_time);
-  const totalBreak = totalBreakMinutesOnTimeline(breaks, startM, endM);
-
-  for (const b of breaks) {
-    if (!breakIntervalOnShiftTimeline(b.break_start, b.break_end, startM, endM)) {
-      return {
-        ok: false,
-        error:
-          "Alle Pausen müssen innerhalb der Schichtzeit liegen (nicht z. B. mittags bei Spätschicht).",
-      };
-    }
-  }
-
-  if (rule.kind === "max") {
-    if (totalBreak > rule.minutes) {
-      return {
-        ok: false,
-        error: `Bei Schichten bis 6 Stunden darf die Gesamtpause höchstens ${rule.minutes} Minuten betragen.`,
-      };
-    }
-    if (breaks.length > 0 && !breaksCenteredOnShift(breaks, startM, endM)) {
-      return {
-        ok: false,
-        error: "Pausen sollen mittig in der Schichtzeit liegen.",
-      };
-    }
-    return { ok: true };
-  }
-
-  if (breaks.length === 0 || totalBreak !== rule.minutes) {
-    const range =
-      rule.minutes === 30 ? "über 6 bis 9 Stunden" : "über 9 Stunden";
-    return {
-      ok: false,
-      error: `Bei Schichten ${range} ist eine Gesamtpause von ${rule.minutes} Minuten erforderlich.`,
-    };
-  }
-
-  if (!breaksCenteredOnShift(breaks, startM, endM)) {
-    return {
-      ok: false,
-      error: "Die Pause muss mittig in der Schichtzeit liegen.",
-    };
-  }
-
-  return { ok: true };
+  return validateShiftTypeBreaksForCountry(
+    countryCode,
+    start_time,
+    end_time,
+    breaks
+  );
 }
 
 export function validateShiftTypeCount(
@@ -236,10 +137,17 @@ export function validateAreaShiftTemplateCount(
   return { ok: true };
 }
 
-export function breakRuleHint(start_time: string, end_time: string): string {
-  const rule = getBreakDurationRule(start_time, end_time);
-  if (rule.kind === "max") {
-    return `Schicht ≤ 6 Std.: Pause max. ${rule.minutes} Min., mittig in der Schicht.`;
+export function breakRuleHint(
+  start_time: string,
+  end_time: string,
+  countryCode: string | null = DEFAULT_COUNTRY_CODE
+): string {
+  const rule = getBreakDurationRule(start_time, end_time, countryCode);
+  if (rule.kind === "none") {
+    return "Keine gesetzliche Mindestpause für diese Schichtdauer.";
   }
-  return `Schicht ${rule.minutes === 30 ? "> 6 bis 9 Std." : "> 9 Std."}: ${rule.minutes} Min. Pause mittig in der Schicht.`;
+  if (rule.kind === "max") {
+    return `Pause max. ${rule.minutes} Min., mittig in der Schicht.`;
+  }
+  return `${rule.minutes} Min. Pause mittig in der Schicht erforderlich.`;
 }

@@ -6,6 +6,7 @@ import {
   deleteAreaShiftTemplate,
   fetchAreaShiftTemplateSources,
   fetchAreaShiftTemplates,
+  fetchOrganizationCountryCode,
   reorderAreaShiftTemplates,
   type AreaShiftTemplateSourceArea,
 } from "@/app/actions/area-shift-templates";
@@ -57,6 +58,7 @@ import {
 import { cn } from "@/lib/cn";
 import { areaShiftTemplatesSetsEqual } from "@/lib/location-area-copy-compare";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
+import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 
 type FormMode =
   | null
@@ -106,6 +108,7 @@ export function AreaShiftTemplatesPanelModal({
     []
   );
   const [selectedSourceAreaId, setSelectedSourceAreaId] = useState("");
+  const [countryCode, setCountryCode] = useState("DE");
 
   const applyTemplates = useCallback(
     (templates: AreaShiftTemplateWithBreaks[]) => {
@@ -125,14 +128,33 @@ export function AreaShiftTemplatesPanelModal({
     let cancelled = false;
     setInitialLoading(true);
     setErrorMessage(null);
-    void fetchAreaShiftTemplates(location.id, area.id).then((result) => {
+
+    void Promise.all([
+      fetchAreaShiftTemplates(location.id, area.id),
+      fetchAreaShiftTemplateSources(location.id, area.id),
+      fetchOrganizationCountryCode(),
+    ]).then(([templatesResult, sourcesResult, countryResult]) => {
       if (cancelled) return;
-      if (!result.ok) {
-        setErrorMessage(result.error);
+
+      if (countryResult.ok) {
+        setCountryCode(countryResult.countryCode);
+      }
+
+      if (sourcesResult.ok) {
+        const sources = sourcesResult.sources ?? [];
+        setSourceAreas(sources);
+        setSelectedSourceAreaId(sources[0]?.id ?? "");
+      } else {
+        setSourceAreas([]);
+        setSelectedSourceAreaId("");
+      }
+
+      if (!templatesResult.ok) {
+        setErrorMessage(templatesResult.error);
         setList([]);
         onCacheUpdate?.(area.id, []);
       } else {
-        const templates = result.templates ?? [];
+        const templates = templatesResult.templates ?? [];
         setList(templates);
         onCacheUpdate?.(area.id, templates);
         setSelectedId((current) => {
@@ -142,26 +164,14 @@ export function AreaShiftTemplatesPanelModal({
           return templates[0]?.id ?? null;
         });
       }
+
       setInitialLoading(false);
     });
+
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch only when area/location changes
-  }, [location.id, area.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchAreaShiftTemplateSources(location.id, area.id).then((result) => {
-      if (cancelled) return;
-      if (!result.ok) return;
-      const sources = result.sources ?? [];
-      setSourceAreas(sources);
-      setSelectedSourceAreaId(sources[0]?.id ?? "");
-    });
-    return () => {
-      cancelled = true;
-    };
   }, [location.id, area.id]);
 
   useEffect(() => {
@@ -282,26 +292,28 @@ export function AreaShiftTemplatesPanelModal({
     });
   }
 
+  const showModal = useDeferredSettingsModalRender(initialLoading, onClose);
+  if (!showModal) return null;
+
   return (
     <div
-      className={cn(
-        settingsSubModalOverlayClass(),
-        (initialLoading || pending) && "cursor-wait"
-      )}
+      className={cn(settingsSubModalOverlayClass(), pending && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !anyOverlayOpen) onClose();
+        if (e.target === e.currentTarget && !anyOverlayOpen) {
+          onClose();
+        }
       }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="area-shift-templates-panel-title"
-        aria-busy={initialLoading || pending}
+        aria-busy={pending}
         aria-hidden={anyOverlayOpen}
         className={cn(
           settingsSubModalDialogClass("2xl"),
-          (initialLoading || pending) && "[&_*]:cursor-wait",
+          pending && "[&_*]:cursor-wait",
           anyOverlayOpen ? "pointer-events-none" : ""
         )}
         onMouseDown={(e) => e.stopPropagation()}
@@ -314,10 +326,12 @@ export function AreaShiftTemplatesPanelModal({
         >
           <div className="min-w-0">
             <h3 id="area-shift-templates-panel-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("locations.panelShiftTemplatesOf", {
-                location: location.name,
-                area: area.name,
-              })}
+              <span className="text-foreground">
+                {t("locations.panelShiftTemplatesOfPrefix")}{" "}
+              </span>
+              <span className="text-cyan-600">
+                {location.name} | {area.name}
+              </span>
             </h3>
             <p className="mt-1 text-xs text-muted">
               {t("locations.areaShiftTemplatesHint")}
@@ -341,9 +355,7 @@ export function AreaShiftTemplatesPanelModal({
         )}
 
         <div className="min-h-0 flex-1 overflow-hidden px-4 py-3">
-          {initialLoading ? (
-            <SettingsEmptyState message={t("common.loading")} className="min-h-full" />
-          ) : list.length === 0 ? (
+              {list.length === 0 ? (
             <SettingsEmptyState
               message={t("locations.areaShiftTemplatesEmpty")}
               hint={t("common.emptyHintCreate")}
@@ -432,7 +444,7 @@ export function AreaShiftTemplatesPanelModal({
                         <td className={settingsListRowDeleteCellClass(isSelected)}>
                           <SettingsListRowDeleteButton
                             label={t("locations.delete")}
-                            disabled={pending || initialLoading}
+                            disabled={pending}
                             onClick={() => {
                               setSelectedId(template.id);
                               setConfirmDelete(true);
@@ -455,8 +467,8 @@ export function AreaShiftTemplatesPanelModal({
               <SettingsPrimaryActionButton
                 label={t("locations.new")}
                 icon={<PlusIcon />}
-                disabled={pending || initialLoading || atTemplateLimit}
-                title={
+                disabled={pending || atTemplateLimit}
+                tooltip={
                   atTemplateLimit
                     ? t("locations.areaShiftTemplatesMax", {
                         max: MAX_AREA_SHIFT_TEMPLATES_PER_AREA,
@@ -475,7 +487,7 @@ export function AreaShiftTemplatesPanelModal({
                 <SettingsIconActionButton
                   label={t("locations.edit")}
                   icon={<PencilIcon />}
-                  disabled={pending || initialLoading || !selected}
+                  disabled={pending || !selected}
                   onClick={() => {
                     if (!selected) return;
                     setFormMode({ type: "edit", template: selected });
@@ -486,7 +498,7 @@ export function AreaShiftTemplatesPanelModal({
                 <SettingsReorderButtons
                   moveUpLabel={t("common.moveUp")}
                   moveDownLabel={t("common.moveDown")}
-                  disabled={pending || initialLoading}
+                  disabled={pending}
                   canMoveUp={canMoveUp}
                   canMoveDown={canMoveDown}
                   onMoveUp={() => {
@@ -509,7 +521,6 @@ export function AreaShiftTemplatesPanelModal({
                     size="sm"
                     disabled={
                       pending ||
-                      initialLoading ||
                       !selectedSourceArea ||
                       copyFromSourceIsNoOp
                     }
@@ -522,7 +533,7 @@ export function AreaShiftTemplatesPanelModal({
                     className="h-8 shrink-0 px-2 text-xs"
                     style={copySourceSelectStyle}
                     value={selectedSourceAreaId}
-                    disabled={pending || initialLoading}
+                    disabled={pending}
                     aria-label={t("locations.areaShiftTemplatesCopySelectArea")}
                     onChange={(event) => setSelectedSourceAreaId(event.target.value)}
                   >
@@ -560,6 +571,7 @@ export function AreaShiftTemplatesPanelModal({
           mode={formMode.type}
           locationId={location.id}
           locationAreaId={area.id}
+          countryCode={countryCode}
           template={formMode.type === "edit" ? formMode.template : undefined}
           existingTemplates={list}
           onClose={() => setFormMode(null)}

@@ -73,6 +73,31 @@ export {
   type AreaPlanningMode,
 } from "./area-planning-mode";
 export {
+  DEFAULT_ORG_PLANNING_MODE,
+  ORG_PLANNING_MODES,
+  isPlanningMode,
+  normalizePlanningMode,
+  validatePlanningMode,
+  validateOrganizationPlanningModeUpgrade,
+  type PlanningModeUpgradeErrorCode,
+  type PlanningMode,
+} from "./org-planning-mode";
+export {
+  INDUSTRIES,
+  isIndustry,
+  normalizeIndustry,
+  validateIndustry,
+  type Industry,
+} from "./industry";
+export {
+  getIndustryTemplate,
+  INDUSTRY_TEMPLATES,
+  resolveIndustryTemplateLocations,
+  type IndustryLocationTemplate,
+  type IndustryTemplate,
+} from "./industry-templates";
+export { seedOrganizationFromIndustryTemplate } from "./seed-organization-from-template";
+export {
   PROFILE_COLOR_PALETTE,
   getProfileColorLabel,
   isProfilePaletteColor,
@@ -86,6 +111,7 @@ export {
 } from "./profile-contact-validation";
 export {
   dayBefore,
+  dayAfter,
   isMutableHourlyRate,
   parseHourlyRateAmount,
   parseValidFromDate,
@@ -154,6 +180,67 @@ export {
   validateShiftTypeBreaks,
   validateAreaShiftTemplateCount,
 } from "./shift-type-break-rules";
+export {
+  DEFAULT_COUNTRY_CODE,
+  resolveCompliance,
+  validateShiftDurationForCountry,
+  validateShiftTypeBreaksForCountry,
+  validateAvailabilityForCountry,
+  validateRestPeriodForCountry,
+  validateStaffingWeekdayForCountry,
+  getBreakDurationRuleForCountry,
+  availabilityDurationHours,
+} from "./labor-compliance-validation";
+export {
+  sumDayShiftWorkHours,
+  validateEmployeeDayShiftAssignments,
+  type DayShiftTimeWindow,
+  type EmployeeDayShiftComplianceViolation,
+} from "./employee-day-shift-compliance";
+export {
+  buildShiftTimestamps,
+  shiftTimeFromTimestamp,
+  zonedWallClockToUtc,
+  SHIFT_TIME_ZONE,
+} from "./shift-timestamps";
+export {
+  DEFAULT_ORGANIZATION_TIME_ZONE,
+  COUNTRY_DEFAULT_TIME_ZONES,
+  resolveOrganizationTimeZone,
+  type OrganizationTimeZoneInput,
+} from "./organization-timezone";
+export {
+  areShiftAssignTimesComplete,
+  employeeHasRecurringAvailabilityOnWeekday,
+  employeeMatchesShiftAvailability,
+  isEmployeeAbsentOnDate,
+  shiftWindowFitsAvailabilitySlot,
+  shiftAssignWeekdayFromDate,
+  validateEmployeeNotAbsentOnDate,
+  validateEmployeeShiftAvailability,
+} from "./shift-assign-eligibility";
+export {
+  getOrgFeaturesFromPlanningMode,
+  type OrgFeatures,
+  type OrgFeatureShiftTemplates,
+} from "./org-features";
+export {
+  findServiceHourIdForShift,
+  serviceWeekdayForShiftDate,
+  validateShiftServiceHoursForArea,
+} from "./shift-service-hours";
+export {
+  evaluateShiftStaffingQualification,
+  staffingQualificationIdsForServiceHour,
+  type ShiftStaffingQualificationStatus,
+} from "./shift-staffing-qualification";
+export {
+  mergeShiftAssignWarnings,
+  validateShiftAssignEligibility,
+  validateShiftEmployeeEligibility,
+  type ShiftAssignEligibilityContext,
+  type ShiftAssignEligibilityInput,
+} from "./shift-assign-validation";
 export {
   suggestServiceHoursFromTemplates,
   uniqueSuggestedServiceHourSlots,

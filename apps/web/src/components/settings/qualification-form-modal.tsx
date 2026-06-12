@@ -8,7 +8,8 @@ import {
 import { validateQualificationUniqueness } from "@schichtwerk/database";
 import type { Qualification } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
-import { SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { cn } from "@/lib/cn";
 import {
   Alert,
   Button,
@@ -82,7 +83,10 @@ export function QualificationFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="qualification-form-title"
-        className="relative z-[71] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl"
+        className={cn(
+          "relative z-[71] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          MODAL_SCROLLBAR_CLASS
+        )}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">

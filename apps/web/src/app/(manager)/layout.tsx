@@ -3,6 +3,8 @@ import { AppShell } from "@/components/dashboard/app-shell";
 import { LocaleProvider } from "@/i18n/locale-provider";
 import { getServerLocale } from "@/i18n/server";
 import { getDatabase } from "@/lib/db";
+import { OrgFeaturesProvider } from "@/lib/org-features-provider";
+import { loadManagerOrganization } from "@/lib/manager";
 
 export default async function ManagerLayout({
   children,
@@ -19,17 +21,23 @@ export default async function ManagerLayout({
   if (!profile || profile.role === "basic") redirect("/app-only");
 
   const orgName = await db.getOrganizationName(profile.organization_id);
+  const organization = await loadManagerOrganization(
+    profile.organization_id,
+    orgName
+  );
   const locale = await getServerLocale();
 
   return (
     <LocaleProvider initialLocale={locale}>
-      <AppShell
-        orgName={orgName ?? undefined}
-        userName={profile.full_name}
-        role={profile.role}
-      >
-        {children}
-      </AppShell>
+      <OrgFeaturesProvider organization={organization}>
+        <AppShell
+          orgName={organization.name || orgName || undefined}
+          userName={profile.full_name}
+          role={profile.role}
+        >
+          {children}
+        </AppShell>
+      </OrgFeaturesProvider>
     </LocaleProvider>
   );
 }

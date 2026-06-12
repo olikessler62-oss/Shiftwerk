@@ -1,43 +1,184 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  formatStaffingEntriesTooltipContent,
+  formatStaffingEntryTooltipContent,
+} from "@/lib/bulk-staffing-header";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import {
   measureStaffingHeaderText,
   resolveStaffingHeaderDisplay,
   type StaffingHeaderDisplay,
+  type StaffingHeaderSegment,
 } from "@/lib/tag-area-header-staffing-display";
+import { useTranslations } from "@/i18n/locale-provider";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 
 type Props = {
   entries: TagAreaHeaderStaffingEntry[];
-  tone?: "default" | "past" | "inactive";
+  /** Vergangener Kalendertag — dunklere Grün-/Rot-Töne. */
+  dimmed?: boolean;
 };
 
 const EMPTY_DISPLAY: StaffingHeaderDisplay = { mode: "empty" };
 
-const PAST_STAFFING_TEXT_CLASS = "text-red-900";
-const INACTIVE_STAFFING_TEXT_CLASS = "text-muted";
+const STAFFING_LABEL_INTERACTIVE_CLASS =
+  "cursor-default rounded px-1 py-px transition-colors duration-150";
 
-function staffingTextClass(
-  tone: "default" | "past" | "inactive",
-  variant: "default" | "understaffed" | "met"
+function staffingLabelClass(
+  variant: "default" | "understaffed" | "met",
+  dimmed: boolean
 ): string {
-  if (tone === "inactive") return INACTIVE_STAFFING_TEXT_CLASS;
-  if (tone === "past") return PAST_STAFFING_TEXT_CLASS;
-  if (variant === "understaffed") return "text-red-600";
-  return "text-green-600";
+  if (variant === "understaffed") {
+    return cn(
+      STAFFING_LABEL_INTERACTIVE_CLASS,
+      dimmed
+        ? "text-red-900 hover:bg-red-900/10 hover:text-red-800"
+        : "text-red-600 hover:bg-red-600/12 hover:text-red-500"
+    );
+  }
+  return cn(
+    STAFFING_LABEL_INTERACTIVE_CLASS,
+    dimmed
+      ? "text-success-foreground hover:bg-success-foreground/10 hover:text-emerald-700"
+      : "text-green-600 hover:bg-green-600/12 hover:text-green-500"
+  );
+}
+
+function StaffingTooltipContent({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
+  return (
+    <>
+      <p className="mb-1.5 border-b border-border/60 pb-1.5 text-xs font-semibold text-foreground">
+        {title}
+      </p>
+      <span className="block whitespace-pre-line">{body}</span>
+    </>
+  );
+}
+
+function StaffingOverlaySegment({
+  segment,
+  className,
+}: {
+  segment: StaffingHeaderSegment;
+  className?: string;
+}) {
+  if (!segment.timeText) {
+    return (
+      <span
+        className={cn(
+          "shrink-0 whitespace-nowrap text-[11px] font-medium leading-none tabular-nums",
+          className
+        )}
+      >
+        {segment.countText}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 whitespace-nowrap leading-none",
+        className
+      )}
+    >
+      <span className="text-[10px] font-medium">{segment.timeText}:</span>
+      <span className="text-[11px] font-medium tabular-nums">{segment.countText}</span>
+    </span>
+  );
+}
+
+function StaffingOverlaySegmentGroup({
+  segments,
+  joinWith,
+  className,
+}: {
+  segments: StaffingHeaderSegment[];
+  joinWith: "pipe" | "space";
+  className?: string;
+}) {
+  const divider = joinWith === "pipe" ? "|" : " ";
+
+  return (
+    <span className={cn("inline-flex min-w-0 items-center gap-1", className)}>
+      {segments.map((segment, index) => (
+        <Fragment key={segment.serviceHourId}>
+          {index > 0 ? (
+            <span
+              className={cn(
+                "shrink-0 leading-none text-muted",
+                joinWith === "pipe" ? "text-[10px]" : "text-[11px]"
+              )}
+              aria-hidden
+            >
+              {divider}
+            </span>
+          ) : null}
+          <StaffingOverlaySegment segment={segment} />
+        </Fragment>
+      ))}
+    </span>
+  );
 }
 
 export function TagAreaHeaderStaffingOverlay({
   entries,
-  tone = "default",
+  dimmed = false,
 }: Props) {
+  const t = useTranslations();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [display, setDisplay] = useState<StaffingHeaderDisplay>(() =>
-    entries.length > 0
-      ? resolveStaffingHeaderDisplay(entries, Number.POSITIVE_INFINITY)
-      : EMPTY_DISPLAY
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(Number.POSITIVE_INFINITY);
+  const [contentOverflows, setContentOverflows] = useState(false);
+
+  const formatQualLine = useCallback(
+    (name: string, assigned: number, required: number) =>
+      t("dashboard.bulkShiftStaffingTooltipLine", {
+        name,
+        assigned,
+        required,
+      }),
+    [t]
+  );
+
+  const entryByServiceHourId = useMemo(
+    () => new Map(entries.map((entry) => [entry.serviceHourId, entry])),
+    [entries]
+  );
+
+  const staffingTooltipTitle = t("locations.panelStaffing");
+
+  const allEntriesTooltip = useMemo(
+    () => (
+      <StaffingTooltipContent
+        title={staffingTooltipTitle}
+        body={formatStaffingEntriesTooltipContent(entries, formatQualLine)}
+      />
+    ),
+    [entries, formatQualLine, staffingTooltipTitle]
+  );
+
+  const entryTooltip = useCallback(
+    (serviceHourId: string) => {
+      const entry = entryByServiceHourId.get(serviceHourId);
+      if (!entry) return undefined;
+      return (
+        <StaffingTooltipContent
+          title={staffingTooltipTitle}
+          body={formatStaffingEntryTooltipContent(entry, formatQualLine)}
+        />
+      );
+    },
+    [entryByServiceHourId, formatQualLine, staffingTooltipTitle]
   );
 
   const entryKey = useMemo(
@@ -45,44 +186,67 @@ export function TagAreaHeaderStaffingOverlay({
       entries
         .map(
           (entry) =>
-            `${entry.serviceHourId}:${entry.assigned}/${entry.required}:${entry.label}`
+            `${entry.serviceHourId}:${entry.assigned}/${entry.required}:${entry.calendarTimeLabel ?? entry.timeLabel ?? entry.label}:${entry.qualifications?.map((qualification) => `${qualification.name}:${qualification.assigned}/${qualification.required}`).join(",") ?? ""}`
         )
         .join("|"),
     [entries]
   );
 
   useLayoutEffect(() => {
-    if (entries.length === 0) {
-      setDisplay(EMPTY_DISPLAY);
-      return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    function updateWidth() {
+      if (!container) return;
+      setContainerWidth(container.clientWidth);
     }
 
-    setDisplay(
-      resolveStaffingHeaderDisplay(entries, Number.POSITIVE_INFINITY)
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [entryKey]);
+
+  const display = useMemo((): StaffingHeaderDisplay => {
+    if (entries.length === 0) return EMPTY_DISPLAY;
+    return resolveStaffingHeaderDisplay(
+      entries,
+      containerWidth,
+      measureStaffingHeaderText
     );
-  }, [entries, entryKey]);
+  }, [entries, entryKey, containerWidth]);
+
+  const hasUnderstaffed = useMemo(
+    () => entries.some((entry) => entry.assigned < entry.required),
+    [entries]
+  );
 
   useLayoutEffect(() => {
     const container = containerRef.current;
-    if (!container || entries.length === 0) return;
-
-    function updateDisplay() {
-      if (!container) return;
-      setDisplay(
-        resolveStaffingHeaderDisplay(
-          entries,
-          container.clientWidth,
-          measureStaffingHeaderText
-        )
-      );
+    const content = contentRef.current;
+    if (!container || !content || display.mode === "indicator" || display.mode === "empty") {
+      setContentOverflows(false);
+      return;
     }
 
-    updateDisplay();
+    function updateOverflow() {
+      if (!container || !content) return;
+      setContentOverflows(content.scrollWidth > container.clientWidth + 1);
+    }
 
-    const observer = new ResizeObserver(updateDisplay);
+    updateOverflow();
+
+    const observer = new ResizeObserver(updateOverflow);
     observer.observe(container);
+    observer.observe(content);
     return () => observer.disconnect();
-  }, [entries, entryKey]);
+  }, [display, entryKey, containerWidth]);
+
+  const showIndicator =
+    display.mode === "indicator" || contentOverflows;
+  const indicatorAllMet =
+    display.mode === "indicator" ? display.allMet : !hasUnderstaffed;
 
   if (entries.length === 0) return null;
 
@@ -91,67 +255,65 @@ export function TagAreaHeaderStaffingOverlay({
       ref={containerRef}
       className="flex h-full w-full min-w-0 items-center justify-center overflow-hidden px-0.5"
     >
-      {display.mode === "indicator" ? (
-        <span
-          className={cn(
-            "shrink-0 text-[10px] font-bold leading-none",
-            staffingTextClass(
-              tone,
-              display.allMet ? "met" : "understaffed"
-            )
-          )}
-          title="Personalbedarf"
+      {showIndicator ? (
+        <Tooltip content={allEntriesTooltip}>
+          <span
+            className={cn(
+              "shrink-0 text-[10px] font-bold leading-none",
+              staffingLabelClass(
+                indicatorAllMet ? "met" : "understaffed",
+                dimmed
+              )
+            )}
+          >
+            !
+          </span>
+        </Tooltip>
+      ) : (
+        <div
+          ref={contentRef}
+          className="flex min-w-0 max-w-full items-center justify-center overflow-hidden"
         >
-          !
-        </span>
-      ) : null}
-
-      {display.mode === "text" ? (
-        <span
-          className={cn(
-            "shrink-0 whitespace-nowrap text-[10px] font-medium leading-none tabular-nums",
-            staffingTextClass(
-              tone,
-              display.understaffed ? "understaffed" : "met"
-            )
-          )}
-        >
-          {display.text}
-        </span>
-      ) : null}
-
-      {display.mode === "segments" ? (
-        <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden">
-          {display.segments.map((segment, segmentIndex) => (
-            <Fragment key={segment.serviceHourId}>
-              {segmentIndex > 0 ? (
-                <span
-                  className={cn(
-                    "shrink-0 text-[10px] leading-none",
-                    tone === "inactive" || tone === "past"
-                      ? staffingTextClass(tone, "default")
-                      : "text-muted"
-                  )}
-                  aria-hidden
-                >
-                  |
-                </span>
-              ) : null}
-              <span
-                className={cn(
-                  "shrink-0 whitespace-nowrap text-[10px] font-medium leading-none tabular-nums",
-                  staffingTextClass(
-                    tone,
-                    segment.understaffed ? "understaffed" : "met"
-                  )
+          {display.mode === "text" ? (
+            <Tooltip content={allEntriesTooltip}>
+              <StaffingOverlaySegmentGroup
+                segments={display.segments}
+                joinWith={display.joinWith}
+                className={staffingLabelClass(
+                  display.understaffed ? "understaffed" : "met",
+                  dimmed
                 )}
-              >
-                {segment.text}
-              </span>
-            </Fragment>
-          ))}
+              />
+            </Tooltip>
+          ) : null}
+
+          {display.mode === "segments" ? (
+            <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden">
+              {display.segments.map((segment, segmentIndex) => (
+                <Fragment key={segment.serviceHourId}>
+                  {segmentIndex > 0 ? (
+                    <span
+                      className="shrink-0 text-[10px] leading-none text-muted"
+                      aria-hidden
+                    >
+                      |
+                    </span>
+                  ) : null}
+                  <Tooltip content={entryTooltip(segment.serviceHourId)}>
+                    <StaffingOverlaySegment
+                      segment={segment}
+                      className={staffingLabelClass(
+                        segment.understaffed ? "understaffed" : "met",
+                        dimmed
+                      )}
+                    />
+                  </Tooltip>
+                </Fragment>
+              ))}
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

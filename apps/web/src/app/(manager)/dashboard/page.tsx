@@ -5,12 +5,15 @@ import {
   toISODate,
   weekDates,
   parseISODate,
+  shiftTimeFromTimestamp,
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
+import { loadManagerOrganization } from "@/lib/manager";
 import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/dashboard-assignment-presets";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-calendar";
+import { resolveOrganizationTimeZone } from "@schichtwerk/database";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
@@ -37,6 +40,10 @@ export default async function DashboardPage({
   const orgId = await db.getProfileOrganizationId(user.id);
   if (!orgId) redirect("/login");
 
+  const orgName = await db.getOrganizationName(orgId);
+  const organization = await loadManagerOrganization(orgId, orgName);
+  const timeZone = resolveOrganizationTimeZone(organization);
+
   const weekStart = week
     ? toISODate(startOfWeek(parseISODate(week)))
     : toISODate(startOfWeek(new Date()));
@@ -44,13 +51,14 @@ export default async function DashboardPage({
   const from = dates[0];
   const to = dates[6];
 
-  let [qualifications, compensationSurchargeTypes, roles, profiles, locations] =
+  let [qualifications, compensationSurchargeTypes, roles, profiles, locations, profileQualificationIdsMap] =
     await Promise.all([
       db.listQualifications(orgId),
       db.listCompensationSurchargeTypes(orgId),
       db.listRoles(orgId),
       db.listOrganizationProfiles(orgId),
       db.listLocationsForDashboard(orgId, from, to),
+      db.listProfileQualificationIdsByOrganization(orgId),
     ]);
 
   if (!roles.length) {
@@ -80,10 +88,10 @@ export default async function DashboardPage({
     const template = relation(s.area_shift_templates);
     const profile = relation(s.profiles);
     const startFromTs = s.starts_at
-      ? s.starts_at.slice(11, 16)
+      ? shiftTimeFromTimestamp(s.starts_at, timeZone)
       : template?.start_time?.slice(0, 5) ?? "00:00";
     const endFromTs = s.ends_at
-      ? s.ends_at.slice(11, 16)
+      ? shiftTimeFromTimestamp(s.ends_at, timeZone)
       : template?.end_time?.slice(0, 5) ?? "00:00";
     const areaTemplate =
       !template && s.location_area_id
@@ -110,6 +118,8 @@ export default async function DashboardPage({
     });
   }
 
+  const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
+
   return (
     <Suspense fallback={<div className="-m-6 p-6 text-sm text-muted">Laden…</div>}>
       <DashboardView
@@ -127,6 +137,7 @@ export default async function DashboardPage({
         compensationSurchargeTypes={compensationSurchargeTypes}
         roles={roles}
         profiles={profiles}
+        profileQualificationIds={profileQualificationIds}
         locations={locations}
       />
     </Suspense>

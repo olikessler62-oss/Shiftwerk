@@ -1,17 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   createProfileRecurringAvailability,
   updateProfileRecurringAvailability,
 } from "@/app/actions/profile-availability";
 import { parseAvailabilityTimeRange } from "@schichtwerk/database";
 import type { ProfileRecurringAvailability } from "@schichtwerk/types";
-import { weekdayLabel } from "@/lib/profile-availability-label";
+import {
+  findAvailabilityForWeekdayWindow,
+  weekdaysWithMatchingAvailability,
+} from "@/lib/profile-availability-bulk";
+import {
+  formatOvernightAvailabilitySpan,
+  weekdayLabel,
+} from "@/lib/profile-availability-label";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { SERVICE_HOUR_WEEKDAY_COUNT } from "@/lib/location-service-hour-entries";
+import { WeekdayChipPicker } from "./weekday-chip-picker";
 import { cn } from "@/lib/cn";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
+  settingsConfirmDialogClass,
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
@@ -29,11 +39,12 @@ import {
   TimeInput,
 } from "@/components/ui";
 
+type FormMode = "create" | "edit" | "bulk-edit";
+
 type Props = {
-  mode: "create" | "edit";
+  mode: FormMode;
   profileId: string;
   currentAvailability?: ProfileRecurringAvailability;
-  /** Bestehende Verfügbarkeiten — für Tag-Vorschlag beim Anlegen */
   existingAvailability?: ProfileRecurringAvailability[];
   onClose: () => void;
   onSaved: (
@@ -43,15 +54,10 @@ type Props = {
   ) => void;
 };
 
-function firstUnassignedWeekday(
-  existing: readonly ProfileRecurringAvailability[]
-): number {
-  const assigned = new Set(existing.map((item) => item.weekday));
-  for (let weekday = 0; weekday < 7; weekday++) {
-    if (!assigned.has(weekday)) return weekday;
-  }
-  return 0;
-}
+type ParsedAvailabilityTimeRange = Extract<
+  ReturnType<typeof parseAvailabilityTimeRange>,
+  { ok: true }
+>;
 
 export function ProfileAvailabilityFormModal({
   mode,
@@ -66,11 +72,42 @@ export function ProfileAvailabilityFormModal({
   const t = useTranslations();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [weekday, setWeekday] = useState(() =>
-    mode === "create"
-      ? firstUnassignedWeekday(existingAvailability)
-      : (currentAvailability?.weekday ?? 0)
+  const [overnightConfirmOpen, setOvernightConfirmOpen] = useState(false);
+
+  const referenceWindow = useMemo(
+    () =>
+      mode === "bulk-edit" && currentAvailability
+        ? {
+            start: currentAvailability.start_time.slice(0, 5),
+            end: currentAvailability.end_time.slice(0, 5),
+          }
+        : null,
+    [currentAvailability, mode]
   );
+
+  const [weekday, setWeekday] = useState(
+    () => currentAvailability?.weekday ?? 0
+  );
+  const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(() => {
+    if (mode === "bulk-edit" && referenceWindow) {
+      const matching = weekdaysWithMatchingAvailability(
+        referenceWindow.start,
+        referenceWindow.end,
+        existingAvailability
+      );
+      return new Set(
+        matching.length > 0
+          ? matching
+          : currentAvailability
+            ? [currentAvailability.weekday]
+            : []
+      );
+    }
+    if (mode === "create") {
+      return new Set([0, 1, 2, 3, 4]);
+    }
+    return new Set([currentAvailability?.weekday ?? 0]);
+  });
   const [startTime, setStartTime] = useState(
     () => currentAvailability?.start_time.slice(0, 5) ?? "08:00"
   );
@@ -78,61 +115,132 @@ export function ProfileAvailabilityFormModal({
     () => currentAvailability?.end_time.slice(0, 5) ?? "17:00"
   );
 
-  const overnightPreview = useMemo(() => {
-    const check = parseAvailabilityTimeRange({
-      start_time: startTime,
-      end_time: endTime,
-    });
-    return check.ok && check.overnight;
-  }, [endTime, startTime]);
+  const usesMultiDayPicker = mode === "create" || mode === "bulk-edit";
 
-  async function handleSubmit() {
-    setError(null);
-
-    const timeCheck = parseAvailabilityTimeRange({
-      start_time: startTime,
-      end_time: endTime,
-    });
-    if (!timeCheck.ok) {
-      setError(timeCheck.error);
-      return;
-    }
-
-    const payload = {
-      profileId,
-      weekday,
-      start_time: timeCheck.start_time.slice(0, 5),
-      end_time: timeCheck.end_time.slice(0, 5),
+  useEffect(() => {
+    if (!saving) return;
+    const previous = document.body.style.cursor;
+    document.body.style.cursor = "wait";
+    return () => {
+      document.body.style.cursor = previous;
     };
+  }, [saving]);
+
+  function parseCurrentTimeRange():
+    | ParsedAvailabilityTimeRange
+    | { ok: false; error: string } {
+    return parseAvailabilityTimeRange({
+      start_time: startTime,
+      end_time: endTime,
+    });
+  }
+
+  async function performSave(timeCheck: ParsedAvailabilityTimeRange) {
+    const savedStart = timeCheck.start_time.slice(0, 5);
+    const savedEnd = timeCheck.end_time.slice(0, 5);
 
     setSaving(true);
     try {
-      const result =
-        mode === "create"
-          ? await createProfileRecurringAvailability(payload)
-          : await updateProfileRecurringAvailability({
-              ...payload,
-              availabilityId: currentAvailability!.id,
-            });
-
-      if (!result.ok) {
-        setError(result.error);
+      if (mode === "edit" && currentAvailability) {
+        const result = await updateProfileRecurringAvailability({
+          profileId,
+          availabilityId: currentAvailability.id,
+          weekday,
+          start_time: savedStart,
+          end_time: savedEnd,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        const list = result.availability ?? [];
+        onSaved(list, currentAvailability.id);
+        onClose();
         return;
       }
 
-      const list = result.availability ?? [];
-      const savedStart = timeCheck.start_time.slice(0, 5);
-      const savedEnd = timeCheck.end_time.slice(0, 5);
-      const selectedId =
-        mode === "edit" && currentAvailability
-          ? currentAvailability.id
-          : list.find(
+      const weekdaysToSave = usesMultiDayPicker
+        ? [...selectedWeekdays].sort((a, b) => a - b)
+        : [weekday];
+
+      if (weekdaysToSave.length === 0) {
+        setError(t("profiles.availabilitySelectWeekdays"));
+        return;
+      }
+
+      let latestList = existingAvailability;
+      let lastSelectedId = "";
+
+      for (const saveWeekday of weekdaysToSave) {
+        if (mode === "bulk-edit" && referenceWindow) {
+          const existing = findAvailabilityForWeekdayWindow(
+            saveWeekday,
+            referenceWindow.start,
+            referenceWindow.end,
+            latestList
+          );
+          if (!existing) {
+            setError(
+              t("profiles.availabilityBulkEditMissingWindow", {
+                weekday: weekdayLabel(saveWeekday, localeKey, "long"),
+              })
+            );
+            return;
+          }
+          const result = await updateProfileRecurringAvailability({
+            profileId,
+            availabilityId: existing.id,
+            weekday: saveWeekday,
+            start_time: savedStart,
+            end_time: savedEnd,
+          });
+          if (!result.ok) {
+            setError(
+              weekdaysToSave.length > 1
+                ? `${weekdayLabel(saveWeekday, localeKey, "long")}: ${result.error}`
+                : result.error
+            );
+            return;
+          }
+          latestList = result.availability ?? latestList;
+          lastSelectedId =
+            latestList.find(
               (item) =>
-                item.weekday === weekday &&
+                item.weekday === saveWeekday &&
                 item.start_time.slice(0, 5) === savedStart &&
                 item.end_time.slice(0, 5) === savedEnd
-            )?.id ?? list[0]?.id ?? "";
-      onSaved(list, selectedId, mode === "create");
+            )?.id ?? existing.id;
+          continue;
+        }
+
+        const result = await createProfileRecurringAvailability({
+          profileId,
+          weekday: saveWeekday,
+          start_time: savedStart,
+          end_time: savedEnd,
+        });
+        if (!result.ok) {
+          setError(
+            weekdaysToSave.length > 1
+              ? `${weekdayLabel(saveWeekday, localeKey, "long")}: ${result.error}`
+              : result.error
+          );
+          return;
+        }
+        latestList = result.availability ?? latestList;
+        lastSelectedId =
+          latestList.find(
+            (item) =>
+              item.weekday === saveWeekday &&
+              item.start_time.slice(0, 5) === savedStart &&
+              item.end_time.slice(0, 5) === savedEnd
+          )?.id ??
+          lastSelectedId ??
+          latestList[0]?.id ??
+          "";
+      }
+
+      onSaved(latestList, lastSelectedId, mode === "create");
       onClose();
     } catch {
       setError("Speichern fehlgeschlagen");
@@ -141,108 +249,235 @@ export function ProfileAvailabilityFormModal({
     }
   }
 
+  async function handleSubmit() {
+    setError(null);
+    setOvernightConfirmOpen(false);
+
+    const timeCheck = parseCurrentTimeRange();
+    if (!timeCheck.ok) {
+      setError(timeCheck.error);
+      return;
+    }
+
+    if (timeCheck.overnight) {
+      setOvernightConfirmOpen(true);
+      return;
+    }
+
+    await performSave(timeCheck);
+  }
+
+  async function confirmOvernightSave() {
+    setOvernightConfirmOpen(false);
+    const timeCheck = parseCurrentTimeRange();
+    if (!timeCheck.ok) {
+      setError(timeCheck.error);
+      return;
+    }
+    await performSave(timeCheck);
+  }
+
+  const overnightConfirmRange =
+    overnightConfirmOpen &&
+    (() => {
+      const timeCheck = parseCurrentTimeRange();
+      if (!timeCheck.ok || !timeCheck.overnight) return null;
+      const confirmWeekday = usesMultiDayPicker
+        ? [...selectedWeekdays].sort((a, b) => a - b)[0] ?? 0
+        : weekday;
+      return formatOvernightAvailabilitySpan(
+        confirmWeekday,
+        timeCheck.start_time,
+        timeCheck.end_time,
+        localeKey
+      );
+    })();
+
+  const title =
+    mode === "create"
+      ? t("profiles.availabilityCreateTitle")
+      : mode === "bulk-edit"
+        ? t("profiles.availabilityBulkEditTitle")
+        : t("profiles.availabilityEditTitle");
+
   return (
-    <div
-      className={settingsNestedModalOverlayClass()}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !saving) onClose();
-      }}
-    >
+    <>
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-availability-form-title"
-        className={settingsNestedModalDialogClass("md")}
-        onMouseDown={(e) => e.stopPropagation()}
+        className={cn(settingsNestedModalOverlayClass(), saving && "cursor-wait")}
+        role="presentation"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !saving && !overnightConfirmOpen) {
+            onClose();
+          }
+        }}
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-availability-form-title"
+          aria-busy={saving}
           className={cn(
-            "flex items-center justify-between border-b border-border",
-            settingsModalHeaderPaddingClass()
+            settingsNestedModalDialogClass("md"),
+            saving && "[&_*]:cursor-wait"
           )}
+          onMouseDown={(e) => e.stopPropagation()}
         >
-          <h3
-            id="profile-availability-form-title"
-            className={SETTINGS_MODAL_TITLE_CLASS}
+          <div
+            className={cn(
+              "flex items-center justify-between border-b border-border",
+              settingsModalHeaderPaddingClass()
+            )}
           >
-            {mode === "create"
-              ? t("profiles.availabilityCreateTitle")
-              : t("profiles.availabilityEditTitle")}
-          </h3>
-          <IconButton
-            size="sm"
-            onClick={onClose}
-            disabled={saving}
-            aria-label={t("common.close")}
-            className="border-transparent bg-transparent hover:bg-subtle"
-          >
-            <CloseIcon className="h-[18px] w-[18px]" />
-          </IconButton>
-        </div>
-
-        <div className={cn("space-y-4", settingsModalBodyPaddingClass())}>
-          {error && <Alert variant="error">{error}</Alert>}
-
-          <div>
-            <LabelMuted>{t("profiles.columnWeekday")}</LabelMuted>
-            <Select
-              className="mt-1"
-              value={String(weekday)}
-              disabled={saving}
-              onChange={(e) => setWeekday(Number(e.target.value))}
+            <h3
+              id="profile-availability-form-title"
+              className={SETTINGS_MODAL_TITLE_CLASS}
             >
-              {Array.from({ length: 7 }, (_, i) => (
-                <option key={i} value={i}>
-                  {weekdayLabel(i, localeKey, "long")}
-                </option>
-              ))}
-            </Select>
+              {title}
+            </h3>
+            <IconButton
+              size="sm"
+              onClick={onClose}
+              disabled={saving}
+              aria-label={t("common.close")}
+              className="border-transparent bg-transparent hover:bg-subtle"
+            >
+              <CloseIcon className="h-[18px] w-[18px]" />
+            </IconButton>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className={cn("space-y-4", settingsModalBodyPaddingClass())}>
+            {error && <Alert variant="error">{error}</Alert>}
+
             <div>
-              <LabelMuted>{t("profiles.availabilityFrom")}</LabelMuted>
-              <TimeInput
-                className="mt-1"
-                value={startTime}
-                disabled={saving}
-                onChange={(e) => setStartTime(e.target.value)}
-              />
+              <LabelMuted className="mb-1 block text-center sm:text-left">
+                {t("profiles.columnWeekday")}
+              </LabelMuted>
+              {usesMultiDayPicker ? (
+                <WeekdayChipPicker
+                  weekdayCount={SERVICE_HOUR_WEEKDAY_COUNT}
+                  selected={selectedWeekdays}
+                  disabled={saving}
+                  onToggle={(nextWeekday) => {
+                    setSelectedWeekdays((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(nextWeekday)) next.delete(nextWeekday);
+                      else next.add(nextWeekday);
+                      return next;
+                    });
+                    setError(null);
+                  }}
+                  onApplyPreset={(weekdays) => {
+                    setSelectedWeekdays(new Set(weekdays));
+                    setError(null);
+                  }}
+                />
+              ) : (
+                <Select
+                  className="mt-1"
+                  value={String(weekday)}
+                  disabled={saving}
+                  onChange={(e) => setWeekday(Number(e.target.value))}
+                >
+                  {Array.from({ length: SERVICE_HOUR_WEEKDAY_COUNT }, (_, i) => (
+                    <option key={i} value={i}>
+                      {weekdayLabel(i, localeKey, "long")}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </div>
-            <div>
-              <LabelMuted>{t("profiles.availabilityTo")}</LabelMuted>
-              <TimeInput
-                className="mt-1"
-                value={endTime}
-                disabled={saving}
-                onChange={(e) => setEndTime(e.target.value)}
-              />
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <LabelMuted>{t("profiles.availabilityFrom")}</LabelMuted>
+                <TimeInput
+                  className="mt-1"
+                  value={startTime}
+                  disabled={saving}
+                  onChange={(e) => setStartTime(e.target.value)}
+                />
+              </div>
+              <div>
+                <LabelMuted>{t("profiles.availabilityTo")}</LabelMuted>
+                <TimeInput
+                  className="mt-1"
+                  value={endTime}
+                  disabled={saving}
+                  onChange={(e) => setEndTime(e.target.value)}
+                />
+              </div>
             </div>
           </div>
-          {overnightPreview ? (
-            <p className="text-xs text-primary">
-              {t("profiles.availabilityOvernightHint")}
-            </p>
-          ) : null}
-        </div>
 
-        <div className={settingsModalFooterClass()}>
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            <CloseIcon />
-            {t("common.cancel")}
-          </Button>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={() => void handleSubmit()}
-            disabled={saving}
-          >
-            <CheckIcon />
-            {t("common.ok")}
-          </Button>
+          <div className={settingsModalFooterClass()}>
+            {saving ? (
+              <p className="text-xs text-muted sm:mr-auto">{t("common.saving")}</p>
+            ) : null}
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              <CloseIcon />
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => void handleSubmit()}
+              disabled={saving}
+            >
+              <CheckIcon />
+              {t("common.ok")}
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {overnightConfirmOpen && overnightConfirmRange ? (
+        <div
+          className={settingsNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !saving) {
+              setOvernightConfirmOpen(false);
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="profile-availability-overnight-desc"
+            className={settingsConfirmDialogClass()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p
+              id="profile-availability-overnight-desc"
+              className="text-sm leading-relaxed text-foreground"
+            >
+              {t("profiles.availabilityOvernightConfirm", {
+                range: overnightConfirmRange,
+              })}
+            </p>
+            <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOvernightConfirmOpen(false)}
+                disabled={saving}
+              >
+                <CloseIcon />
+                {t("common.no")}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => void confirmOvernightSave()}
+                disabled={saving}
+              >
+                <CheckIcon />
+                {t("common.yes")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

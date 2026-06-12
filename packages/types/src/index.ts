@@ -26,10 +26,22 @@ export type RequestStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export type SwapRequestStatus = RequestStatus;
 
+/** Planungsmodus auf Organisationsebene (führend für UI & Validierung). */
+export type PlanningMode = "simple" | "advanced";
+
+/** Branche — rein informativ; steuert Onboarding-Seeding. */
+export type Industry = "gastronomy" | "care" | "retail" | "other";
+
 export interface Organization {
   id: string;
   name: string;
   timezone: string;
+  /** ISO 3166-1 alpha-2 — Compliance-Profil aus compliances/ */
+  country_code: string;
+  /** Führender Planungsmodus; location_areas.planning_mode ist Override pro Bereich. */
+  planning_mode: PlanningMode;
+  /** Branche aus Onboarding; null bei älteren Organisationen ohne Zuordnung. */
+  industry: Industry | null;
   created_at: string;
 }
 

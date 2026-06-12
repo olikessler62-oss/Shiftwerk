@@ -7,6 +7,7 @@ import {
 } from "@/lib/available-employees-for-shift";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
+import { DEFAULT_COUNTRY_CODE, resolveOrganizationTimeZone } from "@schichtwerk/database";
 
 export type DashboardEmployeeAvailabilityEntry = {
   weekday: number;
@@ -31,6 +32,8 @@ export type FetchDashboardBulkShiftContextResult =
       ok: true;
       employees: DashboardShiftAssignEmployee[];
       profileQualificationIds: Record<string, string[]>;
+      countryCode: string;
+      timeZone: string;
     }
   | { ok: false; error: string };
 
@@ -38,7 +41,7 @@ export async function fetchDashboardBulkShiftContext(
   date: string
 ): Promise<FetchDashboardBulkShiftContextResult> {
   try {
-    const { organizationId } = await requireManager();
+    const { organizationId, organization } = await requireManager();
     const db = await getDatabase();
 
     const employeeResult = await fetchDashboardShiftAssignEmployees(date);
@@ -53,10 +56,16 @@ export async function fetchDashboardBulkShiftContext(
       profileQualificationIds[profileId] = ids;
     }
 
+    const countryCode =
+      (await db.getOrganizationCountryCode(organizationId)) ?? DEFAULT_COUNTRY_CODE;
+    const timeZone = resolveOrganizationTimeZone(organization);
+
     return {
       ok: true,
       employees: employeeResult.employees,
       profileQualificationIds,
+      countryCode,
+      timeZone,
     };
   } catch (e) {
     return {

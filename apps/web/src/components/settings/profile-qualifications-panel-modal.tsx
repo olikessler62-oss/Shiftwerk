@@ -201,10 +201,6 @@ export function ProfileQualificationsPanelModal({
     });
   }
 
-  const title = t("profiles.panelQualificationsOf", {
-    name: truncateLabel(profile.full_name, 40),
-  });
-
   return (
     <div
       className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
@@ -242,7 +238,10 @@ export function ProfileQualificationsPanelModal({
             id="profile-qualifications-panel-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
           >
-            {title}
+            <span className="text-foreground">
+              {t("profiles.panelQualificationsOfPrefix")}{" "}
+            </span>
+            <span className="text-cyan-600">{profile.full_name}</span>
           </h3>
           <IconButton
             size="sm"
@@ -324,14 +323,16 @@ export function ProfileQualificationsPanelModal({
                           className={settingsDataCellClass(isSelected, {
                             className: "max-w-[20rem] truncate font-medium",
                           })}
-                          title={item.name}
                         >
-                          {truncateLabel(item.name)}
+                          <span className="block max-w-full truncate">
+                            {truncateLabel(item.name)}
+                          </span>
                         </td>
                         <td className={settingsListRowDeleteCellClass(isSelected)}>
                           <SettingsListRowDeleteButton
                             label={t("profiles.delete")}
                             disabled={pending || loading}
+                            showTooltip={false}
                             onClick={() => {
                               setSelectedQualificationId(item.id);
                               setFormMode(null);

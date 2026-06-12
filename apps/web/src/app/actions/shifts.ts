@@ -1,11 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { buildShiftTimestamps } from "@/lib/dates";
+import { buildShiftTimestamps, shiftTimeFromTimestamp } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { shiftsOverlapIso } from "@/lib/shift-overlap";
+import {
+  dayAfter,
+  dayBefore,
+  DEFAULT_COUNTRY_CODE,
+  resolveOrganizationTimeZone,
+  validateRestPeriodForCountry,
+  validateShiftDurationForCountry,
+  validateEmployeeDayShiftAssignments,
+  weekdayIndexFromDate,
+} from "@schichtwerk/database";
 import {
   setShiftAssignUndoBatch,
   takeShiftAssignUndoBatch,
@@ -16,12 +26,15 @@ import {
   areDashboardShiftTimesComplete,
   profileCanReceiveShiftAssignment,
 } from "@/lib/available-employees-for-shift";
-import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
+import {
+  loadShiftAssignValidationContext,
+  mergeShiftAssignWarnings,
+  validateShiftAssignEligibility,
+} from "@/lib/shift-assign-validation";
 import type { EmployeeShiftRecord } from "@schichtwerk/database";
-import type { LocationAreaServiceHour } from "@schichtwerk/types";
 
 export type ShiftActionResult =
-  | { ok: true }
+  | { ok: true; warnings?: string[] }
   | { ok: false; error: string };
 
 type AssignShiftWithTimesInput = {
@@ -31,7 +44,7 @@ type AssignShiftWithTimesInput = {
   endTime: string;
   areaShiftTemplateId: string | null;
   locationId: string;
-  locationAreaId: string;
+  locationAreaId: string | null;
 };
 
 export type AssignShiftBatchRowInput = {
@@ -42,7 +55,7 @@ export type AssignShiftBatchRowInput = {
 };
 
 export type AssignShiftBatchRowResult =
-  | { rowIndex: number; ok: true }
+  | { rowIndex: number; ok: true; warnings?: string[] }
   | { rowIndex: number; ok: false; error: string };
 
 export type AssignShiftBatchResult =
@@ -77,11 +90,66 @@ function findOverlappingShifts(
   );
 }
 
+async function validateShiftLaborCompliance(
+  organizationId: string,
+  employeeId: string,
+  shiftDate: string,
+  startTime: string,
+  endTime: string,
+  timeZone: string
+): Promise<{ ok: true; warnings?: string[] } | { ok: false; error: string }> {
+  const db = await getDatabase();
+  const countryCode =
+    (await db.getOrganizationCountryCode(organizationId)) ?? DEFAULT_COUNTRY_CODE;
+  const weekday = weekdayIndexFromDate(shiftDate);
+
+  const durationCheck = validateShiftDurationForCountry({
+    countryCode,
+    start_time: startTime,
+    end_time: endTime,
+    weekday,
+    shiftDate,
+    point: "shift_assign",
+  });
+  if (!durationCheck.ok) return durationCheck;
+
+  const { starts_at, ends_at } = buildShiftTimestamps(
+    shiftDate,
+    startTime,
+    endTime,
+    timeZone
+  );
+  const sameDay = await db.listShiftsForEmployeeDate(employeeId, shiftDate);
+  const overlappingIds = new Set(
+    findOverlappingShifts(sameDay, starts_at, ends_at).map((shift) => shift.id)
+  );
+
+  const adjacent = await db.listShiftsForEmployeeOnDates(employeeId, [
+    dayBefore(shiftDate),
+    shiftDate,
+    dayAfter(shiftDate),
+  ]);
+
+  const restCheck = validateRestPeriodForCountry({
+    countryCode,
+    newStartsAt: starts_at,
+    newEndsAt: ends_at,
+    existingShifts: adjacent.filter((shift) => !overlappingIds.has(shift.id)),
+  });
+  if (!restCheck.ok) return restCheck;
+
+  return {
+    ok: true,
+    warnings: durationCheck.warnings.length ? durationCheck.warnings : undefined,
+  };
+}
+
 async function persistShiftWithTimes(
   organizationId: string,
   userId: string,
   input: AssignShiftWithTimesInput,
-  undoBatch: ShiftAssignUndoBatch
+  undoBatch: ShiftAssignUndoBatch,
+  timeZone: string
 ): Promise<void> {
   const db = await getDatabase();
 
@@ -92,7 +160,8 @@ async function persistShiftWithTimes(
   const { starts_at, ends_at } = buildShiftTimestamps(
     input.shiftDate,
     input.startTime,
-    input.endTime
+    input.endTime,
+    timeZone
   );
 
   const existing = await db.listShiftsForEmployeeDate(
@@ -144,7 +213,8 @@ async function validateAssignContext(
   employeeId: string,
   shiftDate: string,
   locationId: string,
-  locationAreaId: string
+  locationAreaId: string | null,
+  requireArea: boolean
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (isPastShiftDate(shiftDate)) {
     return { ok: false, error: "Vergangene Tage können nicht mehr geplant werden." };
@@ -156,14 +226,19 @@ async function validateAssignContext(
     return { ok: false, error: "Standort nicht gefunden" };
   }
 
-  const areas = await db.listLocationAreas(locationId);
-  if (!areas.some((a) => a.id === locationAreaId)) {
-    return { ok: false, error: "Bereich nicht gefunden" };
+  if (requireArea) {
+    if (!locationAreaId) {
+      return { ok: false, error: "Bereich nicht gefunden" };
+    }
+    const areas = await db.listLocationAreas(locationId);
+    if (!areas.some((a) => a.id === locationAreaId)) {
+      return { ok: false, error: "Bereich nicht gefunden" };
+    }
   }
 
   const profile = await db.getProfileById(employeeId);
   if (!profileCanReceiveShiftAssignment(profile, organizationId)) {
-    return { ok: false, error: "Mitarbeiter nicht gefunden" };
+    return { ok: false, error: "Personal nicht gefunden" };
   }
 
   return { ok: true };
@@ -178,30 +253,51 @@ export async function assignShiftWithTimes(
   input: AssignShiftWithTimesInput
 ): Promise<ShiftActionResult> {
   try {
-    const { organizationId, userId } = await requireManager();
+    const { organizationId, userId, orgFeatures, organization } =
+      await requireManager();
     const context = await validateAssignContext(
       organizationId,
       input.employeeId,
       input.shiftDate,
       input.locationId,
-      input.locationAreaId
+      input.locationAreaId,
+      orgFeatures.areas
     );
     if (!context.ok) return context;
 
     const db = await getDatabase();
-
-    const areaServiceHours = await db.listLocationAreaServiceHoursForArea(
-      input.locationAreaId,
-      input.locationId
+    const assignCtx = await loadShiftAssignValidationContext(
+      db,
+      organizationId,
+      organization.planning_mode,
+      input.locationId,
+      input.locationAreaId
     );
-    const serviceHoursCheck = validateDashboardShiftServiceHours(
-      areaServiceHours,
-      input.locationAreaId,
+    const eligibilityCheck = validateShiftAssignEligibility(
+      organization.planning_mode,
+      assignCtx,
+      {
+        employeeId: input.employeeId,
+        shiftDate: input.shiftDate,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        locationAreaId: input.locationAreaId,
+      }
+    );
+    if (!eligibilityCheck.ok) return eligibilityCheck;
+    const assignWarnings = eligibilityCheck.warnings;
+
+    const timeZone = resolveOrganizationTimeZone(organization);
+
+    const laborCheck = await validateShiftLaborCompliance(
+      organizationId,
+      input.employeeId,
       input.shiftDate,
       input.startTime,
-      input.endTime
+      input.endTime,
+      timeZone
     );
-    if (!serviceHoursCheck.ok) return serviceHoursCheck;
+    if (!laborCheck.ok) return laborCheck;
 
     const undoBatch: ShiftAssignUndoBatch = {
       createdIds: [],
@@ -209,11 +305,14 @@ export async function assignShiftWithTimes(
       replacements: [],
     };
 
-    await persistShiftWithTimes(organizationId, userId, input, undoBatch);
+    await persistShiftWithTimes(organizationId, userId, input, undoBatch, timeZone);
     setShiftAssignUndoBatch(userId, undoBatch);
     revalidateShiftPaths();
 
-    return { ok: true };
+    return {
+      ok: true,
+      warnings: mergeShiftAssignWarnings(assignWarnings, laborCheck.warnings),
+    };
   } catch (e) {
     return {
       ok: false,
@@ -229,7 +328,8 @@ export async function assignShiftBatch(input: {
   rows: AssignShiftBatchRowInput[];
 }): Promise<AssignShiftBatchResult> {
   try {
-    const { organizationId, userId } = await requireManager();
+    const { organizationId, userId, organization } = await requireManager();
+    const timeZone = resolveOrganizationTimeZone(organization);
     const db = await getDatabase();
 
     if (isPastShiftDate(input.shiftDate)) {
@@ -246,16 +346,19 @@ export async function assignShiftBatch(input: {
       return { ok: false, error: "Bereich nicht gefunden" };
     }
 
-    const areaServiceHours: LocationAreaServiceHour[] =
-      await db.listLocationAreaServiceHoursForArea(
-        input.locationAreaId,
-        input.locationId
-      );
+    const assignCtx = await loadShiftAssignValidationContext(
+      db,
+      organizationId,
+      organization.planning_mode,
+      input.locationId,
+      input.locationAreaId
+    );
 
     type ValidRow = AssignShiftBatchRowInput & {
       rowIndex: number;
       starts_at: string;
       ends_at: string;
+      warnings?: string[];
     };
 
     const validRows: ValidRow[] = [];
@@ -275,29 +378,48 @@ export async function assignShiftBatch(input: {
         row.employeeId,
         input.shiftDate,
         input.locationId,
-        input.locationAreaId
+        input.locationAreaId,
+        true
       );
       if (!context.ok) {
         results.push({ rowIndex, ok: false, error: context.error });
         continue;
       }
 
-      const serviceHoursCheck = validateDashboardShiftServiceHours(
-        areaServiceHours,
-        input.locationAreaId,
+      const eligibilityCheck = validateShiftAssignEligibility(
+        "advanced",
+        assignCtx,
+        {
+          employeeId: row.employeeId,
+          shiftDate: input.shiftDate,
+          startTime: row.startTime,
+          endTime: row.endTime,
+          locationAreaId: input.locationAreaId,
+        }
+      );
+      if (!eligibilityCheck.ok) {
+        results.push({ rowIndex, ok: false, error: eligibilityCheck.error });
+        continue;
+      }
+
+      const laborCheck = await validateShiftLaborCompliance(
+        organizationId,
+        row.employeeId,
         input.shiftDate,
         row.startTime,
-        row.endTime
+        row.endTime,
+        timeZone
       );
-      if (!serviceHoursCheck.ok) {
-        results.push({ rowIndex, ok: false, error: serviceHoursCheck.error });
+      if (!laborCheck.ok) {
+        results.push({ rowIndex, ok: false, error: laborCheck.error });
         continue;
       }
 
       const { starts_at, ends_at } = buildShiftTimestamps(
         input.shiftDate,
         row.startTime,
-        row.endTime
+        row.endTime,
+        timeZone
       );
 
       validRows.push({
@@ -305,6 +427,10 @@ export async function assignShiftBatch(input: {
         rowIndex,
         starts_at,
         ends_at,
+        warnings: mergeShiftAssignWarnings(
+          eligibilityCheck.warnings,
+          laborCheck.warnings
+        ),
       });
     }
 
@@ -327,6 +453,58 @@ export async function assignShiftBatch(input: {
           validRows.splice(i, 1);
           i -= 1;
           break;
+        }
+      }
+    }
+
+    const countryCode =
+      (await db.getOrganizationCountryCode(organizationId)) ?? DEFAULT_COUNTRY_CODE;
+    const weekday = weekdayIndexFromDate(input.shiftDate);
+    const rowsByEmployee = new Map<string, ValidRow[]>();
+    for (const row of validRows) {
+      const group = rowsByEmployee.get(row.employeeId) ?? [];
+      group.push(row);
+      rowsByEmployee.set(row.employeeId, group);
+    }
+
+    for (const [employeeId, employeeRows] of rowsByEmployee) {
+      const modalWindows = employeeRows.map((row) => ({
+        startTime: row.startTime,
+        endTime: row.endTime,
+      }));
+      if (modalWindows.length < 2) continue;
+
+      const existingDayShifts = await db.listShiftsForEmployeeDate(
+        employeeId,
+        input.shiftDate
+      );
+      const externalWindows = existingDayShifts
+        .filter((shift) => shift.location_area_id !== input.locationAreaId)
+        .map((shift) => ({
+          startTime: shiftTimeFromTimestamp(shift.starts_at, timeZone),
+          endTime: shiftTimeFromTimestamp(shift.ends_at, timeZone),
+        }));
+
+      const dayCheck = validateEmployeeDayShiftAssignments({
+        countryCode,
+        shiftDate: input.shiftDate,
+        weekday,
+        windows: [...modalWindows, ...externalWindows],
+      });
+
+      if (!dayCheck.ok) {
+        for (const row of employeeRows) {
+          results.push({
+            rowIndex: row.rowIndex,
+            ok: false,
+            error: dayCheck.error,
+          });
+        }
+        const blocked = new Set(employeeRows.map((row) => row.rowIndex));
+        for (let i = validRows.length - 1; i >= 0; i--) {
+          if (blocked.has(validRows[i]!.rowIndex)) {
+            validRows.splice(i, 1);
+          }
         }
       }
     }
@@ -355,9 +533,10 @@ export async function assignShiftBatch(input: {
             locationId: input.locationId,
             locationAreaId: input.locationAreaId,
           },
-          undoBatch
+          undoBatch,
+          timeZone
         );
-        results.push({ rowIndex: row.rowIndex, ok: true });
+        results.push({ rowIndex: row.rowIndex, ok: true, warnings: row.warnings });
         anySuccess = true;
       } catch (e) {
         results.push({

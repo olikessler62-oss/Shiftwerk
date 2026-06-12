@@ -4,9 +4,13 @@ import {
   toISODate,
   weekDates,
   parseISODate,
+  shiftTimeFromTimestamp,
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
+import { getOrgFeatures } from "@/lib/org-features";
+import { loadManagerOrganization } from "@/lib/manager";
 import { isPastWeek } from "@/lib/planning-readonly";
+import { resolveOrganizationTimeZone } from "@schichtwerk/database";
 import {
   resolveSelectedAreaId,
   resolveSelectedLocationId,
@@ -36,6 +40,11 @@ export default async function PlanungPage({
   const orgId = await db.getProfileOrganizationId(user.id);
   if (!orgId) redirect("/login");
 
+  const orgName = await db.getOrganizationName(orgId);
+  const organization = await loadManagerOrganization(orgId, orgName);
+  const orgFeatures = getOrgFeatures(organization);
+  const timeZone = resolveOrganizationTimeZone(organization);
+
   const weekStart = week
     ? toISODate(startOfWeek(parseISODate(week)))
     : toISODate(startOfWeek(new Date()));
@@ -44,11 +53,14 @@ export default async function PlanungPage({
   const to = dates[6];
   const readOnlyWeek = isPastWeek(to);
 
-  const [employees, availability, locations] = await Promise.all([
-    db.listActiveEmployees(orgId),
-    db.listAvailabilityForWeek(orgId, from, to),
-    db.listLocations(orgId),
-  ]);
+  const [employees, recurringAvailability, absences, availability, locations] =
+    await Promise.all([
+      db.listActiveEmployees(orgId),
+      db.listOrganizationRecurringAvailability(orgId),
+      db.listOrganizationAbsences(orgId, "approved"),
+      db.listAvailabilityForWeek(orgId, from, to),
+      db.listLocations(orgId),
+    ]);
 
   const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
 
@@ -67,14 +79,20 @@ export default async function PlanungPage({
 
   const shifts: PlanningShift[] = [];
   for (const s of shiftRows) {
-    if (selectedAreaId && s.location_area_id !== selectedAreaId) continue;
+    if (
+      orgFeatures.areas &&
+      selectedAreaId &&
+      s.location_area_id !== selectedAreaId
+    ) {
+      continue;
+    }
 
     const template = relation(s.area_shift_templates);
     const startFromTs = s.starts_at
-      ? s.starts_at.slice(11, 16)
+      ? shiftTimeFromTimestamp(s.starts_at, timeZone)
       : template?.start_time?.slice(0, 5) ?? "00:00";
     const endFromTs = s.ends_at
-      ? s.ends_at.slice(11, 16)
+      ? shiftTimeFromTimestamp(s.ends_at, timeZone)
       : template?.end_time?.slice(0, 5) ?? "00:00";
     const areaTemplate =
       !template && s.location_area_id
@@ -104,6 +122,8 @@ export default async function PlanungPage({
       employees={employees}
       shifts={shifts}
       availability={availability}
+      recurringAvailability={recurringAvailability}
+      absences={absences}
       locations={locations}
       selectedLocationId={selectedLocationId}
       areas={areas}

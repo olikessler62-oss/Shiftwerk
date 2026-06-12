@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
+import { useOrgFeatures } from "@/lib/org-features-provider";
 
 const NAV_LINKS = [
   { href: "/dashboard", labelKey: "nav.dashboard" },
@@ -39,19 +40,22 @@ export function SidebarNav({ onNavigate }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const t = useTranslations();
+  const features = useOrgFeatures();
   const standorteOpen = searchParams.get("standorte") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
   const rollenOpen = searchParams.get("rollen") === "1";
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
   const sonderzuschlaegeOpen = searchParams.get("sonderzuschlaege") === "1";
   const abwesenheitenOpen = searchParams.get("abwesenheiten") === "1";
+  const planungsmodusOpen = searchParams.get("planungsmodus") === "1";
   const settingsModalOpen =
     standorteOpen ||
     profilesOpen ||
     rollenOpen ||
     qualifikationenOpen ||
     sonderzuschlaegeOpen ||
-    abwesenheitenOpen;
+    abwesenheitenOpen ||
+    planungsmodusOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
@@ -76,6 +80,7 @@ export function SidebarNav({ onNavigate }: Props) {
       | "qualifikationen"
       | "sonderzuschlaege"
       | "abwesenheiten"
+      | "planungsmodus"
   ) {
     const params = new URLSearchParams({ [flag]: "1" });
     if (pathname === "/dashboard") {
@@ -88,15 +93,26 @@ export function SidebarNav({ onNavigate }: Props) {
   }
 
   const settingsLinks = [
-    { flag: "standorte" as const, labelKey: "nav.locations", open: standorteOpen },
+    {
+      flag: "planungsmodus" as const,
+      labelKey: "nav.planningMode",
+      open: planungsmodusOpen,
+    },
+    ...(features.areas
+      ? [{ flag: "standorte" as const, labelKey: "nav.locations", open: standorteOpen }]
+      : []),
     { flag: "profiles" as const, labelKey: "nav.profiles", open: profilesOpen },
     { flag: "rollen" as const, labelKey: "nav.roles", open: rollenOpen },
-    {
-      flag: "qualifikationen" as const,
-      labelKey: "nav.qualifications",
-      open: qualifikationenOpen,
-    },
-    ...(COMPENSATION_SURCHARGES_UI_ENABLED
+    ...(features.qualifications
+      ? [
+          {
+            flag: "qualifikationen" as const,
+            labelKey: "nav.qualifications",
+            open: qualifikationenOpen,
+          },
+        ]
+      : []),
+    ...(features.qualifications && COMPENSATION_SURCHARGES_UI_ENABLED
       ? [
           {
             flag: "sonderzuschlaege" as const,

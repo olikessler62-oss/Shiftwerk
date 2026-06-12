@@ -1,0 +1,64 @@
+---
+description: Settings-Modals erst nach vollständigem Datenladen anzeigen (kein leeres Fenster, kein Größen-Sprung)
+globs: apps/web/src/components/settings/**/*-modal*.tsx,apps/web/src/components/dashboard/**/*-modal*.tsx
+alwaysApply: false
+---
+
+# Modal erst laden, dann anzeigen
+
+Settings- und Formular-Modals dürfen **nicht** sichtbar werden, bevor alle Startdaten da sind. Kein leeres Fenster, kein nachträgliches Vergrößern durch nachladende Comboboxen oder Listen.
+
+## Pflicht
+
+1. **Alle Daten parallel laden** — ein `Promise.all([...])` pro Modal-Open; keine separaten `useEffect`-Hooks, die UI-Teile später einblenden.
+2. **Modal unsichtbar halten bis fertig** — `useDeferredSettingsModalRender(loading, onClose)` aus `use-deferred-settings-modal-render.ts`:
+   ```tsx
+   const showModal = useDeferredSettingsModalRender(loading, onClose);
+   if (!showModal) return null;
+   ```
+3. **Wait-Cursor auf der Seite** — der Hook setzt `document.body.style.cursor = "wait"` während `loading === true`. Escape bricht ab (`onClose`).
+4. **Erst dann vollständiges Modal rendern** — Liste, Action Bar, Copy-Select, Footer **gleichzeitig** sichtbar.
+5. **Während Speichern/Löschen** — `cursor-wait` und `aria-busy` nur für laufende Aktionen (`pending`, `saving`), nicht für den Initial-Load.
+
+## Beispiel
+
+```tsx
+const [loading, setLoading] = useState(true);
+
+useEffect(() => {
+  let cancelled = false;
+  setLoading(true);
+  void Promise.all([
+    fetchPrimaryData(...),
+    fetchCopySources(...),
+  ]).then(([primary, sources]) => {
+    if (cancelled) return;
+    // state setzen
+    setLoading(false);
+  });
+  return () => { cancelled = true; };
+}, [deps]);
+
+const showModal = useDeferredSettingsModalRender(loading, onClose);
+if (!showModal) return null;
+
+return (
+  <div aria-busy={pending}>
+    <Header />
+    <TableOrForm />
+    <SettingsActionBar ... />
+    <Footer />
+  </div>
+);
+```
+
+## Anti-Patterns
+
+- Modal sofort rendern und „Laden…“ im Modal-Body anzeigen
+- Leere Liste oder Action Bar ohne Copy-Select, der Sekunden später erscheint
+- Copy-/Quell-Combobox in eigenem `useEffect` nach dem ersten Render
+- Modal schließen erlauben, obwohl der Initial-Load noch läuft (Hook verhindert das per Escape → `onClose` ist korrekt)
+
+## Referenz
+
+Betroffene Modals: **Standorte** (`locations-modal.tsx`), **Profile** (`profiles-modal.tsx`), Funktionsvorlagen, Schichtvorlagen, Servicezeiten, Personalbedarf.

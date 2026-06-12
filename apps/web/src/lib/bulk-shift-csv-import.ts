@@ -99,7 +99,7 @@ export function parseBulkShiftCsv(
   const delimiter = detectDelimiter(lines[0]);
   const header = parseCsvLine(lines[0], delimiter).map(normalizeHeader);
   const employeeIdx = header.findIndex((h) =>
-    ["mitarbeiter", "employee", "name"].includes(h)
+    ["mitarbeiter", "personal", "employee", "staff", "name"].includes(h)
   );
   const typeIdx = header.findIndex((h) =>
     ["schicht", "schichtvorlage", "template", "type"].includes(h)
@@ -110,7 +110,7 @@ export function parseBulkShiftCsv(
   if (employeeIdx < 0 || fromIdx < 0 || toIdx < 0) {
     return {
       rows: [],
-      errors: ["Erforderliche Spalten: Mitarbeiter, Von, Bis."],
+      errors: ["Erforderliche Spalten: Personal, Von, Bis."],
     };
   }
 
@@ -122,7 +122,7 @@ export function parseBulkShiftCsv(
     const employeeToken = cells[employeeIdx] ?? "";
     const employee = resolveEmployee(employeeToken, profiles);
     if (!employee) {
-      errors.push(`Zeile ${lineNo + 1}: Mitarbeiter „${employeeToken}“ nicht gefunden.`);
+      errors.push(`Zeile ${lineNo + 1}: Personal „${employeeToken}“ nicht gefunden.`);
       continue;
     }
 

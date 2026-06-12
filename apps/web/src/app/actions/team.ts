@@ -31,7 +31,7 @@ export async function inviteEmployee(
     if (count >= MAX_EMPLOYEES) {
       return {
         ok: false,
-        error: `Maximal ${MAX_EMPLOYEES} aktive Mitarbeiter erlaubt.`,
+        error: `Maximal ${MAX_EMPLOYEES} aktives Personal erlaubt.`,
       };
     }
 

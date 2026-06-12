@@ -18,6 +18,11 @@ create table public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   timezone text not null default 'Europe/Berlin',
+  country_code char(2) not null default 'DE',
+  planning_mode text not null default 'simple'
+    check (planning_mode in ('simple', 'advanced')),
+  industry text
+    check (industry is null or industry in ('gastronomy', 'care', 'retail', 'other')),
   created_at timestamptz not null default now()
 );
 
@@ -160,7 +165,7 @@ create table public.profile_recurring_availability (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations (id) on delete cascade,
   profile_id uuid not null references public.profiles (id) on delete cascade,
-  weekday smallint not null check (weekday >= 0 and weekday <= 6),
+  weekday smallint not null check (weekday >= 0 and weekday <= 7),
   start_time time not null,
   end_time time not null,
   sort_order int not null default 0,

@@ -7,11 +7,12 @@ import { useCallback, useEffect, useMemo, useRef, useTransition } from "react";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
 import { getDashboardWeekHeaderParts } from "@/lib/planning-utils";
 import type { Location } from "@schichtwerk/types";
-import { Button, ControlDisplay, IconButton } from "@/components/ui";
+import { Button, IconButton } from "@/components/ui";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
+import { useOrgFeatures } from "@/lib/org-features-provider";
 import { LocationSelect } from "./location-select";
 
 /** Gleiche Höhe wie IconButton size="md" (h-9). */
@@ -53,6 +54,7 @@ export function DashboardHeader({
   const [pending, startTransition] = useTransition();
   const { locale } = useLocale();
   const t = useTranslations();
+  const features = useOrgFeatures();
   const headerRef = useRef<HTMLElement>(null);
 
   const weekHeader = useMemo(
@@ -113,12 +115,17 @@ export function DashboardHeader({
       ref={headerRef}
       className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-3 md:h-20 md:max-h-20 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-0"
     >
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center md:gap-2">
+      <div className="flex min-w-0 select-none flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center md:gap-4">
         <div
           role="group"
           aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
           tabIndex={0}
           className="flex w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] outline-none focus-visible:ring-2 focus-visible:ring-primary/30 sm:w-auto sm:gap-2"
+          onMouseDown={(event) => {
+            if (event.target instanceof HTMLElement && event.target.closest("button")) {
+              event.preventDefault();
+            }
+          }}
         >
           <IconButton
             size="md"
@@ -130,21 +137,16 @@ export function DashboardHeader({
             <ChevronIcon direction="left" />
           </IconButton>
 
-          <ControlDisplay
-            className={cn(
-              HEADER_CONTROL_H,
-              "min-w-0 flex-1 justify-center px-2 py-0 sm:flex-none sm:!w-[min(340px,100%)] md:!w-[340px] md:shrink-0"
-            )}
-            title={weekLabelTitle}
+          <Button
+            type="button"
+            variant="outline"
+            size="header"
+            onClick={goToToday}
+            disabled={pending}
+            className={cn(HEADER_CONTROL_H, "shrink-0 font-semibold")}
           >
-            <span className="w-full truncate text-center text-sm leading-none">
-              {weekHeader.rangeLabel}{" "}
-              <span className="font-semibold">{weekHeader.year}</span>
-              <span className="ml-1 text-xs font-normal text-muted">
-                KW {weekHeader.calendarWeek}
-              </span>
-            </span>
-          </ControlDisplay>
+            {t("common.today")}
+          </Button>
 
           <IconButton
             size="md"
@@ -155,29 +157,30 @@ export function DashboardHeader({
           >
             <ChevronIcon direction="right" />
           </IconButton>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="header"
-            onClick={goToToday}
-            disabled={pending}
-            className="shrink-0 font-semibold"
-          >
-            {t("common.today")}
-          </Button>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3 md:ml-5">
-          <span className="hidden shrink-0 text-sm text-foreground sm:inline">
-            {t("dashboard.location")}
+        <p
+          className="min-w-0 select-none text-sm leading-none"
+          title={weekLabelTitle}
+        >
+          <span className="font-semibold">{weekHeader.monthYearLabel}</span>
+          <span className="ml-1.5 text-xs font-normal text-muted">
+            KW {weekHeader.calendarWeek}
           </span>
-          <LocationSelect
-            locations={locations}
-            selectedLocationId={selectedLocationId}
-            className="!mt-0 min-w-0 flex-1 font-semibold sm:w-[11rem] sm:flex-none sm:shrink-0"
-          />
-        </div>
+        </p>
+
+        {features.areas ? (
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3 md:ml-5">
+            <span className="hidden shrink-0 text-sm text-foreground sm:inline">
+              {t("dashboard.location")}
+            </span>
+            <LocationSelect
+              locations={locations}
+              selectedLocationId={selectedLocationId}
+              className="!mt-0 min-w-0 flex-1 font-semibold sm:w-[11rem] sm:flex-none sm:shrink-0"
+            />
+          </div>
+        ) : null}
       </div>
 
       <LanguageSelect className="shrink-0 self-end md:self-auto" />

@@ -49,6 +49,7 @@ import {
   Button,
   CloseIcon,
   IconButton,
+  ListIcon,
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
@@ -65,7 +66,8 @@ function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
 type AvailabilityFormMode =
   | null
   | { type: "create" }
-  | { type: "edit"; availability: ProfileRecurringAvailability };
+  | { type: "edit"; availability: ProfileRecurringAvailability }
+  | { type: "bulk-edit"; availability: ProfileRecurringAvailability };
 
 type Props = {
   profile: Profile;
@@ -201,10 +203,6 @@ export function ProfileAvailabilityPanelModal({
     });
   }
 
-  const title = t("profiles.panelAvailabilityOf", {
-    name: truncateLabel(profile.full_name, 40),
-  });
-
   return (
     <div
       className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
@@ -238,7 +236,10 @@ export function ProfileAvailabilityPanelModal({
             id="profile-availability-panel-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
           >
-            {title}
+            <span className="text-foreground">
+              {t("profiles.panelAvailabilityOfPrefix")}{" "}
+            </span>
+            <span className="text-cyan-600">{profile.full_name}</span>
           </h3>
           <IconButton
             size="sm"
@@ -372,19 +373,35 @@ export function ProfileAvailabilityPanelModal({
               />
             }
             secondary={
-              <SettingsIconActionButton
-                label={t("profiles.edit")}
-                icon={<PencilIcon />}
-                disabled={pending || loading || !selectedAvailability}
-                onClick={() => {
-                  if (!selectedAvailability) return;
-                  setFormMode({
-                    type: "edit",
-                    availability: selectedAvailability,
-                  });
-                  setConfirmRemove(false);
-                }}
-              />
+              <>
+                <SettingsIconActionButton
+                  label={t("profiles.edit")}
+                  icon={<PencilIcon />}
+                  disabled={pending || loading || !selectedAvailability}
+                  onClick={() => {
+                    if (!selectedAvailability) return;
+                    setFormMode({
+                      type: "edit",
+                      availability: selectedAvailability,
+                    });
+                    setConfirmRemove(false);
+                  }}
+                />
+                <SettingsIconActionButton
+                  label={t("profiles.availabilityBulkEdit")}
+                  icon={<ListIcon />}
+                  disabled={pending || loading || !selectedAvailability}
+                  onClick={() => {
+                    if (!selectedAvailability) return;
+                    setFormMode({
+                      type: "bulk-edit",
+                      availability: selectedAvailability,
+                    });
+                    setConfirmRemove(false);
+                    setErrorMessage(null);
+                  }}
+                />
+              </>
             }
           />
         </div>
@@ -417,6 +434,17 @@ export function ProfileAvailabilityPanelModal({
           mode="edit"
           profileId={profile.id}
           currentAvailability={formMode.availability}
+          existingAvailability={profileAvailabilities}
+          onClose={() => setFormMode(null)}
+          onSaved={handleSaved}
+        />
+      )}
+      {formMode?.type === "bulk-edit" && (
+        <ProfileAvailabilityFormModal
+          mode="bulk-edit"
+          profileId={profile.id}
+          currentAvailability={formMode.availability}
+          existingAvailability={profileAvailabilities}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
         />

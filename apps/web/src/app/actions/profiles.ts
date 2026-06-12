@@ -138,7 +138,7 @@ export async function createProfile(input: {
       if (count >= MAX_EMPLOYEES) {
         return {
           ok: false,
-          error: `Maximal ${MAX_EMPLOYEES} aktive Mitarbeiter erlaubt.`,
+          error: `Maximal ${MAX_EMPLOYEES} aktives Personal erlaubt.`,
         };
       }
     }
@@ -237,7 +237,7 @@ export async function updateProfile(input: {
       if (count >= MAX_EMPLOYEES) {
         return {
           ok: false,
-          error: `Maximal ${MAX_EMPLOYEES} aktive Mitarbeiter erlaubt.`,
+          error: `Maximal ${MAX_EMPLOYEES} aktives Personal erlaubt.`,
         };
       }
     }

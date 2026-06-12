@@ -5,7 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { assignShiftWithTimes, removeShift } from "@/app/actions/shifts";
 import { toISODate, startOfWeek, parseISODate } from "@/lib/dates";
 import { isPastShiftDate } from "@/lib/planning-readonly";
-import { useTranslations } from "@/i18n/locale-provider";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useOrgFeatures } from "@/lib/org-features-provider";
+import { translateActionError } from "@/lib/translate-action-error";
+import { toIntlLocale } from "@/i18n/intl-locale";
 import {
   avatarColor,
   buildPlanningWarnings,
@@ -25,14 +28,24 @@ import {
   type DashboardAssignmentPreset,
 } from "@/lib/dashboard-assignment-presets";
 import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
-import { areDashboardShiftTimesComplete } from "@/lib/available-employees-for-shift";
+import {
+  areDashboardShiftTimesComplete,
+  profileAvailabilityWeekdayFromDashboardDate,
+} from "@/lib/available-employees-for-shift";
+import {
+  employeeHasRecurringAvailabilityOnWeekday,
+  employeeMatchesShiftAvailability,
+  isEmployeeAbsentOnDate,
+} from "@schichtwerk/database";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type {
+  AbsenceRequest,
   AreaShiftTemplateWithBreaks,
   AvailabilityStatus,
   Location,
   LocationArea,
   Profile,
+  ProfileRecurringAvailability,
 } from "@schichtwerk/types";
 import { LocationSelect } from "@/components/dashboard/location-select";
 import {
@@ -49,6 +62,7 @@ import {
   TimeInput,
   LabelMuted,
 } from "@/components/ui";
+import { Tooltip } from "@/components/ui/tooltip";
 
 export type PlanningShift = {
   id: string;
@@ -72,6 +86,8 @@ type Props = {
   employees: Profile[];
   shifts: PlanningShift[];
   availability: AvailabilityRow[];
+  recurringAvailability: ProfileRecurringAvailability[];
+  absences: AbsenceRequest[];
   locations: Location[];
   selectedLocationId: string | null;
   areas: LocationArea[];
@@ -83,6 +99,28 @@ type Props = {
 
 type Picker = { employeeId: string; date: string };
 
+type DayAssignBlockReason = "absent" | "no_availability";
+
+function getDayAssignBlockReason(
+  employeeId: string,
+  date: string,
+  recurringAvailability: ProfileRecurringAvailability[],
+  absences: AbsenceRequest[]
+): DayAssignBlockReason | null {
+  if (isEmployeeAbsentOnDate(employeeId, absences, date)) return "absent";
+  const weekday = profileAvailabilityWeekdayFromDashboardDate(date);
+  if (
+    !employeeHasRecurringAvailabilityOnWeekday(
+      employeeId,
+      recurringAvailability,
+      weekday
+    )
+  ) {
+    return "no_availability";
+  }
+  return null;
+}
+
 function timeFieldValue(time: string): string {
   return time.slice(0, 5);
 }
@@ -93,6 +131,8 @@ export function ShiftPlanner({
   employees,
   shifts,
   availability,
+  recurringAvailability,
+  absences,
   locations,
   selectedLocationId,
   areas,
@@ -104,8 +144,13 @@ export function ShiftPlanner({
   const router = useRouter();
   const searchParams = useSearchParams();
   const t = useTranslations();
+  const features = useOrgFeatures();
+  const simplePlanning = !features.areas;
+  const { locale } = useLocale();
+  const intlLocale = toIntlLocale(locale);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [complianceNotice, setComplianceNotice] = useState<string | null>(null);
   const [picker, setPicker] = useState<Picker | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [startTime, setStartTime] = useState("00:00");
@@ -204,6 +249,12 @@ export function ShiftPlanner({
   function openPicker(employeeId: string, date: string) {
     const existing = shiftMap.get(`${employeeId}:${date}`);
     if (isDayReadOnly(date) && !existing) return;
+    if (
+      !existing &&
+      getDayAssignBlockReason(employeeId, date, recurringAvailability, absences)
+    ) {
+      return;
+    }
     setPicker({ employeeId, date });
     setError(null);
     if (existing) {
@@ -260,7 +311,7 @@ export function ShiftPlanner({
       setError(t("dashboard.noLocations"));
       return;
     }
-    if (!selectedAreaId) {
+    if (!simplePlanning && !selectedAreaId) {
       setError(t("planning.noAreas"));
       return;
     }
@@ -269,34 +320,62 @@ export function ShiftPlanner({
       return;
     }
 
-    const serviceHoursCheck = validateDashboardShiftServiceHours(
-      serviceHours,
-      selectedAreaId,
-      picker.date,
-      startTime,
-      endTime
-    );
-    if (!serviceHoursCheck.ok) {
-      setError(serviceHoursCheck.error);
+    if (!simplePlanning) {
+      const serviceHoursCheck = validateDashboardShiftServiceHours(
+        serviceHours,
+        selectedAreaId!,
+        picker.date,
+        startTime,
+        endTime
+      );
+      if (!serviceHoursCheck.ok) {
+        setError(translateActionError(serviceHoursCheck.error, t));
+        return;
+      }
+    }
+
+    const weekday = profileAvailabilityWeekdayFromDashboardDate(picker.date);
+    if (isEmployeeAbsentOnDate(picker.employeeId, absences, picker.date)) {
+      setError(t("shiftAssign.employeeAbsent"));
+      return;
+    }
+    if (
+      !employeeMatchesShiftAvailability(
+        picker.employeeId,
+        recurringAvailability,
+        weekday,
+        startTime,
+        endTime
+      )
+    ) {
+      setError(t("shiftAssign.shiftOutsideAvailability"));
       return;
     }
 
     setError(null);
+    setComplianceNotice(null);
     startTransition(async () => {
       const result = await assignShiftWithTimes({
         employeeId: picker.employeeId,
         shiftDate: picker.date,
         startTime,
         endTime,
-        areaShiftTemplateId: areaShiftTemplateIdForAssign(selectedPresetId),
+        areaShiftTemplateId: simplePlanning
+          ? null
+          : areaShiftTemplateIdForAssign(selectedPresetId),
         locationId: selectedLocationId,
-        locationAreaId: selectedAreaId,
+        locationAreaId: simplePlanning ? null : selectedAreaId,
       });
-      if (!result.ok) setError(result.error);
-      else {
-        setPicker(null);
-        setNote("");
-        router.refresh();
+      if (!result.ok) {
+        setError(translateActionError(result.error, t));
+        setComplianceNotice(null);
+        return;
+      }
+      setPicker(null);
+      setNote("");
+      router.refresh();
+      if (result.warnings?.length) {
+        setComplianceNotice(result.warnings.join(" "));
       }
     });
   }
@@ -306,7 +385,7 @@ export function ShiftPlanner({
     setError(null);
     startTransition(async () => {
       const result = await removeShift(shiftId);
-      if (!result.ok) setError(result.error);
+      if (!result.ok) setError(translateActionError(result.error, t));
       else {
         setPicker(null);
         router.refresh();
@@ -318,11 +397,11 @@ export function ShiftPlanner({
     return (
       <div className="rounded-2xl border border-dashed border-border bg-surface p-12 text-center">
         <p className="text-muted">
-          Noch keine Mitarbeiter. Lege unter{" "}
+          {t("planning.noEmployeesPrefix")}{" "}
           <a href="/dashboard?profiles=1" className="font-medium text-primary">
-            Profile
+            {t("planning.noEmployeesProfilesLink")}
           </a>{" "}
-          Mitarbeiter an, um den Schichtplan zu erstellen.
+          {t("planning.noEmployeesSuffix")}
         </p>
       </div>
     );
@@ -330,8 +409,8 @@ export function ShiftPlanner({
 
   const canAssign =
     Boolean(selectedLocationId) &&
-    Boolean(selectedAreaId) &&
-    assignmentPresets.length > 0;
+    (simplePlanning ||
+      (Boolean(selectedAreaId) && assignmentPresets.length > 0));
 
   return (
     <div className="-m-4 flex min-h-[calc(100vh-4.5rem)] flex-col bg-subtle md:-m-6">
@@ -346,24 +425,30 @@ export function ShiftPlanner({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled
-              title="Demnächst verfügbar"
-            >
-              Vorlage der Vorwoche übernehmen
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled
-              title="Demnächst verfügbar"
-            >
-              Leeren Plan erstellen
-            </Button>
+            <Tooltip content="Demnächst verfügbar">
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled
+                >
+                  Vorlage der Vorwoche übernehmen
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip content="Demnächst verfügbar">
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled
+                >
+                  Leeren Plan erstellen
+                </Button>
+              </span>
+            </Tooltip>
           </div>
         </div>
 
@@ -402,38 +487,42 @@ export function ShiftPlanner({
               </Button>
             </div>
           </Field>
-          <Field label={t("dashboard.location")} mutedLabel>
-            <LocationSelect
-              locations={locations}
-              selectedLocationId={selectedLocationId}
-              basePath="/planung"
-              className="min-w-[200px] py-2"
-            />
-          </Field>
-          <Field label={t("planning.area")} mutedLabel>
-            {areas.length === 0 ? (
-              <ControlDisplay className="min-w-[200px] py-2 text-muted">
-                {t("planning.noAreas")}
-              </ControlDisplay>
-            ) : (
-              <Select
-                value={selectedAreaId ?? areas[0].id}
-                disabled={pending || areas.length === 0}
-                aria-label={t("planning.selectArea")}
-                className="min-w-[200px]"
-                onChange={(event) =>
-                  pushPlanungQuery({ area: event.target.value })
-                }
-              >
-                {areas.map((area) => (
-                  <option key={area.id} value={area.id}>
-                    {area.name}
-                    {area.archived_at ? ` (${t("common.archived")})` : ""}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
+          {features.areas ? (
+            <>
+              <Field label={t("dashboard.location")} mutedLabel>
+                <LocationSelect
+                  locations={locations}
+                  selectedLocationId={selectedLocationId}
+                  basePath="/planung"
+                  className="min-w-[200px] py-2"
+                />
+              </Field>
+              <Field label={t("planning.area")} mutedLabel>
+                {areas.length === 0 ? (
+                  <ControlDisplay className="min-w-[200px] py-2 text-muted">
+                    {t("planning.noAreas")}
+                  </ControlDisplay>
+                ) : (
+                  <Select
+                    value={selectedAreaId ?? areas[0].id}
+                    disabled={pending || areas.length === 0}
+                    aria-label={t("planning.selectArea")}
+                    className="min-w-[200px]"
+                    onChange={(event) =>
+                      pushPlanungQuery({ area: event.target.value })
+                    }
+                  >
+                    {areas.map((area) => (
+                      <option key={area.id} value={area.id}>
+                        {area.name}
+                        {area.archived_at ? ` (${t("common.archived")})` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </>
+          ) : null}
         </div>
       </header>
 
@@ -449,48 +538,56 @@ export function ShiftPlanner({
         </Alert>
       )}
 
+      {complianceNotice && (
+        <Alert variant="info" className="mx-4 mt-4 md:mx-6">
+          {complianceNotice}
+        </Alert>
+      )}
+
       <div className="flex flex-1 flex-col gap-0 overflow-hidden xl:flex-row">
         <aside className="hidden shrink-0 overflow-y-auto border-b border-border bg-surface p-4 xl:block xl:w-56 xl:border-b-0 xl:border-r">
-          <SidebarSection title={t("dashboard.shiftTemplateLabel")}>
-            {assignmentPresets.length === 0 ? (
-              <p className="text-xs text-muted">
-                {t("dashboard.noShiftTemplatesForArea")}
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {assignmentPresets.map((preset) => (
-                  <li
-                    key={preset.id}
-                    className="rounded-lg border border-border bg-background p-2.5"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: preset.color }}
-                      />
-                      <span className="text-sm font-medium">{preset.name}</span>
-                    </div>
-                    <p className="mt-1 pl-4.5 text-xs text-muted">
-                      {formatTimeRange(preset.start_time, preset.end_time)}
-                    </p>
-                    <p className="pl-4.5 text-xs text-muted">
-                      {shiftHours({
-                        start_time: preset.start_time,
-                        end_time: preset.end_time,
-                      })}{" "}
-                      h
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SidebarSection>
+          {!simplePlanning ? (
+            <SidebarSection title={t("dashboard.shiftTemplateLabel")}>
+              {assignmentPresets.length === 0 ? (
+                <p className="text-xs text-muted">
+                  {t("dashboard.noShiftTemplatesForArea")}
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {assignmentPresets.map((preset) => (
+                    <li
+                      key={preset.id}
+                      className="rounded-lg border border-border bg-background p-2.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: preset.color }}
+                        />
+                        <span className="text-sm font-medium">{preset.name}</span>
+                      </div>
+                      <p className="mt-1 pl-4.5 text-xs text-muted">
+                        {formatTimeRange(preset.start_time, preset.end_time)}
+                      </p>
+                      <p className="pl-4.5 text-xs text-muted">
+                        {shiftHours({
+                          start_time: preset.start_time,
+                          end_time: preset.end_time,
+                        })}{" "}
+                        h
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SidebarSection>
+          ) : null}
 
-          <SidebarSection title="Verfügbarkeit" className="mt-6">
-            <LegendDot color="#22c55e" label="Verfügbar" />
-            <LegendDot color="#eab308" label="Wunschfrei" />
-            <LegendDot color="#ef4444" label="Nicht verfügbar" />
-            <LegendDot color="#94a3b8" label="Urlaub / Abwesend" />
+          <SidebarSection title={t("planning.legendAvailability")} className={simplePlanning ? "" : "mt-6"}>
+            <LegendDot color="#22c55e" label={t("planning.legendAvailable")} />
+            <LegendDot color="#eab308" label={t("planning.legendPreferred")} />
+            <LegendDot color="#ef4444" label={t("planning.legendUnavailable")} />
+            <LegendDot color="#94a3b8" label={t("planning.legendAbsent")} />
           </SidebarSection>
         </aside>
 
@@ -500,10 +597,10 @@ export function ShiftPlanner({
               <thead>
                 <tr className="border-b border-border bg-background">
                   <th className="sticky left-0 z-20 min-w-[200px] bg-background px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                    Mitarbeiter
+                    {t("planning.staffColumn")}
                   </th>
                   {dates.map((date) => {
-                    const { weekday, label } = formatDayHeader(date);
+                    const { weekday, label } = formatDayHeader(date, intlLocale);
                     return (
                       <th
                         key={date}
@@ -554,6 +651,14 @@ export function ShiftPlanner({
                         const key = `${emp.id}:${date}`;
                         const shift = shiftMap.get(key);
                         const avail = availabilityMap.get(key);
+                        const blockReason = shift
+                          ? null
+                          : getDayAssignBlockReason(
+                              emp.id,
+                              date,
+                              recurringAvailability,
+                              absences
+                            );
                         const isSelected =
                           picker?.employeeId === emp.id && picker?.date === date;
                         const dayReadOnly = isDayReadOnly(date);
@@ -579,11 +684,31 @@ export function ShiftPlanner({
                           );
                         }
 
+                        if (blockReason === "absent") {
+                          return (
+                            <td key={date} className="p-1.5 align-top">
+                              <div className="flex h-[52px] items-center justify-center rounded-lg bg-rose-50 text-xs font-medium text-rose-700">
+                                {t("planning.cellAbsent")}
+                              </div>
+                            </td>
+                          );
+                        }
+
+                        if (blockReason === "no_availability") {
+                          return (
+                            <td key={date} className="p-1.5 align-top">
+                              <div className="flex h-[52px] items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500">
+                                {t("planning.cellNoAvailability")}
+                              </div>
+                            </td>
+                          );
+                        }
+
                         if (avail === "unavailable") {
                           return (
                             <td key={date} className="p-1.5 align-top">
                               <div className="flex h-[52px] items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500">
-                                Nicht verfügbar
+                                {t("planning.cellUnavailable")}
                               </div>
                             </td>
                           );
@@ -593,7 +718,7 @@ export function ShiftPlanner({
                           return (
                             <td key={date} className="p-1.5 align-top">
                               <div className="flex h-[52px] items-center justify-center rounded-lg bg-amber-50 text-xs font-medium text-amber-700">
-                                Wunschfrei
+                                {t("planning.cellPreferred")}
                               </div>
                             </td>
                           );
@@ -608,7 +733,7 @@ export function ShiftPlanner({
                               className={`flex h-[52px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40 ${isSelected ? "border-primary bg-primary/5 text-primary" : ""}`}
                             >
                               <span className="text-lg leading-none">+</span>
-                              <span className="text-[10px]">Frei</span>
+                              <span className="text-[10px]">{t("planning.cellFree")}</span>
                             </button>
                           </td>
                         );
@@ -646,21 +771,21 @@ export function ShiftPlanner({
         </main>
 
         <aside className="w-full shrink-0 overflow-y-auto border-t border-border bg-surface p-4 xl:w-72 xl:border-t-0 xl:border-l">
-          <h2 className="text-sm font-semibold">Schicht zuweisen</h2>
+          <h2 className="text-sm font-semibold">{t("planning.assignTitle")}</h2>
 
           {picker && pickerEmployee ? (
             <div className="mt-4 space-y-4">
               {isDayReadOnly(picker.date) && (
                 <p className="text-xs text-muted">{t("planning.readOnlyDay")}</p>
               )}
-              {assignmentPresets.length === 0 ? (
+              {!simplePlanning && assignmentPresets.length === 0 ? (
                 <Alert variant="info">{t("dashboard.noShiftTemplatesForArea")}</Alert>
               ) : null}
 
               <div className="rounded-[var(--radius-control)] bg-subtle px-3 py-2 text-sm">
-                <span className="text-muted">Datum: </span>
+                <span className="text-muted">{t("planning.assignDateLabel")}: </span>
                 <span className="font-medium">
-                  {new Intl.DateTimeFormat("de-DE", {
+                  {new Intl.DateTimeFormat(intlLocale, {
                     weekday: "long",
                     day: "numeric",
                     month: "long",
@@ -668,18 +793,20 @@ export function ShiftPlanner({
                 </span>
               </div>
 
-              <div>
-                <LabelMuted>{t("dashboard.shiftTemplateLabel")}</LabelMuted>
-                <DashboardShiftTypeCombobox
-                  value={selectedPresetId}
-                  presets={assignmentPresets}
-                  placeholder={t("dashboard.selectShiftTemplate")}
-                  disabled={
-                    isDayReadOnly(picker.date) || assignmentPresets.length === 0
-                  }
-                  onChange={handlePresetChange}
-                />
-              </div>
+              {!simplePlanning ? (
+                <div>
+                  <LabelMuted>{t("dashboard.shiftTemplateLabel")}</LabelMuted>
+                  <DashboardShiftTypeCombobox
+                    value={selectedPresetId}
+                    presets={assignmentPresets}
+                    placeholder={t("dashboard.selectShiftTemplate")}
+                    disabled={
+                      isDayReadOnly(picker.date) || assignmentPresets.length === 0
+                    }
+                    onChange={handlePresetChange}
+                  />
+                </div>
+              ) : null}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -702,7 +829,7 @@ export function ShiftPlanner({
                 </div>
               </div>
 
-              <Field label="Mitarbeiter">
+              <Field label="Personal">
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-border">
                   <label className="flex cursor-pointer items-center gap-2 border-b border-border bg-primary/5 px-3 py-2.5">
                     <input type="radio" checked readOnly className="accent-primary" />
@@ -721,13 +848,13 @@ export function ShiftPlanner({
                 </div>
               </Field>
 
-              <Field label="Notiz (optional)">
+              <Field label={t("planning.assignNoteLabel")}>
                 <Textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={2}
                   disabled={isDayReadOnly(picker.date)}
-                  placeholder="z. B. Einarbeitung, Vertretung …"
+                  placeholder={t("planning.assignNotePlaceholder")}
                 />
               </Field>
 
@@ -738,7 +865,7 @@ export function ShiftPlanner({
                   disabled={pending || !timesComplete || !canAssign}
                   onClick={handleAssign}
                 >
-                  Schicht zuweisen
+                  {t("planning.assignSubmit")}
                 </Button>
               )}
 
@@ -754,7 +881,7 @@ export function ShiftPlanner({
                     if (shift) handleRemove(shift.id);
                   }}
                 >
-                  Schicht entfernen
+                  {t("planning.assignRemove")}
                 </Button>
               )}
 
@@ -764,12 +891,12 @@ export function ShiftPlanner({
                 className="w-full text-muted"
                 onClick={() => setPicker(null)}
               >
-                Abbrechen
+                {t("planning.assignCancel")}
               </Button>
             </div>
           ) : (
             <p className="mt-4 text-sm text-muted">
-              Wählen Sie eine freie Zelle im Plan aus, um eine Schicht zuzuweisen.
+              {t("planning.assignPickCellHint")}
             </p>
           )}
         </aside>
@@ -810,7 +937,7 @@ export function ShiftPlanner({
           <div className="space-y-2">
             <ActionLink disabled>PDF exportieren</ActionLink>
             <ActionLink disabled>Excel exportieren</ActionLink>
-            <ActionLink disabled>Mitarbeiter benachrichtigen</ActionLink>
+            <ActionLink disabled>Personal benachrichtigen</ActionLink>
           </div>
         </FooterPanel>
       </footer>

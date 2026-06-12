@@ -6,6 +6,12 @@ export function dayBefore(isoDate: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+export function dayAfter(isoDate: string): string {
+  const d = new Date(`${isoDate}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export function parseHourlyRateAmount(
   raw: string
 ): { ok: true; amount: number } | { ok: false; error: string } {

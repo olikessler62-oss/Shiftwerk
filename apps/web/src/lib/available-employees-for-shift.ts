@@ -2,6 +2,8 @@ import {
   isDateWithinAbsenceRange,
   parseAvailabilityTimeRange,
   timeToMinutes,
+  shiftWindowFitsAvailabilitySlot as shiftWindowFitsAvailabilitySlotFromDb,
+  validateEmployeeDayShiftAssignments,
   type AbsenceRange,
 } from "@schichtwerk/database";
 import type { AbsenceRequest, Profile, ProfileRecurringAvailability } from "@schichtwerk/types";
@@ -61,11 +63,11 @@ export function shiftWindowFitsAvailabilitySlot(
   slotStart: string,
   slotEnd: string
 ): boolean {
-  return availabilityRangeContainedInWindow(
+  return shiftWindowFitsAvailabilitySlotFromDb(
     dashboardTimeKey(shiftStart),
     dashboardTimeKey(shiftEnd),
-    dashboardTimeKey(slotStart),
-    dashboardTimeKey(slotEnd)
+    slotStart,
+    slotEnd
   );
 }
 
@@ -94,6 +96,14 @@ export function normalizeDashboardShiftTime(raw: string): string {
 function normalizeProfileAvailabilityWeekday(weekday: number | string): number {
   const value = typeof weekday === "number" ? weekday : Number.parseInt(String(weekday), 10);
   return Number.isInteger(value) ? value : -1;
+}
+
+export function profileAvailabilitiesForWeekday<
+  T extends { weekday: number | string },
+>(availabilities: readonly T[], weekday: number): T[] {
+  return availabilities.filter(
+    (slot) => normalizeProfileAvailabilityWeekday(slot.weekday) === weekday
+  );
 }
 
 export function filterEmployeesAvailableOnWeekday(
@@ -242,7 +252,8 @@ export function filterDashboardShiftAssignEmployeesByWindowWithoutOverlap<
   windowStart: string,
   windowEnd: string,
   shiftDate: string,
-  areaAssignments: readonly DashboardAreaAssignmentWindow[]
+  areaAssignments: readonly DashboardAreaAssignmentWindow[],
+  timeZone?: string
 ): T[] {
   const available = filterDashboardShiftAssignEmployeesByWindow(
     employees,
@@ -262,10 +273,126 @@ export function filterDashboardShiftAssignEmployeesByWindowWithoutOverlap<
             windowStart,
             windowEnd,
             assignment.startTime,
-            assignment.endTime
+            assignment.endTime,
+            timeZone
           )
       )
   );
+}
+
+export type BulkShiftEmployeeAssignmentContext = {
+  shiftDate: string;
+  countryCode: string;
+  timeZone: string;
+  areaAssignments: readonly DashboardAreaAssignmentWindow[];
+  otherAreaAssignments: readonly DashboardAreaAssignmentWindow[];
+};
+
+function assignmentWindowsForEmployee(
+  employeeId: string,
+  assignments: readonly DashboardAreaAssignmentWindow[]
+): { startTime: string; endTime: string }[] {
+  return assignments
+    .filter(
+      (assignment) =>
+        assignment.employeeId === employeeId &&
+        areDashboardShiftTimesComplete(assignment.startTime, assignment.endTime)
+    )
+    .map((assignment) => ({
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+    }));
+}
+
+/** Verfügbarkeit, keine Überschneidung, Tages-Compliance inkl. anderer Bereiche. */
+export function employeeEligibleForBulkShiftAssignment(
+  employeeId: string,
+  windowStart: string,
+  windowEnd: string,
+  context: BulkShiftEmployeeAssignmentContext
+): boolean {
+  if (!areDashboardShiftTimesComplete(windowStart, windowEnd)) return false;
+
+  const sameAreaWindows = assignmentWindowsForEmployee(
+    employeeId,
+    context.areaAssignments
+  );
+
+  for (const existing of sameAreaWindows) {
+    if (
+      dashboardShiftWindowsOverlap(
+        context.shiftDate,
+        windowStart,
+        windowEnd,
+        existing.startTime,
+        existing.endTime,
+        context.timeZone
+      )
+    ) {
+      return false;
+    }
+  }
+
+  const otherAreaWindows = assignmentWindowsForEmployee(
+    employeeId,
+    context.otherAreaAssignments
+  );
+  const proposed = { startTime: windowStart, endTime: windowEnd };
+  const allWindows = [...sameAreaWindows, proposed, ...otherAreaWindows];
+  const requiresDayLevelCheck = allWindows.length >= 2;
+
+  const result = validateEmployeeDayShiftAssignments({
+    countryCode: context.countryCode,
+    shiftDate: context.shiftDate,
+    weekday: weekdayIndexFromDate(context.shiftDate),
+    windows: requiresDayLevelCheck ? allWindows : [proposed],
+  });
+
+  return result.ok;
+}
+
+export function filterBulkShiftAssignEmployeesForRow<
+  T extends {
+    id: string;
+    availabilities: readonly DashboardShiftAssignAvailability[];
+  },
+>(
+  employees: readonly T[],
+  profileAvailabilityWeekday: number,
+  windowStart: string,
+  windowEnd: string,
+  context: BulkShiftEmployeeAssignmentContext
+): T[] {
+  const available = filterDashboardShiftAssignEmployeesByWindow(
+    employees,
+    profileAvailabilityWeekday,
+    windowStart,
+    windowEnd
+  );
+  if (!areDashboardShiftTimesComplete(windowStart, windowEnd)) return [];
+
+  return available.filter((employee) =>
+    employeeEligibleForBulkShiftAssignment(
+      employee.id,
+      windowStart,
+      windowEnd,
+      context
+    )
+  );
+}
+
+export function dedupeDashboardAssignmentWindows<
+  T extends DashboardAreaAssignmentWindow,
+>(assignments: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const assignment of assignments) {
+    const key = `${assignment.employeeId}|${assignment.startTime.slice(0, 5)}|${assignment.endTime.slice(0, 5)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(assignment);
+  }
+  return deduped;
 }
 
 export function pickEmployeeLongestWithoutShift<
@@ -284,13 +411,80 @@ export function pickEmployeeLongestWithoutShift<
   })[0];
 }
 
+export type ShiftAssignmentRequestWindow = {
+  startTime: string;
+  endTime: string;
+  requestedStartTime?: string;
+  requestedEndTime?: string;
+};
+
+/** Angeforderte Schichtzeit (Personalbedarf/Von-Bis), nicht Verfügbarkeitsfenster. */
+export function resolveShiftAssignmentRequestWindow(
+  row: ShiftAssignmentRequestWindow
+): { startTime: string; endTime: string } {
+  if (
+    row.requestedStartTime &&
+    row.requestedEndTime &&
+    areDashboardShiftTimesComplete(row.requestedStartTime, row.requestedEndTime)
+  ) {
+    return {
+      startTime: row.requestedStartTime,
+      endTime: row.requestedEndTime,
+    };
+  }
+  return { startTime: row.startTime, endTime: row.endTime };
+}
+
+export function filterEmployeesEligibleForShiftAssignment<
+  T extends {
+    id: string;
+    availabilities: readonly DashboardShiftAssignAvailability[];
+  },
+>(
+  employees: readonly T[],
+  weekday: number,
+  requestWindow: ShiftAssignmentRequestWindow,
+  shiftDate: string,
+  areaAssignments: readonly DashboardAreaAssignmentWindow[],
+  qualificationId: string,
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>
+): T[] {
+  const { startTime, endTime } = resolveShiftAssignmentRequestWindow(requestWindow);
+  const byWindow = filterDashboardShiftAssignEmployeesByWindowWithoutOverlap(
+    employees,
+    weekday,
+    startTime,
+    endTime,
+    shiftDate,
+    areaAssignments
+  );
+  return filterEmployeesByQualificationForShift(
+    byWindow,
+    qualificationId,
+    profileQualificationIds
+  );
+}
+
+function filterEmployeesByQualificationForShift<
+  T extends { id: string },
+>(
+  employees: readonly T[],
+  qualificationId: string,
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>
+): T[] {
+  if (!qualificationId) return [...employees];
+  return employees.filter((employee) =>
+    profileQualificationIds.get(employee.id)?.has(qualificationId)
+  );
+}
+
 export function weekdayFromDashboardDate(dateISO: string): number {
   return serviceWeekdayForDate(dateISO);
 }
 
-/** Profil-Verfügbarkeiten sind Mo–So (0–6), nicht Feiertags-Spalte 7. */
+/** Mo=0 … So=6, Feiertage=7 (wie Servicezeiten). */
 export function profileAvailabilityWeekdayFromDashboardDate(
   dateISO: string
 ): number {
-  return weekdayIndexFromDate(dateISO);
+  return serviceWeekdayForDate(dateISO);
 }

@@ -47,8 +47,10 @@ import {
   IconButton,
   PlusIcon,
 } from "@/components/ui";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
+import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 
 type Props = {
   location: Location;
@@ -220,26 +222,28 @@ export function AreaQualificationTemplatesPanelModal({
     });
   }
 
+  const showModal = useDeferredSettingsModalRender(initialLoading, onClose);
+  if (!showModal) return null;
+
   return (
     <div
-      className={cn(
-        settingsSubModalOverlayClass(),
-        (initialLoading || pending) && "cursor-wait"
-      )}
+      className={cn(settingsSubModalOverlayClass(), pending && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !anyOverlayOpen) onClose();
+        if (e.target === e.currentTarget && !anyOverlayOpen) {
+          onClose();
+        }
       }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="area-qualification-templates-panel-title"
-        aria-busy={initialLoading || pending}
+        aria-busy={pending}
         aria-hidden={anyOverlayOpen}
         className={cn(
           settingsSubModalDialogClass("lg"),
-          (initialLoading || pending) && "[&_*]:cursor-wait",
+          pending && "[&_*]:cursor-wait",
           anyOverlayOpen ? "pointer-events-none" : ""
         )}
         onMouseDown={(e) => e.stopPropagation()}
@@ -255,10 +259,12 @@ export function AreaQualificationTemplatesPanelModal({
               id="area-qualification-templates-panel-title"
               className={SETTINGS_MODAL_TITLE_CLASS}
             >
-              {t("locations.panelQualificationTemplatesOf", {
-                location: location.name,
-                area: area.name,
-              })}
+              <span className="text-foreground">
+                {t("locations.panelQualificationTemplatesOfPrefix")}{" "}
+              </span>
+              <span className="text-cyan-600">
+                {location.name} | {area.name}
+              </span>
             </h3>
             <p className="mt-1 text-xs text-muted">
               {t("locations.areaQualificationTemplatesHint")}
@@ -282,122 +288,117 @@ export function AreaQualificationTemplatesPanelModal({
         )}
 
         <div className="shrink-0 overflow-hidden px-4 py-3">
-          {initialLoading ? (
-            <SettingsEmptyState message={t("common.loading")} />
-          ) : list.length === 0 ? (
-            <SettingsEmptyState
-              message={t("locations.areaQualificationTemplatesEmpty")}
-              hint={t("common.emptyHintCreate")}
-            />
-          ) : (
-            <div
-              className={cn(
-                settingsScrollableTableListClass(),
-                SETTINGS_FOUR_ROW_TABLE_LIST_SCROLL_CLASS
-              )}
-            >
-              <table className="w-full min-w-[16rem] border-collapse">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th
-                      className={settingsStickyIndicatorHeaderClass()}
-                      aria-hidden
-                    />
-                    <th className={settingsStickyColumnHeaderClass("left")}>
-                      {t("profiles.columnQualification")}
-                    </th>
-                    <th
-                      className={settingsListRowDeleteHeaderClass()}
-                      aria-hidden
-                    />
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedList.map((entry) => {
-                    const isSelected = entry.id === selectedId;
-                    const name = entry.qualification.name;
-                    return (
-                      <tr
-                        key={entry.id}
-                        {...settingsListItemAttrs(entry.id)}
-                        onClick={() => {
-                          setSelectedId(entry.id);
-                          setConfirmDelete(false);
-                          setErrorMessage(null);
-                        }}
-                        className={settingsDataRowClass(isSelected)}
-                      >
-                        <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
-                        <td
-                          className={settingsDataCellClass(isSelected, {
-                            className: "font-medium",
-                          })}
-                          title={name}
-                        >
-                          {truncateLabel(name)}
-                        </td>
-                        <td className={settingsListRowDeleteCellClass(isSelected)}>
-                          <SettingsListRowDeleteButton
-                            label={t("locations.delete")}
-                            disabled={pending || initialLoading}
+              {list.length === 0 ? (
+                <SettingsEmptyState
+                  message={t("locations.areaQualificationTemplatesEmpty")}
+                  hint={t("common.emptyHintCreate")}
+                />
+              ) : (
+                <div
+                  className={cn(
+                    settingsScrollableTableListClass(),
+                    SETTINGS_FOUR_ROW_TABLE_LIST_SCROLL_CLASS
+                  )}
+                >
+                  <table className="w-full min-w-[16rem] border-collapse">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th
+                          className={settingsStickyIndicatorHeaderClass()}
+                          aria-hidden
+                        />
+                        <th className={settingsStickyColumnHeaderClass("left")}>
+                          {t("profiles.columnQualification")}
+                        </th>
+                        <th
+                          className={settingsListRowDeleteHeaderClass()}
+                          aria-hidden
+                        />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedList.map((entry) => {
+                        const isSelected = entry.id === selectedId;
+                        const name = entry.qualification.name;
+                        return (
+                          <tr
+                            key={entry.id}
+                            {...settingsListItemAttrs(entry.id)}
                             onClick={() => {
                               setSelectedId(entry.id);
-                              setConfirmDelete(true);
+                              setConfirmDelete(false);
                               setErrorMessage(null);
                             }}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                            className={settingsDataRowClass(isSelected)}
+                          >
+                            <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
+                            <td
+                              className={settingsDataCellClass(isSelected, {
+                                className: "font-medium",
+                              })}
+                            >
+                              <Tooltip content={name} className="block max-w-full truncate">
+                                {truncateLabel(name)}
+                              </Tooltip>
+                            </td>
+                            <td className={settingsListRowDeleteCellClass(isSelected)}>
+                              <SettingsListRowDeleteButton
+                                label={t("locations.delete")}
+                                disabled={pending}
+                                onClick={() => {
+                                  setSelectedId(entry.id);
+                                  setConfirmDelete(true);
+                                  setErrorMessage(null);
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        <div className="shrink-0 border-t border-border px-4 py-3">
-          <SettingsActionBar
-            primary={
-              <SettingsPrimaryActionButton
-                label={t("locations.new")}
-                icon={<PlusIcon />}
-                disabled={
-                  pending ||
-                  initialLoading ||
-                  unassignedQualifications.length === 0
+            <div className="shrink-0 border-t border-border px-4 py-3">
+              <SettingsActionBar
+                primary={
+                  <SettingsPrimaryActionButton
+                    label={t("locations.new")}
+                    icon={<PlusIcon />}
+                    disabled={pending || unassignedQualifications.length === 0}
+                    tooltip={
+                      unassignedQualifications.length === 0
+                        ? t("locations.areaQualificationTemplatesAllAssigned")
+                        : undefined
+                    }
+                    onClick={() => {
+                      setFormOpen(true);
+                      setConfirmDelete(false);
+                      setErrorMessage(null);
+                    }}
+                  />
                 }
-                title={
-                  unassignedQualifications.length === 0
-                    ? t("locations.areaQualificationTemplatesAllAssigned")
-                    : undefined
+                secondary={
+                  <SettingsReorderButtons
+                    moveUpLabel={t("common.moveUp")}
+                    moveDownLabel={t("common.moveDown")}
+                    disabled={pending}
+                    canMoveUp={canMoveUp}
+                    canMoveDown={canMoveDown}
+                    onMoveUp={() => {
+                      setErrorMessage(null);
+                      handleMove(-1);
+                    }}
+                    onMoveDown={() => {
+                      setErrorMessage(null);
+                      handleMove(1);
+                    }}
+                  />
                 }
-                onClick={() => {
-                  setFormOpen(true);
-                  setConfirmDelete(false);
-                  setErrorMessage(null);
-                }}
               />
-            }
-            secondary={
-              <SettingsReorderButtons
-                moveUpLabel={t("common.moveUp")}
-                moveDownLabel={t("common.moveDown")}
-                disabled={pending || initialLoading}
-                canMoveUp={canMoveUp}
-                canMoveDown={canMoveDown}
-                onMoveUp={() => {
-                  setErrorMessage(null);
-                  handleMove(-1);
-                }}
-                onMoveDown={() => {
-                  setErrorMessage(null);
-                  handleMove(1);
-                }}
-              />
-            }
-          />
-        </div>
+            </div>
 
         <div className={settingsModalFooterClass("shrink-0")}>
           <Button

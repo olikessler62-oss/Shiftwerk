@@ -7,6 +7,7 @@ import type { Role, RolePermissionLevel } from "@schichtwerk/types";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { RoleFormModal } from "./role-form-modal";
 import {
+  MODAL_SCROLLBAR_CLASS,
   SETTINGS_LIST_SCROLL_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
   SettingsActionBar,
@@ -168,6 +169,7 @@ export function RolesModal({ roles, onClose }: Props) {
           aria-hidden={!!formMode}
           className={cn(
             "flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
+            MODAL_SCROLLBAR_CLASS,
             formMode ? "pointer-events-none" : ""
           )}
         >

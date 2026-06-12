@@ -1,0 +1,35 @@
+---
+description: Helle App-Tooltips statt nativer Browser-Tooltips
+globs: apps/web/**/*.{tsx,ts}
+alwaysApply: false
+---
+
+# Tooltips
+
+Verwende **kein** natives HTML-Attribut `title` für Hover-Hinweise. Browser-Tooltips sind dunkel und passen nicht zum UI.
+
+## Stattdessen
+
+- `@/components/ui/tooltip` — `Tooltip` für ein- und mehrzeilige Hinweise (Portal, helles Surface)
+- `tooltipContentClassName` — gemeinsame Klassen für spezielle Tooltips (z. B. Mitarbeiter-Verfügbarkeit im Bulk-Modal)
+- Mehrzeilige Texte: `\n` im String oder ReactNode als `content`
+
+```tsx
+// ❌ BAD
+<button title="Vollständiger Name">…</button>
+
+// ✅ GOOD
+<Tooltip content="Vollständiger Name">
+  <button>…</button>
+</Tooltip>
+```
+
+## Ausnahmen
+
+- `title` als **React-Prop** für Panel-/Section-Überschriften (kein HTML-Tooltip)
+- `aria-label` für Screenreader bleibt unverändert
+- Mitarbeiter-Verfügbarkeit im Schicht-Modal: eigenes positioniertes Tooltip (`EmployeeAvailabilityHint`), Position über `resolveNameHoverTooltipPosition`
+
+## Stil
+
+Helles Tooltip: `bg-surface`, `border-border`, `text-foreground`, `shadow-lg`, `text-xs`
