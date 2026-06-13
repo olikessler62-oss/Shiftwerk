@@ -1,6 +1,7 @@
 export const MOUSE_TOOLTIP_CURSOR_GAP_PX = 3;
 export const COMBOBOX_TOOLTIP_ANCHOR_GAP_PX = 2;
 export const COMBOBOX_TOOLTIP_CLOSE_DISTANCE_PX = 10;
+export const EMPLOYEE_AVAILABILITY_HINT_AUTO_CLOSE_MS = 3000;
 export const MOUSE_TOOLTIP_VIEWPORT_PADDING_PX = 8;
 
 export type MousePoint = {
@@ -18,30 +19,27 @@ export function distanceFromPointToRect(
   return Math.hypot(clientX - closestX, clientY - closestY);
 }
 
-/** Vertikal am Namen, horizontal: linker Tooltip-Rand am rechten Combobox-Rand. */
+/** Tooltip: linker Rand am rechten Combobox-Rand, unterer Rand auf Höhe des oberen Combobox-Rands. */
 export function resolveNameHoverTooltipPosition(
-  nameRect: DOMRect | DOMRectReadOnly,
   comboboxRect: DOMRect | DOMRectReadOnly,
   tooltipWidth: number,
   tooltipHeight: number,
-  options: { offsetX?: number; offsetY?: number } = {}
+  _options: { offsetY?: number } = {}
 ): MousePoint {
   const padding = MOUSE_TOOLTIP_VIEWPORT_PADDING_PX;
   const gap = COMBOBOX_TOOLTIP_ANCHOR_GAP_PX;
-  const offsetX = options.offsetX ?? 0;
-  const offsetY = options.offsetY ?? 0;
 
-  let x = comboboxRect.right + offsetX;
-  let y = nameRect.top - gap - tooltipHeight + offsetY;
-
-  if (y < padding) {
-    y = nameRect.bottom + gap;
-  }
+  let x = comboboxRect.right + gap;
+  let y = comboboxRect.top - tooltipHeight;
 
   if (x + tooltipWidth > window.innerWidth - padding) {
-    x = window.innerWidth - tooltipWidth - padding;
+    x = comboboxRect.left - gap - tooltipWidth;
   }
 
+  x = Math.max(
+    padding,
+    Math.min(x, window.innerWidth - tooltipWidth - padding)
+  );
   y = Math.max(
     padding,
     Math.min(y, window.innerHeight - tooltipHeight - padding)

@@ -1,7 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { buildShiftTimestamps, shiftTimeFromTimestamp } from "@/lib/dates";
+import {
+  dashboardShiftsCacheTag,
+  weekStartsForShiftCacheInvalidation,
+} from "@/lib/cached-dashboard-shifts";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 import { isPastShiftDate } from "@/lib/planning-readonly";
@@ -63,6 +67,7 @@ export type AssignShiftBatchResult =
       ok: true;
       results: AssignShiftBatchRowResult[];
       undoAvailable: boolean;
+      savedRowCount: number;
     }
   | { ok: false; error: string };
 
@@ -90,13 +95,42 @@ function findOverlappingShifts(
   );
 }
 
+function pickAdjacentBoundaryShifts(
+  dayBeforeShifts: EmployeeShiftRecord[],
+  dayAfterShifts: EmployeeShiftRecord[],
+  excludeIds: ReadonlySet<string>
+): EmployeeShiftRecord[] {
+  const boundary: EmployeeShiftRecord[] = [];
+  const before = dayBeforeShifts.filter((shift) => !excludeIds.has(shift.id));
+  const after = dayAfterShifts.filter((shift) => !excludeIds.has(shift.id));
+
+  if (before.length > 0) {
+    boundary.push(
+      before.reduce((latest, shift) =>
+        !latest || shift.ends_at > latest.ends_at ? shift : latest
+      )
+    );
+  }
+
+  if (after.length > 0) {
+    boundary.push(
+      after.reduce((earliest, shift) =>
+        !earliest || shift.starts_at < earliest.starts_at ? shift : earliest
+      )
+    );
+  }
+
+  return boundary;
+}
+
 async function validateShiftLaborCompliance(
   organizationId: string,
   employeeId: string,
   shiftDate: string,
   startTime: string,
   endTime: string,
-  timeZone: string
+  timeZone: string,
+  options?: { sameDayBatchPeerCount?: number }
 ): Promise<{ ok: true; warnings?: string[] } | { ok: false; error: string }> {
   const db = await getDatabase();
   const countryCode =
@@ -123,18 +157,35 @@ async function validateShiftLaborCompliance(
   const overlappingIds = new Set(
     findOverlappingShifts(sameDay, starts_at, ends_at).map((shift) => shift.id)
   );
+  const otherSameDayCount = sameDay.filter(
+    (shift) => !overlappingIds.has(shift.id)
+  ).length;
+  const isSplitDutyDay =
+    otherSameDayCount > 0 || (options?.sameDayBatchPeerCount ?? 0) > 0;
 
-  const adjacent = await db.listShiftsForEmployeeOnDates(employeeId, [
-    dayBefore(shiftDate),
-    shiftDate,
-    dayAfter(shiftDate),
+  if (isSplitDutyDay) {
+    return {
+      ok: true,
+      warnings: durationCheck.warnings.length ? durationCheck.warnings : undefined,
+    };
+  }
+
+  const [dayBeforeShifts, dayAfterShifts] = await Promise.all([
+    db.listShiftsForEmployeeDate(employeeId, dayBefore(shiftDate)),
+    db.listShiftsForEmployeeDate(employeeId, dayAfter(shiftDate)),
   ]);
 
   const restCheck = validateRestPeriodForCountry({
     countryCode,
     newStartsAt: starts_at,
     newEndsAt: ends_at,
-    existingShifts: adjacent.filter((shift) => !overlappingIds.has(shift.id)),
+    newShiftDate: shiftDate,
+    timeZone,
+    existingShifts: pickAdjacentBoundaryShifts(
+      dayBeforeShifts,
+      dayAfterShifts,
+      overlappingIds
+    ),
   });
   if (!restCheck.ok) return restCheck;
 
@@ -244,9 +295,55 @@ async function validateAssignContext(
   return { ok: true };
 }
 
-function revalidateShiftPaths() {
+function revalidateShiftPaths(scope?: {
+  organizationId: string;
+  locationId: string;
+  shiftDates: string[];
+}) {
   revalidatePath("/planung");
   revalidatePath("/dashboard");
+
+  if (!scope?.locationId) return;
+
+  const tags = new Set<string>();
+  for (const shiftDate of scope.shiftDates) {
+    for (const weekStart of weekStartsForShiftCacheInvalidation(shiftDate)) {
+      tags.add(
+        dashboardShiftsCacheTag(
+          scope.organizationId,
+          scope.locationId,
+          weekStart
+        )
+      );
+    }
+  }
+  for (const tag of tags) {
+    revalidateTag(tag);
+  }
+}
+
+function revalidateShiftPathsFromUndoBatch(
+  organizationId: string,
+  batch: ShiftAssignUndoBatch
+) {
+  const shiftDates = new Set<string>();
+  let locationId: string | undefined;
+
+  for (const snapshot of batch.replacements) {
+    shiftDates.add(snapshot.shift_date);
+    if (snapshot.location_id) locationId = snapshot.location_id;
+  }
+
+  if (!locationId || shiftDates.size === 0) {
+    revalidateShiftPaths();
+    return;
+  }
+
+  revalidateShiftPaths({
+    organizationId,
+    locationId,
+    shiftDates: [...shiftDates],
+  });
 }
 
 export async function assignShiftWithTimes(
@@ -307,7 +404,11 @@ export async function assignShiftWithTimes(
 
     await persistShiftWithTimes(organizationId, userId, input, undoBatch, timeZone);
     setShiftAssignUndoBatch(userId, undoBatch);
-    revalidateShiftPaths();
+    revalidateShiftPaths({
+      organizationId,
+      locationId: input.locationId,
+      shiftDates: [input.shiftDate],
+    });
 
     return {
       ok: true,
@@ -326,6 +427,7 @@ export async function assignShiftBatch(input: {
   locationId: string;
   locationAreaId: string;
   rows: AssignShiftBatchRowInput[];
+  deleteShiftIds?: string[];
 }): Promise<AssignShiftBatchResult> {
   try {
     const { organizationId, userId, organization } = await requireManager();
@@ -346,6 +448,26 @@ export async function assignShiftBatch(input: {
       return { ok: false, error: "Bereich nicht gefunden" };
     }
 
+    const deleteShiftIds = [...new Set(input.deleteShiftIds ?? [])];
+    for (const shiftId of deleteShiftIds) {
+      const shift = await db.getShiftRecordById(shiftId, organizationId);
+      if (!shift) {
+        return { ok: false, error: "Schicht nicht gefunden" };
+      }
+      if (shift.location_area_id !== input.locationAreaId) {
+        return { ok: false, error: "Schicht gehört nicht zu diesem Bereich" };
+      }
+      if (shift.shift_date !== input.shiftDate) {
+        return { ok: false, error: "Schicht gehört nicht zu diesem Tag" };
+      }
+      if (isPastShiftDate(shift.shift_date)) {
+        return {
+          ok: false,
+          error: "Vergangene Schichten können nicht mehr entfernt werden.",
+        };
+      }
+    }
+
     const assignCtx = await loadShiftAssignValidationContext(
       db,
       organizationId,
@@ -363,6 +485,21 @@ export async function assignShiftBatch(input: {
 
     const validRows: ValidRow[] = [];
     const results: AssignShiftBatchRowResult[] = [];
+
+    const completeBatchRows = input.rows
+      .map((row, rowIndex) => ({ row, rowIndex }))
+      .filter(
+        ({ row }) =>
+          row.employeeId &&
+          areDashboardShiftTimesComplete(row.startTime, row.endTime)
+      );
+    const batchPeerCountByEmployee = new Map<string, number>();
+    for (const { row } of completeBatchRows) {
+      batchPeerCountByEmployee.set(
+        row.employeeId,
+        (batchPeerCountByEmployee.get(row.employeeId) ?? 0) + 1
+      );
+    }
 
     for (let rowIndex = 0; rowIndex < input.rows.length; rowIndex++) {
       const row = input.rows[rowIndex];
@@ -408,7 +545,11 @@ export async function assignShiftBatch(input: {
         input.shiftDate,
         row.startTime,
         row.endTime,
-        timeZone
+        timeZone,
+        {
+          sameDayBatchPeerCount:
+            (batchPeerCountByEmployee.get(row.employeeId) ?? 1) - 1,
+        }
       );
       if (!laborCheck.ok) {
         results.push({ rowIndex, ok: false, error: laborCheck.error });
@@ -517,6 +658,15 @@ export async function assignShiftBatch(input: {
 
     let anySuccess = false;
 
+    for (const shiftId of deleteShiftIds) {
+      const snapshot = await db.getShiftRecordById(shiftId, organizationId);
+      if (!snapshot) continue;
+      undoBatch.replacements.push(toUndoSnapshot(snapshot));
+      await db.deleteShift(shiftId, organizationId);
+      undoBatch.deletedIds.push(shiftId);
+      anySuccess = true;
+    }
+
     for (const row of validRows) {
       if (results.some((r) => !r.ok && r.rowIndex === row.rowIndex)) continue;
 
@@ -549,10 +699,19 @@ export async function assignShiftBatch(input: {
 
     if (anySuccess) {
       setShiftAssignUndoBatch(userId, undoBatch);
-      revalidateShiftPaths();
+      revalidateShiftPaths({
+        organizationId,
+        locationId: input.locationId,
+        shiftDates: [input.shiftDate],
+      });
     }
 
-    return { ok: true, results, undoAvailable: anySuccess };
+    return {
+      ok: true,
+      results,
+      undoAvailable: anySuccess,
+      savedRowCount: results.filter((entry) => entry.ok).length,
+    };
   } catch (e) {
     return {
       ok: false,
@@ -602,7 +761,7 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
       });
     }
 
-    revalidateShiftPaths();
+    revalidateShiftPathsFromUndoBatch(organizationId, batch);
     return { ok: true };
   } catch (e) {
     return {
@@ -617,7 +776,7 @@ export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
     const { organizationId } = await requireManager();
     const db = await getDatabase();
 
-    const shift = await db.getShiftById(shiftId, organizationId);
+    const shift = await db.getShiftRecordById(shiftId, organizationId);
     if (!shift) {
       return { ok: false, error: "Schicht nicht gefunden" };
     }
@@ -627,7 +786,15 @@ export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
 
     await db.deleteShift(shiftId, organizationId);
 
-    revalidateShiftPaths();
+    if (shift.location_id) {
+      revalidateShiftPaths({
+        organizationId,
+        locationId: shift.location_id,
+        shiftDates: [shift.shift_date],
+      });
+    } else {
+      revalidateShiftPaths();
+    }
 
     return { ok: true };
   } catch (e) {

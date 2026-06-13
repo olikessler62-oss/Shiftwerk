@@ -9,6 +9,7 @@ import type {
   EffectiveProfileCompensationSurcharge,
   CompensationSurchargeType,
   ProfileRecurringAvailability,
+  ProfileShiftPreference,
   Shift,
   Qualification,
   Role,
@@ -386,6 +387,44 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     profileId: string,
     orderedIds: string[]
+  ): Promise<void>;
+
+  // —— Profile shift preferences (Wunsch-Einsatzzeiten) ——
+  listProfileShiftPreferences(
+    organizationId: string,
+    profileId: string
+  ): Promise<ProfileShiftPreference[]>;
+  listOrganizationShiftPreferences(
+    organizationId: string,
+    weekday: number
+  ): Promise<ProfileShiftPreference[]>;
+  insertProfileShiftPreference(
+    organizationId: string,
+    profileId: string,
+    input: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      location_area_id?: string | null;
+      priority?: number;
+    }
+  ): Promise<ProfileShiftPreference>;
+  updateProfileShiftPreference(
+    organizationId: string,
+    profileId: string,
+    preferenceId: string,
+    input: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      location_area_id?: string | null;
+      priority?: number;
+    }
+  ): Promise<ProfileShiftPreference>;
+  deleteProfileShiftPreference(
+    organizationId: string,
+    profileId: string,
+    preferenceId: string
   ): Promise<void>;
 
   // —— Roles ——

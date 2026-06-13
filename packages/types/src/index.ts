@@ -135,6 +135,19 @@ export interface ProfileRecurringAvailability {
   created_at: string;
 }
 
+export interface ProfileShiftPreference {
+  id: string;
+  organization_id: string;
+  profile_id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  location_area_id: string | null;
+  priority: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Qualification {
   id: string;
   organization_id: string;

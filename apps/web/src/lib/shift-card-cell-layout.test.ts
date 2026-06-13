@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeCollapsedDayShiftLineLayouts,
+  computeCollapsedShiftLineLayout,
+  computeCollapsedShiftPixelLeftPx,
+  computePastDayUniformLineWidthPx,
   computeShiftCardCellLayout,
   sparseCellFairShareWidthPx,
 } from "./shift-card-cell-layout";
@@ -203,6 +207,83 @@ describe("shift-card-cell-layout", () => {
     );
     expect(layout.widthPx).toBe(6 + 1);
     expect(layout.density).toBe("marker");
+  });
+
+  it("positions collapsed-day preview lines on the service timeline", () => {
+    const timeline = resolveAreaServiceDayTimeline(
+      SERVICE_HOURS,
+      "area-1",
+      "2026-06-01"
+    );
+    const layouts = computeCollapsedDayShiftLineLayouts(
+      120,
+      [
+        { startTime: "08:00", endTime: "10:00" },
+        { startTime: "12:00", endTime: "15:00" },
+      ],
+      timeline,
+      31
+    );
+
+    expect(layouts).toHaveLength(2);
+    expect(layouts[1]!.marginLeftPx).toBeGreaterThan(layouts[0]!.marginLeftPx);
+    expect(layouts[1]!.widthPx).toBeGreaterThan(layouts[0]!.widthPx);
+  });
+
+  it("uses the smallest duration width for past collapsed-day preview lines only", () => {
+    const timeline = resolveAreaServiceDayTimeline(
+      SERVICE_HOURS,
+      "area-1",
+      "2026-06-01"
+    );
+    const shortOnly = computeCollapsedShiftLineLayout(
+      120,
+      "08:00",
+      "09:00",
+      timeline,
+      31
+    );
+    const dayMinWidth = computePastDayUniformLineWidthPx(
+      120,
+      [
+        { startTime: "08:00", endTime: "09:00" },
+        { startTime: "12:00", endTime: "17:00" },
+      ],
+      timeline
+    );
+    const pastLayouts = computeCollapsedDayShiftLineLayouts(
+      120,
+      [{ startTime: "12:00", endTime: "17:00" }],
+      timeline,
+      31,
+      { uniformMinWidth: true, uniformWidthPx: dayMinWidth }
+    );
+    const activeLayouts = computeCollapsedDayShiftLineLayouts(
+      120,
+      [
+        { startTime: "08:00", endTime: "09:00" },
+        { startTime: "12:00", endTime: "17:00" },
+      ],
+      timeline,
+      31,
+      { uniformMinWidth: false }
+    );
+
+    expect(dayMinWidth).toBe(shortOnly.widthPx);
+    expect(pastLayouts[0]!.widthPx).toBe(dayMinWidth);
+    expect(activeLayouts[0]!.widthPx).toBeLessThan(activeLayouts[1]!.widthPx);
+  });
+
+  it("positions collapsed-area preview pixels on the service timeline", () => {
+    const timeline = resolveAreaServiceDayTimeline(
+      SERVICE_HOURS,
+      "area-1",
+      "2026-06-01"
+    );
+    const morning = computeCollapsedShiftPixelLeftPx(120, "08:00", timeline);
+    const lunch = computeCollapsedShiftPixelLeftPx(120, "12:00", timeline);
+
+    expect(lunch).toBeGreaterThan(morning);
   });
 
   it("renders equal widths for equal shift times across areas on location timeline", () => {

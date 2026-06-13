@@ -1,10 +1,8 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import {
-  startOfWeek,
   toISODate,
   weekDates,
-  parseISODate,
   shiftTimeFromTimestamp,
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
@@ -14,6 +12,8 @@ import { findAreaShiftTemplateByTimes } from "@/lib/dashboard-assignment-presets
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-calendar";
 import { resolveOrganizationTimeZone } from "@schichtwerk/database";
+import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
+import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
@@ -32,7 +32,14 @@ export default async function DashboardPage({
     location?: string;
   }>;
 }) {
-  const { week, location: locationParam } = await searchParams;
+  const {
+    week,
+    location: locationParam,
+    qualifikationen,
+    standorte,
+    profiles: profilesParam,
+    rollen,
+  } = await searchParams;
   const db = await getDatabase();
   const user = await db.authGetUser();
   if (!user) redirect("/login");
@@ -44,9 +51,14 @@ export default async function DashboardPage({
   const organization = await loadManagerOrganization(orgId, orgName);
   const timeZone = resolveOrganizationTimeZone(organization);
 
-  const weekStart = week
-    ? toISODate(startOfWeek(parseISODate(week)))
-    : toISODate(startOfWeek(new Date()));
+  const weekStart = redirectIfPlanningWeekClamped("/dashboard", week, {
+    week,
+    location: locationParam,
+    qualifikationen,
+    standorte,
+    profiles: profilesParam,
+    rollen,
+  });
   const dates = weekDates(weekStart);
   const from = dates[0];
   const to = dates[6];
@@ -76,7 +88,13 @@ export default async function DashboardPage({
         db.listLocationAreasForDashboard(selectedLocationId, from, to),
         db.listLocationAreaStaffing(selectedLocationId),
         db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),
-        db.listDashboardShifts(orgId, from, to, selectedLocationId),
+        getCachedDashboardShifts(
+          orgId,
+          selectedLocationId,
+          weekStart,
+          from,
+          to
+        ),
         db.listAreaShiftTemplatesWithBreaksForLocation(selectedLocationId).catch(
           () => []
         ),

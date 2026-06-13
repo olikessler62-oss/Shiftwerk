@@ -79,7 +79,7 @@ function dedupeWarnings(warnings: string[]): string[] {
   return [...new Set(warnings)];
 }
 
-/** Prüft Einzel-Schichten, Tages-Gesamtdauer und Ruhezeiten zwischen Einsatzzeiten. */
+/** Prüft Einzel-Schichten und Tages-Gesamtdauer. Ruhezeit (11 h) nur zwischen Tagen, nicht zwischen Einsatzzeiten am selben Tag. */
 export function validateEmployeeDayShiftAssignments(input: {
   countryCode: string | null | undefined;
   shiftDate: string;
@@ -144,27 +144,18 @@ export function validateEmployeeDayShiftAssignments(input: {
   if (maxRule?.enforceAt.includes(point) && isWorkdayForRule(input.weekday, maxRule)) {
     const hardMax = extended?.temporaryMaxHours ?? maxRule.maxHours;
     if (totalHours > hardMax) {
-      return {
-        ok: false,
-        kind: "daily_hours",
-        totalHours,
-        limitHours: hardMax,
-        error: `Gesamtarbeitszeit ${formatHours(totalHours)} h überschreitet das Maximum von ${hardMax} h.`,
-      };
-    }
-    if (totalHours > maxRule.maxHours) {
+      warnings.push(
+        `Gesamtarbeitszeit ${formatHours(totalHours)} h über ${hardMax} h — mehrere Einsatzzeiten am selben Tag mit Pause; rechtliche Gesamtgrenze prüfen.`
+      );
+    } else if (totalHours > maxRule.maxHours) {
       if (extended && totalHours <= extended.temporaryMaxHours) {
         warnings.push(
           `Gesamtarbeitszeit ${formatHours(totalHours)} h über ${maxRule.maxHours} h — vorübergehend bis ${extended.temporaryMaxHours} h nur mit Einhaltung des ${extended.windowWeeks}-Wochen-Durchschnitts.`
         );
       } else {
-        return {
-          ok: false,
-          kind: "daily_hours",
-          totalHours,
-          limitHours: maxRule.maxHours,
-          error: `Reguläre Höchstarbeitszeit von ${maxRule.maxHours} h pro Tag überschritten (insgesamt ${formatHours(totalHours)} h).`,
-        };
+        warnings.push(
+          `Gesamtarbeitszeit ${formatHours(totalHours)} h über reguläre ${maxRule.maxHours} h — mehrere Einsatzzeiten am selben Tag mit Pause.`
+        );
       }
     }
   }

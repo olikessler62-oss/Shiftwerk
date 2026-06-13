@@ -9,6 +9,7 @@ import {
   type ProfileColorOption,
 } from "@schichtwerk/database";
 import { cn } from "@/lib/cn";
+import { useComboboxCloseOnPointerDistance } from "@/lib/use-combobox-close";
 import type { Profile } from "@schichtwerk/types";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import {
@@ -70,20 +71,11 @@ function ProfileColorCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const closeCombobox = () => setOpen(false);
+  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef]);
   const selected = options.find(
     (option) => option.hex.toUpperCase() === value.toUpperCase()
   );
-
-  useEffect(() => {
-    if (!open) return;
-    function handlePointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
 
   return (
     <div ref={rootRef} className="relative">

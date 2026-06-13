@@ -8,6 +8,7 @@ import {
   type CountryCompliance,
 } from "@schichtwerk/compliance";
 import type { ShiftTypeBreakInput } from "./interface";
+import { DEFAULT_ORGANIZATION_TIME_ZONE } from "./organization-timezone";
 import { timeToMinutes } from "./profile-availability-validation";
 
 export const DEFAULT_COUNTRY_CODE = "DE";
@@ -355,27 +356,64 @@ export function validateAvailabilityForCountry(_input: {
   return { ok: true, warnings: [] };
 }
 
+function calendarDateInTimeZone(
+  isoTimestamp: string,
+  timeZone: string = DEFAULT_ORGANIZATION_TIME_ZONE
+): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(isoTimestamp));
+}
+
 export function validateRestPeriodForCountry(input: {
   countryCode: string | null | undefined;
   newStartsAt: string;
   newEndsAt: string;
-  existingShifts: readonly { id?: string; starts_at: string; ends_at: string }[];
+  /** Planungstag der neuen Schicht — Pausen zwischen Einsatzzeiten am selben Tag sind keine Ruhezeit. */
+  newShiftDate?: string;
+  /** Organisations-Zeitzone für Kalendertags-Grenzen (Ruhezeit nur zwischen Tagen). */
+  timeZone?: string;
+  existingShifts: readonly {
+    id?: string;
+    starts_at: string;
+    ends_at: string;
+    shift_date?: string;
+  }[];
   excludeShiftId?: string;
 }): { ok: true } | { ok: false; error: string } {
   const compliance = resolveCompliance(input.countryCode);
   const rule = getRule(compliance, "min_rest_period", "min_rest_between_shifts");
   if (!rule) return { ok: true };
 
+  const timeZone = input.timeZone ?? DEFAULT_ORGANIZATION_TIME_ZONE;
   const newStart = new Date(input.newStartsAt).getTime();
   const newEnd = new Date(input.newEndsAt).getTime();
+  const newStartDate = calendarDateInTimeZone(input.newStartsAt, timeZone);
+  const newEndDate = calendarDateInTimeZone(input.newEndsAt, timeZone);
 
   for (const shift of input.existingShifts) {
     if (input.excludeShiftId && shift.id === input.excludeShiftId) continue;
 
+    if (
+      input.newShiftDate &&
+      shift.shift_date &&
+      shift.shift_date.slice(0, 10) === input.newShiftDate.slice(0, 10)
+    ) {
+      continue;
+    }
+
     const existingStart = new Date(shift.starts_at).getTime();
     const existingEnd = new Date(shift.ends_at).getTime();
+    const existingStartDate = calendarDateInTimeZone(shift.starts_at, timeZone);
+    const existingEndDate = calendarDateInTimeZone(shift.ends_at, timeZone);
 
     if (existingEnd <= newStart) {
+      if (existingEndDate === newStartDate) {
+        continue;
+      }
       const restHours = (newStart - existingEnd) / (1000 * 60 * 60);
       if (restHours < rule.minHours) {
         return {
@@ -386,6 +424,9 @@ export function validateRestPeriodForCountry(input: {
     }
 
     if (existingStart >= newEnd) {
+      if (existingStartDate === newEndDate) {
+        continue;
+      }
       const restHours = (existingStart - newEnd) / (1000 * 60 * 60);
       if (restHours < rule.minHours) {
         return {

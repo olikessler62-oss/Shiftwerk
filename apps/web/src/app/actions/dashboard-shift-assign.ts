@@ -7,7 +7,19 @@ import {
 } from "@/lib/available-employees-for-shift";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
-import { DEFAULT_COUNTRY_CODE, resolveOrganizationTimeZone } from "@schichtwerk/database";
+import {
+  DEFAULT_COUNTRY_CODE,
+  resolveOrganizationTimeZone,
+  serviceWeekdayForShiftDate,
+} from "@schichtwerk/database";
+
+export type ProfileShiftPreferenceEntry = {
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  location_area_id: string | null;
+  priority: number;
+};
 
 export type DashboardEmployeeAvailabilityEntry = {
   weekday: number;
@@ -32,6 +44,7 @@ export type FetchDashboardBulkShiftContextResult =
       ok: true;
       employees: DashboardShiftAssignEmployee[];
       profileQualificationIds: Record<string, string[]>;
+      profileShiftPreferences: Record<string, ProfileShiftPreferenceEntry[]>;
       countryCode: string;
       timeZone: string;
     }
@@ -59,11 +72,30 @@ export async function fetchDashboardBulkShiftContext(
     const countryCode =
       (await db.getOrganizationCountryCode(organizationId)) ?? DEFAULT_COUNTRY_CODE;
     const timeZone = resolveOrganizationTimeZone(organization);
+    const weekday = serviceWeekdayForShiftDate(countryCode, date);
+    const shiftPreferences = await db.listOrganizationShiftPreferences(
+      organizationId,
+      weekday
+    );
+    const profileShiftPreferences: Record<string, ProfileShiftPreferenceEntry[]> =
+      {};
+    for (const preference of shiftPreferences) {
+      const list = profileShiftPreferences[preference.profile_id] ?? [];
+      list.push({
+        weekday: preference.weekday,
+        start_time: preference.start_time,
+        end_time: preference.end_time,
+        location_area_id: preference.location_area_id,
+        priority: preference.priority,
+      });
+      profileShiftPreferences[preference.profile_id] = list;
+    }
 
     return {
       ok: true,
       employees: employeeResult.employees,
       profileQualificationIds,
+      profileShiftPreferences,
       countryCode,
       timeZone,
     };

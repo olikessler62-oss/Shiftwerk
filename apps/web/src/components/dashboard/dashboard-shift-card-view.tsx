@@ -48,6 +48,7 @@ type Props = {
   widthPx?: number;
   marginLeftPx?: number;
   density: ShiftCardDensity;
+  onClick?: () => void;
 };
 
 function ShiftCardTextRows({
@@ -105,6 +106,7 @@ export function DashboardShiftCardView({
   widthPx,
   marginLeftPx,
   density,
+  onClick,
 }: Props) {
   const employeeColor =
     shift.employeeColor?.trim() || DASHBOARD_SHIFT_CARD_EMPLOYEE_FALLBACK_COLOR;
@@ -126,7 +128,29 @@ export function DashboardShiftCardView({
         }}
       >
         <div
-          className={cn(DASHBOARD_SHIFT_CARD_CLASS, widthPx === undefined && "w-full")}
+          data-dashboard-shift-card
+          role={onClick ? "button" : undefined}
+          tabIndex={onClick ? 0 : undefined}
+          onClick={(event) => {
+            event.stopPropagation();
+            onClick?.();
+          }}
+          onKeyDown={
+            onClick
+              ? (event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onClick();
+                  }
+                }
+              : undefined
+          }
+          className={cn(
+            DASHBOARD_SHIFT_CARD_CLASS,
+            widthPx === undefined && "w-full",
+            onClick && "cursor-pointer"
+          )}
           style={{
             ...(widthPx !== undefined ? { width: widthPx } : undefined),
             height:

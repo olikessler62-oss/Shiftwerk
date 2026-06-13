@@ -55,4 +55,28 @@ const shifts = await db.listMyShifts(from, to);
 ```
 
 Supabase-Verbindung (SecureStore) liegt in `apps/mobile/lib/supabase.ts` — nur Infrastruktur, kein Schema-SQL.
+
+## Schichten — Query-Vertrag & Retention (Spec 006)
+
+**Hot-Fenster:** 13 Kalendermonate (`SHIFTS_HOT_RETENTION_MONTHS` in `src/shift-retention.ts`).
+
+Jede Abfrage auf `public.shifts` im App-Code **muss** mandanten- und zeitbegrenzt sein:
+
+- Dashboard/Planung: `organization_id` + `location_id` + `shift_date` (max. eine Woche)
+- Mobile: `employee_id` (via RLS) + `shift_date`-Range
+- Einzelabruf: `id` + `organization_id`
+
+**Verboten:** unbegrenzte `SELECT` ohne Datumsfilter; Client-Zugriff auf `shifts_archive` (Phase 2).
+
+Hilfsfunktionen: `clampShiftQueryFromDate`, `resolvePlanningWeekStart`, `earliestPlanningWeekStartISO`.
+
+Migration Phase 1: `migrations/20250706_shifts_hot_retention_phase1.sql` (Index + RPC Konflikt-Count).
+
+**Phase 2 — Archiv (Option A, kein UI-Zugriff):**
+
+- Hot: 13 Monate (`shifts`) · Archiv: Monat 14–25 (`shifts_archive`) · Purge danach
+- Migration: `migrations/20250707_shifts_archive_phase2.sql`
+- Manuell/SQL: `scripts/archive-shifts.sql`, `scripts/purge-shifts-archive.sql`
+- Cron (Service-Role): `npm run retention:shifts --workspace=@schichtwerk/web` (täglich 03:00/04:00 UTC empfohlen)
+
 ```

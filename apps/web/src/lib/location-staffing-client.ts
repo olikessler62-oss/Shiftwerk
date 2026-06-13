@@ -267,6 +267,25 @@ export function isAnyAreaOpenOnDate(
   );
 }
 
+/** Mindestens ein Servicezeit-Fenster für den Kalendertag (optional auf Bereiche begrenzt). */
+export function hasServiceHoursOnDate(
+  serviceHours: readonly AreaServiceHourRef[],
+  dateISO: string,
+  areaIds: readonly string[] = []
+): boolean {
+  const weekday = serviceWeekdayForDate(dateISO);
+  return serviceHours.some((hour) => {
+    if (
+      areaIds.length > 0 &&
+      hour.location_area_id &&
+      !areaIds.includes(hour.location_area_id)
+    ) {
+      return false;
+    }
+    return normalizeServiceHourWeekday(hour.weekday) === weekday;
+  });
+}
+
 export type StaffingRule = {
   location_area_id: string;
   service_hour_id: string;

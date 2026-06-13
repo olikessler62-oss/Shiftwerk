@@ -1,9 +1,6 @@
 import { redirect } from "next/navigation";
 import {
-  startOfWeek,
-  toISODate,
   weekDates,
-  parseISODate,
   shiftTimeFromTimestamp,
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
@@ -20,6 +17,8 @@ import {
   ShiftPlanner,
   type PlanningShift,
 } from "@/components/planning/shift-planner";
+import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
+import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
@@ -45,9 +44,11 @@ export default async function PlanungPage({
   const orgFeatures = getOrgFeatures(organization);
   const timeZone = resolveOrganizationTimeZone(organization);
 
-  const weekStart = week
-    ? toISODate(startOfWeek(parseISODate(week)))
-    : toISODate(startOfWeek(new Date()));
+  const weekStart = redirectIfPlanningWeekClamped("/planung", week, {
+    week,
+    location: locationParam,
+    area: areaParam,
+  });
   const dates = weekDates(weekStart);
   const from = dates[0];
   const to = dates[6];
@@ -71,7 +72,13 @@ export default async function PlanungPage({
           .listAreaShiftTemplatesWithBreaksForLocation(selectedLocationId)
           .catch(() => []),
         db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),
-        db.listDashboardShifts(orgId, from, to, selectedLocationId),
+        getCachedDashboardShifts(
+          orgId,
+          selectedLocationId,
+          weekStart,
+          from,
+          to
+        ),
       ])
     : [[], [], [], []];
 

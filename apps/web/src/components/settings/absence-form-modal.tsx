@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import {
   findOverlappingAbsence,
   validateAbsenceDateOrder,
@@ -15,6 +15,7 @@ import {
 } from "@/app/actions/absences";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useComboboxCloseOnPointerDistance } from "@/lib/use-combobox-close";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
   settingsConfirmDialogClass,
@@ -82,22 +83,13 @@ function ProfileEmployeeCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const closeCombobox = () => setOpen(false);
+  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef]);
 
   const selected = useMemo(
     () => profiles.find((profile) => profile.id === value) ?? null,
     [profiles, value]
   );
-
-  useEffect(() => {
-    if (!open) return;
-    function handlePointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
 
   return (
     <div ref={rootRef} className="relative">

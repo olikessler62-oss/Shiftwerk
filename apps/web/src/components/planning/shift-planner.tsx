@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { assignShiftWithTimes, removeShift } from "@/app/actions/shifts";
 import { toISODate, startOfWeek, parseISODate } from "@/lib/dates";
+import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { useOrgFeatures } from "@/lib/org-features-provider";
@@ -145,6 +146,7 @@ export function ShiftPlanner({
   const searchParams = useSearchParams();
   const t = useTranslations();
   const features = useOrgFeatures();
+  const atEarliestWeek = isPlanningWeekAtEarliest(weekStart);
   const simplePlanning = !features.areas;
   const { locale } = useLocale();
   const intlLocale = toIntlLocale(locale);
@@ -231,6 +233,7 @@ export function ShiftPlanner({
   );
 
   function navigateWeek(delta: number) {
+    if (delta < 0 && atEarliestWeek) return;
     const d = parseISODate(weekStart);
     d.setDate(d.getDate() + delta * 7);
     pushPlanungQuery({ week: toISODate(d) });
@@ -457,7 +460,7 @@ export function ShiftPlanner({
             <div className="flex items-center gap-1">
               <IconButton
                 onClick={() => navigateWeek(-1)}
-                disabled={pending}
+                disabled={pending || atEarliestWeek}
                 aria-label="Vorherige Woche"
               >
                 ‹

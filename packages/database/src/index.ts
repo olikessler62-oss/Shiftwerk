@@ -261,3 +261,14 @@ export {
   SHIFT_TEMPLATE_NAME_COLORS,
   SHIFT_TEMPLATE_PICKER_COLORS,
 } from "./shift-template-name-color";
+export {
+  SHIFTS_HOT_RETENTION_MONTHS,
+  SHIFTS_TOTAL_RETENTION_MONTHS,
+  SHIFTS_ARCHIVE_BATCH_SIZE,
+  clampShiftQueryFromDate,
+  earliestPlanningWeekStartISO,
+  isPlanningWeekAtEarliest,
+  resolvePlanningWeekStart,
+  shiftHotCutoffISO,
+  shiftPurgeCutoffISO,
+} from "./shift-retention";

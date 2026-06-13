@@ -1,0 +1,34 @@
+---
+description: Combobox-Verhalten — Schließen bei Mausabstand, gemeinsamer Hook
+globs: apps/web/**/*.{tsx,ts}
+alwaysApply: false
+---
+
+# Comboboxen
+
+## Schließen bei geöffneter Liste
+
+Wenn eine Combobox **aufgeklappt** ist, schließt sie sich, sobald der Cursor **mehr als 25 px** von Trigger und Dropdown entfernt ist (kürzester Abstand zur Bounding Box). Zusätzlich schließt ein Klick außerhalb wie bisher.
+
+```tsx
+import { useComboboxCloseOnPointerDistance } from "@/lib/use-combobox-close";
+
+const rootRef = useRef<HTMLDivElement>(null);
+const listRef = useRef<HTMLUListElement>(null);
+const closeCombobox = () => setOpen(false);
+
+useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef, listRef]);
+```
+
+- Konstante: `COMBOBOX_CLOSE_DISTANCE_PX = 25` in `@/lib/use-combobox-close`
+- **Portal-Dropdown** (Dashboard): `[triggerRef, listRef]` übergeben
+- **Dropdown im Root** (Settings): `[rootRef]` reicht (Liste liegt im gleichen Container)
+- Kein eigenes `mousedown`-Only-Pattern — immer den Hook verwenden
+
+## Mitarbeiter-Verfügbarkeits-Tooltip (Personal-Combobox)
+
+Position über `resolveNameHoverTooltipPosition` in `@/lib/mouse-tooltip-position`:
+
+- **Linker Tooltip-Rand** = rechter Rand der Combobox (+ 2 px Abstand)
+- **Unterer Tooltip-Rand** = oberer Rand der Combobox
+- Anker-Element: **gesamter Combobox-Trigger**, nicht nur der Name-Text (Chevron darf nicht verdeckt werden)

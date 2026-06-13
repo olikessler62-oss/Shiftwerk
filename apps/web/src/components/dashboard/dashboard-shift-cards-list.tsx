@@ -35,6 +35,7 @@ type Props = {
   /** Nur dominanter Bereich: echtes Überlaufen nach Layout-Wechsel erkennen. */
   measureOverflowFallback?: boolean;
   className?: string;
+  onShiftClick?: (shift: DashboardShiftCard) => void;
 };
 
 function compareShiftCards(a: DashboardShiftCard, b: DashboardShiftCard): number {
@@ -116,6 +117,7 @@ export function DashboardShiftCardsList({
   needsVerticalScroll = false,
   measureOverflowFallback = false,
   className,
+  onShiftClick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [cellWidthPx, setCellWidthPx] = useState(0);
@@ -238,6 +240,7 @@ export function DashboardShiftCardsList({
           density={layout.density}
           widthPx={cellWidthPx > 0 && layout.widthPx > 0 ? layout.widthPx : undefined}
           marginLeftPx={cellWidthPx > 0 ? layout.marginLeftPx : undefined}
+          onClick={onShiftClick ? () => onShiftClick(shift) : undefined}
         />
       ))}
     </div>

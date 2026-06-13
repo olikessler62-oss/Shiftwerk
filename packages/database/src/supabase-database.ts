@@ -14,6 +14,7 @@ import type {
   EffectiveProfileCompensationSurcharge,
   CompensationSurchargeType,
   ProfileRecurringAvailability,
+  ProfileShiftPreference,
   Qualification,
   Role,
   RolePermissionLevel,
@@ -33,8 +34,8 @@ import type {
   ShiftTypeBreakInput,
 } from "./interface";
 import {
-  isDateWithinAbsenceRange,
-} from "./absence-validation";
+  clampShiftQueryFromDate,
+} from "./shift-retention";
 import { normalizeIndustry } from "./industry";
 import { normalizePlanningMode } from "./org-planning-mode";
 import { validateProfileEmail } from "./profile-contact-validation";
@@ -137,6 +138,49 @@ function mapProfileRecurringAvailability(
     sort_order: row.sort_order,
     created_at: row.created_at,
   };
+}
+
+type ProfileShiftPreferenceRow = {
+  id: string;
+  organization_id: string;
+  profile_id: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  location_area_id: string | null;
+  priority: number;
+  created_at: string;
+  updated_at: string;
+};
+
+function mapProfileShiftPreference(
+  row: ProfileShiftPreferenceRow
+): ProfileShiftPreference {
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    profile_id: row.profile_id,
+    weekday: row.weekday,
+    start_time: row.start_time,
+    end_time: row.end_time,
+    location_area_id: row.location_area_id,
+    priority: row.priority,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function normalizeShiftPreferenceTime(value: string): string {
+  return value.trim().slice(0, 5);
+}
+
+function validateShiftPreferenceTimes(start_time: string, end_time: string) {
+  const start = normalizeShiftPreferenceTime(start_time);
+  const end = normalizeShiftPreferenceTime(end_time);
+  if (!start || !end || start === end) {
+    return { ok: false as const, error: "Ungültiges Zeitfenster" };
+  }
+  return { ok: true as const, start_time: start, end_time: end };
 }
 
 function mapProfileHourlyRate(row: ProfileHourlyRateRow): ProfileHourlyRate {
@@ -1145,6 +1189,142 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
     await this.syncProfileRecurringAvailabilitySortOrder(organizationId, profileId);
+  }
+
+  async listProfileShiftPreferences(organizationId: string, profileId: string) {
+    const { data, error } = await this.client
+      .from(T.profileShiftPreferences)
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .order("weekday")
+      .order("start_time");
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((row) =>
+      mapProfileShiftPreference(row as ProfileShiftPreferenceRow)
+    );
+  }
+
+  async listOrganizationShiftPreferences(
+    organizationId: string,
+    weekday: number
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileShiftPreferences)
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("weekday", weekday)
+      .order("profile_id")
+      .order("priority", { ascending: false })
+      .order("start_time");
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((row) =>
+      mapProfileShiftPreference(row as ProfileShiftPreferenceRow)
+    );
+  }
+
+  async insertProfileShiftPreference(
+    organizationId: string,
+    profileId: string,
+    input: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      location_area_id?: string | null;
+      priority?: number;
+    }
+  ) {
+    const profile = await this.getProfileById(profileId);
+    if (!profile || profile.organization_id !== organizationId) {
+      throw new Error("Profil nicht gefunden");
+    }
+
+    const weekdayResult = parseAvailabilityWeekday(input.weekday);
+    if (!weekdayResult.ok) throw new Error(weekdayResult.error);
+
+    const times = validateShiftPreferenceTimes(input.start_time, input.end_time);
+    if (!times.ok) throw new Error(times.error);
+
+    const { data, error } = await this.client
+      .from(T.profileShiftPreferences)
+      .insert({
+        organization_id: organizationId,
+        profile_id: profileId,
+        weekday: weekdayResult.weekday,
+        start_time: times.start_time,
+        end_time: times.end_time,
+        location_area_id: input.location_area_id ?? null,
+        priority: input.priority ?? 0,
+      })
+      .select("*")
+      .single();
+    if (error || !data) {
+      throw new Error(error?.message ?? "Speichern fehlgeschlagen");
+    }
+    return mapProfileShiftPreference(data as ProfileShiftPreferenceRow);
+  }
+
+  async updateProfileShiftPreference(
+    organizationId: string,
+    profileId: string,
+    preferenceId: string,
+    input: {
+      weekday: number;
+      start_time: string;
+      end_time: string;
+      location_area_id?: string | null;
+      priority?: number;
+    }
+  ) {
+    const profile = await this.getProfileById(profileId);
+    if (!profile || profile.organization_id !== organizationId) {
+      throw new Error("Profil nicht gefunden");
+    }
+
+    const weekdayResult = parseAvailabilityWeekday(input.weekday);
+    if (!weekdayResult.ok) throw new Error(weekdayResult.error);
+
+    const times = validateShiftPreferenceTimes(input.start_time, input.end_time);
+    if (!times.ok) throw new Error(times.error);
+
+    const { data, error } = await this.client
+      .from(T.profileShiftPreferences)
+      .update({
+        weekday: weekdayResult.weekday,
+        start_time: times.start_time,
+        end_time: times.end_time,
+        location_area_id: input.location_area_id ?? null,
+        priority: input.priority ?? 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", preferenceId)
+      .eq("profile_id", profileId)
+      .eq("organization_id", organizationId)
+      .select("*")
+      .single();
+    if (error || !data) throw new Error(error?.message ?? "Speichern fehlgeschlagen");
+    return mapProfileShiftPreference(data as ProfileShiftPreferenceRow);
+  }
+
+  async deleteProfileShiftPreference(
+    organizationId: string,
+    profileId: string,
+    preferenceId: string
+  ) {
+    const profile = await this.getProfileById(profileId);
+    if (!profile || profile.organization_id !== organizationId) {
+      throw new Error("Profil nicht gefunden");
+    }
+
+    const { error } = await this.client
+      .from(T.profileShiftPreferences)
+      .delete()
+      .eq("id", preferenceId)
+      .eq("profile_id", profileId)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
   }
 
   async getServerDateIso() {
@@ -2932,10 +3112,11 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   }
 
   async listMyShifts(fromDate: string, toDate: string) {
+    const from = clampShiftQueryFromDate(fromDate);
     const { data, error } = await this.client
       .from(T.shifts)
       .select("*")
-      .gte("shift_date", fromDate)
+      .gte("shift_date", from)
       .lte("shift_date", toDate)
       .order("shift_date", { ascending: true });
 
@@ -2949,6 +3130,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     to: string,
     locationId: string
   ) {
+    const clampedFrom = clampShiftQueryFromDate(from);
     const { data } = await this.client
       .from(T.shifts)
       .select(
@@ -2956,7 +3138,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       )
       .eq("organization_id", organizationId)
       .eq("location_id", locationId)
-      .gte("shift_date", from)
+      .gte("shift_date", clampedFrom)
       .lte("shift_date", to)
       .order("shift_date");
     return (data ?? []) as unknown as DashboardShiftRow[];
@@ -3178,35 +3360,15 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   ) {
     if (!ranges.length) return 0;
 
-    const employeeIds = [...new Set(ranges.map((range) => range.employee_id))];
-    let minDate = ranges[0]!.start_date;
-    let maxDate = ranges[0]!.end_date;
-    for (const range of ranges) {
-      if (range.start_date < minDate) minDate = range.start_date;
-      if (range.end_date > maxDate) maxDate = range.end_date;
-    }
-
-    const { data, error } = await this.client
-      .from(T.shifts)
-      .select("employee_id, shift_date")
-      .eq("organization_id", organizationId)
-      .in("employee_id", employeeIds)
-      .gte("shift_date", minDate)
-      .lte("shift_date", maxDate);
+    const { data, error } = await this.client.rpc(
+      "count_shifts_conflicting_with_absence_ranges",
+      {
+        p_organization_id: organizationId,
+        p_ranges: ranges,
+      }
+    );
     if (error) throw new Error(error.message);
-
-    let count = 0;
-    for (const row of data ?? []) {
-      const employeeId = row.employee_id as string;
-      const shiftDate = row.shift_date as string;
-      const matches = ranges.some(
-        (range) =>
-          range.employee_id === employeeId &&
-          isDateWithinAbsenceRange(range, shiftDate)
-      );
-      if (matches) count += 1;
-    }
-    return count;
+    return Number(data ?? 0);
   }
 
   async getManagerProfile(userId: string) {

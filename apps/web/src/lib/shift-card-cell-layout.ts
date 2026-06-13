@@ -18,6 +18,17 @@ export type ShiftCardCellLayout = {
   density: ShiftCardDensity;
 };
 
+export type CollapsedShiftLineLayout = {
+  marginLeftPx: number;
+  widthPx: number;
+  heightPx: number;
+};
+
+export const COLLAPSED_SHIFT_LINE_MIN_WIDTH_PX = 2;
+export const COLLAPSED_SHIFT_PIXEL_SIZE_PX = 1;
+export const COLLAPSED_PAST_DAY_SHIFT_COLOR = "#94a3b8";
+export const COLLAPSED_PAST_AREA_PIXEL_COLOR = "#64748b";
+
 export type ShiftCardCellLayoutOptions = {
   /** Schichten in der Zelle — bei wenigen Zuweisungen breitere Karten. */
   shiftCountInCell?: number;
@@ -117,6 +128,139 @@ export function computeShiftCardCellLayout(
   widthPx = Math.min(widthPx + SHIFT_CARD_EXTRA_WIDTH_PX, availableWidthPx + SHIFT_CARD_EXTRA_WIDTH_PX);
 
   return { widthPx, marginLeftPx, density };
+}
+
+/** Schicht-Vorschau in zugeklappten Tagen: Position/Breite wie bei aufgeklappten Karten. */
+export function computeCollapsedShiftLineLayout(
+  cellWidthPx: number,
+  startTime: string,
+  endTime: string,
+  timeline: ShiftCardServiceTimeline,
+  heightPx: number
+): CollapsedShiftLineLayout {
+  if (cellWidthPx <= 0 || heightPx <= 0) {
+    return { marginLeftPx: 0, widthPx: 0, heightPx: 0 };
+  }
+
+  const padding = SHIFT_CARD_CELL_PADDING_PX;
+  const trackWidthPx = Math.max(0, cellWidthPx - padding * 2);
+  const widthPx = Math.max(
+    COLLAPSED_SHIFT_LINE_MIN_WIDTH_PX,
+    timelineDurationWidthPx(startTime, endTime, trackWidthPx, timeline)
+  );
+  const marginLeftPx = resolveShiftCardMarginLeftPx(
+    cellWidthPx,
+    startTime,
+    trackWidthPx,
+    timeline,
+    padding,
+    widthPx
+  );
+
+  return { marginLeftPx, widthPx, heightPx };
+}
+
+/** Kleinste Timeline-Breite über alle Schichten eines vergangenen Tages (standortweit). */
+export function computePastDayUniformLineWidthPx(
+  cellWidthPx: number,
+  shifts: readonly CollapsedShiftTimeWindow[],
+  timeline: ShiftCardServiceTimeline
+): number {
+  if (cellWidthPx <= 0 || shifts.length === 0) {
+    return COLLAPSED_SHIFT_LINE_MIN_WIDTH_PX;
+  }
+
+  const padding = SHIFT_CARD_CELL_PADDING_PX;
+  const trackWidthPx = Math.max(0, cellWidthPx - padding * 2);
+
+  let minWidthPx = Number.POSITIVE_INFINITY;
+  for (const shift of shifts) {
+    const widthPx = Math.max(
+      COLLAPSED_SHIFT_LINE_MIN_WIDTH_PX,
+      timelineDurationWidthPx(
+        shift.startTime,
+        shift.endTime,
+        trackWidthPx,
+        timeline
+      )
+    );
+    minWidthPx = Math.min(minWidthPx, widthPx);
+  }
+
+  return Number.isFinite(minWidthPx)
+    ? minWidthPx
+    : COLLAPSED_SHIFT_LINE_MIN_WIDTH_PX;
+}
+
+export type CollapsedShiftTimeWindow = {
+  startTime: string;
+  endTime: string;
+};
+
+/** Zugeklappte Tage: Position wie Karten; bei Vergangenheit einheitliche kleinste Breite. */
+export function computeCollapsedDayShiftLineLayouts(
+  cellWidthPx: number,
+  shifts: readonly CollapsedShiftTimeWindow[],
+  timeline: ShiftCardServiceTimeline,
+  heightPx: number,
+  options: { uniformMinWidth?: boolean; uniformWidthPx?: number } = {}
+): CollapsedShiftLineLayout[] {
+  if (cellWidthPx <= 0 || heightPx <= 0 || shifts.length === 0) {
+    return [];
+  }
+
+  if (!options.uniformMinWidth) {
+    return shifts.map((shift) =>
+      computeCollapsedShiftLineLayout(
+        cellWidthPx,
+        shift.startTime,
+        shift.endTime,
+        timeline,
+        heightPx
+      )
+    );
+  }
+
+  const padding = SHIFT_CARD_CELL_PADDING_PX;
+  const trackWidthPx = Math.max(0, cellWidthPx - padding * 2);
+
+  const uniformWidthPx =
+    options.uniformWidthPx ??
+    computePastDayUniformLineWidthPx(cellWidthPx, shifts, timeline);
+
+  return shifts.map((shift) => ({
+    marginLeftPx: resolveShiftCardMarginLeftPx(
+      cellWidthPx,
+      shift.startTime,
+      trackWidthPx,
+      timeline,
+      padding,
+      uniformWidthPx
+    ),
+    widthPx: uniformWidthPx,
+    heightPx,
+  }));
+}
+
+/** Zugeklappte Bereiche: ein Pixel pro Schicht auf der Servicezeit-Timeline. */
+export function computeCollapsedShiftPixelLeftPx(
+  cellWidthPx: number,
+  startTime: string,
+  timeline: ShiftCardServiceTimeline
+): number {
+  if (cellWidthPx <= 0) return 0;
+
+  const padding = SHIFT_CARD_CELL_PADDING_PX;
+  const trackWidthPx = Math.max(0, cellWidthPx - padding * 2);
+
+  return resolveShiftCardMarginLeftPx(
+    cellWidthPx,
+    startTime,
+    trackWidthPx,
+    timeline,
+    padding,
+    COLLAPSED_SHIFT_PIXEL_SIZE_PX
+  );
 }
 
 function resolveShiftCardMarginLeftPx(

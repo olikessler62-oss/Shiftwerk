@@ -9,6 +9,9 @@ import {
   validateShiftDurationForCountry,
   validateShiftTypeBreaksForCountry,
 } from "./labor-compliance-validation";
+import { buildShiftTimestamps } from "./shift-timestamps";
+
+const BERLIN = "Europe/Berlin";
 
 describe("validateShiftDurationForCountry (DE)", () => {
   const base = {
@@ -68,30 +71,93 @@ describe("validateShiftDurationForCountry (DE)", () => {
 });
 
 describe("validateRestPeriodForCountry (DE)", () => {
-  it("requires 11 hours between shifts", () => {
+  it("requires 11 hours between shifts on different calendar days", () => {
+    const previous = buildShiftTimestamps("2025-06-04", "20:00", "23:00", BERLIN);
+    const next = buildShiftTimestamps("2025-06-05", "08:00", "16:00", BERLIN);
     const result = validateRestPeriodForCountry({
       countryCode: "DE",
-      newStartsAt: "2025-06-05T08:00:00.000Z",
-      newEndsAt: "2025-06-05T16:00:00.000Z",
+      timeZone: BERLIN,
+      newStartsAt: next.starts_at,
+      newEndsAt: next.ends_at,
       existingShifts: [
         {
-          starts_at: "2025-06-04T20:00:00.000Z",
-          ends_at: "2025-06-04T23:00:00.000Z",
+          starts_at: previous.starts_at,
+          ends_at: previous.ends_at,
         },
       ],
     });
     expect(result.ok).toBe(false);
   });
 
-  it("accepts sufficient rest", () => {
+  it("accepts sufficient rest across calendar days", () => {
+    const previous = buildShiftTimestamps("2025-06-04", "08:00", "16:00", BERLIN);
+    const next = buildShiftTimestamps("2025-06-05", "08:00", "16:00", BERLIN);
     const result = validateRestPeriodForCountry({
       countryCode: "DE",
-      newStartsAt: "2025-06-05T08:00:00.000Z",
-      newEndsAt: "2025-06-05T16:00:00.000Z",
+      timeZone: BERLIN,
+      newStartsAt: next.starts_at,
+      newEndsAt: next.ends_at,
       existingShifts: [
         {
-          starts_at: "2025-06-04T08:00:00.000Z",
-          ends_at: "2025-06-04T16:00:00.000Z",
+          starts_at: previous.starts_at,
+          ends_at: previous.ends_at,
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("ignores gaps between duty windows on the same planning day", () => {
+    const morning = buildShiftTimestamps("2025-06-05", "06:00", "08:00", BERLIN);
+    const afternoon = buildShiftTimestamps("2025-06-05", "10:00", "12:00", BERLIN);
+    const result = validateRestPeriodForCountry({
+      countryCode: "DE",
+      timeZone: BERLIN,
+      newShiftDate: "2025-06-05",
+      newStartsAt: morning.starts_at,
+      newEndsAt: morning.ends_at,
+      existingShifts: [
+        {
+          shift_date: "2025-06-05",
+          starts_at: afternoon.starts_at,
+          ends_at: afternoon.ends_at,
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("ignores pauses between duty windows on the same calendar day", () => {
+    const morning = buildShiftTimestamps("2025-06-05", "08:00", "10:00", BERLIN);
+    const afternoon = buildShiftTimestamps("2025-06-05", "12:00", "15:00", BERLIN);
+    const result = validateRestPeriodForCountry({
+      countryCode: "DE",
+      timeZone: BERLIN,
+      newStartsAt: morning.starts_at,
+      newEndsAt: morning.ends_at,
+      existingShifts: [
+        {
+          starts_at: afternoon.starts_at,
+          ends_at: afternoon.ends_at,
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("allows afternoon duty after overnight tail ending the same morning", () => {
+    const overnight = buildShiftTimestamps("2025-06-04", "22:00", "08:00", BERLIN);
+    const afternoon = buildShiftTimestamps("2025-06-05", "12:00", "20:00", BERLIN);
+    const result = validateRestPeriodForCountry({
+      countryCode: "DE",
+      timeZone: BERLIN,
+      newStartsAt: afternoon.starts_at,
+      newEndsAt: afternoon.ends_at,
+      existingShifts: [
+        {
+          shift_date: "2025-06-04",
+          starts_at: overnight.starts_at,
+          ends_at: overnight.ends_at,
         },
       ],
     });

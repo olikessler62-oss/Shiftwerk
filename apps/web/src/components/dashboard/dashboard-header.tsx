@@ -5,6 +5,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useTransition } from "react";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
+import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { getDashboardWeekHeaderParts } from "@/lib/planning-utils";
 import type { Location } from "@schichtwerk/types";
 import { Button, IconButton } from "@/components/ui";
@@ -63,6 +64,7 @@ export function DashboardHeader({
   );
 
   const weekLabelTitle = `${weekHeader.rangeLabel} ${weekHeader.year} KW ${weekHeader.calendarWeek}`;
+  const atEarliestWeek = isPlanningWeekAtEarliest(weekStart);
 
   const pushDashboardQuery = useCallback(
     (updates: Record<string, string>) => {
@@ -80,11 +82,12 @@ export function DashboardHeader({
 
   const navigateWeek = useCallback(
     (delta: number) => {
+      if (delta < 0 && atEarliestWeek) return;
       const d = parseISODate(weekStart);
       d.setDate(d.getDate() + delta * 7);
       pushDashboardQuery({ week: toISODate(d) });
     },
-    [pushDashboardQuery, weekStart]
+    [atEarliestWeek, pushDashboardQuery, weekStart]
   );
 
   const goToToday = useCallback(() => {
@@ -130,7 +133,7 @@ export function DashboardHeader({
           <IconButton
             size="md"
             onClick={() => navigateWeek(-1)}
-            disabled={pending}
+            disabled={pending || atEarliestWeek}
             aria-label={t("common.prevWeek")}
             className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
           >

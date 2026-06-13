@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { SHIFT_TEMPLATE_PICKER_COLORS } from "@schichtwerk/database";
 import { cn } from "@/lib/cn";
 import { shiftColorStyle } from "@/lib/shift-color-style";
+import { useComboboxCloseOnPointerDistance } from "@/lib/use-combobox-close";
 
 function ColorSwatch({
   hex,
@@ -42,17 +43,8 @@ export function ShiftTemplateColorCombobox({
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handlePointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open]);
+  const closeCombobox = () => setOpen(false);
+  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef]);
 
   return (
     <div ref={rootRef} className="relative">

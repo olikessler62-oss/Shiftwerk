@@ -9,6 +9,7 @@ export {
   TOOLTIP_Z_INDEX,
 } from "./tooltip";
 export {
+  BoltIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,

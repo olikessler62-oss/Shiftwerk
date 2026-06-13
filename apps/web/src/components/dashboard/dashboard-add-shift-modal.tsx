@@ -51,10 +51,12 @@ import {
 import {
   COMBOBOX_TOOLTIP_CLOSE_DISTANCE_PX,
   distanceFromPointToRect,
+  EMPLOYEE_AVAILABILITY_HINT_AUTO_CLOSE_MS,
   resolveMouseTooltipPosition,
   resolveNameHoverTooltipPosition,
   type MousePoint,
 } from "@/lib/mouse-tooltip-position";
+import { useComboboxCloseOnPointerDistance } from "@/lib/use-combobox-close";
 import { shiftColorStyle } from "@/lib/shift-color-style";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { useOrgFeatures } from "@/lib/org-features-provider";
@@ -111,26 +113,6 @@ function useFloatingDropdownPosition(
   return position;
 }
 
-function useCloseOnOutsideClick(
-  open: boolean,
-  onClose: () => void,
-  refs: RefObject<HTMLElement | null>[]
-) {
-  const refsRef = useRef(refs);
-  refsRef.current = refs;
-
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (refsRef.current.some((ref) => ref.current?.contains(target))) return;
-      onClose();
-    };
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open, onClose]);
-}
-
 type MenuPosition = MousePoint;
 
 function availabilityTimeLabel(
@@ -156,7 +138,6 @@ type EmployeeAvailabilityHintProps = {
   employeeName: string;
   availabilities: DashboardEmployeeAvailabilityEntry[];
   anchorEl: HTMLElement | null;
-  comboboxRef: RefObject<HTMLElement | null>;
   tooltipRef: RefObject<HTMLDivElement | null>;
   weekdayLabelStyle: WeekdayLabelStyle;
 };
@@ -165,7 +146,6 @@ function EmployeeAvailabilityHint({
   employeeName,
   availabilities,
   anchorEl,
-  comboboxRef,
   tooltipRef,
   weekdayLabelStyle,
 }: EmployeeAvailabilityHintProps) {
@@ -176,21 +156,13 @@ function EmployeeAvailabilityHint({
 
   useLayoutEffect(() => {
     const node = tooltipRef.current;
-    const comboboxEl = comboboxRef.current;
-    if (!anchorEl || !comboboxEl || !node) return;
+    if (!anchorEl || !node) return;
 
     const updatePosition = () => {
-      const nameRect = anchorEl.getBoundingClientRect();
-      const comboboxRect = comboboxEl.getBoundingClientRect();
+      const comboboxRect = anchorEl.getBoundingClientRect();
       const { width, height } = node.getBoundingClientRect();
       setPosition(
-        resolveNameHoverTooltipPosition(
-          nameRect,
-          comboboxRect,
-          width,
-          height,
-          { offsetX: -80 }
-        )
+        resolveNameHoverTooltipPosition(comboboxRect, width, height)
       );
     };
 
@@ -201,7 +173,7 @@ function EmployeeAvailabilityHint({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [anchorEl, comboboxRef, tooltipRef, availabilities, employeeName, localeKey, t]);
+  }, [anchorEl, tooltipRef, availabilities, employeeName, localeKey, t]);
 
   return createPortal(
     <div
@@ -341,6 +313,8 @@ export type DashboardAddShiftDialogState = {
 export type DashboardBulkShiftDialogState = {
   areaId: string;
   date: string;
+  /** Gespeicherte Schicht — Zeile im Bulk-Modal fokussieren und scrollen. */
+  focusShiftId?: string;
 };
 
 function EmployeeColorSwatch({ hex }: { hex: string | null }) {
@@ -383,6 +357,30 @@ function availabilitiesForWeekday(
   return profileAvailabilitiesForWeekday(employee.availabilities, weekday);
 }
 
+function splitEmployeeDisplayName(fullName: string): {
+  givenName: string;
+  surname: string;
+} {
+  const trimmed = fullName.trim();
+  if (!trimmed) return { givenName: "", surname: "" };
+  const lastSpace = trimmed.lastIndexOf(" ");
+  if (lastSpace <= 0) return { givenName: "", surname: trimmed };
+  return {
+    givenName: `${trimmed.slice(0, lastSpace)} `,
+    surname: trimmed.slice(lastSpace + 1),
+  };
+}
+
+function EmployeeNameLabel({ name }: { name: string }) {
+  const { givenName, surname } = splitEmployeeDisplayName(name);
+  return (
+    <span className="min-w-0 flex-1 truncate" data-employee-name>
+      {givenName ? <span>{givenName}</span> : null}
+      <span data-employee-surname>{surname || name}</span>
+    </span>
+  );
+}
+
 export function DashboardShiftEmployeeCombobox({
   value,
   onChange,
@@ -411,7 +409,7 @@ export function DashboardShiftEmployeeCombobox({
   const hintTooltipRef = useRef<HTMLDivElement>(null);
   const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
   const closeDropdown = useCallback(() => setOpen(false), []);
-  useCloseOnOutsideClick(open, closeDropdown, [triggerRef, listRef]);
+  useComboboxCloseOnPointerDistance(open, closeDropdown, [triggerRef, listRef]);
   const selected =
     value === EMPTY_EMPLOYEE_ID
       ? null
@@ -455,6 +453,11 @@ export function DashboardShiftEmployeeCombobox({
   useEffect(() => {
     if (!hintAvailabilities) return;
 
+    const autoCloseTimer = window.setTimeout(
+      hideHint,
+      EMPLOYEE_AVAILABILITY_HINT_AUTO_CLOSE_MS
+    );
+
     const handleMouseMove = (event: MouseEvent) => {
       const comboboxEl = rootRef.current;
       if (!comboboxEl) return;
@@ -489,6 +492,7 @@ export function DashboardShiftEmployeeCombobox({
     window.addEventListener("scroll", handleScroll, true);
 
     return () => {
+      window.clearTimeout(autoCloseTimer);
       document.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("scroll", handleScroll, true);
     };
@@ -511,11 +515,7 @@ export function DashboardShiftEmployeeCombobox({
   return (
     <div
       ref={rootRef}
-      className={cn(
-        "relative",
-        rootClassName ? "h-9" : !triggerClassName && "mt-1",
-        rootClassName
-      )}
+      className={cn("relative", !rootClassName && "mt-1", rootClassName)}
     >
       <button
         ref={triggerRef}
@@ -530,12 +530,11 @@ export function DashboardShiftEmployeeCombobox({
           disabled && "cursor-not-allowed opacity-60",
           triggerClassName
         )}
-        onMouseEnter={(event) => {
-          if (!canShowSelectedEmployeeHint || open || !selected) return;
-          const nameEl = event.currentTarget.querySelector<HTMLElement>(
-            "[data-employee-name]"
-          );
-          if (nameEl) showHint(dayAvailabilities, nameEl, selected.full_name);
+        onMouseEnter={() => {
+          if (!canShowSelectedEmployeeHint || open || !selected || !triggerRef.current) {
+            return;
+          }
+          showHint(dayAvailabilities, triggerRef.current, selected.full_name);
         }}
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
@@ -555,9 +554,7 @@ export function DashboardShiftEmployeeCombobox({
         }}
       >
         <EmployeeColorSwatch hex={selected?.color ?? null} />
-        <span className="min-w-0 flex-1 truncate" data-employee-name>
-          {selected?.full_name ?? emptyLabel}
-        </span>
+        <EmployeeNameLabel name={selected?.full_name ?? emptyLabel} />
         <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
       </button>
       {open && dropdownPosition
@@ -580,13 +577,9 @@ export function DashboardShiftEmployeeCombobox({
                     className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm hover:bg-subtle"
                     onMouseEnter={(event) => {
                       if (!employee.id) return;
-                      const nameEl = event.currentTarget.querySelector<HTMLElement>(
-                        "[data-employee-name]"
-                      );
-                      if (!nameEl) return;
                       showHint(
                         availabilitiesForWeekday(employee, weekday),
-                        nameEl,
+                        event.currentTarget,
                         employee.full_name
                       );
                     }}
@@ -596,9 +589,7 @@ export function DashboardShiftEmployeeCombobox({
                     }}
                   >
                     <EmployeeColorSwatch hex={employee.color} />
-                    <span className="min-w-0 flex-1 truncate" data-employee-name>
-                      {employee.full_name}
-                    </span>
+                    <EmployeeNameLabel name={employee.full_name} />
                     {value === employee.id ? (
                       <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
                     ) : null}
@@ -614,7 +605,6 @@ export function DashboardShiftEmployeeCombobox({
           employeeName={hintEmployeeName}
           availabilities={hintAvailabilities}
           anchorEl={hintAnchorEl}
-          comboboxRef={rootRef}
           tooltipRef={hintTooltipRef}
           weekdayLabelStyle={weekdayLabelStyle}
         />
@@ -686,23 +676,20 @@ export function DashboardShiftTypeCombobox({
   const listRef = useRef<HTMLUListElement>(null);
   const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
   const closeDropdown = useCallback(() => setOpen(false), []);
-  useCloseOnOutsideClick(open, closeDropdown, [triggerRef, listRef]);
+  useComboboxCloseOnPointerDistance(open, closeDropdown, [triggerRef, listRef]);
   const selectedType = presets.find((type) => type.id === value) ?? null;
   const isPlaceholder = !value;
   const displayText = selectedType?.name ?? placeholder;
+  const showTriggerTooltip = !rootClassName;
 
   return (
     <div
-      className={cn(
-        "relative",
-        rootClassName ? "h-9" : "mt-1",
-        rootClassName
-      )}
+      className={cn("relative", !rootClassName && "mt-1", rootClassName)}
     >
       <Tooltip
         content={selectedType?.name}
         className="h-full w-full min-w-0"
-        disabled={!selectedType || open}
+        disabled={!showTriggerTooltip || !selectedType || open}
       >
         <button
           ref={triggerRef}
@@ -812,23 +799,20 @@ export function DashboardQualificationCombobox({
   const listRef = useRef<HTMLUListElement>(null);
   const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
   const closeDropdown = useCallback(() => setOpen(false), []);
-  useCloseOnOutsideClick(open, closeDropdown, [triggerRef, listRef]);
+  useComboboxCloseOnPointerDistance(open, closeDropdown, [triggerRef, listRef]);
   const selectedOption = options.find((option) => option.id === value) ?? null;
   const isPlaceholder = !value;
   const displayText = selectedOption?.name ?? placeholder;
+  const showTriggerTooltip = !rootClassName;
 
   return (
     <div
-      className={cn(
-        "relative",
-        rootClassName ? "h-9" : "mt-1",
-        rootClassName
-      )}
+      className={cn("relative", !rootClassName && "mt-1", rootClassName)}
     >
       <Tooltip
         content={selectedOption?.name}
         className="h-full w-full min-w-0"
-        disabled={!selectedOption || open}
+        disabled={!showTriggerTooltip || !selectedOption || open}
       >
         <button
           ref={triggerRef}

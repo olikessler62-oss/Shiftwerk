@@ -69,6 +69,58 @@ export function staffingEntryForNewBulkRow(
   return staffingEntries[0] ?? null;
 }
 
+function sortStaffingEntriesChronologically(
+  staffingEntries: readonly TagAreaHeaderStaffingEntry[],
+  serviceHours: readonly AreaServiceHourRef[]
+): TagAreaHeaderStaffingEntry[] {
+  return [...staffingEntries].sort((a, b) => {
+    const startA =
+      personalbedarfTimesForServiceHour(serviceHours, a.serviceHourId)?.startTime ??
+      "99:99";
+    const startB =
+      personalbedarfTimesForServiceHour(serviceHours, b.serviceHourId)?.startTime ??
+      "99:99";
+    return startA.localeCompare(startB) || a.serviceHourId.localeCompare(b.serviceHourId);
+  });
+}
+
+/** Nächstes chronologisches ungedecktes Bedarf-Fenster; Fallback wie staffingEntryForNewBulkRow. */
+export function resolveStaffingEntryForBulkPrefill(
+  staffingEntries: readonly TagAreaHeaderStaffingEntry[],
+  serviceHours: readonly AreaServiceHourRef[],
+  existingRows: readonly { demandServiceHourId?: string }[] = []
+): TagAreaHeaderStaffingEntry | null {
+  const sorted = sortStaffingEntriesChronologically(staffingEntries, serviceHours);
+  const unsatisfied = sorted.find((entry) => entry.assigned < entry.required);
+  if (unsatisfied) return unsatisfied;
+  return staffingEntryForNewBulkRow(staffingEntries, existingRows);
+}
+
+export type BulkShiftCurrentRowCandidate = {
+  id: string;
+  existingShiftId?: string;
+  demandServiceHourId?: string;
+};
+
+/** Erste noch nicht gespeicherte Zeile für den aktuellen Personalbedarf. */
+export function resolveCurrentBulkShiftRowId(
+  rows: readonly BulkShiftCurrentRowCandidate[],
+  staffingEntries: readonly TagAreaHeaderStaffingEntry[]
+): string | null {
+  const unsavedRows = rows.filter((row) => !row.existingShiftId);
+  if (unsavedRows.length === 0) return null;
+
+  const targetEntry = staffingEntryForNewBulkRow(staffingEntries, rows);
+  if (targetEntry) {
+    const demandMatch = unsavedRows.find(
+      (row) => row.demandServiceHourId === targetEntry.serviceHourId
+    );
+    if (demandMatch) return demandMatch.id;
+  }
+
+  return unsavedRows[0]?.id ?? null;
+}
+
 export function personalbedarfTimesForServiceHour(
   serviceHours: readonly AreaServiceHourRef[],
   serviceHourId: string | undefined

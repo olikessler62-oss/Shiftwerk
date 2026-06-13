@@ -19,7 +19,7 @@ describe("validateEmployeeDayShiftAssignments (DE)", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("rejects combined daily hours over hard maximum", () => {
+  it("warns but accepts split duty when combined hours exceed hard maximum", () => {
     const result = validateEmployeeDayShiftAssignments({
       ...base,
       windows: [
@@ -27,15 +27,26 @@ describe("validateEmployeeDayShiftAssignments (DE)", () => {
         { startTime: "15:00", endTime: "21:00" },
       ],
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.kind).toBe("daily_hours");
-      expect(result.totalHours).toBe(12);
-      expect(result.limitHours).toBe(10);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(
+        result.warnings.some((warning) => warning.includes("12") || warning.includes("10"))
+      ).toBe(true);
     }
   });
 
-  it("rejects combined daily hours over regular maximum with warning threshold", () => {
+  it("accepts split early and late duty windows totalling 16h", () => {
+    const result = validateEmployeeDayShiftAssignments({
+      ...base,
+      windows: [
+        { startTime: "00:00", endTime: "08:00" },
+        { startTime: "12:00", endTime: "20:00" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("warns when combined daily hours exceed regular maximum", () => {
     const result = validateEmployeeDayShiftAssignments({
       ...base,
       windows: [
