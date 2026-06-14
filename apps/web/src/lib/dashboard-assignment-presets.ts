@@ -2,6 +2,7 @@ import {
   areDashboardShiftTimesComplete,
   dashboardTimeKey,
 } from "@/lib/available-employees-for-shift";
+import { timeToMinutes } from "@schichtwerk/database";
 import type { AreaShiftTemplateWithBreaks } from "@schichtwerk/types";
 
 export type DashboardAssignmentPreset = {
@@ -97,6 +98,49 @@ export function resolvePresetShiftTemplateForDemandTimes(
     return currentPresetId;
   }
   return "";
+}
+
+/** Früheste Schichtvorlage nach Startzeit (Bereich). */
+export function earliestAssignmentPreset(
+  presets: readonly DashboardAssignmentPreset[]
+): DashboardAssignmentPreset | null {
+  if (!presets.length) return null;
+  return (
+    [...presets].sort((a, b) => {
+      const startDiff =
+        timeToMinutes(a.start_time) - timeToMinutes(b.start_time);
+      if (startDiff !== 0) return startDiff;
+      const endDiff = timeToMinutes(a.end_time) - timeToMinutes(b.end_time);
+      if (endDiff !== 0) return endDiff;
+      const nameCmp = a.name.localeCompare(b.name, "de");
+      if (nameCmp !== 0) return nameCmp;
+      return a.id.localeCompare(b.id);
+    })[0] ?? null
+  );
+}
+
+export function prefillBulkRowWithEarliestAssignmentPreset<
+  T extends {
+    shiftTypeId: string;
+    startTime: string;
+    endTime: string;
+    requestedStartTime?: string;
+    requestedEndTime?: string;
+  },
+>(row: T, presets: readonly DashboardAssignmentPreset[]): boolean {
+  const earliest = earliestAssignmentPreset(presets);
+  if (!earliest) return false;
+
+  const startTime = dashboardTimeKey(earliest.start_time);
+  const endTime = dashboardTimeKey(earliest.end_time);
+  if (!areDashboardShiftTimesComplete(startTime, endTime)) return false;
+
+  row.shiftTypeId = earliest.id;
+  row.startTime = startTime;
+  row.endTime = endTime;
+  row.requestedStartTime = startTime;
+  row.requestedEndTime = endTime;
+  return true;
 }
 
 export function findAreaShiftTemplateByTimes(

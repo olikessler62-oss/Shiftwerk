@@ -9,6 +9,7 @@ const MANAGER_ROUTES = [
   "/abwesenheiten",
   "/berichte",
   "/einstellungen",
+  "/settings",
 ];
 
 export async function middleware(request: NextRequest) {
@@ -67,6 +68,7 @@ export const config = {
     "/abwesenheiten/:path*",
     "/berichte/:path*",
     "/einstellungen/:path*",
+    "/settings/:path*",
     "/auth/callback",
   ],
 };

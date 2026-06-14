@@ -105,7 +105,7 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
                   <nav className="p-2 text-sm text-muted">{t("common.loading")}</nav>
                 }
               >
-                <SidebarNav onNavigate={() => setOpen(false)} />
+                <SidebarNav onNavigate={() => setOpen(false)} viewerRole={role} />
               </Suspense>
 
               <div className="mt-auto border-t border-border p-2">

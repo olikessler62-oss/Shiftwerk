@@ -13,6 +13,9 @@ import { resolveShiftTemplateStoredColor } from "@schichtwerk/database";
 import {
   MODAL_SCROLLBAR_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
+  dashboardAlertDialogClass,
+  dashboardNestedModalOverlayClass,
+  settingsModalFooterClass,
 } from "@/components/settings/settings-list-ui";
 import { cn } from "@/lib/cn";
 import {
@@ -315,6 +318,8 @@ export type DashboardBulkShiftDialogState = {
   date: string;
   /** Gespeicherte Schicht — Zeile im Bulk-Modal fokussieren und scrollen. */
   focusShiftId?: string;
+  /** Tag ohne Servicezeit — Bedarfsliste ausblenden, keine Servicezeit-Validierung. */
+  withoutServiceHours?: boolean;
 };
 
 function EmployeeColorSwatch({ hex }: { hex: string | null }) {
@@ -952,6 +957,8 @@ export function DashboardAddShiftModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [complianceNotice, setComplianceNotice] = useState<string | null>(null);
+  const [outsideServiceHoursConfirm, setOutsideServiceHoursConfirm] =
+    useState(false);
   const skipShiftTypeFromTimesSyncRef = useRef(false);
 
   const timesComplete = areDashboardShiftTimesComplete(startTime, endTime);
@@ -1066,6 +1073,57 @@ export function DashboardAddShiftModal({
     [assignmentPresets]
   );
 
+  const performAssign = useCallback(
+    async (options?: { withoutServiceHours?: boolean }) => {
+      setSaving(true);
+      setError(null);
+      const result = await assignShiftWithTimes({
+        employeeId,
+        shiftDate: dialog.date,
+        startTime,
+        endTime,
+        areaShiftTemplateId: simplePlanning
+          ? null
+          : areaShiftTemplateIdForAssign(shiftTypeId),
+        locationId,
+        locationAreaId: simplePlanning ? null : dialog.areaId,
+        withoutServiceHours: options?.withoutServiceHours,
+      });
+      setSaving(false);
+
+      if (!result.ok) {
+        setError(translateActionError(result.error, t));
+        setComplianceNotice(null);
+        return;
+      }
+
+      setError(null);
+      onSaved?.();
+      router.refresh();
+
+      if (result.warnings?.length) {
+        setComplianceNotice(result.warnings.join(" "));
+        return;
+      }
+
+      onClose();
+    },
+    [
+      employeeId,
+      dialog.date,
+      dialog.areaId,
+      startTime,
+      endTime,
+      shiftTypeId,
+      locationId,
+      simplePlanning,
+      onClose,
+      onSaved,
+      router,
+      t,
+    ]
+  );
+
   const handleOk = useCallback(async () => {
     if (
       !employeeId ||
@@ -1092,42 +1150,12 @@ export function DashboardAddShiftModal({
         endTime
       );
       if (!serviceHoursCheck.ok) {
-        setError(translateActionError(serviceHoursCheck.error, t));
+        setOutsideServiceHoursConfirm(true);
         return;
       }
     }
 
-    setSaving(true);
-    setError(null);
-    const result = await assignShiftWithTimes({
-      employeeId,
-      shiftDate: dialog.date,
-      startTime,
-      endTime,
-      areaShiftTemplateId: simplePlanning
-        ? null
-        : areaShiftTemplateIdForAssign(shiftTypeId),
-      locationId,
-      locationAreaId: simplePlanning ? null : dialog.areaId,
-    });
-    setSaving(false);
-
-    if (!result.ok) {
-      setError(translateActionError(result.error, t));
-      setComplianceNotice(null);
-      return;
-    }
-
-    setError(null);
-    onSaved?.();
-    router.refresh();
-
-    if (result.warnings?.length) {
-      setComplianceNotice(result.warnings.join(" "));
-      return;
-    }
-
-    onClose();
+    await performAssign();
   }, [
     employeeId,
     timesComplete,
@@ -1135,13 +1163,9 @@ export function DashboardAddShiftModal({
     dialog.areaId,
     startTime,
     endTime,
-    shiftTypeId,
-    locationId,
     serviceHours,
     simplePlanning,
-    onClose,
-    onSaved,
-    router,
+    performAssign,
     t,
   ]);
 
@@ -1269,6 +1293,58 @@ export function DashboardAddShiftModal({
           </Button>
         </div>
       </div>
+
+      {outsideServiceHoursConfirm ? (
+        <div
+          className={dashboardNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !saving) {
+              setOutsideServiceHoursConfirm(false);
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="dashboard-add-shift-service-hours-confirm"
+            className={dashboardAlertDialogClass()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p
+              id="dashboard-add-shift-service-hours-confirm"
+              className="text-sm text-foreground"
+            >
+              {t("dashboard.bulkShiftOutsideServiceHoursConfirm")}
+            </p>
+            <div
+              className={settingsModalFooterClass(
+                "mt-5 border-0 px-0 pb-0 pt-0 sm:justify-end"
+              )}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOutsideServiceHoursConfirm(false)}
+                disabled={saving}
+              >
+                {t("common.no")}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={saving}
+                onClick={() => {
+                  setOutsideServiceHoursConfirm(false);
+                  void performAssign({ withoutServiceHours: true });
+                }}
+              >
+                {t("common.yes")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -172,6 +172,30 @@ export function employeeAreaQualificationOptions(
   return areaQualifications.filter((option) => ids.has(option.id));
 }
 
+/** Alle beim Mitarbeiter hinterlegten Jobs — ohne Personalbedarf-Filter. */
+export function employeeProfileQualificationOptions(
+  employeeId: string,
+  qualifications: readonly Qualification[],
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>,
+  emptyEmployeeId: string
+): StaffingQualificationOption[] {
+  if (!employeeId || employeeId === emptyEmployeeId) return [];
+  const ids = profileQualificationIds.get(employeeId);
+  if (!ids?.size) return [];
+  return qualifications
+    .filter((qualification) => ids.has(qualification.id))
+    .slice()
+    .sort(
+      (a, b) =>
+        a.sort_order - b.sort_order ||
+        a.name.localeCompare(b.name, "de")
+    )
+    .map((qualification) => ({
+      id: qualification.id,
+      name: qualification.name,
+    }));
+}
+
 /** Eine passende Funktion vorauswählen; bei mehreren Optionen leer lassen. */
 export function resolvePresetQualificationForEmployee(
   employeeId: string,

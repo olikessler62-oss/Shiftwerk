@@ -7,9 +7,20 @@ export const SHIFT_CARD_TWO_LINE_HEIGHT_PX = 30 + SHIFT_CARD_EXTRA_HEIGHT_PX;
 export const SHIFT_CARD_LIST_GAP_PX = 4;
 /** Unteres Padding der Schichtkarten-Liste (pb-1). */
 export const SHIFT_CARD_LIST_BOTTOM_PADDING_PX = 4;
-export const SHIFT_CARD_ROW_FIT_BUFFER_PX = 4;
-/** Schatten der Karten ragt unter die Layout-Box — für Zeilenhöhe und Scroll berücksichtigen. */
-export const SHIFT_CARD_SHADOW_OVERFLOW_PX = 6;
+/** Reserve unter der Liste (Schatten der letzten Karte, Subpixel). */
+export const SHIFT_CARD_ROW_FIT_BUFFER_PX = 12;
+/**
+ * Zusätzliche Listenhöhe in der Zeile — wird nur zu required addiert, nicht von
+ * contentHeightPx abgezogen (im Gegensatz zu FIT_BUFFER / VISIBLE_SPACE).
+ * Schatten-Bleed ist bereits im Stack; Rest für Subpixel/Transition.
+ */
+export const AREA_ROW_LIST_FIT_SLACK_PX = 12;
+/** Max. sichtbarer Abstand unter der letzten Schichtkarte in ausgeklappten Zellen. */
+export const AREA_ROW_VISIBLE_SPACE_BELOW_LAST_SHIFT_PX = 20;
+/** Externer Schatten unter jeder Karte — Wrapper-Höhe = Karte + dieser Wert. */
+export const SHIFT_CARD_SHADOW_BLEED_PX = 3;
+/** @deprecated Einzel-Reserve am Stack-Ende — ersetzt durch {@link SHIFT_CARD_SHADOW_BLEED_PX} pro Karte. */
+export const SHIFT_CARD_SHADOW_OVERFLOW_PX = SHIFT_CARD_SHADOW_BLEED_PX;
 export const AREA_ROW_CELL_PADDING_Y_PX = 16;
 export const AREA_ROW_HEADER_STRIP_PX = 20;
 export const AREA_ROW_FOOTER_STRIP_PX = 18;
@@ -29,12 +40,17 @@ export const AREA_ROW_VERTICAL_CHROME_PX =
   AREA_ROW_HEADER_STRIP_PX +
   AREA_ROW_FOOTER_STRIP_PX;
 
+export function shiftCardListItemHeightPx(
+  cardHeightPx: number = SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+): number {
+  return cardHeightPx + SHIFT_CARD_SHADOW_BLEED_PX;
+}
+
 export function areaRowShiftStackHeightPx(shiftCount: number): number {
   if (shiftCount <= 0) return 0;
   return (
-    shiftCount * SHIFT_CARD_TWO_LINE_HEIGHT_PX +
-    Math.max(0, shiftCount - 1) * SHIFT_CARD_LIST_GAP_PX +
-    SHIFT_CARD_SHADOW_OVERFLOW_PX
+    shiftCount * shiftCardListItemHeightPx() +
+    Math.max(0, shiftCount - 1) * SHIFT_CARD_LIST_GAP_PX
   );
 }
 
@@ -45,8 +61,10 @@ export function areaRowRequiredHeightPx(maxLaneCount: number): number {
   return (
     AREA_ROW_VERTICAL_CHROME_PX +
     areaRowShiftStackHeightPx(maxLaneCount) +
+    SHIFT_CARD_LIST_BOTTOM_PADDING_PX +
+    AREA_ROW_VISIBLE_SPACE_BELOW_LAST_SHIFT_PX +
     SHIFT_CARD_ROW_FIT_BUFFER_PX +
-    SHIFT_CARD_LIST_BOTTOM_PADDING_PX
+    AREA_ROW_LIST_FIT_SLACK_PX
   );
 }
 
@@ -55,16 +73,20 @@ export function areaRowContentHeightPx(rowHeightPx: number): number {
     0,
     rowHeightPx -
       AREA_ROW_VERTICAL_CHROME_PX -
-      SHIFT_CARD_ROW_FIT_BUFFER_PX -
-      SHIFT_CARD_LIST_BOTTOM_PADDING_PX
+      AREA_ROW_VISIBLE_SPACE_BELOW_LAST_SHIFT_PX -
+      SHIFT_CARD_ROW_FIT_BUFFER_PX,
   );
 }
 
 export function areaRowShiftStackFitsPx(
   laneCount: number,
-  availableContentHeightPx: number
+  availableContentHeightPx: number,
 ): boolean {
-  return areaRowShiftStackHeightPx(laneCount) <= availableContentHeightPx;
+  if (laneCount <= 0) return true;
+  return (
+    areaRowShiftStackHeightPx(laneCount) + SHIFT_CARD_LIST_BOTTOM_PADDING_PX <=
+    availableContentHeightPx
+  );
 }
 
 export type AreaRowLayout = {
@@ -74,13 +96,13 @@ export type AreaRowLayout = {
   requiredPx: number;
   /** Verfügbare Höhe für die Schichtkarten-Liste (ohne Header/Footer/Padding). */
   contentHeightPx: number;
-  /** Zeile darf mit 1fr wachsen, wenn Platz übrig ist. */
+  /** @deprecated Immer false — Zeilenhöhen sind feste px-Werte. */
   flexGrow: boolean;
 };
 
 function buildAreaRowLayout(
   requiredPx: number,
-  heightPx: number
+  heightPx: number,
 ): AreaRowLayout {
   return {
     heightPx,
@@ -90,31 +112,581 @@ function buildAreaRowLayout(
   };
 }
 
+function isCollapsedAreaRow(
+  areaId: string,
+  layoutActiveAreaIds: ReadonlySet<string>,
+): boolean {
+  return !layoutActiveAreaIds.has(areaId);
+}
+
+/** Checkbox eingeklappt oder service-dormant (keine Servicezeit/Schichten ab heute, keine Schichten in Vergangenheit der Woche) — Zeile fix 50 px. */
+function isAreaRowFixedAtMinHeight(
+  areaId: string,
+  layoutActiveAreaIds: ReadonlySet<string>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): boolean {
+  return (
+    isCollapsedAreaRow(areaId, layoutActiveAreaIds) ||
+    layoutMinHeightAreaIds.has(areaId)
+  );
+}
+
+function isShiftAreaRow(
+  areaId: string,
+  layoutActiveAreaIds: ReadonlySet<string>,
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+): boolean {
+  return (
+    layoutActiveAreaIds.has(areaId) &&
+    (maxShiftCountByAreaId.get(areaId) ?? 0) > 0
+  );
+}
+
+function isEmptyExpandedAreaRow(
+  areaId: string,
+  layoutActiveAreaIds: ReadonlySet<string>,
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): boolean {
+  return (
+    layoutActiveAreaIds.has(areaId) &&
+    !layoutMinHeightAreaIds.has(areaId) &&
+    (maxShiftCountByAreaId.get(areaId) ?? 0) === 0
+  );
+}
+
+function listShiftAreaRows(
+  areas: readonly { id: string }[],
+  layoutActiveAreaIds: ReadonlySet<string>,
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+): readonly { id: string }[] {
+  return areas.filter((area) =>
+    isShiftAreaRow(area.id, layoutActiveAreaIds, maxShiftCountByAreaId),
+  );
+}
+
+function listEmptyExpandedAreaRows(
+  areas: readonly { id: string }[],
+  layoutActiveAreaIds: ReadonlySet<string>,
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): readonly { id: string }[] {
+  return areas.filter((area) =>
+    isEmptyExpandedAreaRow(
+      area.id,
+      layoutActiveAreaIds,
+      maxShiftCountByAreaId,
+      layoutMinHeightAreaIds,
+    ),
+  );
+}
+
 function sumHeights(
   areas: readonly { id: string }[],
-  heights: ReadonlyMap<string, number>
+  heights: ReadonlyMap<string, number>,
 ): number {
   return areas.reduce((sum, area) => sum + (heights.get(area.id) ?? 0), 0);
 }
 
-function busiestActiveAreaId(
-  activeAreas: readonly { id: string }[],
-  maxShiftCountByAreaId: ReadonlyMap<string, number>
-): string | null {
-  let best: { id: string; count: number } | null = null;
-  for (const area of activeAreas) {
-    const count = maxShiftCountByAreaId.get(area.id) ?? 0;
-    if (!best || count > best.count) {
-      best = { id: area.id, count };
-    }
-  }
-  return best?.id ?? null;
+function distributeTotalPxEvenlyAmongAreas(
+  heights: Map<string, number>,
+  recipients: readonly { id: string }[],
+  totalPx: number,
+): void {
+  if (recipients.length === 0 || totalPx <= 0) return;
+
+  let distributed = 0;
+  recipients.forEach((area, index) => {
+    const heightPx =
+      index === recipients.length - 1
+        ? totalPx - distributed
+        : Math.floor(totalPx / recipients.length);
+    heights.set(area.id, clampAreaRowHeightPx(heightPx));
+    distributed += heightPx;
+  });
 }
 
-/** Bereich mit deutlich mehr Schichten — dort scrollt es zuerst. */
+function applyRemainderToLastArea(
+  areas: readonly { id: string }[],
+  heights: Map<string, number>,
+  targetTotalPx: number,
+  layoutActiveAreaIds: ReadonlySet<string>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): void {
+  const currentTotalPx = sumHeights(areas, heights);
+  const remainderPx = targetTotalPx - currentTotalPx;
+  if (remainderPx === 0) return;
+
+  for (let index = areas.length - 1; index >= 0; index -= 1) {
+    const area = areas[index];
+    if (
+      isAreaRowFixedAtMinHeight(
+        area.id,
+        layoutActiveAreaIds,
+        layoutMinHeightAreaIds,
+      )
+    ) {
+      continue;
+    }
+    const current = heights.get(area.id);
+    if (current === undefined) continue;
+    heights.set(area.id, clampAreaRowHeightPx(current + remainderPx));
+    return;
+  }
+
+  const lastArea = areas[areas.length - 1];
+  const current = heights.get(lastArea.id);
+  if (current === undefined) return;
+  heights.set(lastArea.id, clampAreaRowHeightPx(current + remainderPx));
+}
+
+function equalizeShiftAreasTowardTarget(
+  heights: Map<string, number>,
+  shiftAreas: readonly { id: string }[],
+  targetHeightPx: number,
+  slackPx: number,
+): number {
+  let remainingSlackPx = slackPx;
+
+  while (remainingSlackPx > 0) {
+    const undersized = shiftAreas.filter(
+      (area) => (heights.get(area.id) ?? 0) < targetHeightPx,
+    );
+    if (undersized.length === 0) break;
+
+    const totalRoomPx = undersized.reduce(
+      (sum, area) =>
+        sum + (targetHeightPx - (heights.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX)),
+      0,
+    );
+    if (totalRoomPx <= 0) break;
+
+    const grantPx = Math.min(remainingSlackPx, totalRoomPx);
+    let distributedPx = 0;
+
+    undersized.forEach((area, index) => {
+      const currentPx = heights.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX;
+      const roomPx = targetHeightPx - currentPx;
+      const extraPx =
+        index === undersized.length - 1
+          ? grantPx - distributedPx
+          : Math.floor((grantPx * roomPx) / totalRoomPx);
+      const appliedPx = Math.min(extraPx, roomPx);
+      heights.set(area.id, currentPx + appliedPx);
+      distributedPx += appliedPx;
+    });
+
+    if (distributedPx <= 0) break;
+    remainingSlackPx -= distributedPx;
+  }
+
+  return remainingSlackPx;
+}
+
+function findDominantAreaIdsByMaxLaneCount(
+  shiftAreas: readonly { id: string }[],
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+): readonly string[] {
+  if (shiftAreas.length === 0) return [];
+
+  const maxLaneCount = Math.max(
+    ...shiftAreas.map((area) => maxShiftCountByAreaId.get(area.id) ?? 0),
+  );
+
+  return shiftAreas
+    .filter((area) => (maxShiftCountByAreaId.get(area.id) ?? 0) === maxLaneCount)
+    .map((area) => area.id);
+}
+
+function computePhase1MinTotalPx(
+  areas: readonly { id: string }[],
+  layoutActiveAreaIds: ReadonlySet<string>,
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+  requiredByArea: ReadonlyMap<string, number>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): number {
+  return areas.reduce((sum, area) => {
+    if (
+      isAreaRowFixedAtMinHeight(
+        area.id,
+        layoutActiveAreaIds,
+        layoutMinHeightAreaIds,
+      )
+    ) {
+      return sum + AREA_ROW_MIN_HEIGHT_PX;
+    }
+    if (isShiftAreaRow(area.id, layoutActiveAreaIds, maxShiftCountByAreaId)) {
+      return sum + (requiredByArea.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX);
+    }
+    return sum + AREA_ROW_MIN_HEIGHT_PX;
+  }, 0);
+}
+
+function stealPxFromEmptyExpandedAreas(
+  heights: Map<string, number>,
+  emptyExpandedAreas: readonly { id: string }[],
+  amountPx: number,
+): number {
+  if (amountPx <= 0 || emptyExpandedAreas.length === 0) return 0;
+
+  let remainingPx = amountPx;
+  let stolenPx = 0;
+
+  while (remainingPx > 0) {
+    const donors = emptyExpandedAreas.filter(
+      (area) =>
+        (heights.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX) > AREA_ROW_MIN_HEIGHT_PX,
+    );
+    if (donors.length === 0) break;
+
+    let removedThisRoundPx = 0;
+    for (const area of donors) {
+      if (remainingPx <= 0) break;
+      const currentPx = heights.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX;
+      const removePx = Math.min(currentPx - AREA_ROW_MIN_HEIGHT_PX, remainingPx);
+      if (removePx <= 0) continue;
+      heights.set(area.id, currentPx - removePx);
+      remainingPx -= removePx;
+      removedThisRoundPx += removePx;
+      stolenPx += removePx;
+    }
+
+    if (removedThisRoundPx <= 0) break;
+  }
+
+  return stolenPx;
+}
+
+function boostShiftAreasFromEmptySlack(
+  areas: readonly { id: string }[],
+  heights: Map<string, number>,
+  layoutActiveAreaIds: ReadonlySet<string>,
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+  requiredByArea: ReadonlyMap<string, number>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): void {
+  const shiftAreas = listShiftAreaRows(
+    areas,
+    layoutActiveAreaIds,
+    maxShiftCountByAreaId,
+  );
+  const emptyExpandedAreas = listEmptyExpandedAreaRows(
+    areas,
+    layoutActiveAreaIds,
+    maxShiftCountByAreaId,
+    layoutMinHeightAreaIds,
+  );
+  if (shiftAreas.length === 0 || emptyExpandedAreas.length === 0) return;
+
+  const rankedShiftAreas = [...shiftAreas].sort(
+    (a, b) =>
+      (maxShiftCountByAreaId.get(b.id) ?? 0) -
+      (maxShiftCountByAreaId.get(a.id) ?? 0),
+  );
+
+  for (const area of rankedShiftAreas) {
+    const maxLaneCount = maxShiftCountByAreaId.get(area.id) ?? 0;
+    if (maxLaneCount <= 0) continue;
+
+    const requiredPx = requiredByArea.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX;
+    let heightPx = heights.get(area.id) ?? requiredPx;
+
+    while (
+      !areaRowShiftStackFitsPx(
+        maxLaneCount,
+        areaRowContentHeightPx(heightPx),
+      )
+    ) {
+      const targetPx = Math.max(requiredPx, heightPx + 1);
+      const deficitPx = targetPx - heightPx;
+      const stolenPx = stealPxFromEmptyExpandedAreas(
+        heights,
+        emptyExpandedAreas,
+        deficitPx,
+      );
+      if (stolenPx <= 0) break;
+      heightPx += stolenPx;
+      heights.set(area.id, heightPx);
+    }
+  }
+}
+
+function applyPhase1Layout(
+  areas: readonly { id: string }[],
+  layoutActiveAreaIds: ReadonlySet<string>,
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+  requiredByArea: ReadonlyMap<string, number>,
+  availableBodyHeightPx: number,
+  heights: Map<string, number>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): void {
+  const shiftAreas = listShiftAreaRows(
+    areas,
+    layoutActiveAreaIds,
+    maxShiftCountByAreaId,
+  );
+  const emptyExpandedAreas = listEmptyExpandedAreaRows(
+    areas,
+    layoutActiveAreaIds,
+    maxShiftCountByAreaId,
+    layoutMinHeightAreaIds,
+  );
+  const expandedAreas = areas.filter(
+    (area) =>
+      !isAreaRowFixedAtMinHeight(
+        area.id,
+        layoutActiveAreaIds,
+        layoutMinHeightAreaIds,
+      ),
+  );
+
+  for (const area of areas) {
+    if (
+      isAreaRowFixedAtMinHeight(
+        area.id,
+        layoutActiveAreaIds,
+        layoutMinHeightAreaIds,
+      )
+    ) {
+      heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+      continue;
+    }
+
+    if (isShiftAreaRow(area.id, layoutActiveAreaIds, maxShiftCountByAreaId)) {
+      heights.set(
+        area.id,
+        requiredByArea.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX,
+      );
+      continue;
+    }
+
+    heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+  }
+
+  if (shiftAreas.length === 0 && expandedAreas.length > 0) {
+    const fixedMinTotalPx = areas.reduce(
+      (sum, area) =>
+        isAreaRowFixedAtMinHeight(
+          area.id,
+          layoutActiveAreaIds,
+          layoutMinHeightAreaIds,
+        )
+          ? sum + AREA_ROW_MIN_HEIGHT_PX
+          : sum,
+      0,
+    );
+    distributeTotalPxEvenlyAmongAreas(
+      heights,
+      expandedAreas,
+      availableBodyHeightPx - fixedMinTotalPx,
+    );
+    return;
+  }
+
+  const fixedMinTotalPx = areas.reduce(
+    (sum, area) =>
+      isAreaRowFixedAtMinHeight(
+        area.id,
+        layoutActiveAreaIds,
+        layoutMinHeightAreaIds,
+      )
+        ? sum + AREA_ROW_MIN_HEIGHT_PX
+        : sum,
+    0,
+  );
+  const shiftTotalPx = shiftAreas.reduce(
+    (sum, area) => sum + (heights.get(area.id) ?? 0),
+    0,
+  );
+
+  if (emptyExpandedAreas.length > 0) {
+    distributeTotalPxEvenlyAmongAreas(
+      heights,
+      emptyExpandedAreas,
+      availableBodyHeightPx - fixedMinTotalPx - shiftTotalPx,
+    );
+  }
+
+  let slackPx = availableBodyHeightPx - sumHeights(areas, heights);
+
+  if (shiftAreas.length > 0 && slackPx > 0) {
+    const maxShiftRequiredPx = Math.max(
+      ...shiftAreas.map(
+        (area) => requiredByArea.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX,
+      ),
+    );
+    slackPx = equalizeShiftAreasTowardTarget(
+      heights,
+      shiftAreas,
+      maxShiftRequiredPx,
+      slackPx,
+    );
+  }
+
+  if (slackPx !== 0) {
+    applyRemainderToLastArea(
+      areas,
+      heights,
+      availableBodyHeightPx,
+      layoutActiveAreaIds,
+      layoutMinHeightAreaIds,
+    );
+  }
+
+  boostShiftAreasFromEmptySlack(
+    areas,
+    heights,
+    layoutActiveAreaIds,
+    maxShiftCountByAreaId,
+    requiredByArea,
+    layoutMinHeightAreaIds,
+  );
+
+  const finalSlackPx = availableBodyHeightPx - sumHeights(areas, heights);
+  if (finalSlackPx !== 0) {
+    applyRemainderToLastArea(
+      areas,
+      heights,
+      availableBodyHeightPx,
+      layoutActiveAreaIds,
+      layoutMinHeightAreaIds,
+    );
+  }
+}
+
+function applyPhase2Layout(
+  areas: readonly { id: string }[],
+  layoutActiveAreaIds: ReadonlySet<string>,
+  maxShiftCountByAreaId: ReadonlyMap<string, number>,
+  availableBodyHeightPx: number,
+  heights: Map<string, number>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): void {
+  const shiftAreas = listShiftAreaRows(
+    areas,
+    layoutActiveAreaIds,
+    maxShiftCountByAreaId,
+  );
+  const emptyExpandedAreas = listEmptyExpandedAreaRows(
+    areas,
+    layoutActiveAreaIds,
+    maxShiftCountByAreaId,
+    layoutMinHeightAreaIds,
+  );
+  const expandedAreas = areas.filter(
+    (area) =>
+      !isAreaRowFixedAtMinHeight(
+        area.id,
+        layoutActiveAreaIds,
+        layoutMinHeightAreaIds,
+      ),
+  );
+  const dominantAreaIds = findDominantAreaIdsByMaxLaneCount(
+    shiftAreas,
+    maxShiftCountByAreaId,
+  );
+  const dominantAreaIdSet = new Set(dominantAreaIds);
+
+  if (shiftAreas.length === 0 && expandedAreas.length > 0) {
+    const fixedMinTotalPx = areas.reduce(
+      (sum, area) =>
+        isAreaRowFixedAtMinHeight(
+          area.id,
+          layoutActiveAreaIds,
+          layoutMinHeightAreaIds,
+        )
+          ? sum + AREA_ROW_MIN_HEIGHT_PX
+          : sum,
+      0,
+    );
+    distributeTotalPxEvenlyAmongAreas(
+      heights,
+      expandedAreas,
+      Math.max(
+        expandedAreas.length * AREA_ROW_MIN_HEIGHT_PX,
+        availableBodyHeightPx - fixedMinTotalPx,
+      ),
+    );
+    applyRemainderToLastArea(
+      areas,
+      heights,
+      availableBodyHeightPx,
+      layoutActiveAreaIds,
+      layoutMinHeightAreaIds,
+    );
+    return;
+  }
+
+  for (const area of areas) {
+    if (
+      isAreaRowFixedAtMinHeight(
+        area.id,
+        layoutActiveAreaIds,
+        layoutMinHeightAreaIds,
+      )
+    ) {
+      heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+      continue;
+    }
+
+    if (
+      isEmptyExpandedAreaRow(
+        area.id,
+        layoutActiveAreaIds,
+        maxShiftCountByAreaId,
+        layoutMinHeightAreaIds,
+      )
+    ) {
+      heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+      continue;
+    }
+
+    if (isShiftAreaRow(area.id, layoutActiveAreaIds, maxShiftCountByAreaId)) {
+      if (dominantAreaIdSet.has(area.id)) {
+        continue;
+      }
+      heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+    }
+  }
+
+  const fixedTotalPx = sumHeights(areas, heights);
+  const dominantRecipients = shiftAreas.filter((area) =>
+    dominantAreaIdSet.has(area.id),
+  );
+
+  if (dominantRecipients.length > 0) {
+    distributeTotalPxEvenlyAmongAreas(
+      heights,
+      dominantRecipients,
+      Math.max(
+        dominantRecipients.length * AREA_ROW_MIN_HEIGHT_PX,
+        availableBodyHeightPx - fixedTotalPx,
+      ),
+    );
+  } else if (emptyExpandedAreas.length > 0) {
+    distributeTotalPxEvenlyAmongAreas(
+      heights,
+      emptyExpandedAreas,
+      Math.max(
+        emptyExpandedAreas.length * AREA_ROW_MIN_HEIGHT_PX,
+        availableBodyHeightPx - fixedTotalPx,
+      ),
+    );
+  }
+
+  applyRemainderToLastArea(
+    areas,
+    heights,
+    availableBodyHeightPx,
+    layoutActiveAreaIds,
+    layoutMinHeightAreaIds,
+  );
+}
+
+/** Bereich mit deutlich mehr Schichten — für Legacy-Hilfsfunktionen. */
 export function findDominantAreaId(
   activeAreas: readonly { id: string }[],
-  requiredByArea: ReadonlyMap<string, number>
+  requiredByArea: ReadonlyMap<string, number>,
 ): string | null {
   if (activeAreas.length < 2) return null;
 
@@ -133,199 +705,18 @@ export function findDominantAreaId(
   return largest.id;
 }
 
-function distributeSlackToBusiestAreas(
-  heights: Map<string, number>,
-  activeAreas: readonly { id: string }[],
-  maxShiftCountByAreaId: ReadonlyMap<string, number>,
-  slackPx: number
-): void {
-  if (slackPx <= 0 || activeAreas.length === 0) return;
-
-  const maxCount = Math.max(
-    0,
-    ...activeAreas.map((area) => maxShiftCountByAreaId.get(area.id) ?? 0)
-  );
-  if (maxCount <= 0) return;
-
-  const recipients = activeAreas.filter(
-    (area) => (maxShiftCountByAreaId.get(area.id) ?? 0) === maxCount
-  );
-  if (recipients.length === 0) return;
-
-  let distributed = 0;
-  recipients.forEach((area, index) => {
-    const extra =
-      index === recipients.length - 1
-        ? slackPx - distributed
-        : Math.floor(slackPx / recipients.length);
-    heights.set(area.id, (heights.get(area.id) ?? 0) + extra);
-    distributed += extra;
-  });
-}
-
-function normalizeHeightsToTarget(
-  areas: readonly { id: string }[],
-  activeAreas: readonly { id: string }[],
-  heights: Map<string, number>,
-  maxShiftCountByAreaId: ReadonlyMap<string, number>,
-  targetHeightPx: number,
-  dominantAreaId: string | null
-): void {
-  const diff = targetHeightPx - sumHeights(areas, heights);
-  if (diff === 0) return;
-
-  const preferredId =
-    dominantAreaId ??
-    busiestActiveAreaId(activeAreas, maxShiftCountByAreaId);
-  const fallbackId = activeAreas[0]?.id ?? areas[0]?.id;
-  const adjustId = preferredId ?? fallbackId;
-  if (!adjustId) return;
-
-  if (diff > 0) {
-    heights.set(adjustId, (heights.get(adjustId) ?? 0) + diff);
-    return;
-  }
-
-  let toRemove = -diff;
-  const shrinkOrder = dominantAreaId
-    ? [
-        dominantAreaId,
-        ...activeAreas
-          .map((area) => area.id)
-          .filter((id) => id !== dominantAreaId)
-          .sort((a, b) => (heights.get(b) ?? 0) - (heights.get(a) ?? 0)),
-      ]
-    : [...activeAreas]
-        .sort((a, b) => (heights.get(b.id) ?? 0) - (heights.get(a.id) ?? 0))
-        .map((area) => area.id);
-
-  for (const areaId of shrinkOrder) {
-    if (toRemove <= 0) break;
-    const current = heights.get(areaId) ?? 0;
-    const removable = current - AREA_ROW_MIN_HEIGHT_PX;
-    if (removable <= 0) continue;
-    const remove = Math.min(removable, toRemove);
-    heights.set(areaId, current - remove);
-    toRemove -= remove;
-  }
-}
-
-/** Kleine Bereiche zuerst voll auffüllen; dominant scrollt zuletzt. */
-function allocateHeightsWithDominantArea(
-  areas: readonly { id: string }[],
-  activeAreas: readonly { id: string }[],
-  requiredByArea: ReadonlyMap<string, number>,
-  dominantAreaId: string,
-  availableBodyHeightPx: number
-): Map<string, number> {
-  const assigned = new Map<string, number>();
-
-  for (const area of areas) {
-    assigned.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
-  }
-
-  let remaining =
-    availableBodyHeightPx - AREA_ROW_MIN_HEIGHT_PX * areas.length;
-  if (remaining <= 0) {
-    return assigned;
-  }
-
-  const grantExtra = (areaId: string) => {
-    const requiredPx = requiredByArea.get(areaId) ?? AREA_ROW_MIN_HEIGHT_PX;
-    const extra = Math.max(0, requiredPx - AREA_ROW_MIN_HEIGHT_PX);
-    const grant = Math.min(extra, remaining);
-    assigned.set(areaId, AREA_ROW_MIN_HEIGHT_PX + grant);
-    remaining -= grant;
-  };
-
-  for (const area of areas) {
-    if (activeAreas.some((entry) => entry.id === area.id)) continue;
-    grantExtra(area.id);
-  }
-
-  for (const area of activeAreas) {
-    if (area.id === dominantAreaId) continue;
-    grantExtra(area.id);
-  }
-
-  assigned.set(
-    dominantAreaId,
-    (assigned.get(dominantAreaId) ?? AREA_ROW_MIN_HEIGHT_PX) + remaining
-  );
-
-  return assigned;
-}
-
-function allocateHeightsWhenSpaceIsTight(
-  areas: readonly { id: string }[],
-  activeAreas: readonly { id: string }[],
-  requiredByArea: ReadonlyMap<string, number>,
-  availableBodyHeightPx: number
-): Map<string, number> {
-  const assigned = new Map<string, number>();
-
-  for (const area of areas) {
-    assigned.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
-  }
-
-  let remaining =
-    availableBodyHeightPx - AREA_ROW_MIN_HEIGHT_PX * areas.length;
-  if (remaining <= 0) {
-    return assigned;
-  }
-
-  const extraNeedByArea = new Map<string, number>();
-  for (const area of areas) {
-    const requiredPx = requiredByArea.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX;
-    extraNeedByArea.set(
-      area.id,
-      Math.max(0, requiredPx - AREA_ROW_MIN_HEIGHT_PX)
-    );
-  }
-
-  for (const area of areas) {
-    if (activeAreas.some((entry) => entry.id === area.id)) continue;
-    const grant = Math.min(extraNeedByArea.get(area.id) ?? 0, remaining);
-    assigned.set(area.id, AREA_ROW_MIN_HEIGHT_PX + grant);
-    remaining -= grant;
-  }
-
-  const activeByDescendingNeed = [...activeAreas].sort(
-    (a, b) =>
-      (requiredByArea.get(b.id) ?? 0) - (requiredByArea.get(a.id) ?? 0)
-  );
-
-  for (const area of activeByDescendingNeed) {
-    const grant = Math.min(extraNeedByArea.get(area.id) ?? 0, remaining);
-    assigned.set(area.id, AREA_ROW_MIN_HEIGHT_PX + grant);
-    remaining -= grant;
-  }
-
-  if (remaining > 0 && activeByDescendingNeed[0]) {
-    const busiest = activeByDescendingNeed[0];
-    assigned.set(
-      busiest.id,
-      (assigned.get(busiest.id) ?? AREA_ROW_MIN_HEIGHT_PX) + remaining
-    );
-  }
-
-  return assigned;
-}
-
 /**
- * Füllt immer die volle Kalenderhöhe.
- * Bei dominantem Bereich (≥25 % mehr Schichten): kleinere Bereiche wachsen zuerst,
- * Scrollbars erscheinen zuerst im größten Bereich.
+ * Verteilt Bereichszeilen gemäß specs/007-area-row-heights-specification.md.
  */
 export function computeAreaRowLayouts(
   areas: readonly { id: string }[],
   layoutActiveAreaIds: ReadonlySet<string>,
   maxShiftCountByAreaId: ReadonlyMap<string, number>,
-  availableBodyHeightPx: number
+  availableBodyHeightPx: number,
+  layoutMinHeightAreaIds: ReadonlySet<string> = new Set(),
 ): Map<string, AreaRowLayout> {
   const result = new Map<string, AreaRowLayout>();
   const requiredByArea = new Map<string, number>();
-  const activeAreas = areas.filter((area) => layoutActiveAreaIds.has(area.id));
 
   for (const area of areas) {
     if (!layoutActiveAreaIds.has(area.id)) {
@@ -337,64 +728,61 @@ export function computeAreaRowLayouts(
   }
 
   const heights = new Map<string, number>();
-  for (const area of areas) {
-    heights.set(area.id, requiredByArea.get(area.id) ?? AREA_ROW_EMPTY_HEIGHT_PX);
-  }
 
   if (availableBodyHeightPx <= 0) {
     for (const area of areas) {
       const requiredPx = requiredByArea.get(area.id) ?? AREA_ROW_EMPTY_HEIGHT_PX;
-      result.set(area.id, buildAreaRowLayout(requiredPx, requiredPx));
-    }
-    return result;
-  }
-
-  const totalMinimum = sumHeights(areas, heights);
-  const dominantAreaId = findDominantAreaId(activeAreas, requiredByArea);
-
-  if (totalMinimum <= availableBodyHeightPx) {
-    distributeSlackToBusiestAreas(
-      heights,
-      activeAreas,
-      maxShiftCountByAreaId,
-      availableBodyHeightPx - totalMinimum
-    );
-  } else if (dominantAreaId) {
-    const tight = allocateHeightsWithDominantArea(
-      areas,
-      activeAreas,
-      requiredByArea,
-      dominantAreaId,
-      availableBodyHeightPx
-    );
-    for (const area of areas) {
-      heights.set(area.id, tight.get(area.id) ?? requiredByArea.get(area.id) ?? 0);
+      if (
+        isAreaRowFixedAtMinHeight(
+          area.id,
+          layoutActiveAreaIds,
+          layoutMinHeightAreaIds,
+        )
+      ) {
+        heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+      } else if (
+        isShiftAreaRow(area.id, layoutActiveAreaIds, maxShiftCountByAreaId)
+      ) {
+        heights.set(area.id, requiredPx);
+      } else {
+        heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+      }
     }
   } else {
-    const tight = allocateHeightsWhenSpaceIsTight(
+    const phase1MinTotalPx = computePhase1MinTotalPx(
       areas,
-      activeAreas,
+      layoutActiveAreaIds,
+      maxShiftCountByAreaId,
       requiredByArea,
-      availableBodyHeightPx
+      layoutMinHeightAreaIds,
     );
-    for (const area of areas) {
-      heights.set(area.id, tight.get(area.id) ?? requiredByArea.get(area.id) ?? 0);
+
+    if (phase1MinTotalPx > availableBodyHeightPx) {
+      applyPhase2Layout(
+        areas,
+        layoutActiveAreaIds,
+        maxShiftCountByAreaId,
+        availableBodyHeightPx,
+        heights,
+        layoutMinHeightAreaIds,
+      );
+    } else {
+      applyPhase1Layout(
+        areas,
+        layoutActiveAreaIds,
+        maxShiftCountByAreaId,
+        requiredByArea,
+        availableBodyHeightPx,
+        heights,
+        layoutMinHeightAreaIds,
+      );
     }
   }
-
-  normalizeHeightsToTarget(
-    areas,
-    activeAreas,
-    heights,
-    maxShiftCountByAreaId,
-    availableBodyHeightPx,
-    dominantAreaId
-  );
 
   for (const area of areas) {
     const requiredPx = requiredByArea.get(area.id) ?? AREA_ROW_EMPTY_HEIGHT_PX;
     const heightPx = clampAreaRowHeightPx(
-      heights.get(area.id) ?? requiredPx
+      heights.get(area.id) ?? requiredPx,
     );
     result.set(area.id, buildAreaRowLayout(requiredPx, heightPx));
   }
@@ -403,55 +791,30 @@ export function computeAreaRowLayouts(
 }
 
 export function buildAreaRowGridTrack(layout: AreaRowLayout): string {
-  const heightPx = clampAreaRowHeightPx(layout.heightPx);
-  return `minmax(${AREA_ROW_MIN_HEIGHT_PX}px, ${heightPx}px)`;
+  return `${clampAreaRowHeightPx(layout.heightPx)}px`;
 }
 
 export function cellShiftListNeedsScroll(
   laneCount: number,
-  rowLayout: AreaRowLayout
+  rowLayout: AreaRowLayout,
 ): boolean {
   if (laneCount === 0) return false;
   return !areaRowShiftStackFitsPx(laneCount, rowLayout.contentHeightPx);
 }
 
-/**
- * Scrollbar nur wo sinnvoll: kleine Bereiche scrollen nicht, solange sie ihre
- * volle Soll-Höhe erhalten haben — der dominante Bereich scrollt zuerst.
- */
 export function cellShiftListShouldEnableScroll(
   laneCount: number,
   rowLayout: AreaRowLayout,
-  options: {
-    dominantAreaId?: string | null;
-    areaId?: string;
-  } = {}
 ): boolean {
-  if (laneCount === 0) return false;
-
-  const { dominantAreaId, areaId } = options;
-
-  if (dominantAreaId && areaId && areaId !== dominantAreaId) {
-    if (rowLayout.heightPx >= rowLayout.requiredPx) {
-      return false;
-    }
-  }
-
-  if (dominantAreaId && areaId === dominantAreaId) {
-    if (rowLayout.heightPx < rowLayout.requiredPx) {
-      return true;
-    }
-  }
-
   return cellShiftListNeedsScroll(laneCount, rowLayout);
 }
 
 export function totalAssignedRowHeightPx(
   areas: readonly { id: string }[],
-  layouts: ReadonlyMap<string, AreaRowLayout>
+  layouts: ReadonlyMap<string, AreaRowLayout>,
 ): number {
   return areas.reduce(
     (sum, area) => sum + (layouts.get(area.id)?.heightPx ?? 0),
-    0
+    0,
   );
 }

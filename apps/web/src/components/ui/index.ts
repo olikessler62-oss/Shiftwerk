@@ -18,5 +18,6 @@ export {
   PencilIcon,
   PlusIcon,
   TrashIcon,
+  BellIcon,
 } from "./icons";
 export { Label, LabelMuted } from "./label";

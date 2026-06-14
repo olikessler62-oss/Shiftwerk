@@ -115,6 +115,8 @@ export {
   isMutableHourlyRate,
   parseHourlyRateAmount,
   parseValidFromDate,
+  validateHourlyRateEdit,
+  validateHourlyRateValidFromPolicy,
   validateMutableHourlyRateValidFrom,
   validateNewHourlyRate,
 } from "./profile-hourly-rate-validation";
@@ -272,3 +274,58 @@ export {
   shiftHotCutoffISO,
   shiftPurgeCutoffISO,
 } from "./shift-retention";
+export {
+  buildShiftConfirmationSnapshot,
+  isShiftConfirmationSnapshotStale,
+  shiftConfirmationSnapshotsEqual,
+  shouldResetConfirmationToProposed,
+  type ShiftConfirmationSnapshot,
+  type ShiftConfirmationSnapshotSource,
+} from "./shift-confirmation-snapshot";
+export {
+  profileEligibleForShiftConfirmationAssignment,
+  resolveConfirmationAssignPatch,
+  resolveInitialConfirmationStatus,
+  validateProfileForShiftConfirmationAssign,
+  SHIFT_CONFIRMATION_ASSIGN_GATE_ERROR,
+  type ShiftConfirmationAssignPatch,
+} from "./shift-confirmation-assign";
+export {
+  confirmationBatchIsDelta,
+  filterSendableProposedShifts,
+  filterShiftsForConfirmationSendScope,
+  isoWeekEndFromWeekStart,
+  isShiftEligibleForConfirmationSend,
+  isShiftProposedForSend,
+  resolveConfirmationNotificationChannel,
+  resolveConfirmationNotificationTemplateKey,
+  shiftToConfirmationSnapshot,
+  type ProposedShiftForSend,
+} from "./shift-confirmation-send";
+export {
+  businessMinutesBetween,
+  isShiftConfirmationPendingDue,
+  PENDING_BUSINESS_HOUR_END,
+  PENDING_BUSINESS_HOUR_START,
+  PENDING_BUSINESS_MINUTES_REQUIRED,
+} from "./business-minutes";
+export {
+  buildManagerPendingEscalationBody,
+  buildManagerPendingEscalationTitle,
+  buildPendingReminderNotificationBody,
+  buildPendingReminderNotificationTitle,
+  filterRequestedShiftsDueForPendingTransition,
+  isRequestedShiftDueForPendingTransition,
+  type RequestedShiftForPendingJob,
+  type ShiftConfirmationPendingJobResult,
+} from "./shift-confirmation-pending";
+export {
+  assertRespondItemsAllowed,
+  buildManagerResponseSummaryNotification,
+  decisionToConfirmationStatus,
+  isEmployeeRespondableConfirmationStatus,
+  validateConfirmationRespondItems,
+  EMPLOYEE_RESPONDABLE_CONFIRMATION_STATUSES,
+  type EmployeeRespondableConfirmationStatus,
+  type ShiftOpenForEmployeeResponse,
+} from "./shift-confirmation-respond";

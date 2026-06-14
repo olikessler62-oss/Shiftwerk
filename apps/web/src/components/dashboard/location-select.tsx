@@ -45,7 +45,7 @@ export function LocationSelect({
       disabled={pending || locations.length === 0}
       onChange={(e) => onChange(e.target.value)}
       aria-label={t("dashboard.selectLocation")}
-      className={cn("mt-1 !w-full min-w-0 max-w-full", className)}
+      className={cn("mt-1 min-w-0 max-w-full w-full", className)}
     >
       {locations.map((loc) => (
         <option key={loc.id} value={loc.id}>

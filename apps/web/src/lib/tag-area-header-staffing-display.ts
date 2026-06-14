@@ -87,12 +87,12 @@ function measureSegmentContent(
   measure: (text: string) => number
 ): number {
   if (!segment.timeText) {
-    return measureWithCountFont(segment.countText);
+    return measureStaffingHeaderCountText(segment.countText);
   }
   return (
     measure(`${segment.timeText}:`) +
     SEGMENT_FLEX_GAP_PX +
-    measureWithCountFont(segment.countText)
+    measureStaffingHeaderCountText(segment.countText)
   );
 }
 
@@ -125,7 +125,7 @@ function measureTextModeGroup(
   if (segments.length === 0) return 0;
 
   const textWidth = segments.reduce(
-    (sum, segment) => sum + measureWithCountFont(segment.countText),
+    (sum, segment) => sum + measureStaffingHeaderCountText(segment.countText),
     0
   );
 
@@ -135,7 +135,7 @@ function measureTextModeGroup(
     dividerWidth =
       joinWith === "pipe"
         ? dividerCount * measure("|")
-        : dividerCount * measureWithCountFont(" ");
+        : dividerCount * measureStaffingHeaderCountText(" ");
   }
 
   const gapCount = Math.max(0, segments.length + dividerCount - 1);
@@ -147,7 +147,7 @@ function measureTextModeGroup(
   );
 }
 
-function measureWithCountFont(text: string): number {
+export function measureStaffingHeaderCountText(text: string): number {
   if (typeof document === "undefined") return text.length * 6.5;
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");

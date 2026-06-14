@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { useComboboxCloseOnPointerDistance } from "@/lib/use-combobox-close";
 import type { Profile } from "@schichtwerk/types";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useOrganization } from "@/lib/org-features-provider";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
   settingsModalBodyPaddingClass,
@@ -166,6 +167,7 @@ export function ProfileFormModal({
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
+  const organization = useOrganization();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
@@ -178,6 +180,13 @@ export function ProfileFormModal({
   const [email, setEmail] = useState(() => initialEmail(profile?.email));
   const [mobilePhone, setMobilePhone] = useState(profile?.mobile_phone ?? "");
   const [color, setColor] = useState(profile?.color ?? "");
+  const [emailFallbackMode, setEmailFallbackMode] = useState(
+    profile?.email_fallback_mode ?? false
+  );
+  const showEmailFallbackSetting =
+    mode === "edit" &&
+    profile?.role === "basic" &&
+    organization.shift_confirmation_enabled;
 
   const usedColors = useMemo(() => {
     const set = new Set<string>();
@@ -222,6 +231,7 @@ export function ProfileFormModal({
         email,
         mobile_phone: mobilePhone,
         color,
+        ...(showEmailFallbackSetting ? { email_fallback_mode: emailFallbackMode } : {}),
       };
 
       const result =
@@ -331,6 +341,26 @@ export function ProfileFormModal({
                 {t("profiles.columnSchedulable")}
               </label>
             </div>
+
+            {showEmailFallbackSetting ? (
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-border"
+                  checked={emailFallbackMode}
+                  disabled={pending}
+                  onChange={(e) => setEmailFallbackMode(e.target.checked)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-foreground">
+                    {t("profiles.emailFallbackModeLabel")}
+                  </span>
+                  <span className="mt-1 block text-xs leading-snug text-muted">
+                    {t("profiles.emailFallbackModeHint")}
+                  </span>
+                </span>
+              </label>
+            ) : null}
 
             <div>
               <LabelMuted>{t("profiles.columnName")}</LabelMuted>

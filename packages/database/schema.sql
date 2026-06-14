@@ -12,6 +12,13 @@
 create type public.availability_status as enum ('available', 'unavailable', 'preferred');
 create type public.absence_type as enum ('vacation', 'sick', 'other');
 create type public.request_status as enum ('pending', 'approved', 'rejected', 'cancelled');
+create type public.shift_confirmation_status as enum (
+  'proposed',
+  'requested',
+  'confirmed',
+  'rejected',
+  'pending'
+);
 
 -- Organizations
 create table public.organizations (
@@ -23,6 +30,9 @@ create table public.organizations (
     check (planning_mode in ('simple', 'advanced')),
   industry text
     check (industry is null or industry in ('gastronomy', 'care', 'retail', 'other')),
+  allow_retroactive_compensation_entries boolean not null default true,
+  shift_confirmation_enabled boolean not null default false,
+  shift_confirmation_disclaimer text,
   created_at timestamptz not null default now()
 );
 
@@ -54,6 +64,8 @@ create table public.profiles (
   is_active boolean not null default true,
   schedulable boolean not null default true,
   sort_order int not null default 0,
+  app_registered_at timestamptz,
+  email_fallback_mode boolean not null default false,
   created_at timestamptz not null default now(),
   constraint profiles_email_length_check check (char_length(email) <= 60),
   constraint profiles_mobile_phone_check check (
@@ -322,7 +334,12 @@ create table public.shifts (
   ends_at timestamptz not null,
   notes text,
   created_by uuid references public.profiles (id) on delete set null,
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  confirmation_status public.shift_confirmation_status not null default 'confirmed',
+  confirmation_status_updated_at timestamptz not null default now(),
+  requested_at timestamptz,
+  pending_since timestamptz,
+  pending_reminder_sent_at timestamptz
 );
 
 create index shifts_area_shift_template_id_idx on public.shifts (area_shift_template_id);
@@ -332,6 +349,8 @@ create index shifts_org_location_date_idx on public.shifts (organization_id, loc
 create index shifts_location_id_idx on public.shifts (location_id);
 create index shifts_location_area_id_idx on public.shifts (location_area_id);
 create index shifts_employee_date_idx on public.shifts (employee_id, shift_date);
+create index shifts_confirmation_status_idx
+  on public.shifts (organization_id, confirmation_status, shift_date);
 
 create or replace function public.count_shifts_conflicting_with_absence_ranges(
   p_organization_id uuid,
@@ -604,6 +623,96 @@ create table public.swap_requests (
 
 create index swap_requests_org_idx on public.swap_requests (organization_id);
 
+-- Shift confirmation (Spec 008)
+create table public.shift_confirmation_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  shift_id uuid not null references public.shifts (id) on delete cascade,
+  actor_id uuid references public.profiles (id) on delete set null,
+  from_status public.shift_confirmation_status,
+  to_status public.shift_confirmation_status not null,
+  payload jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+create index shift_confirmation_events_shift_idx
+  on public.shift_confirmation_events (shift_id, created_at desc);
+
+create table public.shift_deletion_events (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  shift_id uuid not null,
+  deleted_by uuid not null references public.profiles (id) on delete restrict,
+  deleted_at timestamptz not null default now(),
+  snapshot jsonb not null
+);
+
+create index shift_deletion_events_org_deleted_at_idx
+  on public.shift_deletion_events (organization_id, deleted_at desc);
+
+create index shift_deletion_events_shift_id_idx
+  on public.shift_deletion_events (shift_id);
+
+create table public.confirmation_request_batches (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  employee_id uuid not null references public.profiles (id) on delete cascade,
+  sent_by uuid not null references public.profiles (id) on delete restrict,
+  scope text not null check (scope in (
+    'single_shift', 'employee_day', 'employee_week', 'bulk_week'
+  )),
+  week_start date not null,
+  week_end date not null,
+  is_delta boolean not null default false,
+  sent_at timestamptz not null default now()
+);
+
+create index confirmation_request_batches_employee_week_idx
+  on public.confirmation_request_batches (employee_id, week_start, week_end);
+
+create table public.confirmation_request_items (
+  id uuid primary key default gen_random_uuid(),
+  batch_id uuid not null references public.confirmation_request_batches (id) on delete cascade,
+  shift_id uuid not null references public.shifts (id) on delete cascade,
+  snapshot jsonb not null,
+  created_at timestamptz not null default now(),
+  unique (batch_id, shift_id)
+);
+
+create index confirmation_request_items_shift_idx
+  on public.confirmation_request_items (shift_id, created_at desc);
+
+create table public.notification_outbox (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  recipient_profile_id uuid not null references public.profiles (id) on delete cascade,
+  channel text not null check (channel in ('push', 'email')),
+  template_key text not null,
+  payload jsonb not null default '{}',
+  simulated boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index notification_outbox_org_created_idx
+  on public.notification_outbox (organization_id, created_at desc);
+
+create table public.manager_notifications (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  recipient_profile_id uuid not null references public.profiles (id) on delete cascade,
+  type text not null,
+  title text not null,
+  body text not null,
+  payload jsonb not null default '{}',
+  read_at timestamptz,
+  dismissed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index manager_notifications_recipient_idx
+  on public.manager_notifications (recipient_profile_id, created_at desc)
+  where dismissed_at is null;
+
 -- Updated_at trigger for shifts
 create or replace function public.set_updated_at()
 returns trigger
@@ -731,6 +840,12 @@ alter table public.shifts enable row level security;
 alter table public.availability enable row level security;
 alter table public.absence_requests enable row level security;
 alter table public.swap_requests enable row level security;
+alter table public.shift_confirmation_events enable row level security;
+alter table public.shift_deletion_events enable row level security;
+alter table public.confirmation_request_batches enable row level security;
+alter table public.confirmation_request_items enable row level security;
+alter table public.notification_outbox enable row level security;
+alter table public.manager_notifications enable row level security;
 
 -- Organizations
 create policy "org_select_member"
@@ -1360,6 +1475,122 @@ create policy "swap_update_manager_or_requester"
         select organization_id from private.current_profile()
         where permission_level in ('admin', 'manager')
       )
+    )
+  );
+
+-- Shift confirmation events
+create policy "shift_confirmation_events_select_manager"
+  on public.shift_confirmation_events for select
+  using (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
+create policy "shift_deletion_events_select_manager"
+  on public.shift_deletion_events for select
+  using (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
+create policy "shift_deletion_events_insert_manager"
+  on public.shift_deletion_events for insert
+  with check (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+    and deleted_by = auth.uid()
+  );
+
+create policy "confirmation_request_batches_select_manager"
+  on public.confirmation_request_batches for select
+  using (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
+create policy "confirmation_request_items_select_manager"
+  on public.confirmation_request_items for select
+  using (
+    batch_id in (
+      select b.id from public.confirmation_request_batches b
+      where b.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  );
+
+create policy "notification_outbox_select_manager"
+  on public.notification_outbox for select
+  using (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
+create policy "manager_notifications_select_own"
+  on public.manager_notifications for select
+  using (recipient_profile_id = auth.uid());
+
+create policy "manager_notifications_update_own"
+  on public.manager_notifications for update
+  using (recipient_profile_id = auth.uid())
+  with check (recipient_profile_id = auth.uid());
+
+create policy "shift_confirmation_events_insert_manager"
+  on public.shift_confirmation_events for insert
+  with check (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
+create policy "confirmation_request_batches_insert_manager"
+  on public.confirmation_request_batches for insert
+  with check (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
+create policy "confirmation_request_items_insert_manager"
+  on public.confirmation_request_items for insert
+  with check (
+    batch_id in (
+      select b.id from public.confirmation_request_batches b
+      where b.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  );
+
+create policy "notification_outbox_insert_manager"
+  on public.notification_outbox for insert
+  with check (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
+    )
+  );
+
+create policy "manager_notifications_insert_manager"
+  on public.manager_notifications for insert
+  with check (
+    organization_id in (
+      select organization_id from private.current_profile()
+      where permission_level in ('admin', 'manager')
     )
   );
 

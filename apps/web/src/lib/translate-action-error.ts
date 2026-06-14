@@ -47,13 +47,16 @@ export function translateActionError(message: string, t: Translator): string {
 
   if (
     message.startsWith(MIN_REST_PERIOD_PREFIX) &&
-    message.endsWith(MIN_REST_PERIOD_SUFFIX)
+    message.includes(MIN_REST_PERIOD_SUFFIX)
   ) {
+    const suffixIdx = message.indexOf(MIN_REST_PERIOD_SUFFIX);
     const hours = message.slice(
       MIN_REST_PERIOD_PREFIX.length,
-      message.length - MIN_REST_PERIOD_SUFFIX.length
+      suffixIdx
     );
-    return t("shiftAssign.minRestPeriod", { hours });
+    const base = t("shiftAssign.minRestPeriod", { hours });
+    const remainder = message.slice(suffixIdx + MIN_REST_PERIOD_SUFFIX.length);
+    return remainder ? `${base}${remainder}` : base;
   }
 
   return message;

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
-import { useOrgFeatures } from "@/lib/org-features-provider";
+import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
 
 const NAV_LINKS = [
   { href: "/dashboard", labelKey: "nav.dashboard" },
@@ -34,13 +34,20 @@ const settingsSubLinkClass = (active: boolean) =>
 
 type Props = {
   onNavigate?: () => void;
+  viewerRole?: string;
 };
 
-export function SidebarNav({ onNavigate }: Props) {
+export function SidebarNav({ onNavigate, viewerRole }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const t = useTranslations();
   const features = useOrgFeatures();
+  const organization = useOrganization();
+  const outboxPath = "/settings/notifications-outbox";
+  const outboxActive = pathname === outboxPath;
+  const showOutboxLink =
+    organization.shift_confirmation_enabled &&
+    (viewerRole === "admin" || process.env.NODE_ENV === "development");
   const standorteOpen = searchParams.get("standorte") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
   const rollenOpen = searchParams.get("rollen") === "1";
@@ -48,6 +55,7 @@ export function SidebarNav({ onNavigate }: Props) {
   const sonderzuschlaegeOpen = searchParams.get("sonderzuschlaege") === "1";
   const abwesenheitenOpen = searchParams.get("abwesenheiten") === "1";
   const planungsmodusOpen = searchParams.get("planungsmodus") === "1";
+  const arbeitsentgeltOpen = searchParams.get("arbeitsentgelt") === "1";
   const settingsModalOpen =
     standorteOpen ||
     profilesOpen ||
@@ -55,7 +63,9 @@ export function SidebarNav({ onNavigate }: Props) {
     qualifikationenOpen ||
     sonderzuschlaegeOpen ||
     abwesenheitenOpen ||
-    planungsmodusOpen;
+    planungsmodusOpen ||
+    arbeitsentgeltOpen ||
+    outboxActive;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
@@ -81,6 +91,7 @@ export function SidebarNav({ onNavigate }: Props) {
       | "sonderzuschlaege"
       | "abwesenheiten"
       | "planungsmodus"
+      | "arbeitsentgelt"
   ) {
     const params = new URLSearchParams({ [flag]: "1" });
     if (pathname === "/dashboard") {
@@ -97,6 +108,11 @@ export function SidebarNav({ onNavigate }: Props) {
       flag: "planungsmodus" as const,
       labelKey: "nav.planningMode",
       open: planungsmodusOpen,
+    },
+    {
+      flag: "arbeitsentgelt" as const,
+      labelKey: "nav.compensationSettings",
+      open: arbeitsentgeltOpen,
     },
     ...(features.areas
       ? [{ flag: "standorte" as const, labelKey: "nav.locations", open: standorteOpen }]
@@ -172,6 +188,15 @@ export function SidebarNav({ onNavigate }: Props) {
                 {t(item.labelKey)}
               </Link>
             ))}
+            {showOutboxLink ? (
+              <Link
+                href={outboxPath}
+                onClick={onNavigate}
+                className={settingsSubLinkClass(outboxActive)}
+              >
+                {t("nav.notificationOutbox")}
+              </Link>
+            ) : null}
           </div>
         </div>
       </div>

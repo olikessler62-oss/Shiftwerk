@@ -5,7 +5,6 @@ import {
   deleteProfileHourlyRate,
   fetchProfileHourlyRates,
 } from "@/app/actions/profile-hourly-rates";
-import { isMutableHourlyRate } from "@schichtwerk/database";
 import type {
   Profile,
   ProfileHourlyRate,
@@ -17,6 +16,7 @@ import { DeleteConfirmModal } from "./delete-confirm-modal";
 import {
   formatAmountLabel,
   formatDateLabel,
+  sortProfileHourlyRatesByValidFrom,
 } from "@/lib/profile-hourly-rate-display";
 import { ProfileHourlyRateFormModal } from "./profile-hourly-rate-form-modal";
 import {
@@ -74,8 +74,8 @@ function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
 }
 
 function resolveDefaultSelectedRateId(rates: ProfileHourlyRate[]): string | null {
-  const openRate = rates.find((rate) => rate.valid_to === null);
-  return openRate?.id ?? rates[0]?.id ?? null;
+  const sorted = sortProfileHourlyRatesByValidFrom(rates);
+  return sorted.at(-1)?.id ?? null;
 }
 
 type Props = {
@@ -151,24 +151,14 @@ export function ProfileCompensationPanelModal({
     () => rates.find((rate) => rate.id === selectedRateId) ?? null,
     [rates, selectedRateId]
   );
-  const openRate = useMemo(
-    () => rates.find((rate) => rate.valid_to === null) ?? null,
+  const sortedRates = useMemo(
+    () => sortProfileHourlyRatesByValidFrom(rates),
     [rates]
   );
   const defaultCurrency = rates[0]?.currency ?? "EUR";
-  const openRateMutable =
-    !!openRate && !!serverToday && isMutableHourlyRate(openRate.valid_from, serverToday);
-  const selectedRateMutable =
-    !!selectedRate &&
-    !!serverToday &&
-    isMutableHourlyRate(selectedRate.valid_from, serverToday);
-  const canCreate =
-    !!serverToday &&
-    (rates.length === 0 ||
-      !openRate ||
-      (!!openRate && !isMutableHourlyRate(openRate.valid_from, serverToday)));
-  const canEdit = selectedRateMutable;
-  const canDelete = selectedRateMutable;
+  const canCreate = !!serverToday;
+  const canEdit = !!selectedRate;
+  const canDelete = !!selectedRate;
 
   useScrollToSettingsListItem(rates, scrollToItemId, () =>
     setScrollToItemId(null)
@@ -352,9 +342,6 @@ export function ProfileCompensationPanelModal({
                     {t("profiles.hourlyRateColumnValidFrom")}
                   </th>
                   <th className={settingsStickyColumnHeaderClass()}>
-                    {t("profiles.hourlyRateColumnValidTo")}
-                  </th>
-                  <th className={settingsStickyColumnHeaderClass()}>
                     {t("profiles.hourlyRateColumnCreatedBy")}
                   </th>
                   <th
@@ -364,11 +351,9 @@ export function ProfileCompensationPanelModal({
                 </tr>
               </thead>
               <tbody>
-                {rates.map((rate) => {
+                {sortedRates.map((rate, index) => {
                   const isSelected = rate.id === selectedRateId;
-                  const rateMutable =
-                    !!serverToday &&
-                    isMutableHourlyRate(rate.valid_from, serverToday);
+                  const isCurrent = index === sortedRates.length - 1;
                   return (
                     <tr
                       key={rate.id}
@@ -380,12 +365,6 @@ export function ProfileCompensationPanelModal({
                       onDoubleClick={(e) => {
                         e.preventDefault();
                         window.getSelection()?.removeAllRanges();
-                        if (
-                          !serverToday ||
-                          !isMutableHourlyRate(rate.valid_from, serverToday)
-                        ) {
-                          return;
-                        }
                         setFormMode({ type: "edit", rate });
                       }}
                       className={settingsDataRowClass(isSelected)}
@@ -404,11 +383,11 @@ export function ProfileCompensationPanelModal({
                       </td>
                       <td className={settingsDataCellClass(isSelected)}>
                         {formatDateLabel(rate.valid_from, locale)}
-                      </td>
-                      <td className={settingsDataCellClass(isSelected)}>
-                        {rate.valid_to
-                          ? formatDateLabel(rate.valid_to, locale)
-                          : t("profiles.hourlyRateOpen")}
+                        {isCurrent ? (
+                          <span className="ml-1 text-muted">
+                            ({t("profiles.hourlyRateOpen")})
+                          </span>
+                        ) : null}
                       </td>
                       <td
                         className={settingsDataCellClass(isSelected, {
@@ -424,7 +403,7 @@ export function ProfileCompensationPanelModal({
                       <td className={settingsListRowDeleteCellClass(isSelected)}>
                         <SettingsListRowDeleteButton
                           label={t("profiles.delete")}
-                          disabled={loading || pending || !rateMutable}
+                          disabled={loading || pending}
                           showTooltip={false}
                           onClick={() => {
                             setSelectedRateId(rate.id);
@@ -490,7 +469,7 @@ export function ProfileCompensationPanelModal({
           mode="create"
           profileId={profile.id}
           serverToday={serverToday}
-          currentOpenRate={openRateMutable ? null : currentRate}
+          rates={rates}
           defaultCurrency={defaultCurrency}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
@@ -501,6 +480,7 @@ export function ProfileCompensationPanelModal({
           mode="edit"
           profileId={profile.id}
           serverToday={serverToday}
+          rates={rates}
           editingRate={formMode.rate}
           defaultCurrency={defaultCurrency}
           onClose={() => setFormMode(null)}

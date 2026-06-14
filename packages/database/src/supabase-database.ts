@@ -3,6 +3,7 @@ import type {
   AbsenceType,
   AreaShiftTemplateWithBreaks,
   AreaQualificationTemplateEntry,
+  ConfirmationRequestScope,
   Location,
   LocationArea,
   LocationAreaServiceHour,
@@ -48,6 +49,7 @@ import {
   applySortOrderBatch,
   validateReorderPermutation,
 } from "./reorder-sort-order";
+import { buildShiftDeletionSnapshot } from "./shift-deletion-audit";
 import {
   isServiceHoursTableUnavailable,
   SERVICE_HOURS_MIGRATION_HINT,
@@ -68,6 +70,37 @@ import {
   seedDefaultRoles,
 } from "./utils";
 import { seedOrganizationFromIndustryTemplate } from "./seed-organization-from-template";
+import {
+  confirmationBatchIsDelta,
+  filterSendableProposedShifts,
+  parseStoredConfirmationSnapshot,
+  resolveConfirmationNotificationChannel,
+  resolveConfirmationNotificationTemplateKey,
+  shiftToConfirmationSnapshot,
+  type ProposedShiftForSend,
+} from "./shift-confirmation-send";
+import {
+  buildManagerPendingEscalationBody,
+  buildManagerPendingEscalationTitle,
+  filterRequestedShiftsDueForPendingTransition,
+  type RequestedShiftForPendingJob,
+  type ShiftConfirmationPendingJobResult,
+} from "./shift-confirmation-pending";
+import { businessMinutesBetween } from "./business-minutes";
+import { resolveOrganizationTimeZone } from "./organization-timezone";
+import {
+  assertRespondItemsAllowed,
+  buildManagerResponseSummaryNotification,
+  decisionToConfirmationStatus,
+  isEmployeeRespondableConfirmationStatus,
+  validateConfirmationRespondItems,
+} from "./shift-confirmation-respond";
+import type {
+  ConfirmationRespondItem,
+  ConfirmationWeekItem,
+  ConfirmationWeekResponse,
+} from "@schichtwerk/types";
+import type { ShiftConfirmationSnapshot } from "./shift-confirmation-snapshot";
 
 const T = Schema.tables;
 const PROFILE_SELECT = "*, roles!inner(permission_level, name)";
@@ -90,8 +123,47 @@ function mapProfile(row: ProfileRow): Profile {
   const { roles: _roles, ...rest } = row;
   return {
     ...rest,
+    app_registered_at: rest.app_registered_at ?? null,
+    email_fallback_mode: rest.email_fallback_mode ?? false,
     role: roleRel?.permission_level ?? "basic",
     role_name: roleRel?.name ?? "",
+  };
+}
+
+function mapConfirmationWeekRow(
+  row: Record<string, unknown>,
+  organizationDisclaimer: string | null
+): ConfirmationWeekItem | null {
+  const status = row.confirmation_status as import("@schichtwerk/types").ShiftConfirmationStatus;
+  if (!isEmployeeRespondableConfirmationStatus(status)) return null;
+
+  const locationRel = row.locations as
+    | { name: string }
+    | { name: string }[]
+    | null;
+  const areaRel = row.location_areas as
+    | { name: string }
+    | { name: string }[]
+    | null;
+  const templateRel = row.area_shift_templates as
+    | { name: string }
+    | { name: string }[]
+    | null;
+  const location = Array.isArray(locationRel) ? locationRel[0] : locationRel;
+  const area = Array.isArray(areaRel) ? areaRel[0] : areaRel;
+  const template = Array.isArray(templateRel) ? templateRel[0] : templateRel;
+
+  return {
+    shiftId: row.id as string,
+    status,
+    shiftDate: row.shift_date as string,
+    startsAt: row.starts_at as string,
+    endsAt: row.ends_at as string,
+    locationName: location?.name ?? "",
+    areaName: area?.name ?? "",
+    templateName: template?.name ?? null,
+    jobName: null,
+    disclaimer: organizationDisclaimer,
   };
 }
 
@@ -418,7 +490,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.organizations)
       .select(
-        "id, name, timezone, country_code, planning_mode, industry, created_at"
+        "id, name, timezone, country_code, planning_mode, industry, allow_retroactive_compensation_entries, shift_confirmation_enabled, shift_confirmation_disclaimer, created_at"
       )
       .eq("id", id)
       .maybeSingle();
@@ -431,6 +503,12 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       country_code: data.country_code as string,
       planning_mode: normalizePlanningMode(data.planning_mode),
       industry: normalizeIndustry(data.industry),
+      allow_retroactive_compensation_entries:
+        (data.allow_retroactive_compensation_entries as boolean | null) ?? true,
+      shift_confirmation_enabled:
+        (data.shift_confirmation_enabled as boolean | null) ?? false,
+      shift_confirmation_disclaimer:
+        (data.shift_confirmation_disclaimer as string | null) ?? null,
       created_at: data.created_at as string,
     };
   }
@@ -465,6 +543,39 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { error } = await this.client
       .from(T.organizations)
       .update({ planning_mode: planningMode })
+      .eq("id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async updateOrganizationAllowRetroactiveCompensationEntries(
+    organizationId: string,
+    allowed: boolean
+  ) {
+    const { error } = await this.client
+      .from(T.organizations)
+      .update({ allow_retroactive_compensation_entries: allowed })
+      .eq("id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async updateOrganizationShiftConfirmationEnabled(
+    organizationId: string,
+    enabled: boolean
+  ) {
+    const { error } = await this.client
+      .from(T.organizations)
+      .update({ shift_confirmation_enabled: enabled })
+      .eq("id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async updateOrganizationShiftConfirmationDisclaimer(
+    organizationId: string,
+    disclaimer: string | null
+  ) {
+    const { error } = await this.client
+      .from(T.organizations)
+      .update({ shift_confirmation_disclaimer: disclaimer })
       .eq("id", organizationId);
     if (error) throw new Error(error.message);
   }
@@ -651,6 +762,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       email: string;
       mobile_phone: string | null;
       color: string | null;
+      email_fallback_mode?: boolean;
     }
   ) {
     const { error } = await this.client
@@ -662,6 +774,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         email: row.email,
         mobile_phone: row.mobile_phone,
         color: row.color,
+        ...(row.email_fallback_mode !== undefined
+          ? { email_fallback_mode: row.email_fallback_mode }
+          : {}),
       })
       .eq("id", id)
       .eq("organization_id", organizationId);
@@ -1387,6 +1502,55 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return data as { id: string; valid_from: string } | null;
   }
 
+  private async rechainProfileHourlyRates(
+    organizationId: string,
+    profileId: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.profileHourlyRates)
+      .select("id, valid_from")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .order("valid_from", { ascending: true });
+    if (error) throw new Error(error.message);
+
+    const rates = data ?? [];
+    for (let i = 0; i < rates.length; i++) {
+      const nextValidTo =
+        i < rates.length - 1
+          ? dayBefore((rates[i + 1].valid_from as string).slice(0, 10))
+          : null;
+      const { error: updateError } = await this.client
+        .from(T.profileHourlyRates)
+        .update({ valid_to: nextValidTo })
+        .eq("id", rates[i].id as string)
+        .eq("organization_id", organizationId);
+      if (updateError) throw new Error(updateError.message);
+    }
+  }
+
+  private async assertUniqueProfileHourlyRateValidFrom(
+    organizationId: string,
+    profileId: string,
+    validFrom: string,
+    excludeRateId?: string
+  ) {
+    let query = this.client
+      .from(T.profileHourlyRates)
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId)
+      .eq("valid_from", validFrom);
+    if (excludeRateId) {
+      query = query.neq("id", excludeRateId);
+    }
+    const { data, error } = await query.maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) {
+      throw new Error("Für dieses Gültig-ab-Datum existiert bereits ein Stundensatz.");
+    }
+  }
+
   async listProfileHourlyRates(
     organizationId: string,
     profileId: string,
@@ -1400,7 +1564,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .select(PROFILE_HOURLY_RATE_SELECT)
       .eq("organization_id", organizationId)
       .eq("profile_id", profileId)
-      .order("valid_from", { ascending: false })
+      .order("valid_from", { ascending: true })
       .limit(limit);
     if (error) throw new Error(error.message);
     return (data ?? []).map((row) =>
@@ -1484,25 +1648,36 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error("Erfasser nicht gefunden");
     }
 
-    const { data: openRate, error: openError } = await this.client
+    await this.assertUniqueProfileHourlyRateValidFrom(
+      organizationId,
+      profileId,
+      input.valid_from
+    );
+
+    const { data: existingRows, error: listError } = await this.client
       .from(T.profileHourlyRates)
       .select("id, valid_from")
       .eq("organization_id", organizationId)
       .eq("profile_id", profileId)
-      .is("valid_to", null)
-      .maybeSingle();
-    if (openError) throw new Error(openError.message);
+      .order("valid_from", { ascending: true });
+    if (listError) throw new Error(listError.message);
 
-    if (openRate && input.valid_from <= (openRate.valid_from as string).slice(0, 10)) {
-      throw new Error("Das Gültig-ab-Datum muss nach dem aktuellen Satz liegen.");
-    }
+    const existing = existingRows ?? [];
+    const successor = existing.find(
+      (row) =>
+        (row.valid_from as string).slice(0, 10) > input.valid_from
+    );
+    const insertValidTo = successor
+      ? dayBefore((successor.valid_from as string).slice(0, 10))
+      : null;
 
-    if (openRate) {
+    if (insertValidTo === null) {
       const { error: closeError } = await this.client
         .from(T.profileHourlyRates)
         .update({ valid_to: dayBefore(input.valid_from) })
-        .eq("id", openRate.id as string)
-        .eq("organization_id", organizationId);
+        .eq("organization_id", organizationId)
+        .eq("profile_id", profileId)
+        .is("valid_to", null);
       if (closeError) throw new Error(closeError.message);
     }
 
@@ -1514,7 +1689,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         amount: input.amount,
         currency: "EUR",
         valid_from: input.valid_from,
-        valid_to: null,
+        valid_to: insertValidTo,
         created_by: input.created_by,
       })
       .select(PROFILE_HOURLY_RATE_SELECT)
@@ -1522,7 +1697,18 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (insertError || !inserted) {
       throw new Error(insertError?.message ?? "Stundensatz konnte nicht gespeichert werden");
     }
-    return mapProfileHourlyRate(inserted as ProfileHourlyRateRow);
+
+    await this.rechainProfileHourlyRates(organizationId, profileId);
+
+    const refreshed = await this.getProfileHourlyRateById(
+      organizationId,
+      profileId,
+      inserted.id as string
+    );
+    if (!refreshed) {
+      throw new Error("Stundensatz konnte nicht geladen werden");
+    }
+    return refreshed;
   }
 
   async updateProfileHourlyRate(
@@ -1532,8 +1718,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     input: {
       amount: number;
       valid_from: string;
-    },
-    referenceDate: string
+    }
   ) {
     const rate = await this.getProfileHourlyRateById(
       organizationId,
@@ -1543,44 +1728,17 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (!rate) {
       throw new Error("Stundensatz nicht gefunden");
     }
-    if (!isMutableHourlyRate(rate.valid_from, referenceDate)) {
-      throw new Error(
-        "Nur Entgelte mit Gültig-ab ab heute können geändert oder gelöscht werden."
-      );
-    }
-
-    const validFromCheck = validateMutableHourlyRateValidFrom(
-      input.valid_from,
-      referenceDate
-    );
-    if (!validFromCheck.ok) throw new Error(validFromCheck.error);
-
-    const successor = await this.findSuccessorProfileHourlyRate(
-      organizationId,
-      profileId,
-      rate.valid_from
-    );
-    if (successor && input.valid_from >= successor.valid_from.slice(0, 10)) {
-      throw new Error("Das Gültig-ab-Datum muss vor dem nächsten Satz liegen.");
-    }
 
     if (input.valid_from !== rate.valid_from) {
-      const predecessor = await this.findPredecessorProfileHourlyRate(
+      await this.assertUniqueProfileHourlyRateValidFrom(
         organizationId,
         profileId,
-        rate.valid_from
+        input.valid_from,
+        rateId
       );
-      if (predecessor) {
-        const { error: predError } = await this.client
-          .from(T.profileHourlyRates)
-          .update({ valid_to: dayBefore(input.valid_from) })
-          .eq("id", predecessor.id)
-          .eq("organization_id", organizationId);
-        if (predError) throw new Error(predError.message);
-      }
     }
 
-    const { data: updated, error: updateError } = await this.client
+    const { error: updateError } = await this.client
       .from(T.profileHourlyRates)
       .update({
         amount: input.amount,
@@ -1588,22 +1746,30 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       })
       .eq("id", rateId)
       .eq("organization_id", organizationId)
-      .eq("profile_id", profileId)
-      .select(PROFILE_HOURLY_RATE_SELECT)
-      .single();
-    if (updateError || !updated) {
+      .eq("profile_id", profileId);
+    if (updateError) {
       throw new Error(
-        updateError?.message ?? "Stundensatz konnte nicht aktualisiert werden"
+        updateError.message ?? "Stundensatz konnte nicht aktualisiert werden"
       );
     }
-    return mapProfileHourlyRate(updated as ProfileHourlyRateRow);
+
+    await this.rechainProfileHourlyRates(organizationId, profileId);
+
+    const refreshed = await this.getProfileHourlyRateById(
+      organizationId,
+      profileId,
+      rateId
+    );
+    if (!refreshed) {
+      throw new Error("Stundensatz konnte nicht geladen werden");
+    }
+    return refreshed;
   }
 
   async deleteProfileHourlyRate(
     organizationId: string,
     profileId: string,
-    rateId: string,
-    referenceDate: string
+    rateId: string
   ) {
     const rate = await this.getProfileHourlyRateById(
       organizationId,
@@ -1613,22 +1779,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (!rate) {
       throw new Error("Stundensatz nicht gefunden");
     }
-    if (!isMutableHourlyRate(rate.valid_from, referenceDate)) {
-      throw new Error(
-        "Nur Entgelte mit Gültig-ab ab heute können geändert oder gelöscht werden."
-      );
-    }
-
-    const predecessor = await this.findPredecessorProfileHourlyRate(
-      organizationId,
-      profileId,
-      rate.valid_from
-    );
-    const successor = await this.findSuccessorProfileHourlyRate(
-      organizationId,
-      profileId,
-      rate.valid_from
-    );
 
     const { error: deleteError } = await this.client
       .from(T.profileHourlyRates)
@@ -1638,17 +1788,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("profile_id", profileId);
     if (deleteError) throw new Error(deleteError.message);
 
-    if (predecessor) {
-      const nextValidTo = successor
-        ? dayBefore(successor.valid_from.slice(0, 10))
-        : null;
-      const { error: predError } = await this.client
-        .from(T.profileHourlyRates)
-        .update({ valid_to: nextValidTo })
-        .eq("id", predecessor.id)
-        .eq("organization_id", organizationId);
-      if (predError) throw new Error(predError.message);
-    }
+    await this.rechainProfileHourlyRates(organizationId, profileId);
   }
 
   async listCompensationSurchargeTypes(organizationId: string) {
@@ -3134,7 +3274,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data } = await this.client
       .from(T.shifts)
       .select(
-        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
+        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, confirmation_status, requested_at, pending_since, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
       )
       .eq("organization_id", organizationId)
       .eq("location_id", locationId)
@@ -3160,7 +3300,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, employee_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+        "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at"
       )
       .eq("employee_id", employeeId)
       .eq("shift_date", shiftDate)
@@ -3176,7 +3316,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, employee_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+        "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at"
       )
       .eq("employee_id", employeeId)
       .in("shift_date", uniqueDates)
@@ -3185,11 +3325,54 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []) as EmployeeShiftRecord[];
   }
 
+  async listShiftsForEmployeeRestCheck(
+    employeeId: string,
+    startsAt: string,
+    endsAt: string,
+    shiftDate: string
+  ) {
+    const lookbackMs = 36 * 60 * 60 * 1000;
+    const newStartMs = new Date(startsAt).getTime();
+    const newEndMs = new Date(endsAt).getTime();
+    const lookbackIso = new Date(newStartMs - lookbackMs).toISOString();
+    const lookaheadIso = new Date(newEndMs + lookbackMs).toISOString();
+    const select =
+      "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at";
+
+    const [priorResult, nextResult] = await Promise.all([
+      this.client
+        .from(T.shifts)
+        .select(select)
+        .eq("employee_id", employeeId)
+        .gt("ends_at", lookbackIso)
+        .lte("ends_at", startsAt)
+        .neq("shift_date", shiftDate)
+        .order("ends_at"),
+      this.client
+        .from(T.shifts)
+        .select(select)
+        .eq("employee_id", employeeId)
+        .gte("starts_at", endsAt)
+        .lt("starts_at", lookaheadIso)
+        .neq("shift_date", shiftDate)
+        .order("starts_at"),
+    ]);
+
+    if (priorResult.error) throw new Error(priorResult.error.message);
+    if (nextResult.error) throw new Error(nextResult.error.message);
+
+    const byId = new Map<string, EmployeeShiftRecord>();
+    for (const row of [...(priorResult.data ?? []), ...(nextResult.data ?? [])]) {
+      byId.set(row.id as string, row as EmployeeShiftRecord);
+    }
+    return [...byId.values()];
+  }
+
   async getShiftRecordById(id: string, organizationId: string) {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, employee_id, location_id, location_area_id, shift_date, starts_at, ends_at, created_by"
+        "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at"
       )
       .eq("id", id)
       .eq("organization_id", organizationId)
@@ -3235,6 +3418,11 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     starts_at: string;
     ends_at: string;
     created_by: string;
+    confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
+    confirmation_status_updated_at?: string;
+    requested_at?: string | null;
+    pending_since?: string | null;
+    pending_reminder_sent_at?: string | null;
   }) {
     const { area_shift_template_id, ...rest } = row;
     const payload =
@@ -3259,6 +3447,11 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       starts_at: string;
       ends_at: string;
       created_by: string;
+      confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
+      confirmation_status_updated_at?: string;
+      requested_at?: string | null;
+      pending_since?: string | null;
+      pending_reminder_sent_at?: string | null;
     }
   ) {
     const { area_shift_template_id, ...rest } = row;
@@ -3270,7 +3463,24 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (error) throw new Error(error.message);
   }
 
-  async deleteShift(id: string, organizationId: string) {
+  async deleteShift(id: string, organizationId: string, deletedBy: string) {
+    const shift = await this.getShiftRecordById(id, organizationId);
+    if (!shift) {
+      throw new Error("Schicht nicht gefunden");
+    }
+
+    const deletedAt = new Date().toISOString();
+    const { error: auditError } = await this.client
+      .from(T.shiftDeletionEvents)
+      .insert({
+        organization_id: organizationId,
+        shift_id: id,
+        deleted_by: deletedBy,
+        deleted_at: deletedAt,
+        snapshot: buildShiftDeletionSnapshot(shift),
+      });
+    if (auditError) throw new Error(auditError.message);
+
     const { error } = await this.client
       .from(T.shifts)
       .delete()
@@ -3369,6 +3579,641 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     );
     if (error) throw new Error(error.message);
     return Number(data ?? 0);
+  }
+
+  async listProposedShiftsForConfirmationSend(
+    organizationId: string,
+    options: {
+      weekStart: string;
+      weekEnd: string;
+      locationId?: string;
+      employeeId?: string;
+    }
+  ): Promise<ProposedShiftForSend[]> {
+    let query = this.client
+      .from(T.shifts)
+      .select(
+        "id, organization_id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, confirmation_status"
+      )
+      .eq("organization_id", organizationId)
+      .eq("confirmation_status", "proposed")
+      .gte("shift_date", options.weekStart)
+      .lte("shift_date", options.weekEnd);
+
+    if (options.locationId) {
+      query = query.eq("location_id", options.locationId);
+    }
+    if (options.employeeId) {
+      query = query.eq("employee_id", options.employeeId);
+    }
+
+    const { data, error } = await query.order("shift_date").order("starts_at");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ProposedShiftForSend[];
+  }
+
+  async getLatestConfirmationSnapshotsByShiftIds(
+    shiftIds: string[]
+  ): Promise<Map<string, ShiftConfirmationSnapshot>> {
+    const uniqueIds = [...new Set(shiftIds.filter(Boolean))];
+    const map = new Map<string, ShiftConfirmationSnapshot>();
+    if (!uniqueIds.length) return map;
+
+    const { data, error } = await this.client
+      .from(T.confirmationRequestItems)
+      .select("shift_id, snapshot, created_at")
+      .in("shift_id", uniqueIds)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    for (const row of data ?? []) {
+      const shiftId = row.shift_id as string;
+      if (map.has(shiftId)) continue;
+      const snapshot = parseStoredConfirmationSnapshot(row.snapshot);
+      if (snapshot) map.set(shiftId, snapshot);
+    }
+
+    return map;
+  }
+
+  async sendConfirmationRequestForEmployee(input: {
+    organizationId: string;
+    employeeId: string;
+    sentBy: string;
+    scope: ConfirmationRequestScope;
+    weekStart: string;
+    weekEnd: string;
+    shifts: ProposedShiftForSend[];
+    profile: Pick<Profile, "email_fallback_mode">;
+  }): Promise<{ batchId: string; sentCount: number; isDelta: boolean }> {
+    const now = new Date().toISOString();
+    const shiftIds = input.shifts.map((shift) => shift.id);
+    const latestSnapshots = await this.getLatestConfirmationSnapshotsByShiftIds(
+      shiftIds
+    );
+    const sendable = filterSendableProposedShifts(input.shifts, latestSnapshots);
+    if (!sendable.length) {
+      throw new Error("Keine sendbaren Schichten für diesen Mitarbeiter.");
+    }
+
+    const isDelta = confirmationBatchIsDelta(sendable, latestSnapshots);
+    const templateKey = resolveConfirmationNotificationTemplateKey(isDelta);
+    const channel = resolveConfirmationNotificationChannel(input.profile);
+
+    const { data: batchRow, error: batchError } = await this.client
+      .from(T.confirmationRequestBatches)
+      .insert({
+        organization_id: input.organizationId,
+        employee_id: input.employeeId,
+        sent_by: input.sentBy,
+        scope: input.scope,
+        week_start: input.weekStart,
+        week_end: input.weekEnd,
+        is_delta: isDelta,
+      })
+      .select("id")
+      .single();
+
+    if (batchError || !batchRow) {
+      throw new Error(batchError?.message ?? "Versand-Batch fehlgeschlagen");
+    }
+
+    const batchId = batchRow.id as string;
+
+    for (const shift of sendable) {
+      const snapshot = shiftToConfirmationSnapshot(shift);
+      const fromStatus = shift.confirmation_status ?? "proposed";
+
+      const { error: itemError } = await this.client
+        .from(T.confirmationRequestItems)
+        .insert({
+          batch_id: batchId,
+          shift_id: shift.id,
+          snapshot,
+        });
+      if (itemError) throw new Error(itemError.message);
+
+      const { error: shiftError } = await this.client
+        .from(T.shifts)
+        .update({
+          confirmation_status: "requested",
+          confirmation_status_updated_at: now,
+          requested_at: now,
+          pending_since: null,
+          pending_reminder_sent_at: null,
+        })
+        .eq("id", shift.id)
+        .eq("organization_id", input.organizationId)
+        .eq("confirmation_status", "proposed");
+
+      if (shiftError) throw new Error(shiftError.message);
+
+      const { error: eventError } = await this.client
+        .from(T.shiftConfirmationEvents)
+        .insert({
+          organization_id: input.organizationId,
+          shift_id: shift.id,
+          actor_id: input.sentBy,
+          from_status: fromStatus,
+          to_status: "requested",
+          payload: {
+            batch_id: batchId,
+            scope: input.scope,
+            is_delta: isDelta,
+          },
+        });
+      if (eventError) throw new Error(eventError.message);
+    }
+
+    const { error: outboxError } = await this.client
+      .from(T.notificationOutbox)
+      .insert({
+        organization_id: input.organizationId,
+        recipient_profile_id: input.employeeId,
+        channel,
+        template_key: templateKey,
+        payload: {
+          batch_id: batchId,
+          scope: input.scope,
+          week_start: input.weekStart,
+          week_end: input.weekEnd,
+          shift_count: sendable.length,
+          is_delta: isDelta,
+        },
+        simulated: true,
+      });
+    if (outboxError) throw new Error(outboxError.message);
+
+    return {
+      batchId,
+      sentCount: sendable.length,
+      isDelta,
+    };
+  }
+
+  async runShiftConfirmationPendingJob(
+    nowInput?: Date
+  ): Promise<ShiftConfirmationPendingJobResult> {
+    const now = nowInput ?? new Date();
+    const nowIso = now.toISOString();
+    const result: ShiftConfirmationPendingJobResult = {
+      scanned: 0,
+      transitioned: 0,
+      errors: [],
+    };
+
+    const requestedShifts = await this.listRequestedShiftsForPendingJob();
+    result.scanned = requestedShifts.length;
+
+    const dueShifts = filterRequestedShiftsDueForPendingTransition(
+      requestedShifts,
+      now
+    );
+
+    const managerRecipientsByOrg = new Map<string, string[]>();
+
+    for (const shift of dueShifts) {
+      try {
+        const transitioned = await this.transitionShiftToPending(shift, nowIso);
+        if (!transitioned) continue;
+
+        result.transitioned += 1;
+
+        let managerRecipientIds = managerRecipientsByOrg.get(shift.organization_id);
+        if (!managerRecipientIds) {
+          const profiles = await this.listOrganizationProfiles(shift.organization_id);
+          managerRecipientIds = profiles
+            .filter((profile) => profile.role === "admin" || profile.role === "manager")
+            .map((profile) => profile.id);
+          managerRecipientsByOrg.set(shift.organization_id, managerRecipientIds);
+        }
+
+        const channel = shift.email_fallback_mode ? "email" : "push";
+        const { error: outboxError } = await this.client
+          .from(T.notificationOutbox)
+          .insert({
+            organization_id: shift.organization_id,
+            recipient_profile_id: shift.employee_id,
+            channel,
+            template_key: "confirmation_pending_reminder",
+            payload: {
+              shift_id: shift.id,
+              shift_date: shift.shift_date,
+              requested_at: shift.requested_at,
+            },
+            simulated: true,
+          });
+        if (outboxError) throw new Error(outboxError.message);
+
+        if (managerRecipientIds.length > 0) {
+          const title = buildManagerPendingEscalationTitle(shift.employee_full_name);
+          const body = buildManagerPendingEscalationBody(shift.employee_full_name);
+          const { error: managerError } = await this.client
+            .from(T.managerNotifications)
+            .insert(
+              managerRecipientIds.map((recipientId) => ({
+                organization_id: shift.organization_id,
+                recipient_profile_id: recipientId,
+                type: "employee_pending_escalation",
+                title,
+                body,
+                payload: {
+                  shift_id: shift.id,
+                  employee_id: shift.employee_id,
+                  employee_name: shift.employee_full_name,
+                  shift_date: shift.shift_date,
+                },
+              }))
+            );
+          if (managerError) throw new Error(managerError.message);
+        }
+      } catch (error) {
+        result.errors.push({
+          shiftId: shift.id,
+          error: error instanceof Error ? error.message : "Pending-Übergang fehlgeschlagen.",
+        });
+      }
+    }
+
+    return result;
+  }
+
+  private async listRequestedShiftsForPendingJob(): Promise<
+    RequestedShiftForPendingJob[]
+  > {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, organization_id, employee_id, shift_date, requested_at, organizations!inner(shift_confirmation_enabled, timezone, country_code), profiles!employee_id(full_name, email_fallback_mode)"
+      )
+      .eq("confirmation_status", "requested")
+      .not("requested_at", "is", null)
+      .eq("organizations.shift_confirmation_enabled", true);
+
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).flatMap((row) => {
+      const orgRel = row.organizations as
+        | {
+            shift_confirmation_enabled: boolean;
+            timezone: string | null;
+            country_code: string | null;
+          }
+        | {
+            shift_confirmation_enabled: boolean;
+            timezone: string | null;
+            country_code: string | null;
+          }[]
+        | null;
+      const profileRel = row.profiles as
+        | { full_name: string; email_fallback_mode: boolean | null }
+        | { full_name: string; email_fallback_mode: boolean | null }[]
+        | null;
+      const organization = Array.isArray(orgRel) ? orgRel[0] : orgRel;
+      const profile = Array.isArray(profileRel) ? profileRel[0] : profileRel;
+      const requestedAt = row.requested_at as string | null;
+
+      if (!organization?.shift_confirmation_enabled || !requestedAt || !profile) {
+        return [];
+      }
+
+      return [
+        {
+          id: row.id as string,
+          organization_id: row.organization_id as string,
+          employee_id: row.employee_id as string,
+          shift_date: row.shift_date as string,
+          requested_at: requestedAt,
+          employee_full_name: profile.full_name,
+          email_fallback_mode: profile.email_fallback_mode ?? false,
+          organization: {
+            timezone: organization.timezone,
+            country_code: organization.country_code,
+          },
+        },
+      ];
+    });
+  }
+
+  private async transitionShiftToPending(
+    shift: RequestedShiftForPendingJob,
+    nowIso: string
+  ): Promise<boolean> {
+    const timeZone = resolveOrganizationTimeZone(shift.organization);
+    const businessMinutes = businessMinutesBetween(
+      shift.requested_at,
+      nowIso,
+      timeZone
+    );
+
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .update({
+        confirmation_status: "pending",
+        confirmation_status_updated_at: nowIso,
+        pending_since: nowIso,
+        pending_reminder_sent_at: nowIso,
+      })
+      .eq("id", shift.id)
+      .eq("organization_id", shift.organization_id)
+      .eq("confirmation_status", "requested")
+      .select("id")
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) return false;
+
+    const { error: eventError } = await this.client
+      .from(T.shiftConfirmationEvents)
+      .insert({
+        organization_id: shift.organization_id,
+        shift_id: shift.id,
+        actor_id: null,
+        from_status: "requested",
+        to_status: "pending",
+        payload: {
+          reason: "pending_job",
+          requested_at: shift.requested_at,
+          business_minutes_elapsed: businessMinutes,
+        },
+      });
+    if (eventError) throw new Error(eventError.message);
+
+    return true;
+  }
+
+  async listManagerNotificationsForRecipient(
+    recipientProfileId: string,
+    options?: { limit?: number; includeDismissed?: boolean }
+  ) {
+    let query = this.client
+      .from(T.managerNotifications)
+      .select(
+        "id, organization_id, recipient_profile_id, type, title, body, payload, read_at, dismissed_at, created_at"
+      )
+      .eq("recipient_profile_id", recipientProfileId)
+      .order("created_at", { ascending: false });
+
+    if (!options?.includeDismissed) {
+      query = query.is("dismissed_at", null);
+    }
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((row) => ({
+      id: row.id as string,
+      organization_id: row.organization_id as string,
+      recipient_profile_id: row.recipient_profile_id as string,
+      type: row.type as string,
+      title: row.title as string,
+      body: row.body as string,
+      payload: (row.payload as Record<string, unknown>) ?? {},
+      read_at: (row.read_at as string | null) ?? null,
+      dismissed_at: (row.dismissed_at as string | null) ?? null,
+      created_at: row.created_at as string,
+    }));
+  }
+
+  async dismissManagerNotification(
+    notificationId: string,
+    recipientProfileId: string
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const { error } = await this.client
+      .from(T.managerNotifications)
+      .update({
+        dismissed_at: now,
+        read_at: now,
+      })
+      .eq("id", notificationId)
+      .eq("recipient_profile_id", recipientProfileId)
+      .is("dismissed_at", null);
+
+    if (error) throw new Error(error.message);
+  }
+
+  async listNotificationOutboxEntries(
+    organizationId: string,
+    options?: { limit?: number }
+  ) {
+    let query = this.client
+      .from(T.notificationOutbox)
+      .select(
+        "id, organization_id, recipient_profile_id, channel, template_key, payload, simulated, created_at, profiles!recipient_profile_id(full_name)"
+      )
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false });
+
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((row) => {
+      const profileRel = row.profiles as
+        | { full_name: string }
+        | { full_name: string }[]
+        | null;
+      const profile = Array.isArray(profileRel) ? profileRel[0] : profileRel;
+      return {
+        id: row.id as string,
+        organization_id: row.organization_id as string,
+        recipient_profile_id: row.recipient_profile_id as string,
+        channel: row.channel as import("@schichtwerk/types").NotificationOutboxChannel,
+        template_key: row.template_key as string,
+        payload: (row.payload as Record<string, unknown>) ?? {},
+        simulated: row.simulated as boolean,
+        created_at: row.created_at as string,
+        recipient_full_name: profile?.full_name ?? "",
+      };
+    });
+  }
+
+  async listEmployeeConfirmationWeekItems(
+    employeeId: string,
+    organizationId: string,
+    from: string,
+    to: string,
+    organizationDisclaimer: string | null
+  ): Promise<ConfirmationWeekResponse> {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, shift_date, starts_at, ends_at, confirmation_status, locations!inner(name), location_areas(name), area_shift_templates(name)"
+      )
+      .eq("organization_id", organizationId)
+      .eq("employee_id", employeeId)
+      .in("confirmation_status", ["requested", "pending"])
+      .gte("shift_date", from)
+      .lte("shift_date", to)
+      .order("shift_date", { ascending: true })
+      .order("starts_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    const items = (data ?? [])
+      .map((row) =>
+        mapConfirmationWeekRow(
+          row as Record<string, unknown>,
+          organizationDisclaimer
+        )
+      )
+      .filter((item): item is ConfirmationWeekItem => item !== null);
+
+    return {
+      items,
+      organizationDisclaimer,
+    };
+  }
+
+  async getEmployeeConfirmationShiftItem(
+    employeeId: string,
+    organizationId: string,
+    shiftId: string,
+    organizationDisclaimer: string | null
+  ): Promise<ConfirmationWeekItem | null> {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, shift_date, starts_at, ends_at, confirmation_status, locations!inner(name), location_areas(name), area_shift_templates(name)"
+      )
+      .eq("organization_id", organizationId)
+      .eq("employee_id", employeeId)
+      .eq("id", shiftId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+
+    return mapConfirmationWeekRow(
+      data as Record<string, unknown>,
+      organizationDisclaimer
+    );
+  }
+
+  async submitEmployeeConfirmationResponses(input: {
+    organizationId: string;
+    employeeId: string;
+    employeeName: string;
+    items: ConfirmationRespondItem[];
+  }): Promise<{ updatedCount: number }> {
+    const validation = validateConfirmationRespondItems(input.items);
+    if (!validation.ok) {
+      throw new Error(validation.error);
+    }
+
+    const shiftIds = input.items.map((item) => item.shiftId);
+    const { data: shiftRows, error: shiftError } = await this.client
+      .from(T.shifts)
+      .select("id, employee_id, confirmation_status")
+      .eq("organization_id", input.organizationId)
+      .in("id", shiftIds);
+
+    if (shiftError) throw new Error(shiftError.message);
+
+    const openShiftsById = new Map(
+      (shiftRows ?? []).map((row) => [
+        row.id as string,
+        {
+          id: row.id as string,
+          employee_id: row.employee_id as string,
+          confirmation_status: row.confirmation_status as import("@schichtwerk/types").ShiftConfirmationStatus,
+        },
+      ])
+    );
+
+    const allowed = assertRespondItemsAllowed(
+      input.items,
+      openShiftsById,
+      input.employeeId
+    );
+    if (!allowed.ok) {
+      throw new Error(allowed.error);
+    }
+
+    const now = new Date().toISOString();
+    const updatedShiftIds: string[] = [];
+
+    for (const item of input.items) {
+      const current = openShiftsById.get(item.shiftId)!;
+      const toStatus = decisionToConfirmationStatus(item.decision);
+
+      const { data: updated, error: updateError } = await this.client
+        .from(T.shifts)
+        .update({
+          confirmation_status: toStatus,
+          confirmation_status_updated_at: now,
+          pending_since: null,
+          pending_reminder_sent_at: null,
+        })
+        .eq("id", item.shiftId)
+        .eq("organization_id", input.organizationId)
+        .eq("employee_id", input.employeeId)
+        .eq("confirmation_status", current.confirmation_status)
+        .select("id")
+        .maybeSingle();
+
+      if (updateError) throw new Error(updateError.message);
+      if (!updated) {
+        throw new Error("Schicht konnte nicht aktualisiert werden.");
+      }
+
+      updatedShiftIds.push(item.shiftId);
+
+      const { error: eventError } = await this.client
+        .from(T.shiftConfirmationEvents)
+        .insert({
+          organization_id: input.organizationId,
+          shift_id: item.shiftId,
+          actor_id: input.employeeId,
+          from_status: current.confirmation_status,
+          to_status: toStatus,
+          payload: {
+            decision: item.decision,
+            source: "mobile_respond",
+          },
+        });
+      if (eventError) throw new Error(eventError.message);
+    }
+
+    const summary = buildManagerResponseSummaryNotification({
+      employeeName: input.employeeName,
+      decisions: input.items.map((item) => item.decision),
+      shiftIds: updatedShiftIds,
+    });
+
+    const managers = await this.listOrganizationProfiles(input.organizationId);
+    const managerRecipientIds = managers
+      .filter((profile) => profile.role === "admin" || profile.role === "manager")
+      .map((profile) => profile.id);
+
+    if (managerRecipientIds.length > 0) {
+      const { error: managerError } = await this.client
+        .from(T.managerNotifications)
+        .insert(
+          managerRecipientIds.map((recipientId) => ({
+            organization_id: input.organizationId,
+            recipient_profile_id: recipientId,
+            type: summary.type,
+            title: summary.title,
+            body: summary.body,
+            payload: {
+              ...summary.payload,
+              employee_id: input.employeeId,
+            },
+          }))
+        );
+      if (managerError) throw new Error(managerError.message);
+    }
+
+    return { updatedCount: updatedShiftIds.length };
   }
 
   async getManagerProfile(userId: string) {

@@ -6,13 +6,13 @@ import {
   updateProfileHourlyRate,
 } from "@/app/actions/profile-hourly-rates";
 import type { ProfileHourlyRate } from "@schichtwerk/types";
-import { isMutableHourlyRate } from "@schichtwerk/database";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useOrganization } from "@/lib/org-features-provider";
 import {
   formatAmountForInput,
-  minValidFromForRateChange,
   parseAmountInput,
+  resolveHourlyRateEditBounds,
 } from "@/lib/profile-hourly-rate-display";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
@@ -37,8 +37,8 @@ type Props = {
   mode: "create" | "edit";
   profileId: string;
   serverToday: string;
+  rates: ProfileHourlyRate[];
   editingRate?: ProfileHourlyRate;
-  currentOpenRate?: ProfileHourlyRate | null;
   defaultCurrency?: string;
   onClose: () => void;
   onSaved: (
@@ -52,16 +52,27 @@ export function ProfileHourlyRateFormModal({
   mode,
   profileId,
   serverToday,
+  rates,
   editingRate,
-  currentOpenRate,
   defaultCurrency = "EUR",
   onClose,
   onSaved,
 }: Props) {
   const { locale } = useLocale();
   const t = useTranslations();
+  const organization = useOrganization();
+  const allowRetroactive = organization.allow_retroactive_compensation_entries;
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  const editBounds = useMemo(
+    () =>
+      mode === "edit" && editingRate
+        ? resolveHourlyRateEditBounds(rates, editingRate.id)
+        : {},
+    [editingRate, mode, rates]
+  );
+
   const [hourlyRate, setHourlyRate] = useState(() =>
     mode === "edit" && editingRate
       ? formatAmountForInput(editingRate.amount, locale)
@@ -69,31 +80,43 @@ export function ProfileHourlyRateFormModal({
   );
   const [validFrom, setValidFrom] = useState(() => {
     if (mode === "edit" && editingRate) return editingRate.valid_from;
-    if (
-      currentOpenRate &&
-      !isMutableHourlyRate(currentOpenRate.valid_from, serverToday)
-    ) {
-      return minValidFromForRateChange(currentOpenRate.valid_from, serverToday);
-    }
     return serverToday;
   });
+
   const initialHourlyAmount =
     mode === "edit" && editingRate ? editingRate.amount : null;
   const initialValidFrom =
     mode === "edit" && editingRate ? editingRate.valid_from : null;
-  const hourlyCurrency =
-    editingRate?.currency ?? currentOpenRate?.currency ?? defaultCurrency;
 
   const minValidFrom = useMemo(() => {
-    if (mode === "edit") return serverToday;
-    if (
-      currentOpenRate &&
-      !isMutableHourlyRate(currentOpenRate.valid_from, serverToday)
-    ) {
-      return minValidFromForRateChange(currentOpenRate.valid_from, serverToday);
+    const candidates: string[] = [];
+    if (editBounds.minValidFrom) candidates.push(editBounds.minValidFrom);
+    if (!allowRetroactive) {
+      if (
+        mode === "edit" &&
+        initialValidFrom &&
+        initialValidFrom < serverToday
+      ) {
+        candidates.push(initialValidFrom);
+      } else {
+        candidates.push(serverToday);
+      }
     }
-    return serverToday;
-  }, [currentOpenRate, mode, serverToday]);
+    if (candidates.length === 0) return undefined;
+    return candidates.sort().at(-1);
+  }, [
+    allowRetroactive,
+    editBounds.minValidFrom,
+    initialValidFrom,
+    mode,
+    serverToday,
+  ]);
+
+  const showRetroactiveHint =
+    allowRetroactive && validFrom < serverToday && Boolean(validFrom);
+
+  const hourlyCurrency =
+    editingRate?.currency ?? rates.at(-1)?.currency ?? defaultCurrency;
 
   function applySavedResult(
     result: {
@@ -117,7 +140,7 @@ export function ProfileHourlyRateFormModal({
     const selectedRateId =
       result.rate?.id ??
       entry.currentRate?.id ??
-      entry.rates[0]?.id ??
+      entry.rates.at(-1)?.id ??
       "";
     onSaved(entry, selectedRateId, scrollToSelection);
     onClose();
@@ -250,11 +273,22 @@ export function ProfileHourlyRateFormModal({
               <Input
                 type="date"
                 value={validFrom}
-                min={minValidFrom}
+                {...(minValidFrom ? { min: minValidFrom } : {})}
+                {...(editBounds.maxValidFrom ? { max: editBounds.maxValidFrom } : {})}
                 onChange={(e) => setValidFrom(e.target.value)}
                 disabled={pending || !hourlyRate.trim()}
                 className="min-w-0"
               />
+              {!allowRetroactive ? (
+                <p className="mt-1 text-xs text-muted">
+                  {t("profiles.hourlyRateFutureOnlyHint")}
+                </p>
+              ) : null}
+              {showRetroactiveHint ? (
+                <p className="mt-1 text-xs text-muted">
+                  {t("profiles.hourlyRateRetroactivePlanningHint")}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>

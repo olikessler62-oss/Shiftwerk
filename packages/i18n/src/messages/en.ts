@@ -39,6 +39,8 @@ export const en = {
     profiles: "Profiles",
     roles: "Roles",
     planningMode: "Planning mode",
+    compensationSettings: "Compensation",
+    notificationOutbox: "Notification outbox",
     openMenu: "Open menu",
     closeMenu: "Close menu",
   },
@@ -47,9 +49,19 @@ export const en = {
     selectLocation: "Select location",
     noLocations: "No location created",
     noAreas: "No areas configured for this location yet.",
+    noServiceHours: "No service hours",
+    noServiceHoursHeaderTooltip:
+      "No service hours were configured for {weekday} in this area.",
+    tagAreaFooterTotalHours: "Total hours: {hours}",
+    tagAreaFooterTotalCost: "Total cost: {amount} {currency}",
+    noServiceHoursShiftConfirm:
+      "This area \"({area})\" has no service hours on this day. Add duty times anyway?",
     staffingCount: "{assigned}/{required}",
     assignShift: "Add a shift",
     assignMultipleShifts: "Assign/edit duty times",
+    deleteShift: "Delete shift",
+    deleteShiftConfirm: "Remove this shift?",
+    editShift: "Edit shift",
     addShiftTitle: "Add shift",
     bulkShiftTitle: "Assign/edit duty times",
     bulkShiftStaffingPrefix: "Staffing:",
@@ -102,6 +114,8 @@ export const en = {
       "At least two overlapping assignment times were assigned to {name}.",
     bulkShiftValidationOutsideServiceHours:
       "Row {row}: The shift is outside service hours.",
+    bulkShiftOutsideServiceHoursConfirm:
+      "This shift is outside service hours. Add it anyway?",
     bulkShiftValidationDailyHours:
       "{name}: Total work time {total} h on this day exceeds the maximum of {limit} h (assignments: {spans}).",
     bulkShiftValidationShiftDuration:
@@ -250,6 +264,8 @@ export const en = {
     availabilitySelectWeekdays: "Please select at least one weekday.",
     availabilityBulkEditMissingWindow:
       "{weekday}: No availability exists for this time window.",
+    availabilityBulkEditNoMatchingDays:
+      "None of the selected days have an availability entry in the list.",
     availabilityInputTimes: "Times",
     availabilityInputShiftType: "Shift type",
     availabilityFrom: "From",
@@ -277,11 +293,17 @@ export const en = {
     color: "Color",
     selectColor: "Select color",
     noColorsAvailable: "All colors are already assigned.",
+    emailFallbackModeLabel: "Email mode (shift confirmation)",
+    emailFallbackModeHint:
+      "Phase 1: simulated. Notifications go to the outbox as email instead of push.",
     compensationSection: "Compensation",
     currentHourlyRate: "Hourly rate",
     noHourlyRate: "No hourly rate on file.",
     hourlyRatePlaceholder: "e.g. 15.50",
     validFrom: "Valid from",
+    validTo: "Valid to",
+    hourlyRateOpenEnd: "Open (no end date)",
+    enterValidToOrOpen: "Enter a valid-to date or choose open.",
     enterHourlyRate: "Please enter an hourly rate.",
     hourlyRateHistory: "History",
     hourlyRateColumnAmount: "Rate",
@@ -291,6 +313,10 @@ export const en = {
     hourlyRateOpen: "current",
     hourlyRateCreateTitle: "Add hourly rate",
     hourlyRateEditTitle: "Change hourly rate",
+    hourlyRateFutureOnlyHint:
+      "Valid from must be today or in the future (organization setting).",
+    hourlyRateRetroactivePlanningHint:
+      "Planning costs for past shifts may change when adding retroactive entries.",
     surchargesSection: "Surcharges",
     noSurcharges: "No surcharges assigned",
     surchargeType: "Surcharge type",
@@ -390,12 +416,19 @@ export const en = {
       "Removed locations and areas are archived — existing shifts and future cost reports stay correct.",
     weekdays: {
       monday: "Monday",
+      mondayPlural: "Mondays",
       tuesday: "Tuesday",
+      tuesdayPlural: "Tuesdays",
       wednesday: "Wednesday",
+      wednesdayPlural: "Wednesdays",
       thursday: "Thursday",
+      thursdayPlural: "Thursdays",
       friday: "Friday",
+      fridayPlural: "Fridays",
       saturday: "Saturday",
+      saturdayPlural: "Saturdays",
       sunday: "Sunday",
+      sundayPlural: "Sundays",
       holiday: "Public holidays",
       holidaySingular: "Public holiday",
       holidayPlural: "Public holidays",
@@ -627,6 +660,71 @@ export const en = {
     batchRowOverlap: "Overlaps with another row in this entry.",
     minRestPeriod: "Minimum rest period of {hours} hours between shifts not met.",
   },
+  shiftConfirmation: {
+    status: {
+      proposed: "Planned",
+      requested: "Requested",
+      pending: "Pending",
+      rejected: "Rejected",
+      confirmed: "Confirmed",
+    },
+    actions: {
+      requestConfirmation: "Request confirmation",
+      sendResponses: "Send responses",
+    },
+    send: {
+      modalTitle: "Request confirmation",
+      modalHint:
+        "All open shifts this week will be sent for the selected employees.",
+      noCandidates: "No employees with open shifts this week.",
+      noSelection: "Please select at least one employee.",
+      failed: "Send failed.",
+      partialSuccess: "{sent} sent, {failed} failed.",
+      proposedCount: "{count} open",
+    },
+    disclaimer: {
+      default: "Confirmation does not replace any employment contract agreement.",
+    },
+    notifications: {
+      responseAllConfirmed: "{name} fully confirmed the schedule.",
+      responseWithRejections: "{name} responded to the schedule including rejections.",
+      pending: "{name} did not respond to shifts in time.",
+      centerTitle: "Notifications",
+      empty: "No open notifications.",
+      dismiss: "Dismiss",
+    },
+    panel: {
+      title: "Open responses",
+      hint: "Shifts for this week and location.",
+      empty: "No entries in this tab.",
+      reassign: "Reassign",
+      tabs: {
+        pending: "Pending",
+        rejected: "Rejected",
+        proposed: "Not sent",
+      },
+    },
+    settings: {
+      enabled: "Employee shift confirmation",
+    },
+    gate: {
+      appNotRegistered:
+        "Employees without app registration cannot be scheduled.",
+    },
+    outbox: {
+      title: "Notification outbox",
+      hint: "Simulated push and email notifications (Phase 1, read-only).",
+      empty: "No entries yet.",
+      columns: {
+        createdAt: "Time",
+        recipient: "Recipient",
+        channel: "Channel",
+        template: "Template",
+        payload: "Payload",
+        simulated: "Simulated",
+      },
+    },
+  },
   organization: {
     planningModeTitle: "Planning mode",
     planningModeCurrent: "Current mode",
@@ -639,6 +737,18 @@ export const en = {
     planningModeUpgradeSuccess: "Planning mode was upgraded to Advanced.",
     planningModeDowngradeHint:
       "Switching back to simple mode is not available yet because settings would be hidden.",
+    compensationSettingsTitle: "Compensation (organization)",
+    allowRetroactiveCompensationLabel: "Allow retroactive compensation entries",
+    allowRetroactiveCompensationHint:
+      "Allows hourly rates with a valid-from date in the past. Future valid-from dates are always allowed.",
+    compensationPlanningDisclaimer:
+      "Dashboard costs are planning figures only and do not replace payroll or audit-proof records.",
+    shiftConfirmationEnabledLabel: "Employee shift confirmation",
+    shiftConfirmationEnabledHint:
+      "Employees must confirm assigned shifts before they become binding.",
+    shiftConfirmationDisclaimerLabel: "Employee disclaimer text",
+    shiftConfirmationDisclaimerHint:
+      "Shown in the mobile app when confirming. Empty = default text.",
     errors: {
       planningModeAlreadyActive: "Planning mode is already active.",
       planningModeDowngradeNotAllowed:

@@ -22,6 +22,16 @@ const WEEKDAY_KEYS = [
   "sunday",
 ] as const;
 
+const WEEKDAY_PLURAL_KEYS = [
+  "mondayPlural",
+  "tuesdayPlural",
+  "wednesdayPlural",
+  "thursdayPlural",
+  "fridayPlural",
+  "saturdayPlural",
+  "sundayPlural",
+] as const;
+
 export function weekdayIndexFromDate(isoDate: string): number {
   const [y, m, d] = isoDate.split("-").map(Number);
   const day = new Date(y, m - 1, d).getDay();
@@ -342,20 +352,17 @@ export function areaHasStaffingRequirementInWeek(
   );
 }
 
-/** Öffnungsstatus im Dashboard: Vergangenheit = Arbeitstag laut Arbeitszeit oder Schicht. */
+/** Öffnungsstatus im Dashboard: Servicezeit oder Schichten im Bereich. */
 export function isAreaOpenInCalendar(
   serviceHours: AreaServiceHourRef[],
   areaId: string,
   dateISO: string,
   hasShiftsInAreaOnDate: boolean
 ): boolean {
-  if (isPastCalendarDate(dateISO)) {
-    return (
-      hasShiftsInAreaOnDate ||
-      isAreaOpenOnDate(serviceHours, areaId, dateISO)
-    );
-  }
-  return isAreaOpenOnDate(serviceHours, areaId, dateISO);
+  return (
+    hasShiftsInAreaOnDate ||
+    isAreaOpenOnDate(serviceHours, areaId, dateISO)
+  );
 }
 
 /** Mindestens ein Bereich geöffnet (Dashboard). */
@@ -365,10 +372,9 @@ export function isAnyAreaOpenInCalendar(
   dateISO: string,
   hasShiftsOnDate: boolean
 ): boolean {
-  if (isPastCalendarDate(dateISO)) {
-    return hasShiftsOnDate || isAnyAreaOpenOnDate(serviceHours, areaIds, dateISO);
-  }
-  return isAnyAreaOpenOnDate(serviceHours, areaIds, dateISO);
+  return (
+    hasShiftsOnDate || isAnyAreaOpenOnDate(serviceHours, areaIds, dateISO)
+  );
 }
 
 /** Personalbedarf an geöffneten Bereichen (Dashboard). */
@@ -599,6 +605,16 @@ export function weekdayLabelFromIndex(
     return t("locations.weekdays.holiday");
   }
   return t(`locations.weekdays.${WEEKDAY_KEYS[weekday]!}`);
+}
+
+export function weekdayPluralLabelFromIndex(
+  weekday: number,
+  t: (key: string) => string
+): string {
+  if (weekday === STAFFING_HOLIDAY_WEEKDAY) {
+    return t("locations.weekdays.holidayPlural");
+  }
+  return t(`locations.weekdays.${WEEKDAY_PLURAL_KEYS[weekday]!}`);
 }
 
 function serviceHourTimeFieldValue(time: string): string {

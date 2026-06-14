@@ -180,4 +180,37 @@ describe("validateShiftAssignEligibility", () => {
     );
     expect(result.ok).toBe(true);
   });
+
+  it("advanced mode rejects shift when area has no service hours on day", () => {
+    const result = validateShiftAssignEligibility(
+      "advanced",
+      {
+        countryCode: "DE",
+        recurringAvailability: [slot()],
+        absences: [],
+        serviceHours: [],
+        profileQualificationIds: new Map([[employeeId, new Set([qualId])]]),
+      },
+      { ...baseInput, locationAreaId: areaId }
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("Servicezeiten");
+    }
+  });
+
+  it("advanced mode skips service hours check when withoutServiceHours is set", () => {
+    const result = validateShiftAssignEligibility(
+      "advanced",
+      {
+        countryCode: "DE",
+        recurringAvailability: [slot()],
+        absences: [],
+        serviceHours: [],
+        profileQualificationIds: new Map([[employeeId, new Set([qualId])]]),
+      },
+      { ...baseInput, locationAreaId: areaId, withoutServiceHours: true }
+    );
+    expect(result.ok).toBe(true);
+  });
 });

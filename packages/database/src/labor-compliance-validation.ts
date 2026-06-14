@@ -10,6 +10,7 @@ import {
 import type { ShiftTypeBreakInput } from "./interface";
 import { DEFAULT_ORGANIZATION_TIME_ZONE } from "./organization-timezone";
 import { timeToMinutes } from "./profile-availability-validation";
+import { shiftTimeFromTimestamp } from "./shift-timestamps";
 
 export const DEFAULT_COUNTRY_CODE = "DE";
 
@@ -368,6 +369,26 @@ function calendarDateInTimeZone(
   }).format(new Date(isoTimestamp));
 }
 
+function formatHours(hours: number): string {
+  return hours.toFixed(1).replace(".0", "");
+}
+
+function formatRestPeriodConflictDetail(input: {
+  shiftDate?: string;
+  startsAt: string;
+  endsAt: string;
+  restHours: number;
+  timeZone: string;
+}): string {
+  const startTime = shiftTimeFromTimestamp(input.startsAt, input.timeZone);
+  const endTime = shiftTimeFromTimestamp(input.endsAt, input.timeZone);
+  const dateLabel = input.shiftDate?.slice(0, 10) ?? "";
+  const window = dateLabel
+    ? `${dateLabel} ${startTime}–${endTime}`
+    : `${startTime}–${endTime}`;
+  return ` (Konflikt mit Schicht ${window}, Pause ${formatHours(input.restHours)} h)`;
+}
+
 export function validateRestPeriodForCountry(input: {
   countryCode: string | null | undefined;
   newStartsAt: string;
@@ -418,7 +439,15 @@ export function validateRestPeriodForCountry(input: {
       if (restHours < rule.minHours) {
         return {
           ok: false,
-          error: `Mindestruhezeit von ${rule.minHours} Stunden zwischen Schichten nicht eingehalten.`,
+          error:
+            `Mindestruhezeit von ${rule.minHours} Stunden zwischen Schichten nicht eingehalten.` +
+            formatRestPeriodConflictDetail({
+              shiftDate: shift.shift_date,
+              startsAt: shift.starts_at,
+              endsAt: shift.ends_at,
+              restHours,
+              timeZone,
+            }),
         };
       }
     }
@@ -431,7 +460,15 @@ export function validateRestPeriodForCountry(input: {
       if (restHours < rule.minHours) {
         return {
           ok: false,
-          error: `Mindestruhezeit von ${rule.minHours} Stunden zwischen Schichten nicht eingehalten.`,
+          error:
+            `Mindestruhezeit von ${rule.minHours} Stunden zwischen Schichten nicht eingehalten.` +
+            formatRestPeriodConflictDetail({
+              shiftDate: shift.shift_date,
+              startsAt: shift.starts_at,
+              endsAt: shift.ends_at,
+              restHours,
+              timeZone,
+            }),
         };
       }
     }

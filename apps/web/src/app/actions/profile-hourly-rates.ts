@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import {
   parseHourlyRateAmount,
   parseValidFromDate,
-  validateMutableHourlyRateValidFrom,
+  validateHourlyRateEdit,
+  validateHourlyRateValidFromPolicy,
   validateNewHourlyRate,
 } from "@schichtwerk/database";
 import type {
@@ -37,7 +38,7 @@ async function loadCompensationEntry(
   const [currentRate, rates, currentSurcharges, surchargeEntries] =
     await Promise.all([
       db.getProfileHourlyRateForDate(organizationId, profileId, serverToday),
-      db.listProfileHourlyRates(organizationId, profileId, 10),
+      db.listProfileHourlyRates(organizationId, profileId, 50),
       db.listEffectiveProfileCompensationSurchargesForDate(
         organizationId,
         profileId,
@@ -88,7 +89,8 @@ export async function saveProfileHourlyRate(input: {
   valid_from: string;
 }): Promise<ProfileHourlyRateActionResult> {
   try {
-    const { organizationId, profile: managerProfile } = await requireManager();
+    const { organizationId, profile: managerProfile, organization } =
+      await requireManager();
     const db = await getDatabase();
 
     const profile = await db.getProfileById(input.profileId);
@@ -99,34 +101,27 @@ export async function saveProfileHourlyRate(input: {
     const parsedAmount = parseHourlyRateAmount(input.amount);
     if (!parsedAmount.ok) return parsedAmount;
 
-    const parsedDate = parseValidFromDate(input.valid_from);
-    if (!parsedDate.ok) return parsedDate;
+    const parsedFrom = parseValidFromDate(input.valid_from);
+    if (!parsedFrom.ok) return parsedFrom;
 
     const serverToday = await db.getServerDateIso();
-    const mutableFromCheck = validateMutableHourlyRateValidFrom(
-      parsedDate.valid_from,
-      serverToday
-    );
-    if (!mutableFromCheck.ok) return mutableFromCheck;
+    const policyCheck = validateHourlyRateValidFromPolicy({
+      valid_from: parsedFrom.valid_from,
+      serverToday,
+      allowRetroactive: organization.allow_retroactive_compensation_entries,
+    });
+    if (!policyCheck.ok) return policyCheck;
 
-    const openRate = await db.getProfileHourlyRateForDate(
-      organizationId,
-      input.profileId,
-      serverToday
-    );
-    const openValidFrom =
-      openRate?.valid_to === null ? openRate.valid_from : null;
-
+    const rates = await db.listProfileHourlyRates(organizationId, input.profileId, 50);
     const validated = validateNewHourlyRate({
-      amount: parsedAmount.amount,
-      valid_from: parsedDate.valid_from,
-      currentOpenValidFrom: openValidFrom,
+      valid_from: parsedFrom.valid_from,
+      existingValidFromDates: rates.map((rate) => rate.valid_from),
     });
     if (!validated.ok) return validated;
 
     const rate = await db.setProfileHourlyRate(organizationId, input.profileId, {
       amount: parsedAmount.amount,
-      valid_from: parsedDate.valid_from,
+      valid_from: parsedFrom.valid_from,
       created_by: managerProfile.id,
     });
 
@@ -156,7 +151,7 @@ export async function updateProfileHourlyRate(input: {
   valid_from: string;
 }): Promise<ProfileHourlyRateActionResult> {
   try {
-    const { organizationId } = await requireManager();
+    const { organizationId, organization } = await requireManager();
     const db = await getDatabase();
 
     const profile = await db.getProfileById(input.profileId);
@@ -167,19 +162,47 @@ export async function updateProfileHourlyRate(input: {
     const parsedAmount = parseHourlyRateAmount(input.amount);
     if (!parsedAmount.ok) return parsedAmount;
 
-    const parsedDate = parseValidFromDate(input.valid_from);
-    if (!parsedDate.ok) return parsedDate;
+    const parsedFrom = parseValidFromDate(input.valid_from);
+    if (!parsedFrom.ok) return parsedFrom;
+
+    const rates = await db.listProfileHourlyRates(organizationId, input.profileId, 50);
+    const editingIndex = rates.findIndex((rate) => rate.id === input.rateId);
+    if (editingIndex < 0) {
+      return { ok: false, error: "Stundensatz nicht gefunden" };
+    }
+    const editingRate = rates[editingIndex]!;
 
     const serverToday = await db.getServerDateIso();
+    const policyCheck = validateHourlyRateValidFromPolicy({
+      valid_from: parsedFrom.valid_from,
+      serverToday,
+      allowRetroactive: organization.allow_retroactive_compensation_entries,
+      initialValidFrom: editingRate.valid_from,
+    });
+    if (!policyCheck.ok) return policyCheck;
+
+    const predecessor = editingIndex > 0 ? rates[editingIndex - 1] : null;
+    const successor =
+      editingIndex < rates.length - 1 ? rates[editingIndex + 1] : null;
+
+    const validated = validateHourlyRateEdit({
+      valid_from: parsedFrom.valid_from,
+      existingValidFromDates: rates
+        .filter((rate) => rate.id !== input.rateId)
+        .map((rate) => rate.valid_from),
+      predecessorValidFrom: predecessor?.valid_from ?? null,
+      successorValidFrom: successor?.valid_from ?? null,
+    });
+    if (!validated.ok) return validated;
+
     const rate = await db.updateProfileHourlyRate(
       organizationId,
       input.profileId,
       input.rateId,
       {
         amount: parsedAmount.amount,
-        valid_from: parsedDate.valid_from,
-      },
-      serverToday
+        valid_from: parsedFrom.valid_from,
+      }
     );
 
     const entry = await loadCompensationEntry(organizationId, input.profileId);
@@ -214,12 +237,10 @@ export async function deleteProfileHourlyRate(input: {
       return { ok: false, error: "Profil nicht gefunden" };
     }
 
-    const serverToday = await db.getServerDateIso();
     await db.deleteProfileHourlyRate(
       organizationId,
       input.profileId,
-      input.rateId,
-      serverToday
+      input.rateId
     );
 
     const entry = await loadCompensationEntry(organizationId, input.profileId);

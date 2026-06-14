@@ -166,17 +166,21 @@ export function dashboardModalDialogClass(
   );
 }
 
-/** Verschachtelter Alertdialog im Dashboard. */
+/** Alertdialog-Overlay über Dashboard-Modals (fixed, nicht im Dialog-Container). */
 export function dashboardNestedModalOverlayClass(className?: string) {
   return cn(
-    "absolute inset-0 z-[112] flex items-center justify-center rounded-2xl bg-black/30 p-2 sm:p-4",
-    "max-sm:items-stretch max-sm:justify-stretch max-sm:rounded-none max-sm:p-0",
+    "fixed inset-0 z-[112] flex items-center justify-center bg-black/30 p-2 sm:p-4",
+    "max-sm:items-stretch max-sm:justify-stretch max-sm:p-0",
     className
   );
 }
 
 export function dashboardAlertDialogClass(className?: string) {
-  return cn(settingsConfirmDialogClass(), "z-[113]", className);
+  return cn(
+    settingsConfirmDialogClass(),
+    "z-[113] flex max-h-[min(85dvh,36rem)] w-full flex-col",
+    className
+  );
 }
 
 /** Wrapper mit max. Breite für Einstellungs-Hauptmodals. */

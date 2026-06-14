@@ -28,6 +28,9 @@ export async function loadManagerOrganization(
     country_code: "DE",
     planning_mode: "advanced",
     industry: null,
+    allow_retroactive_compensation_entries: true,
+    shift_confirmation_enabled: false,
+    shift_confirmation_disclaimer: null,
     created_at: new Date().toISOString(),
   };
 }

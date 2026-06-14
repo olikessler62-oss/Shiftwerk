@@ -17,6 +17,15 @@ export type BulkShiftPartialSaveBatchFailure = {
   error: string;
 };
 
+/** Ab mehr als dieser Anzahl Einträge wird die Liste im Meldungsmodal gescrollt. */
+export const BULK_SHIFT_PARTIAL_SAVE_SCROLL_ENTRY_THRESHOLD = 4;
+
+export function bulkShiftPartialSaveListShouldScroll(
+  entryCount: number
+): boolean {
+  return entryCount > BULK_SHIFT_PARTIAL_SAVE_SCROLL_ENTRY_THRESHOLD;
+}
+
 export function resolveBulkShiftPartialSaveOutcome(input: {
   currentRows: readonly BulkShiftPartialSaveRow[];
   payloadRows: readonly { row: BulkShiftPartialSaveRow; payloadIndex: number }[];

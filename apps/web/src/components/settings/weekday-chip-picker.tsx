@@ -18,6 +18,8 @@ type Props = {
   disabled?: boolean;
   /** Mo–So (7); mit Feiertag (8, Standard wie Servicezeiten). */
   weekdayCount?: number;
+  /** Wenn gesetzt, sind nur diese Wochentage auswählbar. */
+  selectableWeekdays?: Set<number>;
   onToggle: (weekday: number) => void;
   onApplyPreset: (weekdays: number[]) => void;
 };
@@ -26,6 +28,7 @@ export function WeekdayChipPicker({
   selected,
   disabled,
   weekdayCount = SERVICE_HOUR_WEEKDAY_COUNT,
+  selectableWeekdays,
   onToggle,
   onApplyPreset,
 }: Props) {
@@ -85,21 +88,29 @@ export function WeekdayChipPicker({
       <div className="flex flex-wrap justify-center gap-1">
         {Array.from({ length: weekdayCount }, (_, weekday) => {
           const active = selected.has(weekday);
+          const chipDisabled =
+            disabled ||
+            (selectableWeekdays !== undefined &&
+              !selectableWeekdays.has(weekday));
           const tooltip = weekdayChipTooltipLabel(weekday, t);
           return (
             <Tooltip key={weekday} content={tooltip}>
               <button
                 type="button"
-                disabled={disabled}
+                disabled={chipDisabled}
                 aria-pressed={active}
                 aria-label={tooltip}
-                onClick={() => onToggle(weekday)}
+                aria-disabled={chipDisabled}
+                onClick={() => {
+                  if (chipDisabled) return;
+                  onToggle(weekday);
+                }}
                 className={cn(
                 "min-w-[2rem] rounded-md border px-1.5 py-0.5 text-xs font-medium transition-colors",
                 active
                   ? "border-primary bg-primary/10 text-foreground"
                   : "border-border bg-surface text-muted hover:bg-subtle",
-                disabled && "cursor-not-allowed opacity-50"
+                chipDisabled && "cursor-not-allowed opacity-50"
               )}
             >
               {weekdayChipLabel(weekday, t, localeKey)}

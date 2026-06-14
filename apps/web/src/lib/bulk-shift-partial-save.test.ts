@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { resolveBulkShiftPartialSaveOutcome } from "./bulk-shift-partial-save";
+import {
+  bulkShiftPartialSaveListShouldScroll,
+  BULK_SHIFT_PARTIAL_SAVE_SCROLL_ENTRY_THRESHOLD,
+  resolveBulkShiftPartialSaveOutcome,
+} from "./bulk-shift-partial-save";
+
+describe("bulkShiftPartialSaveListShouldScroll", () => {
+  it("scrolls only when there are more than four entries", () => {
+    expect(BULK_SHIFT_PARTIAL_SAVE_SCROLL_ENTRY_THRESHOLD).toBe(4);
+    expect(bulkShiftPartialSaveListShouldScroll(4)).toBe(false);
+    expect(bulkShiftPartialSaveListShouldScroll(5)).toBe(true);
+  });
+});
 
 describe("resolveBulkShiftPartialSaveOutcome", () => {
   it("maps batch rowIndex to payload rows and keeps unsubmitted rows", () => {

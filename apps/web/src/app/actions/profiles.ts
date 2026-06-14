@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import {
   parseHourlyRateAmount,
   parseValidFromDate,
-  validateMutableHourlyRateValidFrom,
   validateNewHourlyRate,
+  validateHourlyRateValidFromPolicy,
   validateProfileColorAssignment,
   validateProfileEmail,
   validateProfileMobilePhone,
@@ -73,6 +73,7 @@ async function applyInitialHourlyRate(
   organizationId: string,
   profileId: string,
   createdByProfileId: string,
+  allowRetroactive: boolean,
   hourlyRate?: { amount: string; valid_from: string }
 ): Promise<ProfileActionResult | null> {
   if (!hourlyRate?.amount.trim()) return null;
@@ -85,16 +86,16 @@ async function applyInitialHourlyRate(
   if (!parsedDate.ok) return parsedDate;
 
   const serverToday = await db.getServerDateIso();
-  const mutableFromCheck = validateMutableHourlyRateValidFrom(
-    parsedDate.valid_from,
-    serverToday
-  );
-  if (!mutableFromCheck.ok) return mutableFromCheck;
+  const policyCheck = validateHourlyRateValidFromPolicy({
+    valid_from: parsedDate.valid_from,
+    serverToday,
+    allowRetroactive,
+  });
+  if (!policyCheck.ok) return policyCheck;
 
   const validated = validateNewHourlyRate({
-    amount: parsedAmount.amount,
     valid_from: parsedDate.valid_from,
-    currentOpenValidFrom: null,
+    existingValidFromDates: [],
   });
   if (!validated.ok) return validated;
 
@@ -116,7 +117,8 @@ export async function createProfile(input: {
   hourly_rate?: { amount: string; valid_from: string };
 }): Promise<ProfileActionResult> {
   try {
-    const { organizationId, profile: managerProfile } = await requireManager();
+    const { organizationId, profile: managerProfile, organization } =
+      await requireManager();
     const fullName = input.full_name.trim();
     if (!fullName) {
       return { ok: false, error: "Bitte einen Namen eingeben." };
@@ -176,6 +178,7 @@ export async function createProfile(input: {
       organizationId,
       created.user.id,
       managerProfile.id,
+      organization.allow_retroactive_compensation_entries,
       input.hourly_rate
     );
     if (hourlyRateError && !hourlyRateError.ok) return hourlyRateError;
@@ -200,10 +203,12 @@ export async function updateProfile(input: {
   email: string;
   mobile_phone: string;
   color: string;
+  email_fallback_mode?: boolean;
   hourly_rate?: { amount: string; valid_from: string };
 }): Promise<ProfileActionResult> {
   try {
-    const { organizationId, profile: managerProfile } = await requireManager();
+    const { organizationId, profile: managerProfile, organization } =
+      await requireManager();
     const fullName = input.full_name.trim();
     if (!fullName) {
       return { ok: false, error: "Bitte einen Namen eingeben." };
@@ -260,6 +265,9 @@ export async function updateProfile(input: {
       email: contact.email,
       mobile_phone: contact.mobile_phone,
       color: contact.color,
+      ...(existing.role === "basic" && input.email_fallback_mode !== undefined
+        ? { email_fallback_mode: input.email_fallback_mode }
+        : {}),
     });
 
     if (input.hourly_rate?.amount.trim()) {
@@ -270,24 +278,18 @@ export async function updateProfile(input: {
       if (!parsedDate.ok) return parsedDate;
 
       const serverToday = await db.getServerDateIso();
-      const mutableFromCheck = validateMutableHourlyRateValidFrom(
-        parsedDate.valid_from,
-        serverToday
-      );
-      if (!mutableFromCheck.ok) return mutableFromCheck;
+      const policyCheck = validateHourlyRateValidFromPolicy({
+        valid_from: parsedDate.valid_from,
+        serverToday,
+        allowRetroactive: organization.allow_retroactive_compensation_entries,
+      });
+      if (!policyCheck.ok) return policyCheck;
 
-      const openRate = await db.getProfileHourlyRateForDate(
-        organizationId,
-        input.id,
-        serverToday
-      );
-      const openValidFrom =
-        openRate?.valid_to === null ? openRate.valid_from : null;
+      const rates = await db.listProfileHourlyRates(organizationId, input.id, 50);
 
       const validated = validateNewHourlyRate({
-        amount: parsedAmount.amount,
         valid_from: parsedDate.valid_from,
-        currentOpenValidFrom: openValidFrom,
+        existingValidFromDates: rates.map((rate) => rate.valid_from),
       });
       if (!validated.ok) return validated;
 

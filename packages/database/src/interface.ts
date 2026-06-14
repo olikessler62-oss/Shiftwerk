@@ -22,7 +22,13 @@ import type {
   Organization,
   PlanningMode,
   Industry,
+  ConfirmationRequestScope,
 } from "@schichtwerk/types";
+import type { ShiftConfirmationSnapshot } from "./shift-confirmation-snapshot";
+import type { ProposedShiftForSend } from "./shift-confirmation-send";
+import type { ShiftConfirmationPendingJobResult } from "./shift-confirmation-pending";
+
+export type { ShiftConfirmationPendingJobResult };
 
 export type { Shift };
 import type { Session, User } from "@supabase/supabase-js";
@@ -40,6 +46,9 @@ export type DashboardShiftRow = {
   shift_date: string;
   starts_at?: string;
   ends_at?: string;
+  confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
+  requested_at?: string | null;
+  pending_since?: string | null;
   area_shift_templates: {
     name: string;
     color: string;
@@ -58,7 +67,20 @@ export type EmployeeShiftRecord = {
   shift_date: string;
   starts_at: string;
   ends_at: string;
+  notes: string | null;
   created_by: string | null;
+  confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
+  requested_at?: string | null;
+  pending_since?: string | null;
+  pending_reminder_sent_at?: string | null;
+};
+
+export type ShiftConfirmationWriteFields = {
+  confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
+  confirmation_status_updated_at?: string;
+  requested_at?: string | null;
+  pending_since?: string | null;
+  pending_reminder_sent_at?: string | null;
 };
 
 export type AvailabilityRow = {
@@ -129,6 +151,18 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     planningMode: PlanningMode
   ): Promise<void>;
+  updateOrganizationAllowRetroactiveCompensationEntries(
+    organizationId: string,
+    allowed: boolean
+  ): Promise<void>;
+  updateOrganizationShiftConfirmationEnabled(
+    organizationId: string,
+    enabled: boolean
+  ): Promise<void>;
+  updateOrganizationShiftConfirmationDisclaimer(
+    organizationId: string,
+    disclaimer: string | null
+  ): Promise<void>;
   getOrganizationIdByProfileEmail(email: string): Promise<string | null>;
   getFirstOrganization(): Promise<{ id: string; name: string } | null>;
 
@@ -165,6 +199,7 @@ export interface SchichtwerkDatabase {
       email: string;
       mobile_phone: string | null;
       color: string | null;
+      email_fallback_mode?: boolean;
     }
   ): Promise<void>;
   listAssignedProfileColors(
@@ -257,14 +292,12 @@ export interface SchichtwerkDatabase {
     input: {
       amount: number;
       valid_from: string;
-    },
-    referenceDate: string
+    }
   ): Promise<ProfileHourlyRate>;
   deleteProfileHourlyRate(
     organizationId: string,
     profileId: string,
-    rateId: string,
-    referenceDate: string
+    rateId: string
   ): Promise<void>;
 
   // —— Compensation surcharge types ——
@@ -637,6 +670,13 @@ export interface SchichtwerkDatabase {
     employeeId: string,
     shiftDates: string[]
   ): Promise<EmployeeShiftRecord[]>;
+  /** Schichten mit End-/Startfenster vor/nach der neuen Schicht (für Ruhezeitprüfung). */
+  listShiftsForEmployeeRestCheck(
+    employeeId: string,
+    startsAt: string,
+    endsAt: string,
+    shiftDate: string
+  ): Promise<EmployeeShiftRecord[]>;
   getShiftRecordById(
     id: string,
     organizationId: string
@@ -654,7 +694,7 @@ export interface SchichtwerkDatabase {
     starts_at: string;
     ends_at: string;
     created_by: string;
-  }): Promise<{ id: string }>;
+  } & ShiftConfirmationWriteFields): Promise<{ id: string }>;
   updateShift(
     id: string,
     row: {
@@ -664,9 +704,79 @@ export interface SchichtwerkDatabase {
       starts_at: string;
       ends_at: string;
       created_by: string;
-    }
+    } & ShiftConfirmationWriteFields
   ): Promise<void>;
-  deleteShift(id: string, organizationId: string): Promise<void>;
+  deleteShift(id: string, organizationId: string, deletedBy: string): Promise<void>;
+
+  listProposedShiftsForConfirmationSend(
+    organizationId: string,
+    options: {
+      weekStart: string;
+      weekEnd: string;
+      locationId?: string;
+      employeeId?: string;
+    }
+  ): Promise<ProposedShiftForSend[]>;
+
+  getLatestConfirmationSnapshotsByShiftIds(
+    shiftIds: string[]
+  ): Promise<Map<string, ShiftConfirmationSnapshot>>;
+
+  sendConfirmationRequestForEmployee(input: {
+    organizationId: string;
+    employeeId: string;
+    sentBy: string;
+    scope: ConfirmationRequestScope;
+    weekStart: string;
+    weekEnd: string;
+    shifts: ProposedShiftForSend[];
+    profile: Pick<Profile, "email_fallback_mode">;
+  }): Promise<{ batchId: string; sentCount: number; isDelta: boolean }>;
+
+  runShiftConfirmationPendingJob(
+    now?: Date
+  ): Promise<ShiftConfirmationPendingJobResult>;
+
+  listManagerNotificationsForRecipient(
+    recipientProfileId: string,
+    options?: { limit?: number; includeDismissed?: boolean }
+  ): Promise<import("@schichtwerk/types").ManagerNotification[]>;
+
+  dismissManagerNotification(
+    notificationId: string,
+    recipientProfileId: string
+  ): Promise<void>;
+
+  listNotificationOutboxEntries(
+    organizationId: string,
+    options?: { limit?: number }
+  ): Promise<
+    (import("@schichtwerk/types").NotificationOutboxEntry & {
+      recipient_full_name: string;
+    })[]
+  >;
+
+  listEmployeeConfirmationWeekItems(
+    employeeId: string,
+    organizationId: string,
+    from: string,
+    to: string,
+    organizationDisclaimer: string | null
+  ): Promise<import("@schichtwerk/types").ConfirmationWeekResponse>;
+
+  getEmployeeConfirmationShiftItem(
+    employeeId: string,
+    organizationId: string,
+    shiftId: string,
+    organizationDisclaimer: string | null
+  ): Promise<import("@schichtwerk/types").ConfirmationWeekItem | null>;
+
+  submitEmployeeConfirmationResponses(input: {
+    organizationId: string;
+    employeeId: string;
+    employeeName: string;
+    items: import("@schichtwerk/types").ConfirmationRespondItem[];
+  }): Promise<{ updatedCount: number }>;
 
   // —— Availability ——
   listAvailabilityForWeek(

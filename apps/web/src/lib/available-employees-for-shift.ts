@@ -1,6 +1,7 @@
 import {
   isDateWithinAbsenceRange,
   parseAvailabilityTimeRange,
+  profileEligibleForShiftConfirmationAssignment,
   timeToMinutes,
   shiftWindowFitsAvailabilitySlot as shiftWindowFitsAvailabilitySlotFromDb,
   validateEmployeeDayShiftAssignments,
@@ -138,6 +139,19 @@ export function profileCanReceiveShiftAssignment(
     profile.organization_id === organizationId &&
     profile.is_active &&
     profile.schedulable
+  );
+}
+
+/** Filtert MA ohne App-Registrierung wenn Schichtbestätigung aktiv (Spec 008). */
+export function filterProfilesForShiftConfirmationAssign(
+  profiles: readonly Profile[],
+  shiftConfirmationEnabled: boolean
+): Profile[] {
+  if (!shiftConfirmationEnabled) {
+    return [...profiles];
+  }
+  return profiles.filter((profile) =>
+    profileEligibleForShiftConfirmationAssignment(profile)
   );
 }
 
@@ -378,6 +392,23 @@ export function filterBulkShiftAssignEmployeesForRow<
       windowEnd,
       context
     )
+  );
+}
+
+/**
+ * Tag ohne Servicezeit: MA mit Verfügbarkeit am Wochentag (Liste ist bereits
+ * ohne Abwesenheiten), bevor Von/Bis gesetzt sind.
+ */
+export function filterBulkShiftAssignEmployeesWithoutTimeWindow<
+  T extends {
+    id: string;
+    availabilities: readonly DashboardShiftAssignAvailability[];
+  },
+>(employees: readonly T[], weekday: number): T[] {
+  return employees.filter(
+    (employee) =>
+      profileAvailabilitiesForWeekday(employee.availabilities, weekday).length >
+      0
   );
 }
 

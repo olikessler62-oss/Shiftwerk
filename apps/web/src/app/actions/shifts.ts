@@ -11,10 +11,10 @@ import { requireManager } from "@/lib/manager";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { shiftsOverlapIso } from "@/lib/shift-overlap";
 import {
-  dayAfter,
-  dayBefore,
   DEFAULT_COUNTRY_CODE,
+  resolveConfirmationAssignPatch,
   resolveOrganizationTimeZone,
+  validateProfileForShiftConfirmationAssign,
   validateRestPeriodForCountry,
   validateShiftDurationForCountry,
   validateEmployeeDayShiftAssignments,
@@ -28,7 +28,6 @@ import {
 } from "@/lib/shift-assign-undo-store";
 import {
   areDashboardShiftTimesComplete,
-  profileCanReceiveShiftAssignment,
 } from "@/lib/available-employees-for-shift";
 import {
   loadShiftAssignValidationContext,
@@ -49,7 +48,25 @@ type AssignShiftWithTimesInput = {
   areaShiftTemplateId: string | null;
   locationId: string;
   locationAreaId: string | null;
+  withoutServiceHours?: boolean;
 };
+
+function buildAssignSnapshotSource(
+  input: AssignShiftWithTimesInput,
+  starts_at: string,
+  ends_at: string
+) {
+  return {
+    employee_id: input.employeeId,
+    location_id: input.locationId,
+    location_area_id: input.locationAreaId,
+    area_shift_template_id: input.areaShiftTemplateId,
+    shift_date: input.shiftDate,
+    starts_at,
+    ends_at,
+    notes: null as string | null,
+  };
+}
 
 export type AssignShiftBatchRowInput = {
   employeeId: string;
@@ -95,34 +112,6 @@ function findOverlappingShifts(
   );
 }
 
-function pickAdjacentBoundaryShifts(
-  dayBeforeShifts: EmployeeShiftRecord[],
-  dayAfterShifts: EmployeeShiftRecord[],
-  excludeIds: ReadonlySet<string>
-): EmployeeShiftRecord[] {
-  const boundary: EmployeeShiftRecord[] = [];
-  const before = dayBeforeShifts.filter((shift) => !excludeIds.has(shift.id));
-  const after = dayAfterShifts.filter((shift) => !excludeIds.has(shift.id));
-
-  if (before.length > 0) {
-    boundary.push(
-      before.reduce((latest, shift) =>
-        !latest || shift.ends_at > latest.ends_at ? shift : latest
-      )
-    );
-  }
-
-  if (after.length > 0) {
-    boundary.push(
-      after.reduce((earliest, shift) =>
-        !earliest || shift.starts_at < earliest.starts_at ? shift : earliest
-      )
-    );
-  }
-
-  return boundary;
-}
-
 async function validateShiftLaborCompliance(
   organizationId: string,
   employeeId: string,
@@ -130,7 +119,7 @@ async function validateShiftLaborCompliance(
   startTime: string,
   endTime: string,
   timeZone: string,
-  options?: { sameDayBatchPeerCount?: number }
+  options?: { sameDayBatchPeerCount?: number; excludeShiftIds?: ReadonlySet<string> }
 ): Promise<{ ok: true; warnings?: string[] } | { ok: false; error: string }> {
   const db = await getDatabase();
   const countryCode =
@@ -153,7 +142,10 @@ async function validateShiftLaborCompliance(
     endTime,
     timeZone
   );
-  const sameDay = await db.listShiftsForEmployeeDate(employeeId, shiftDate);
+  const excludeIds = options?.excludeShiftIds ?? new Set<string>();
+  const sameDay = (await db.listShiftsForEmployeeDate(employeeId, shiftDate)).filter(
+    (shift) => !excludeIds.has(shift.id)
+  );
   const overlappingIds = new Set(
     findOverlappingShifts(sameDay, starts_at, ends_at).map((shift) => shift.id)
   );
@@ -170,10 +162,14 @@ async function validateShiftLaborCompliance(
     };
   }
 
-  const [dayBeforeShifts, dayAfterShifts] = await Promise.all([
-    db.listShiftsForEmployeeDate(employeeId, dayBefore(shiftDate)),
-    db.listShiftsForEmployeeDate(employeeId, dayAfter(shiftDate)),
-  ]);
+  const restShifts = (
+    await db.listShiftsForEmployeeRestCheck(
+      employeeId,
+      starts_at,
+      ends_at,
+      shiftDate
+    )
+  ).filter((shift) => !excludeIds.has(shift.id) && !overlappingIds.has(shift.id));
 
   const restCheck = validateRestPeriodForCountry({
     countryCode,
@@ -181,11 +177,7 @@ async function validateShiftLaborCompliance(
     newEndsAt: ends_at,
     newShiftDate: shiftDate,
     timeZone,
-    existingShifts: pickAdjacentBoundaryShifts(
-      dayBeforeShifts,
-      dayAfterShifts,
-      overlappingIds
-    ),
+    existingShifts: restShifts,
   });
   if (!restCheck.ok) return restCheck;
 
@@ -200,7 +192,8 @@ async function persistShiftWithTimes(
   userId: string,
   input: AssignShiftWithTimesInput,
   undoBatch: ShiftAssignUndoBatch,
-  timeZone: string
+  timeZone: string,
+  shiftConfirmationEnabled: boolean
 ): Promise<void> {
   const db = await getDatabase();
 
@@ -214,6 +207,8 @@ async function persistShiftWithTimes(
     input.endTime,
     timeZone
   );
+
+  const nextSnapshot = buildAssignSnapshotSource(input, starts_at, ends_at);
 
   const existing = await db.listShiftsForEmployeeDate(
     input.employeeId,
@@ -236,7 +231,12 @@ async function persistShiftWithTimes(
     if (snapshot) {
       undoBatch.replacements.push(toUndoSnapshot(snapshot));
     }
-    await db.updateShift(primary.id, payload);
+    const confirmationPatch = resolveConfirmationAssignPatch({
+      shiftConfirmationEnabled,
+      existing: snapshot,
+      next: nextSnapshot,
+    });
+    await db.updateShift(primary.id, { ...payload, ...confirmationPatch });
 
     for (let i = 1; i < overlapping.length; i++) {
       const extra = overlapping[i];
@@ -244,17 +244,24 @@ async function persistShiftWithTimes(
       if (extraSnapshot) {
         undoBatch.replacements.push(toUndoSnapshot(extraSnapshot));
       }
-      await db.deleteShift(extra.id, organizationId);
+      await db.deleteShift(extra.id, organizationId, userId);
       undoBatch.deletedIds.push(extra.id);
     }
     return;
   }
+
+  const confirmationPatch = resolveConfirmationAssignPatch({
+    shiftConfirmationEnabled,
+    existing: null,
+    next: nextSnapshot,
+  });
 
   const { id } = await db.insertShift({
     organization_id: organizationId,
     employee_id: input.employeeId,
     shift_date: input.shiftDate,
     ...payload,
+    ...confirmationPatch,
   });
   undoBatch.createdIds.push(id);
 }
@@ -265,7 +272,8 @@ async function validateAssignContext(
   shiftDate: string,
   locationId: string,
   locationAreaId: string | null,
-  requireArea: boolean
+  requireArea: boolean,
+  shiftConfirmationEnabled: boolean
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (isPastShiftDate(shiftDate)) {
     return { ok: false, error: "Vergangene Tage können nicht mehr geplant werden." };
@@ -288,9 +296,12 @@ async function validateAssignContext(
   }
 
   const profile = await db.getProfileById(employeeId);
-  if (!profileCanReceiveShiftAssignment(profile, organizationId)) {
-    return { ok: false, error: "Personal nicht gefunden" };
-  }
+  const gate = validateProfileForShiftConfirmationAssign(
+    profile,
+    organizationId,
+    shiftConfirmationEnabled
+  );
+  if (!gate.ok) return gate;
 
   return { ok: true };
 }
@@ -358,7 +369,8 @@ export async function assignShiftWithTimes(
       input.shiftDate,
       input.locationId,
       input.locationAreaId,
-      orgFeatures.areas
+      orgFeatures.areas,
+      organization.shift_confirmation_enabled
     );
     if (!context.ok) return context;
 
@@ -379,6 +391,7 @@ export async function assignShiftWithTimes(
         startTime: input.startTime,
         endTime: input.endTime,
         locationAreaId: input.locationAreaId,
+        withoutServiceHours: input.withoutServiceHours,
       }
     );
     if (!eligibilityCheck.ok) return eligibilityCheck;
@@ -402,7 +415,14 @@ export async function assignShiftWithTimes(
       replacements: [],
     };
 
-    await persistShiftWithTimes(organizationId, userId, input, undoBatch, timeZone);
+    await persistShiftWithTimes(
+      organizationId,
+      userId,
+      input,
+      undoBatch,
+      timeZone,
+      organization.shift_confirmation_enabled
+    );
     setShiftAssignUndoBatch(userId, undoBatch);
     revalidateShiftPaths({
       organizationId,
@@ -428,6 +448,7 @@ export async function assignShiftBatch(input: {
   locationAreaId: string;
   rows: AssignShiftBatchRowInput[];
   deleteShiftIds?: string[];
+  withoutServiceHours?: boolean;
 }): Promise<AssignShiftBatchResult> {
   try {
     const { organizationId, userId, organization } = await requireManager();
@@ -449,6 +470,7 @@ export async function assignShiftBatch(input: {
     }
 
     const deleteShiftIds = [...new Set(input.deleteShiftIds ?? [])];
+    const excludeShiftIds = new Set(deleteShiftIds);
     for (const shiftId of deleteShiftIds) {
       const shift = await db.getShiftRecordById(shiftId, organizationId);
       if (!shift) {
@@ -516,7 +538,8 @@ export async function assignShiftBatch(input: {
         input.shiftDate,
         input.locationId,
         input.locationAreaId,
-        true
+        true,
+        organization.shift_confirmation_enabled
       );
       if (!context.ok) {
         results.push({ rowIndex, ok: false, error: context.error });
@@ -532,6 +555,7 @@ export async function assignShiftBatch(input: {
           startTime: row.startTime,
           endTime: row.endTime,
           locationAreaId: input.locationAreaId,
+          withoutServiceHours: input.withoutServiceHours,
         }
       );
       if (!eligibilityCheck.ok) {
@@ -549,6 +573,7 @@ export async function assignShiftBatch(input: {
         {
           sameDayBatchPeerCount:
             (batchPeerCountByEmployee.get(row.employeeId) ?? 1) - 1,
+          excludeShiftIds,
         }
       );
       if (!laborCheck.ok) {
@@ -662,7 +687,7 @@ export async function assignShiftBatch(input: {
       const snapshot = await db.getShiftRecordById(shiftId, organizationId);
       if (!snapshot) continue;
       undoBatch.replacements.push(toUndoSnapshot(snapshot));
-      await db.deleteShift(shiftId, organizationId);
+      await db.deleteShift(shiftId, organizationId, userId);
       undoBatch.deletedIds.push(shiftId);
       anySuccess = true;
     }
@@ -684,7 +709,8 @@ export async function assignShiftBatch(input: {
             locationAreaId: input.locationAreaId,
           },
           undoBatch,
-          timeZone
+          timeZone,
+          organization.shift_confirmation_enabled
         );
         results.push({ rowIndex: row.rowIndex, ok: true, warnings: row.warnings });
         anySuccess = true;
@@ -742,7 +768,7 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
     }
 
     for (const id of batch.createdIds) {
-      await db.deleteShift(id, organizationId);
+      await db.deleteShift(id, organizationId, userId);
     }
 
     for (const id of batch.deletedIds) {
@@ -773,7 +799,7 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
 
 export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
   try {
-    const { organizationId } = await requireManager();
+    const { organizationId, userId } = await requireManager();
     const db = await getDatabase();
 
     const shift = await db.getShiftRecordById(shiftId, organizationId);
@@ -784,7 +810,7 @@ export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
       return { ok: false, error: "Vergangene Schichten können nicht mehr entfernt werden." };
     }
 
-    await db.deleteShift(shiftId, organizationId);
+    await db.deleteShift(shiftId, organizationId, userId);
 
     if (shift.location_id) {
       revalidateShiftPaths({

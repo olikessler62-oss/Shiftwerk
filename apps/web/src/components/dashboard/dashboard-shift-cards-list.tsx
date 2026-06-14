@@ -18,6 +18,8 @@ import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { cn } from "@/lib/cn";
+import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
+import { useTranslations } from "@/i18n/locale-provider";
 
 type Props = {
   shifts: DashboardShiftCard[];
@@ -36,6 +38,10 @@ type Props = {
   measureOverflowFallback?: boolean;
   className?: string;
   onShiftClick?: (shift: DashboardShiftCard) => void;
+  onShiftContextMenu?: (shift: DashboardShiftCard, event: React.MouseEvent) => void;
+  shiftConfirmationEnabled?: boolean;
+  /** Vergangene Tage: kein Scroll, Inhalt abschneiden. */
+  clipVerticalOverflow?: boolean;
 };
 
 function compareShiftCards(a: DashboardShiftCard, b: DashboardShiftCard): number {
@@ -118,7 +124,11 @@ export function DashboardShiftCardsList({
   measureOverflowFallback = false,
   className,
   onShiftClick,
+  onShiftContextMenu,
+  shiftConfirmationEnabled = false,
+  clipVerticalOverflow = false,
 }: Props) {
+  const t = useTranslations();
   const containerRef = useRef<HTMLDivElement>(null);
   const [cellWidthPx, setCellWidthPx] = useState(0);
   const [contentOverflows, setContentOverflows] = useState(false);
@@ -197,16 +207,20 @@ export function DashboardShiftCardsList({
 
     function updateOverflow() {
       if (!container) return;
-      setContentOverflows(container.scrollHeight > container.clientHeight + 1);
+      setContentOverflows(
+        container.scrollHeight > Math.ceil(container.clientHeight)
+      );
     }
 
     updateOverflow();
     const raf = requestAnimationFrame(updateOverflow);
+    const afterGridTransition = window.setTimeout(updateOverflow, 350);
 
     const observer = new ResizeObserver(updateOverflow);
     observer.observe(container);
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(afterGridTransition);
       observer.disconnect();
     };
   }, [
@@ -218,6 +232,7 @@ export function DashboardShiftCardsList({
   ]);
 
   const showVerticalScroll =
+    !clipVerticalOverflow &&
     shifts.length > 0 &&
     (needsVerticalScroll || (measureOverflowFallback && contentOverflows));
 
@@ -241,6 +256,16 @@ export function DashboardShiftCardsList({
           widthPx={cellWidthPx > 0 && layout.widthPx > 0 ? layout.widthPx : undefined}
           marginLeftPx={cellWidthPx > 0 ? layout.marginLeftPx : undefined}
           onClick={onShiftClick ? () => onShiftClick(shift) : undefined}
+          onContextMenu={
+            onShiftContextMenu
+              ? (event) => onShiftContextMenu(shift, event)
+              : undefined
+          }
+          confirmationStatusLabel={
+            shift.confirmationStatus
+              ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
+              : undefined
+          }
         />
       ))}
     </div>

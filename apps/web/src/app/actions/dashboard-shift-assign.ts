@@ -3,6 +3,7 @@
 import {
   filterEmployeesAvailableOnWeekday,
   filterEmployeesNotAbsentOnDate,
+  filterProfilesForShiftConfirmationAssign,
   profileAvailabilityWeekdayFromDashboardDate,
 } from "@/lib/available-employees-for-shift";
 import { getDatabase } from "@/lib/db";
@@ -111,7 +112,7 @@ export async function fetchDashboardShiftAssignEmployees(
   date: string
 ): Promise<FetchDashboardShiftAssignEmployeesResult> {
   try {
-    const { organizationId } = await requireManager();
+    const { organizationId, organization } = await requireManager();
     const db = await getDatabase();
     const weekday = profileAvailabilityWeekdayFromDashboardDate(date);
 
@@ -122,10 +123,13 @@ export async function fetchDashboardShiftAssignEmployees(
       db.listOrganizationAbsences(organizationId, "approved"),
     ]);
 
-    const dayAvailable = filterEmployeesNotAbsentOnDate(
-      filterEmployeesAvailableOnWeekday(profiles, availability, weekday),
-      absences,
-      date
+    const dayAvailable = filterProfilesForShiftConfirmationAssign(
+      filterEmployeesNotAbsentOnDate(
+        filterEmployeesAvailableOnWeekday(profiles, availability, weekday),
+        absences,
+        date
+      ),
+      organization.shift_confirmation_enabled
     );
 
     const availabilityByProfile = new Map<string, typeof availability>();

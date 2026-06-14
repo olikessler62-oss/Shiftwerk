@@ -1,5 +1,6 @@
 import { TagAreaHeaderStaffingOverlay } from "@/components/dashboard/tag-area-header-staffing-overlay";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 
 export const DAYTIMES_HEADER_IMAGE_SRC = "/images/daytimes.png";
@@ -8,6 +9,9 @@ export const DAYTIMES_HEADER_IMAGE_HEIGHT_PX = 4;
 type Props = {
   showDaytimesGradient: boolean;
   entries: TagAreaHeaderStaffingEntry[];
+  /** Schichten ohne Servicezeit — Bedarf-Overlay ersetzen. */
+  noServiceHoursLabel?: string;
+  noServiceHoursTooltip?: string;
   overlayBackgroundColor?: string;
   staffingLabelsDimmed?: boolean;
   className?: string;
@@ -18,6 +22,8 @@ type Props = {
 export function TagAreaHeaderStrip({
   showDaytimesGradient,
   entries,
+  noServiceHoursLabel,
+  noServiceHoursTooltip,
   overlayBackgroundColor,
   staffingLabelsDimmed = false,
   className,
@@ -56,16 +62,34 @@ export function TagAreaHeaderStrip({
           showDaytimesGradient && "translate-y-px"
         )}
       >
-        <TagAreaHeaderStaffingOverlay
-          key={entries
-            .map(
-              (entry) =>
-                `${entry.serviceHourId}:${entry.assigned}/${entry.required}`
-            )
-            .join("|")}
-          entries={entries}
-          dimmed={staffingLabelsDimmed}
-        />
+        {noServiceHoursLabel ? (
+          <Tooltip
+            content={
+              noServiceHoursTooltip ? (
+                <span className="block whitespace-pre-line">
+                  {noServiceHoursTooltip}
+                </span>
+              ) : (
+                noServiceHoursLabel
+              )
+            }
+          >
+            <span className="shrink-0 cursor-default whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black">
+              {noServiceHoursLabel}
+            </span>
+          </Tooltip>
+        ) : (
+          <TagAreaHeaderStaffingOverlay
+            key={entries
+              .map(
+                (entry) =>
+                  `${entry.serviceHourId}:${entry.assigned}/${entry.required}`
+              )
+              .join("|")}
+            entries={entries}
+            dimmed={staffingLabelsDimmed}
+          />
+        )}
       </div>
     </div>
   );

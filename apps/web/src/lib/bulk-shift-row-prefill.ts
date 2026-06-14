@@ -2,6 +2,7 @@ import type { DashboardShiftAssignEmployee } from "@/app/actions/dashboard-shift
 import {
   areDashboardShiftTimesComplete,
   filterBulkShiftAssignEmployeesForRow,
+  filterBulkShiftAssignEmployeesWithoutTimeWindow,
   pickEmployeeLongestWithoutShift,
 } from "@/lib/available-employees-for-shift";
 import type { BulkShiftColumnPrefs } from "@/lib/bulk-shift-column-prefs";
@@ -18,6 +19,7 @@ import {
 import { shiftClockRangesOverlapMinutes } from "@/lib/bulk-staffing-header";
 import {
   filterAssignmentPresetsMatchingTimes,
+  prefillBulkRowWithEarliestAssignmentPreset,
   resolvePresetShiftTemplateForDemandTimes,
   type DashboardAssignmentPreset,
 } from "@/lib/dashboard-assignment-presets";
@@ -85,6 +87,8 @@ export type BuildPrefilledBulkRowInput = {
     serviceHourId: string;
     qualificationId: string;
   };
+  /** Keine Servicezeit — nur Verfügbarkeit, keine Personalbedarf-Filter. */
+  withoutServiceHours?: boolean;
 };
 
 function timeFieldValue(time: string): string {
@@ -154,6 +158,7 @@ function matchingEmployeesForPrefillRow(
     locationDayAssignments: readonly LocationDayAssignmentRef[];
     allRows: readonly BulkPrefillRow[];
     emptyEmployeeId: string;
+    withoutServiceHours?: boolean;
   }
 ): DashboardShiftAssignEmployee[] {
   const windowStart =
@@ -164,6 +169,13 @@ function matchingEmployeesForPrefillRow(
     row.requestedEndTime && areDashboardShiftTimesComplete(row.requestedStartTime ?? "", row.requestedEndTime)
       ? row.requestedEndTime
       : row.endTime;
+
+  if (options.withoutServiceHours && !areDashboardShiftTimesComplete(windowStart, windowEnd)) {
+    return filterBulkShiftAssignEmployeesWithoutTimeWindow(
+      options.employees,
+      options.weekday
+    );
+  }
 
   if (!areDashboardShiftTimesComplete(windowStart, windowEnd)) return [];
 
@@ -192,6 +204,9 @@ function matchingEmployeesForPrefillRow(
       ),
     }
   );
+  if (options.withoutServiceHours) {
+    return byWindow;
+  }
   const demandQualificationIds = staffingQualificationIdsForServiceHour(
     options.staffingRules,
     options.areaId,
@@ -266,6 +281,48 @@ function pickEmployeeForBulkPrefill(
 
 export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPrefillRow {
   const row = input.createEmptyRow();
+
+  if (input.withoutServiceHours) {
+    row.employeeManuallySelected = !input.prefill.employee;
+    row.shiftTypeManuallySelected = !input.prefill.template;
+    row.qualificationManuallySelected = !input.prefill.qualification;
+
+    prefillBulkRowWithEarliestAssignmentPreset(row, input.assignmentPresets);
+
+    if (
+      input.prefill.employee &&
+      areDashboardShiftTimesComplete(row.startTime, row.endTime)
+    ) {
+      const picked = pickEmployeeForBulkPrefill(
+        matchingEmployeesForPrefillRow(row, {
+          employees: input.employees,
+          weekday: input.weekday,
+          dateISO: input.dateISO,
+          areaId: input.areaId,
+          countryCode: input.countryCode,
+          timeZone: input.timeZone,
+          staffingRules: input.staffingRules,
+          areaQualifications: input.areaQualifications,
+          profileQualificationIds: input.profileQualificationIds,
+          areaExistingAssignments: input.areaExistingAssignments,
+          locationDayAssignments: input.locationDayAssignments,
+          allRows: input.existingRows,
+          emptyEmployeeId: input.emptyEmployeeId,
+          withoutServiceHours: true,
+        }),
+        row.startTime,
+        row.endTime,
+        input.areaId,
+        input.profileShiftPreferences
+      );
+      if (picked) {
+        row.employeeId = picked.id;
+      }
+    }
+
+    return row;
+  }
+
   const targetEntry = input.targetDemand
     ? (input.staffingEntries.find(
         (entry) => entry.serviceHourId === input.targetDemand!.serviceHourId

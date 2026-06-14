@@ -10,13 +10,14 @@ import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { useOrgFeatures } from "@/lib/org-features-provider";
 import { translateActionError } from "@/lib/translate-action-error";
 import { toIntlLocale } from "@/i18n/intl-locale";
+import { cn } from "@/lib/cn";
 import {
   avatarColor,
   buildPlanningWarnings,
   employeeWeekHours,
   formatDayHeader,
   formatTimeRange,
-  formatWeekRange,
+  getDashboardWeekHeaderParts,
   initials,
   shiftHours,
   weeklySummary,
@@ -101,6 +102,9 @@ type Props = {
 type Picker = { employeeId: string; date: string };
 
 type DayAssignBlockReason = "absent" | "no_availability";
+
+/** Gleiche Höhe wie IconButton size="md" (h-9). */
+const HEADER_CONTROL_H = "h-9 min-h-9";
 
 function getDayAssignBlockReason(
   employeeId: string,
@@ -227,17 +231,34 @@ export function ShiftPlanner({
       for (const [key, value] of Object.entries(updates)) {
         params.set(key, value);
       }
-      router.push(`/planung?${params.toString()}`);
+      const q = params.toString();
+      startTransition(() => {
+        router.push(q ? `/planung?${q}` : "/planung");
+      });
     },
     [router, searchParams]
   );
 
-  function navigateWeek(delta: number) {
-    if (delta < 0 && atEarliestWeek) return;
-    const d = parseISODate(weekStart);
-    d.setDate(d.getDate() + delta * 7);
-    pushPlanungQuery({ week: toISODate(d) });
-  }
+  const weekHeader = useMemo(
+    () => getDashboardWeekHeaderParts(weekStart, intlLocale),
+    [weekStart, intlLocale]
+  );
+
+  const weekLabelTitle = `${weekHeader.rangeLabel} ${weekHeader.year} KW ${weekHeader.calendarWeek}`;
+
+  const navigateWeek = useCallback(
+    (delta: number) => {
+      if (delta < 0 && atEarliestWeek) return;
+      const d = parseISODate(weekStart);
+      d.setDate(d.getDate() + delta * 7);
+      pushPlanungQuery({ week: toISODate(d) });
+    },
+    [atEarliestWeek, pushPlanungQuery, weekStart]
+  );
+
+  const goToToday = useCallback(() => {
+    pushPlanungQuery({ week: toISODate(startOfWeek(new Date())) });
+  }, [pushPlanungQuery]);
 
   function isDayReadOnly(date: string) {
     return readOnlyWeek || isPastShiftDate(date);
@@ -423,9 +444,6 @@ export function ShiftPlanner({
             <h1 className="text-2xl font-semibold tracking-tight">
               Schichtplan erstellen
             </h1>
-            <p className="mt-0.5 text-sm text-muted">
-              Erstellen Sie den Schichtplan für die nächste Woche.
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Tooltip content="Demnächst verfügbar">
@@ -455,54 +473,73 @@ export function ShiftPlanner({
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-end gap-6">
-          <Field label="Zeitraum" mutedLabel>
-            <div className="flex items-center gap-1">
-              <IconButton
-                onClick={() => navigateWeek(-1)}
-                disabled={pending || atEarliestWeek}
-                aria-label="Vorherige Woche"
-              >
-                ‹
-              </IconButton>
-              <ControlDisplay className="min-w-[220px] py-2">
-                {formatWeekRange(weekStart)}
-              </ControlDisplay>
-              <IconButton
-                onClick={() => navigateWeek(1)}
-                disabled={pending}
-                aria-label="Nächste Woche"
-              >
-                ›
-              </IconButton>
-              <Button
-                type="button"
-                size="sm"
-                className="ml-1"
-                onClick={() =>
-                  pushPlanungQuery({
-                    week: toISODate(startOfWeek(new Date())),
-                  })
-                }
-                disabled={pending}
-              >
-                Nächste Woche
-              </Button>
-            </div>
-          </Field>
+        <div className="mt-3 flex flex-wrap items-center gap-3 md:gap-4">
+          <div
+            role="group"
+            aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
+            className="flex shrink-0 items-center gap-1.5 sm:gap-2"
+          >
+            <IconButton
+              size="md"
+              onClick={() => navigateWeek(-1)}
+              disabled={pending || atEarliestWeek}
+              aria-label={t("common.prevWeek")}
+              className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
+            >
+              <ChevronIcon direction="left" />
+            </IconButton>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="header"
+              onClick={goToToday}
+              disabled={pending}
+              className={cn(HEADER_CONTROL_H, "shrink-0 font-semibold")}
+            >
+              {t("common.today")}
+            </Button>
+
+            <IconButton
+              size="md"
+              onClick={() => navigateWeek(1)}
+              disabled={pending}
+              aria-label={t("common.nextWeek")}
+              className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
+            >
+              <ChevronIcon direction="right" />
+            </IconButton>
+          </div>
+
+          <p
+            className="min-w-0 select-none text-sm leading-none"
+            title={weekLabelTitle}
+          >
+            <span className="font-semibold">{weekHeader.monthYearLabel}</span>
+            <span className="ml-1.5 text-xs font-normal text-muted">
+              KW {weekHeader.calendarWeek}
+            </span>
+          </p>
+
           {features.areas ? (
-            <>
-              <Field label={t("dashboard.location")} mutedLabel>
+            <div className="flex shrink-0 flex-nowrap items-center">
+              <span className="shrink-0 text-sm text-foreground">
+                {t("dashboard.location")}
+              </span>
+              <div className="ml-2 w-[11rem] shrink-0">
                 <LocationSelect
                   locations={locations}
                   selectedLocationId={selectedLocationId}
                   basePath="/planung"
-                  className="min-w-[200px] py-2"
+                  className="!mt-0 w-full font-semibold"
                 />
-              </Field>
-              <Field label={t("planning.area")} mutedLabel>
+              </div>
+              <span className="ml-5 shrink-0 text-sm text-foreground">
+                {t("planning.area")}
+              </span>
+              <div className="ml-2 w-[11rem] shrink-0">
                 {areas.length === 0 ? (
-                  <ControlDisplay className="min-w-[200px] py-2 text-muted">
+                  <ControlDisplay className="w-full py-2 text-muted">
                     {t("planning.noAreas")}
                   </ControlDisplay>
                 ) : (
@@ -510,7 +547,7 @@ export function ShiftPlanner({
                     value={selectedAreaId ?? areas[0].id}
                     disabled={pending || areas.length === 0}
                     aria-label={t("planning.selectArea")}
-                    className="min-w-[200px]"
+                    className="w-full font-semibold"
                     onChange={(event) =>
                       pushPlanungQuery({ area: event.target.value })
                     }
@@ -523,8 +560,8 @@ export function ShiftPlanner({
                     ))}
                   </Select>
                 )}
-              </Field>
-            </>
+              </div>
+            </div>
           ) : null}
         </div>
       </header>
@@ -1021,6 +1058,21 @@ function ActionLink({
     <Button type="button" variant="ghost" size="sm" className="h-auto justify-start px-0 text-primary">
       {children}
     </Button>
+  );
+}
+
+function ChevronIcon({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg
+      width="8"
+      height="12"
+      viewBox="0 0 8 12"
+      fill="currentColor"
+      aria-hidden
+      className={direction === "right" ? "scale-x-[-1]" : undefined}
+    >
+      <path d="M7 0L1 6l6 6V0z" />
+    </svg>
   );
 }
 

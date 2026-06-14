@@ -37,6 +37,8 @@ export const de = {
     profiles: "Profile",
     roles: "Rollen",
     planningMode: "Planungsmodus",
+    compensationSettings: "Arbeitsentgelt",
+    notificationOutbox: "Benachrichtigungs-Outbox",
     openMenu: "Menü öffnen",
     closeMenu: "Menü schließen",
   },
@@ -45,9 +47,19 @@ export const de = {
     selectLocation: "Standort auswählen",
     noLocations: "Kein Standort angelegt",
     noAreas: "Für diesen Standort sind noch keine Bereiche angelegt.",
+    noServiceHours: "Keine Servicezeiten",
+    noServiceHoursHeaderTooltip:
+      "Für diesen Bereich wurden für {weekday} keine Servicezeiten festgelegt!",
+    tagAreaFooterTotalHours: "Gesamte Stunden: {hours}",
+    tagAreaFooterTotalCost: "Gesamte Kosten: {amount} {currency}",
+    noServiceHoursShiftConfirm:
+      "An diesem Tag hat dieser Bereich \"{area}\" keine Servicezeit! Sollen dennoch Einsatzzeiten hinzugefügt werden?",
     staffingCount: "{assigned}/{required}",
     assignShift: "eine Schicht hinzufügen",
     assignMultipleShifts: "Einsatzzeiten zuweisen/bearbeiten",
+    deleteShift: "Schicht löschen",
+    deleteShiftConfirm: "Soll diese Schicht wirklich entfernt werden?",
+    editShift: "Schicht bearbeiten",
     addShiftTitle: "Schicht hinzufügen",
     bulkShiftTitle: "Einsatzzeiten zuweisen/bearbeiten",
     bulkShiftStaffingPrefix: "Bedarf:",
@@ -100,6 +112,8 @@ export const de = {
       "Dem Personal {name} wurden mindestens zwei Einsatzzeiten zugewiesen, die sich zeitlich überschneiden.",
     bulkShiftValidationOutsideServiceHours:
       "Zeile {row}: Die Schicht liegt außerhalb der Servicezeiten.",
+    bulkShiftOutsideServiceHoursConfirm:
+      "Die Schicht liegt außerhalb der Servicezeiten! Soll sie dennoch hinzugefügt werden?",
     bulkShiftValidationDailyHours:
       "{name}: Gesamtarbeitszeit {total} h am Tag überschreitet das Maximum von {limit} h (Einsatzzeiten: {spans}).",
     bulkShiftValidationShiftDuration:
@@ -248,6 +262,8 @@ export const de = {
     availabilitySelectWeekdays: "Bitte mindestens einen Wochentag auswählen.",
     availabilityBulkEditMissingWindow:
       "{weekday}: Für dieses Zeitfenster ist keine Verfügbarkeit hinterlegt.",
+    availabilityBulkEditNoMatchingDays:
+      "Für keinen der gewählten Tage ist eine Verfügbarkeit in der Liste hinterlegt.",
     availabilityInputTimes: "Uhrzeiten",
     availabilityInputShiftType: "Schichtart",
     availabilityFrom: "Von",
@@ -275,11 +291,17 @@ export const de = {
     color: "Farbe",
     selectColor: "Farbe auswählen",
     noColorsAvailable: "Alle Farben sind bereits vergeben.",
+    emailFallbackModeLabel: "E-Mail-Modus (Schichtbestätigung)",
+    emailFallbackModeHint:
+      "Phase 1: simuliert. Benachrichtigungen gehen als E-Mail in die Outbox statt als Push.",
     compensationSection: "Arbeitsentgelt",
     currentHourlyRate: "Stundensatz",
     noHourlyRate: "Kein Stundensatz hinterlegt",
     hourlyRatePlaceholder: "z. B. 15,50",
     validFrom: "Gültig ab",
+    validTo: "Gültig bis",
+    hourlyRateOpenEnd: "Offen (ohne Enddatum)",
+    enterValidToOrOpen: "Bitte Gültig bis eingeben oder „Offen“ wählen.",
     enterHourlyRate: "Bitte einen Stundensatz eingeben.",
     hourlyRateHistory: "Verlauf",
     hourlyRateColumnAmount: "Satz",
@@ -289,6 +311,10 @@ export const de = {
     hourlyRateOpen: "aktuell",
     hourlyRateCreateTitle: "Stundensatz anlegen",
     hourlyRateEditTitle: "Stundensatz ändern",
+    hourlyRateFutureOnlyHint:
+      "Gültig ab muss heute oder in der Zukunft liegen (Organisationseinstellung).",
+    hourlyRateRetroactivePlanningHint:
+      "Planungskosten vergangener Schichten können sich durch nachträgliche Einträge ändern.",
     surchargesSection: "Sonderzuschläge",
     noSurcharges: "Keine Sonderzuschläge zugewiesen",
     surchargeType: "Zuschlagsart",
@@ -389,12 +415,19 @@ export const de = {
       "Entfernte Standorte und Bereiche werden archiviert — bestehende Schichten und spätere Kosten bleiben korrekt zuordenbar.",
     weekdays: {
       monday: "Montag",
+      mondayPlural: "Montage",
       tuesday: "Dienstag",
+      tuesdayPlural: "Dienstage",
       wednesday: "Mittwoch",
+      wednesdayPlural: "Mittwoche",
       thursday: "Donnerstag",
+      thursdayPlural: "Donnerstage",
       friday: "Freitag",
+      fridayPlural: "Freitage",
       saturday: "Samstag",
+      saturdayPlural: "Samstage",
       sunday: "Sonntag",
+      sundayPlural: "Sonntage",
       holiday: "Feiertage",
       holidaySingular: "Feiertag",
       holidayPlural: "Feiertage",
@@ -629,6 +662,72 @@ export const de = {
     minRestPeriod:
       "Mindestruhezeit von {hours} Stunden zwischen Schichten nicht eingehalten.",
   },
+  shiftConfirmation: {
+    status: {
+      proposed: "Geplant",
+      requested: "Angefragt",
+      pending: "Ausstehend",
+      rejected: "Abgelehnt",
+      confirmed: "Bestätigt",
+    },
+    actions: {
+      requestConfirmation: "Bestätigung anfordern",
+      sendResponses: "Antworten senden",
+    },
+    send: {
+      modalTitle: "Bestätigung anfordern",
+      modalHint:
+        "Für ausgewählte Mitarbeiter werden alle offenen Schichten dieser Woche gesendet.",
+      noCandidates: "Keine Mitarbeiter mit offenen Schichten in dieser Woche.",
+      noSelection: "Bitte mindestens einen Mitarbeiter auswählen.",
+      failed: "Senden fehlgeschlagen.",
+      partialSuccess: "{sent} gesendet, {failed} fehlgeschlagen.",
+      proposedCount: "{count} offen",
+    },
+    disclaimer: {
+      default: "Die Bestätigung ersetzt keine arbeitsvertragliche Vereinbarung.",
+    },
+    notifications: {
+      responseAllConfirmed: "{name} hat die Einplanung vollständig bestätigt.",
+      responseWithRejections:
+        "{name} hat die Einplanung inkl. Ablehnungen beantwortet.",
+      pending: "{name} hat auf Schichten nicht rechtzeitig geantwortet.",
+      centerTitle: "Benachrichtigungen",
+      empty: "Keine offenen Benachrichtigungen.",
+      dismiss: "Schließen",
+    },
+    panel: {
+      title: "Offene Rückmeldungen",
+      hint: "Schichten dieser Woche und dieses Standorts.",
+      empty: "Keine Einträge in diesem Tab.",
+      reassign: "Neu zuweisen",
+      tabs: {
+        pending: "Ausstehend",
+        rejected: "Abgelehnt",
+        proposed: "Nicht versendet",
+      },
+    },
+    settings: {
+      enabled: "Schichtbestätigung durch Mitarbeiter",
+    },
+    gate: {
+      appNotRegistered:
+        "Mitarbeiter ohne App-Registrierung kann nicht eingeplant werden.",
+    },
+    outbox: {
+      title: "Benachrichtigungs-Outbox",
+      hint: "Simulierte Push- und E-Mail-Benachrichtigungen (Phase 1, readonly).",
+      empty: "Keine Einträge vorhanden.",
+      columns: {
+        createdAt: "Zeit",
+        recipient: "Empfänger",
+        channel: "Kanal",
+        template: "Template",
+        payload: "Payload",
+        simulated: "Simuliert",
+      },
+    },
+  },
   organization: {
     planningModeTitle: "Planungsmodus",
     planningModeCurrent: "Aktueller Modus",
@@ -641,6 +740,18 @@ export const de = {
     planningModeUpgradeSuccess: "Planungsmodus wurde auf Erweitert umgestellt.",
     planningModeDowngradeHint:
       "Ein Wechsel zurück in den einfachen Modus ist derzeit nicht möglich, da dabei Einstellungen ausgeblendet würden.",
+    compensationSettingsTitle: "Arbeitsentgelt (Organisation)",
+    allowRetroactiveCompensationLabel: "Nachträgliche Entgelteinträge erlauben",
+    allowRetroactiveCompensationHint:
+      "Erlaubt Stundensätze mit Gültig ab in der Vergangenheit. Einträge mit zukünftigem Gültig ab sind immer möglich.",
+    compensationPlanningDisclaimer:
+      "Angezeigte Kosten im Dashboard sind Planungswerte und ersetzen keine Lohnabrechnung oder revisionssichere Belege.",
+    shiftConfirmationEnabledLabel: "Schichtbestätigung durch Mitarbeiter",
+    shiftConfirmationEnabledHint:
+      "Mitarbeiter müssen zugewiesene Schichten bestätigen, bevor sie verbindlich sind.",
+    shiftConfirmationDisclaimerLabel: "Hinweistext für Mitarbeiter",
+    shiftConfirmationDisclaimerHint:
+      "Wird in der Mobile-App beim Bestätigen angezeigt. Leer = Standardtext.",
     errors: {
       planningModeAlreadyActive: "Der Planungsmodus ist bereits aktiv.",
       planningModeDowngradeNotAllowed:

@@ -7,6 +7,7 @@ import {
 import {
   SHIFT_CARD_EXTRA_HEIGHT_PX,
   SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+  shiftCardListItemHeightPx,
 } from "@/lib/shift-card-row-layout";
 import {
   buildShiftCardDisplayContent,
@@ -14,8 +15,14 @@ import {
   type ShiftCardDisplayContent,
   type ShiftCardDensity,
 } from "@/lib/shift-card-display-content";
-import { Tooltip } from "@/components/ui/tooltip";
+import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import { Tooltip } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import {
+  shiftConfirmationBadgeSymbol,
+  shiftConfirmationShowsOverlay,
+  shiftConfirmationStatusLabelKey,
+} from "@/lib/shift-confirmation-display";
 
 export type DashboardShiftCard = {
   id: string;
@@ -29,10 +36,15 @@ export type DashboardShiftCard = {
   endTime: string;
   employeeName: string;
   employeeColor: string | null;
+  confirmationStatus?: ShiftConfirmationStatus;
 };
 
 const DASHBOARD_SHIFT_CARD_CLASS =
-  "relative flex shrink-0 overflow-hidden rounded shadow-md";
+  "relative flex shrink-0 overflow-hidden rounded";
+
+/** Kompakter, dunklerer Schatten — passt in {@link shiftCardListItemHeightPx}. */
+export const DASHBOARD_SHIFT_CARD_BOX_SHADOW =
+  "0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.07)";
 
 const DASHBOARD_SHIFT_CARD_MARKER_MIN_HEIGHT_PX =
   16 + SHIFT_CARD_EXTRA_HEIGHT_PX;
@@ -49,6 +61,8 @@ type Props = {
   marginLeftPx?: number;
   density: ShiftCardDensity;
   onClick?: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
+  confirmationStatusLabel?: string;
 };
 
 function ShiftCardTextRows({
@@ -107,19 +121,37 @@ export function DashboardShiftCardView({
   marginLeftPx,
   density,
   onClick,
+  onContextMenu,
+  confirmationStatusLabel,
 }: Props) {
   const employeeColor =
     shift.employeeColor?.trim() || DASHBOARD_SHIFT_CARD_EMPLOYEE_FALLBACK_COLOR;
 
+  const cardHeightPx =
+    density === "marker"
+      ? DASHBOARD_SHIFT_CARD_MARKER_MIN_HEIGHT_PX
+      : SHIFT_CARD_TWO_LINE_HEIGHT_PX;
+
+  const confirmationStatus = shift.confirmationStatus;
+  const showConfirmationOverlay =
+    density !== "marker" &&
+    confirmationStatus &&
+    shiftConfirmationShowsOverlay(confirmationStatus);
+
+  const tooltipBody = showConfirmationOverlay && confirmationStatusLabel
+    ? `${display.tooltipBody}\n${confirmationStatusLabel}`
+    : display.tooltipBody;
+
   return (
     <div
-      className="self-start max-w-full"
+      className="max-w-full shrink-0 self-start"
       style={{
+        height: shiftCardListItemHeightPx(cardHeightPx),
         ...(marginLeftPx !== undefined ? { marginLeft: marginLeftPx } : undefined),
       }}
     >
       <Tooltip
-        content={display.tooltipBody}
+        content={tooltipBody}
         className="inline-flex w-fit max-w-full"
         placement={{
           anchorLeftToTriggerCenter: true,
@@ -135,6 +167,15 @@ export function DashboardShiftCardView({
             event.stopPropagation();
             onClick?.();
           }}
+          onContextMenu={
+            onContextMenu
+              ? (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onContextMenu(event);
+                }
+              : undefined
+          }
           onKeyDown={
             onClick
               ? (event) => {
@@ -153,14 +194,9 @@ export function DashboardShiftCardView({
           )}
           style={{
             ...(widthPx !== undefined ? { width: widthPx } : undefined),
-            height:
-              density === "marker"
-                ? DASHBOARD_SHIFT_CARD_MARKER_MIN_HEIGHT_PX
-                : SHIFT_CARD_TWO_LINE_HEIGHT_PX,
-            minHeight:
-              density === "marker"
-                ? DASHBOARD_SHIFT_CARD_MARKER_MIN_HEIGHT_PX
-                : SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+            height: cardHeightPx,
+            minHeight: cardHeightPx,
+            boxShadow: DASHBOARD_SHIFT_CARD_BOX_SHADOW,
           }}
         >
         <div
@@ -179,7 +215,10 @@ export function DashboardShiftCardView({
           />
         ) : (
           <div
-            className={cn(DASHBOARD_SHIFT_CARD_CONTENT_CLASS, "items-center gap-1.5")}
+            className={cn(
+              DASHBOARD_SHIFT_CARD_CONTENT_CLASS,
+              "relative items-center gap-1.5"
+            )}
             style={{
               backgroundImage: buildShiftCardTimeGradientCss(
                 shift.startTime,
@@ -188,6 +227,20 @@ export function DashboardShiftCardView({
             }}
           >
             <ShiftCardTextRows display={display} density={density} />
+            {showConfirmationOverlay && confirmationStatus ? (
+              <>
+                <div
+                  className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-black/25"
+                  aria-hidden
+                />
+                <div
+                  className="pointer-events-none absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-sm bg-white/90 px-0.5 text-[10px] font-semibold leading-none text-foreground shadow-sm"
+                  aria-hidden
+                >
+                  {shiftConfirmationBadgeSymbol(confirmationStatus)}
+                </div>
+              </>
+            ) : null}
           </div>
         )}
         </div>

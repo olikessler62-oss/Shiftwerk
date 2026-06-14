@@ -7,14 +7,15 @@ import { useCallback, useEffect, useMemo, useRef, useTransition } from "react";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
 import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { getDashboardWeekHeaderParts } from "@/lib/planning-utils";
-import type { Location } from "@schichtwerk/types";
-import { Button, IconButton } from "@/components/ui";
+import type { Location, ManagerNotification } from "@schichtwerk/types";
+import { Button, IconButton, ListIcon } from "@/components/ui";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
 import { useOrgFeatures } from "@/lib/org-features-provider";
 import { LocationSelect } from "./location-select";
+import { DashboardNotificationCenter } from "./dashboard-notification-center";
 
 /** Gleiche Höhe wie IconButton size="md" (h-9). */
 const HEADER_CONTROL_H = "h-9 min-h-9";
@@ -43,12 +44,26 @@ type Props = {
   weekStart: string;
   locations: Location[];
   selectedLocationId: string | null;
+  proposedSendCount?: number;
+  openConfirmationsCount?: number;
+  shiftConfirmationEnabled?: boolean;
+  managerNotifications?: ManagerNotification[];
+  onOpenSendConfirmation?: () => void;
+  onOpenConfirmationsPanel?: (tab?: "pending" | "rejected" | "proposed") => void;
+  onNavigateToWeek?: (weekStart: string) => void;
 };
 
 export function DashboardHeader({
   weekStart,
   locations,
   selectedLocationId,
+  proposedSendCount = 0,
+  openConfirmationsCount = 0,
+  shiftConfirmationEnabled = false,
+  managerNotifications = [],
+  onOpenSendConfirmation,
+  onOpenConfirmationsPanel,
+  onNavigateToWeek,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -186,7 +201,48 @@ export function DashboardHeader({
         ) : null}
       </div>
 
-      <LanguageSelect className="shrink-0 self-end md:self-auto" />
+      <div className="flex shrink-0 items-center gap-2 self-end md:self-auto">
+        {shiftConfirmationEnabled && proposedSendCount > 0 && onOpenSendConfirmation ? (
+          <Button
+            type="button"
+            size="header"
+            onClick={onOpenSendConfirmation}
+            disabled={pending}
+            className={cn(HEADER_CONTROL_H, "font-semibold")}
+          >
+            {t("shiftConfirmation.actions.requestConfirmation")}
+            <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
+              {proposedSendCount}
+            </span>
+          </Button>
+        ) : null}
+        {shiftConfirmationEnabled && onOpenConfirmationsPanel ? (
+          <IconButton
+            type="button"
+            size="md"
+            aria-label={t("shiftConfirmation.panel.title")}
+            title={t("shiftConfirmation.panel.title")}
+            className="relative"
+            onClick={() => onOpenConfirmationsPanel()}
+          >
+            <ListIcon />
+            {openConfirmationsCount > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
+                {openConfirmationsCount > 9 ? "9+" : openConfirmationsCount}
+              </span>
+            ) : null}
+          </IconButton>
+        ) : null}
+        {shiftConfirmationEnabled && onOpenConfirmationsPanel ? (
+          <DashboardNotificationCenter
+            enabled={shiftConfirmationEnabled}
+            initialNotifications={managerNotifications}
+            onOpenConfirmationsPanel={onOpenConfirmationsPanel}
+            onNavigateToWeek={onNavigateToWeek}
+          />
+        ) : null}
+        <LanguageSelect className="shrink-0" />
+      </div>
     </header>
   );
 }

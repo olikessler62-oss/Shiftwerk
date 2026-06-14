@@ -31,6 +31,8 @@ export type ShiftAssignEligibilityInput = {
   startTime: string;
   endTime: string;
   locationAreaId: string | null;
+  /** Tag/Bereich ohne Servicezeit — explizit bestätigt; keine Servicezeit-Prüfung. */
+  withoutServiceHours?: boolean;
 };
 
 function mergeWarnings(...groups: (string[] | undefined)[]): string[] | undefined {
@@ -76,7 +78,7 @@ export function validateShiftAssignEligibility(
   const profileQualificationIds = ctx.profileQualificationIds ?? new Map();
   const qualificationNameById = ctx.qualificationNameById ?? new Map();
 
-  if (orgFeatures.serviceHours) {
+  if (orgFeatures.serviceHours && !input.withoutServiceHours) {
     const serviceHoursCheck = validateShiftServiceHoursForArea(
       serviceHours,
       input.locationAreaId,

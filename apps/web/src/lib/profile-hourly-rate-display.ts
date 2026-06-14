@@ -1,9 +1,32 @@
 import type { ProfileHourlyRate } from "@schichtwerk/types";
+import { dayAfter, dayBefore } from "@schichtwerk/database";
 
-function dayAfter(isoDate: string): string {
-  const d = new Date(`${isoDate}T12:00:00`);
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+export type HourlyRateEditBounds = {
+  minValidFrom?: string;
+  maxValidFrom?: string;
+};
+
+export function sortProfileHourlyRatesByValidFrom(
+  rates: ProfileHourlyRate[]
+): ProfileHourlyRate[] {
+  return [...rates].sort((a, b) => a.valid_from.localeCompare(b.valid_from));
+}
+
+export function resolveHourlyRateEditBounds(
+  rates: ProfileHourlyRate[],
+  editingRateId: string
+): HourlyRateEditBounds {
+  const sorted = sortProfileHourlyRatesByValidFrom(rates);
+  const index = sorted.findIndex((rate) => rate.id === editingRateId);
+  if (index < 0) return {};
+
+  const predecessor = index > 0 ? sorted[index - 1] : null;
+  const successor = index < sorted.length - 1 ? sorted[index + 1] : null;
+
+  return {
+    minValidFrom: predecessor ? dayAfter(predecessor.valid_from) : undefined,
+    maxValidFrom: successor ? dayBefore(successor.valid_from) : undefined,
+  };
 }
 
 export function minValidFromForRateChange(

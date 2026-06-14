@@ -26,6 +26,22 @@ export type RequestStatus = "pending" | "approved" | "rejected" | "cancelled";
 
 export type SwapRequestStatus = RequestStatus;
 
+/** Phase 1 — Schichtbestätigung durch Mitarbeiter (Spec 008). */
+export type ShiftConfirmationStatus =
+  | "proposed"
+  | "requested"
+  | "confirmed"
+  | "rejected"
+  | "pending";
+
+export type ConfirmationRequestScope =
+  | "single_shift"
+  | "employee_day"
+  | "employee_week"
+  | "bulk_week";
+
+export type NotificationOutboxChannel = "push" | "email";
+
 /** Planungsmodus auf Organisationsebene (führend für UI & Validierung). */
 export type PlanningMode = "simple" | "advanced";
 
@@ -42,6 +58,12 @@ export interface Organization {
   planning_mode: PlanningMode;
   /** Branche aus Onboarding; null bei älteren Organisationen ohne Zuordnung. */
   industry: Industry | null;
+  /** Nachträgliche Stundensatz-Einträge (Gültig ab in der Vergangenheit). */
+  allow_retroactive_compensation_entries: boolean;
+  /** Schichtbestätigung durch Mitarbeiter (Default aus). */
+  shift_confirmation_enabled: boolean;
+  /** Editierbarer Hinweistext für Mitarbeiter-Antworten. */
+  shift_confirmation_disclaimer: string | null;
   created_at: string;
 }
 
@@ -61,6 +83,10 @@ export interface Profile {
   is_active: boolean;
   schedulable: boolean;
   sort_order: number;
+  /** Mobile-App registriert — Pflicht für Zuweisung bei aktiver Schichtbestätigung. */
+  app_registered_at: string | null;
+  /** E-Mail-Fallback bei verlorenem Gerät (Phase 1 simuliert). */
+  email_fallback_mode: boolean;
   created_at: string;
 }
 
@@ -243,6 +269,96 @@ export interface Shift {
   notes: string | null;
   created_by: string | null;
   updated_at: string;
+  confirmation_status: ShiftConfirmationStatus;
+  confirmation_status_updated_at: string;
+  requested_at: string | null;
+  pending_since: string | null;
+  pending_reminder_sent_at: string | null;
+}
+
+export interface ShiftConfirmationEvent {
+  id: string;
+  organization_id: string;
+  shift_id: string;
+  actor_id: string | null;
+  from_status: ShiftConfirmationStatus | null;
+  to_status: ShiftConfirmationStatus;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ConfirmationRequestBatch {
+  id: string;
+  organization_id: string;
+  employee_id: string;
+  sent_by: string;
+  scope: ConfirmationRequestScope;
+  week_start: string;
+  week_end: string;
+  is_delta: boolean;
+  sent_at: string;
+}
+
+export interface ConfirmationRequestItem {
+  id: string;
+  batch_id: string;
+  shift_id: string;
+  snapshot: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface NotificationOutboxEntry {
+  id: string;
+  organization_id: string;
+  recipient_profile_id: string;
+  channel: NotificationOutboxChannel;
+  template_key: string;
+  payload: Record<string, unknown>;
+  simulated: boolean;
+  created_at: string;
+}
+
+export interface ManagerNotification {
+  id: string;
+  organization_id: string;
+  recipient_profile_id: string;
+  type: string;
+  title: string;
+  body: string;
+  payload: Record<string, unknown>;
+  read_at: string | null;
+  dismissed_at: string | null;
+  created_at: string;
+}
+
+export type ConfirmationWeekItemStatus = "requested" | "pending";
+export type ConfirmationDecision = "confirm" | "reject";
+
+export interface ConfirmationWeekItem {
+  shiftId: string;
+  status: ConfirmationWeekItemStatus;
+  shiftDate: string;
+  startsAt: string;
+  endsAt: string;
+  locationName: string;
+  areaName: string;
+  templateName: string | null;
+  jobName: string | null;
+  disclaimer: string | null;
+}
+
+export interface ConfirmationWeekResponse {
+  items: ConfirmationWeekItem[];
+  organizationDisclaimer: string | null;
+}
+
+export interface ConfirmationRespondItem {
+  shiftId: string;
+  decision: ConfirmationDecision;
+}
+
+export interface ConfirmationRespondBody {
+  items: ConfirmationRespondItem[];
 }
 
 export interface Availability {

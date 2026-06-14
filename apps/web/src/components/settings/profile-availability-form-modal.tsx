@@ -8,8 +8,8 @@ import {
 import { parseAvailabilityTimeRange } from "@schichtwerk/database";
 import type { ProfileRecurringAvailability } from "@schichtwerk/types";
 import {
-  findAvailabilityForWeekdayWindow,
-  weekdaysWithMatchingAvailability,
+  findBulkEditEntryForWeekday,
+  weekdaysWithListedAvailability,
 } from "@/lib/profile-availability-bulk";
 import {
   formatOvernightAvailabilitySpan,
@@ -74,34 +74,40 @@ export function ProfileAvailabilityFormModal({
   const [error, setError] = useState<string | null>(null);
   const [overnightConfirmOpen, setOvernightConfirmOpen] = useState(false);
 
+  const referenceEntry = useMemo(() => {
+    if (mode !== "bulk-edit" || !currentAvailability) return null;
+    return (
+      existingAvailability.find((entry) => entry.id === currentAvailability.id) ??
+      currentAvailability
+    );
+  }, [currentAvailability, existingAvailability, mode]);
+
   const referenceWindow = useMemo(
     () =>
-      mode === "bulk-edit" && currentAvailability
+      referenceEntry
         ? {
-            start: currentAvailability.start_time.slice(0, 5),
-            end: currentAvailability.end_time.slice(0, 5),
+            start: referenceEntry.start_time.slice(0, 5),
+            end: referenceEntry.end_time.slice(0, 5),
           }
         : null,
-    [currentAvailability, mode]
+    [referenceEntry]
+  );
+
+  const listedWeekdays = useMemo(
+    () => new Set(weekdaysWithListedAvailability(existingAvailability)),
+    [existingAvailability]
   );
 
   const [weekday, setWeekday] = useState(
     () => currentAvailability?.weekday ?? 0
   );
   const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(() => {
-    if (mode === "bulk-edit" && referenceWindow) {
-      const matching = weekdaysWithMatchingAvailability(
-        referenceWindow.start,
-        referenceWindow.end,
-        existingAvailability
-      );
-      return new Set(
-        matching.length > 0
-          ? matching
-          : currentAvailability
-            ? [currentAvailability.weekday]
-            : []
-      );
+    if (mode === "bulk-edit") {
+      const listed = weekdaysWithListedAvailability(existingAvailability);
+      if (listed.length > 0) {
+        return new Set(listed);
+      }
+      return new Set(referenceEntry ? [referenceEntry.weekday] : []);
     }
     if (mode === "create") {
       return new Set([0, 1, 2, 3, 4]);
@@ -109,10 +115,10 @@ export function ProfileAvailabilityFormModal({
     return new Set([currentAvailability?.weekday ?? 0]);
   });
   const [startTime, setStartTime] = useState(
-    () => currentAvailability?.start_time.slice(0, 5) ?? "08:00"
+    () => referenceEntry?.start_time.slice(0, 5) ?? currentAvailability?.start_time.slice(0, 5) ?? "08:00"
   );
   const [endTime, setEndTime] = useState(
-    () => currentAvailability?.end_time.slice(0, 5) ?? "17:00"
+    () => referenceEntry?.end_time.slice(0, 5) ?? currentAvailability?.end_time.slice(0, 5) ?? "17:00"
   );
 
   const usesMultiDayPicker = mode === "create" || mode === "bulk-edit";
@@ -160,7 +166,11 @@ export function ProfileAvailabilityFormModal({
       }
 
       const weekdaysToSave = usesMultiDayPicker
-        ? [...selectedWeekdays].sort((a, b) => a - b)
+        ? [...selectedWeekdays]
+            .filter((day) =>
+              mode === "bulk-edit" ? listedWeekdays.has(day) : true
+            )
+            .sort((a, b) => a - b)
         : [weekday];
 
       if (weekdaysToSave.length === 0) {
@@ -170,22 +180,18 @@ export function ProfileAvailabilityFormModal({
 
       let latestList = existingAvailability;
       let lastSelectedId = "";
+      let bulkEditUpdatedCount = 0;
 
       for (const saveWeekday of weekdaysToSave) {
-        if (mode === "bulk-edit" && referenceWindow) {
-          const existing = findAvailabilityForWeekdayWindow(
+        if (mode === "bulk-edit") {
+          const existing = findBulkEditEntryForWeekday(
             saveWeekday,
-            referenceWindow.start,
-            referenceWindow.end,
-            latestList
+            latestList,
+            referenceWindow ?? undefined,
+            referenceEntry?.id
           );
           if (!existing) {
-            setError(
-              t("profiles.availabilityBulkEditMissingWindow", {
-                weekday: weekdayLabel(saveWeekday, localeKey, "long"),
-              })
-            );
-            return;
+            continue;
           }
           const result = await updateProfileRecurringAvailability({
             profileId,
@@ -210,6 +216,7 @@ export function ProfileAvailabilityFormModal({
                 item.start_time.slice(0, 5) === savedStart &&
                 item.end_time.slice(0, 5) === savedEnd
             )?.id ?? existing.id;
+          bulkEditUpdatedCount += 1;
           continue;
         }
 
@@ -238,6 +245,16 @@ export function ProfileAvailabilityFormModal({
           lastSelectedId ??
           latestList[0]?.id ??
           "";
+      }
+
+      if (mode === "bulk-edit") {
+        if (bulkEditUpdatedCount === 0) {
+          setError(t("profiles.availabilityBulkEditNoMatchingDays"));
+          return;
+        }
+        onSaved(latestList, lastSelectedId, false);
+        onClose();
+        return;
       }
 
       onSaved(latestList, lastSelectedId, mode === "create");
@@ -357,6 +374,9 @@ export function ProfileAvailabilityFormModal({
                   weekdayCount={SERVICE_HOUR_WEEKDAY_COUNT}
                   selected={selectedWeekdays}
                   disabled={saving}
+                  selectableWeekdays={
+                    mode === "bulk-edit" ? listedWeekdays : undefined
+                  }
                   onToggle={(nextWeekday) => {
                     setSelectedWeekdays((prev) => {
                       const next = new Set(prev);
@@ -367,7 +387,13 @@ export function ProfileAvailabilityFormModal({
                     setError(null);
                   }}
                   onApplyPreset={(weekdays) => {
-                    setSelectedWeekdays(new Set(weekdays));
+                    setSelectedWeekdays(
+                      new Set(
+                        weekdays.filter((day) =>
+                          mode === "bulk-edit" ? listedWeekdays.has(day) : true
+                        )
+                      )
+                    );
                     setError(null);
                   }}
                 />
@@ -394,7 +420,10 @@ export function ProfileAvailabilityFormModal({
                   className="mt-1"
                   value={startTime}
                   disabled={saving}
-                  onChange={(e) => setStartTime(e.target.value)}
+                  onChange={(e) => {
+                    setStartTime(e.target.value);
+                    setError(null);
+                  }}
                 />
               </div>
               <div>
@@ -403,7 +432,10 @@ export function ProfileAvailabilityFormModal({
                   className="mt-1"
                   value={endTime}
                   disabled={saving}
-                  onChange={(e) => setEndTime(e.target.value)}
+                  onChange={(e) => {
+                    setEndTime(e.target.value);
+                    setError(null);
+                  }}
                 />
               </div>
             </div>

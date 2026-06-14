@@ -14,6 +14,7 @@ import type { DashboardShiftCard } from "@/components/dashboard/dashboard-calend
 import { resolveOrganizationTimeZone } from "@schichtwerk/database";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
+import { loadDashboardShiftCompensation } from "@/lib/load-dashboard-shift-compensation";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
@@ -49,6 +50,9 @@ export default async function DashboardPage({
 
   const orgName = await db.getOrganizationName(orgId);
   const organization = await loadManagerOrganization(orgId, orgName);
+  const managerNotifications = organization.shift_confirmation_enabled
+    ? await db.listManagerNotificationsForRecipient(user.id, { limit: 50 })
+    : [];
   const timeZone = resolveOrganizationTimeZone(organization);
 
   const weekStart = redirectIfPlanningWeekClamped("/dashboard", week, {
@@ -133,10 +137,16 @@ export default async function DashboardPage({
       endTime: endFromTs,
       employeeName: profile?.full_name ?? "Unbekannt",
       employeeColor: profile?.color ?? null,
+      confirmationStatus: s.confirmation_status,
     });
   }
 
   const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
+
+  const shiftCompensation =
+    cards.length > 0
+      ? await loadDashboardShiftCompensation(db, orgId, cards)
+      : {};
 
   return (
     <Suspense fallback={<div className="-m-6 p-6 text-sm text-muted">Laden…</div>}>
@@ -156,7 +166,9 @@ export default async function DashboardPage({
         roles={roles}
         profiles={profiles}
         profileQualificationIds={profileQualificationIds}
+        shiftCompensation={shiftCompensation}
         locations={locations}
+        managerNotifications={managerNotifications}
       />
     </Suspense>
   );

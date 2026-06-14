@@ -107,6 +107,50 @@ describe("validateRestPeriodForCountry (DE)", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts Sat 08–10 before Sun 08–10 (22h rest)", () => {
+    const previous = buildShiftTimestamps("2026-06-13", "08:00", "10:00", BERLIN);
+    const next = buildShiftTimestamps("2026-06-14", "08:00", "10:00", BERLIN);
+    const result = validateRestPeriodForCountry({
+      countryCode: "DE",
+      timeZone: BERLIN,
+      newShiftDate: "2026-06-14",
+      newStartsAt: next.starts_at,
+      newEndsAt: next.ends_at,
+      existingShifts: [
+        {
+          shift_date: "2026-06-13",
+          starts_at: previous.starts_at,
+          ends_at: previous.ends_at,
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("reports conflicting shift details when rest is too short", () => {
+    const previous = buildShiftTimestamps("2026-06-13", "20:00", "23:00", BERLIN);
+    const next = buildShiftTimestamps("2026-06-14", "08:00", "10:00", BERLIN);
+    const result = validateRestPeriodForCountry({
+      countryCode: "DE",
+      timeZone: BERLIN,
+      newShiftDate: "2026-06-14",
+      newStartsAt: next.starts_at,
+      newEndsAt: next.ends_at,
+      existingShifts: [
+        {
+          shift_date: "2026-06-13",
+          starts_at: previous.starts_at,
+          ends_at: previous.ends_at,
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("Konflikt mit Schicht");
+      expect(result.error).toContain("2026-06-13");
+    }
+  });
+
   it("ignores gaps between duty windows on the same planning day", () => {
     const morning = buildShiftTimestamps("2025-06-05", "06:00", "08:00", BERLIN);
     const afternoon = buildShiftTimestamps("2025-06-05", "10:00", "12:00", BERLIN);

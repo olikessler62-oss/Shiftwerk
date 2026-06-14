@@ -48,6 +48,7 @@ import {
   areDashboardShiftTimesComplete,
   dedupeDashboardAssignmentWindows,
   filterBulkShiftAssignEmployeesForRow,
+  filterBulkShiftAssignEmployeesWithoutTimeWindow,
   pickEmployeeLongestWithoutShift,
   profileAvailabilitiesForWeekday,
   profileAvailabilityWeekdayFromDashboardDate,
@@ -57,6 +58,7 @@ import {
   areaShiftTemplatesForArea,
   dashboardAssignmentPresetsForArea,
   filterAssignmentPresetsMatchingTimes,
+  prefillBulkRowWithEarliestAssignmentPreset,
   resolvePresetShiftTemplateForDemandTimes,
   areaShiftTemplateIdForAssign,
   type DashboardAssignmentPreset,
@@ -66,6 +68,7 @@ import {
   presetQualificationForServiceHour,
   areaStaffingQualificationOptions,
   employeeAreaQualificationOptions,
+  employeeProfileQualificationOptions,
   filterEmployeesWithAnyAreaQualification,
   filterEmployeesWithAnyQualificationInSet,
   resolvePresetQualificationForEmployee,
@@ -111,6 +114,7 @@ import {
 import { formatDayHeader } from "@/lib/planning-utils";
 import {
   findServiceHourIdForShift,
+  isAreaOpenOnDate,
   weekdayLabelFromIndex,
   type AreaServiceHourRef,
   type TagAreaHeaderStaffingEntry,
@@ -122,9 +126,10 @@ import {
 import { cn } from "@/lib/cn";
 import { translateActionError } from "@/lib/translate-action-error";
 import {
-  formatBulkShiftPartialSaveMessage,
   resolveBulkShiftPartialSaveOutcome,
+  type BulkShiftPartialSaveFailure,
 } from "@/lib/bulk-shift-partial-save";
+import { BulkShiftPartialSaveAlertContent } from "@/components/dashboard/bulk-shift-partial-save-alert";
 import {
   filterLocationDayAssignmentsForBulkModal,
   resolveBulkShiftDeletedIds,
@@ -306,9 +311,10 @@ type BulkModalPrompt =
       kind: "alert";
       message: string;
       blocking?: boolean;
-      refreshOnDismiss?: boolean;
+      partialSaveFailures?: readonly BulkShiftPartialSaveFailure[];
     }
-  | { kind: "confirm-add-row" };
+  | { kind: "confirm-add-row" }
+  | { kind: "confirm-outside-service-hours" };
 
 type BulkRow = {
   id: string;
@@ -377,6 +383,29 @@ function bulkRowPatchDiff(
 
 function joinStableIds(ids: readonly string[]): string {
   return ids.join("\0");
+}
+
+/** Verhindert Auto-Sync-Kaskaden auf fehlgeschlagenen, bereits gesendeten Zeilen. */
+function freezeSubmittedBulkRowsAfterPartialSave(
+  rows: readonly BulkRow[],
+  submittedRowIds: ReadonlySet<string>
+): BulkRow[] {
+  return rows.map((row) => {
+    if (!submittedRowIds.has(row.id)) return row;
+    return {
+      ...row,
+      employeeManuallySelected:
+        row.employeeId !== DASHBOARD_EMPTY_EMPLOYEE_ID
+          ? true
+          : row.employeeManuallySelected,
+      shiftTypeManuallySelected: row.shiftTypeId
+        ? true
+        : row.shiftTypeManuallySelected,
+      qualificationManuallySelected: row.qualificationId
+        ? true
+        : row.qualificationManuallySelected,
+    };
+  });
 }
 
 type BulkRowValidationState = "empty" | "complete" | "incomplete";
@@ -582,6 +611,7 @@ function matchingEmployeesForBulkRow(
     areaExistingAssignments: DashboardAssignmentTimeWindow[];
     locationDayAssignments: LocationDayAssignment[];
     allRows: BulkRow[];
+    withoutServiceHours?: boolean;
   }
 ): DashboardShiftAssignEmployee[] {
   const requestWindow = resolveShiftAssignmentRequestWindow(row);
@@ -589,6 +619,12 @@ function matchingEmployeesForBulkRow(
     requestWindow.startTime,
     requestWindow.endTime
   );
+  if (options.withoutServiceHours && !requestTimesComplete) {
+    return filterBulkShiftAssignEmployeesWithoutTimeWindow(
+      options.employees,
+      options.weekday
+    );
+  }
   if (!requestTimesComplete) return [];
 
   const areaQualificationIds = new Set(
@@ -616,6 +652,9 @@ function matchingEmployeesForBulkRow(
       ),
     }
   );
+  if (options.withoutServiceHours) {
+    return byWindow;
+  }
   const demandQualificationIds = staffingQualificationIdsForServiceHour(
     options.staffingRules,
     options.areaId,
@@ -686,17 +725,20 @@ function createBulkRowFromExistingShift(
     staffingRules: LocationAreaStaffing[];
     areaId: string;
     dateISO: string;
+    withoutServiceHours?: boolean;
   }
 ): BulkRow {
   const startTime = timeFieldValue(shift.startTime);
   const endTime = timeFieldValue(shift.endTime);
-  const serviceHourId = findServiceHourIdForShift(
-    options.serviceHours,
-    options.areaId,
-    options.dateISO,
-    startTime,
-    endTime
-  );
+  const serviceHourId = options.withoutServiceHours
+    ? null
+    : findServiceHourIdForShift(
+        options.serviceHours,
+        options.areaId,
+        options.dateISO,
+        startTime,
+        endTime
+      );
   const shiftTypeId =
     shift.areaShiftTemplateId ??
     resolvePresetShiftTemplateForDemandTimes(
@@ -710,17 +752,21 @@ function createBulkRowFromExistingShift(
     id: crypto.randomUUID(),
     existingShiftId: shift.id,
     employeeId: shift.employeeId,
-    qualificationId: presetQualificationForServiceHour(
-      options.staffingRules,
-      options.areaId,
-      serviceHourId
-    ),
+    qualificationId: options.withoutServiceHours
+      ? ""
+      : presetQualificationForServiceHour(
+          options.staffingRules,
+          options.areaId,
+          serviceHourId
+        ),
     shiftTypeId,
     startTime,
     endTime,
     requestedStartTime: startTime,
     requestedEndTime: endTime,
-    demandServiceHourId: serviceHourId ?? undefined,
+    demandServiceHourId: options.withoutServiceHours
+      ? undefined
+      : serviceHourId ?? undefined,
     employeeManuallySelected: true,
     shiftTypeManuallySelected: true,
     qualificationManuallySelected: true,
@@ -742,6 +788,7 @@ function createInitialBulkModalRows(
       endTime: string
     ) => string;
     weekdayLabel: (weekday: number) => string;
+    withoutServiceHours?: boolean;
   }
 ): BulkRow[] {
   return sortBulkShiftRows(
@@ -758,8 +805,19 @@ function createPresetBulkRow(
   assignmentPresets: DashboardAssignmentPreset[],
   staffingRules: LocationAreaStaffing[],
   areaId: string,
-  existingRows: BulkRow[] = []
+  existingRows: BulkRow[] = [],
+  withoutServiceHours = false
 ): BulkRow {
+  if (withoutServiceHours) {
+    const row: BulkRow = {
+      ...createEmptyRow(),
+      employeeManuallySelected: false,
+      shiftTypeManuallySelected: false,
+      qualificationManuallySelected: false,
+    };
+    prefillBulkRowWithEarliestAssignmentPreset(row, assignmentPresets);
+    return row;
+  }
   const targetEntry = staffingEntryForNewBulkRow(staffingEntries, existingRows);
   let demand = targetEntry
     ? personalbedarfDemandTimesForEntry(
@@ -820,6 +878,7 @@ type BulkShiftRowEditorProps = {
   areaQualifications: StaffingQualificationOption[];
   staffingRules: LocationAreaStaffing[];
   serviceHours: AreaServiceHourRef[];
+  qualifications: Qualification[];
   dateISO: string;
   countryCode: string;
   timeZone: string;
@@ -827,6 +886,7 @@ type BulkShiftRowEditorProps = {
   locationDayAssignments: LocationDayAssignment[];
   allRows: BulkRow[];
   profileQualificationIds: Map<string, Set<string>>;
+  withoutServiceHours?: boolean;
   onChange: (patch: Partial<BulkRow>) => void;
   onDelete: () => void;
   disabled?: boolean;
@@ -846,6 +906,7 @@ function BulkShiftRowEditor({
   areaQualifications,
   staffingRules,
   serviceHours,
+  qualifications,
   dateISO,
   countryCode,
   timeZone,
@@ -853,6 +914,7 @@ function BulkShiftRowEditor({
   locationDayAssignments,
   allRows,
   profileQualificationIds,
+  withoutServiceHours = false,
   onChange,
   onDelete,
   disabled = false,
@@ -886,6 +948,7 @@ function BulkShiftRowEditor({
         areaExistingAssignments,
         locationDayAssignments,
         allRows,
+        withoutServiceHours,
       }),
     [
       row.id,
@@ -906,21 +969,57 @@ function BulkShiftRowEditor({
       areaExistingAssignments,
       locationDayAssignments,
       allRows,
+      withoutServiceHours,
     ]
   );
 
   const rowQualificationOptions = useMemo(
     () =>
-      employeeAreaQualificationOptions(
-        row.employeeId,
-        areaQualifications,
-        profileQualificationIds,
-        DASHBOARD_EMPTY_EMPLOYEE_ID
-      ),
-    [row.employeeId, areaQualifications, profileQualificationIds]
+      withoutServiceHours
+        ? employeeProfileQualificationOptions(
+            row.employeeId,
+            qualifications,
+            profileQualificationIds,
+            DASHBOARD_EMPTY_EMPLOYEE_ID
+          )
+        : employeeAreaQualificationOptions(
+            row.employeeId,
+            areaQualifications,
+            profileQualificationIds,
+            DASHBOARD_EMPTY_EMPLOYEE_ID
+          ),
+    [
+      withoutServiceHours,
+      row.employeeId,
+      qualifications,
+      areaQualifications,
+      profileQualificationIds,
+    ]
+  );
+
+  const qualificationOptionsForPrefill = useMemo(
+    () =>
+      withoutServiceHours
+        ? employeeProfileQualificationOptions(
+            row.employeeId,
+            qualifications,
+            profileQualificationIds,
+            DASHBOARD_EMPTY_EMPLOYEE_ID
+          )
+        : areaQualifications,
+    [
+      withoutServiceHours,
+      row.employeeId,
+      qualifications,
+      areaQualifications,
+      profileQualificationIds,
+    ]
   );
 
   const rowAssignmentPresets = useMemo(() => {
+    if (withoutServiceHours) {
+      return assignmentPresets;
+    }
     if (!requestTimesComplete) return [];
     return filterAssignmentPresetsMatchingTimes(
       requestWindow.startTime,
@@ -929,6 +1028,7 @@ function BulkShiftRowEditor({
     );
   }, [
     assignmentPresets,
+    withoutServiceHours,
     requestTimesComplete,
     requestWindow.endTime,
     requestWindow.startTime,
@@ -958,7 +1058,11 @@ function BulkShiftRowEditor({
 
     if (!isNewRow) return;
 
-    if (!requestTimesComplete && row.demandServiceHourId) {
+    if (
+      !withoutServiceHours &&
+      !requestTimesComplete &&
+      row.demandServiceHourId
+    ) {
       const hourTimes = personalbedarfTimesForServiceHour(
         serviceHours,
         row.demandServiceHourId
@@ -981,8 +1085,25 @@ function BulkShiftRowEditor({
     }
 
     if (!requestTimesComplete) {
+      if (withoutServiceHours && !row.shiftTypeManuallySelected && !row.shiftTypeId) {
+        const earliestPatch: Partial<BulkRow> = {};
+        const draft = { ...row, ...earliestPatch };
+        if (prefillBulkRowWithEarliestAssignmentPreset(draft, assignmentPresets)) {
+          onChange(
+            bulkRowPatchDiff(row, {
+              shiftTypeId: draft.shiftTypeId,
+              startTime: draft.startTime,
+              endTime: draft.endTime,
+              requestedStartTime: draft.requestedStartTime,
+              requestedEndTime: draft.requestedEndTime,
+            })
+          );
+          return;
+        }
+      }
+
       const patch: Partial<BulkRow> = {};
-      if (row.shiftTypeId) patch.shiftTypeId = "";
+      if (!withoutServiceHours && row.shiftTypeId) patch.shiftTypeId = "";
       if (
         !row.employeeManuallySelected &&
         row.employeeId !== DASHBOARD_EMPTY_EMPLOYEE_ID
@@ -1035,7 +1156,7 @@ function BulkShiftRowEditor({
     if (!row.qualificationManuallySelected && columnPrefill.qualification) {
       const nextQualificationId = resolvePresetQualificationForEmployee(
         effectiveEmployeeId,
-        areaQualifications,
+        qualificationOptionsForPrefill,
         profileQualificationIds,
         DASHBOARD_EMPTY_EMPLOYEE_ID,
         row.qualificationId
@@ -1084,6 +1205,8 @@ function BulkShiftRowEditor({
     row.demandServiceHourId,
     assignmentPresets,
     areaQualifications,
+    qualificationOptionsForPrefill,
+    withoutServiceHours,
     timesComplete,
     requestTimesComplete,
     requestWindow.startTime,
@@ -1333,6 +1456,9 @@ export function DashboardBulkShiftModal({
 
   const areaName = areas.find((area) => area.id === dialog.areaId)?.name ?? "";
   const dayHeader = formatDayHeader(dialog.date, intlLocale, "long");
+  const withoutServiceHours =
+    dialog.withoutServiceHours ??
+    !isAreaOpenOnDate(serviceHours, dialog.areaId, dialog.date);
 
   const templatesForArea = useMemo(
     () => areaShiftTemplatesForArea(dialog.areaId, areaShiftTemplates),
@@ -1381,6 +1507,7 @@ export function DashboardBulkShiftModal({
       qualifications,
       formatTimeLabel: formatStaffingTimeLabel,
       weekdayLabel: staffingWeekdayLabel,
+      withoutServiceHours,
     })
   );
   const [employees, setEmployees] = useState<DashboardShiftAssignEmployee[]>([]);
@@ -1406,19 +1533,22 @@ export function DashboardBulkShiftModal({
 
   const staffingEntries = useMemo(
     () =>
-      computeBulkModalStaffingEntries(
-        staffingRules,
-        dialog.areaId,
-        dialog.date,
-        serviceHours,
-        rows,
-        assignmentPresets,
-        qualifications,
-        profileQualificationIds,
-        formatStaffingTimeLabel,
-        staffingWeekdayLabel
-      ),
+      withoutServiceHours
+        ? []
+        : computeBulkModalStaffingEntries(
+            staffingRules,
+            dialog.areaId,
+            dialog.date,
+            serviceHours,
+            rows,
+            assignmentPresets,
+            qualifications,
+            profileQualificationIds,
+            formatStaffingTimeLabel,
+            staffingWeekdayLabel
+          ),
     [
+      withoutServiceHours,
       staffingRules,
       dialog.areaId,
       dialog.date,
@@ -1433,8 +1563,14 @@ export function DashboardBulkShiftModal({
   );
 
   const staffingTableRows = useMemo(
-    () => buildBulkStaffingTableRows(staffingEntries),
-    [staffingEntries]
+    () =>
+      withoutServiceHours ? [] : buildBulkStaffingTableRows(staffingEntries),
+    [staffingEntries, withoutServiceHours]
+  );
+
+  const staffingEntriesRowFocusKey = useMemo(
+    () => resolveCurrentBulkShiftRowId(rows, staffingEntries) ?? "",
+    [rows, staffingEntries]
   );
 
   const staffingSpeedActionsActive = useMemo(
@@ -1452,9 +1588,9 @@ export function DashboardBulkShiftModal({
         dialog.focusShiftId
       );
       if (focusRowId) return focusRowId;
-      return resolveCurrentBulkShiftRowId(rows, staffingEntries);
+      return staffingEntriesRowFocusKey || null;
     });
-  }, [rows, staffingEntries, dialog.focusShiftId]);
+  }, [rows, staffingEntriesRowFocusKey, dialog.focusShiftId]);
 
   useLayoutEffect(() => {
     const focusShiftId = pendingFocusShiftIdRef.current;
@@ -1649,9 +1785,11 @@ export function DashboardBulkShiftModal({
         emptyEmployeeId: DASHBOARD_EMPTY_EMPLOYEE_ID,
         createEmptyRow,
         targetDemand,
+        withoutServiceHours,
       });
 
       if (
+        !withoutServiceHours &&
         columnPrefs.prefill.employee &&
         previewRow.employeeId === DASHBOARD_EMPTY_EMPLOYEE_ID
       ) {
@@ -1690,6 +1828,7 @@ export function DashboardBulkShiftModal({
           emptyEmployeeId: DASHBOARD_EMPTY_EMPLOYEE_ID,
           createEmptyRow,
           targetDemand,
+          withoutServiceHours,
         });
         scrollRowId = newRow.id;
         return insertBulkShiftRowInList(
@@ -1727,6 +1866,7 @@ export function DashboardBulkShiftModal({
       effectiveAreaExistingAssignments,
       effectiveLocationDayAssignments,
       qualifications,
+      withoutServiceHours,
     ]
   );
 
@@ -1743,13 +1883,17 @@ export function DashboardBulkShiftModal({
 
   const getEligibleEmployeesForNewRow = useCallback(
     (currentRows: BulkRow[]) => {
+      if (withoutServiceHours) {
+        return filterBulkShiftAssignEmployeesWithoutTimeWindow(employees, weekday);
+      }
       const presetRow = createPresetBulkRow(
         staffingEntries,
         serviceHours,
         assignmentPresets,
         staffingRules,
         dialog.areaId,
-        currentRows
+        currentRows,
+        withoutServiceHours
       );
       return matchingEmployeesForBulkRow(
         { ...presetRow, id: PENDING_NEW_BULK_ROW_ID },
@@ -1766,6 +1910,7 @@ export function DashboardBulkShiftModal({
           areaExistingAssignments: effectiveAreaExistingAssignments,
           locationDayAssignments: effectiveLocationDayAssignments,
           allRows: currentRows,
+          withoutServiceHours,
         }
       );
     },
@@ -1784,6 +1929,7 @@ export function DashboardBulkShiftModal({
       profileQualificationIds,
       effectiveAreaExistingAssignments,
       effectiveLocationDayAssignments,
+      withoutServiceHours,
     ]
   );
 
@@ -1794,7 +1940,7 @@ export function DashboardBulkShiftModal({
       return;
     }
 
-    if (getEligibleEmployeesForNewRow(rows).length === 0) {
+    if (!withoutServiceHours && getEligibleEmployeesForNewRow(rows).length === 0) {
       setPrompt({
         kind: "alert",
         message: t("dashboard.bulkShiftNoEligibleEmployees"),
@@ -1802,16 +1948,28 @@ export function DashboardBulkShiftModal({
       return;
     }
 
-    if (isStaffingFullyCovered(staffingEntries)) {
+    if (!withoutServiceHours && isStaffingFullyCovered(staffingEntries)) {
       setPrompt({ kind: "confirm-add-row" });
       return;
     }
 
     performAddRow();
-  }, [rows, t, staffingEntries, getEligibleEmployeesForNewRow, performAddRow]);
+  }, [
+    rows,
+    t,
+    withoutServiceHours,
+    staffingEntries,
+    getEligibleEmployeesForNewRow,
+    performAddRow,
+  ]);
 
   const performSave = useCallback(
-    async (rowsSnapshot: BulkRow[]) => {
+    async (
+      rowsSnapshot: BulkRow[],
+      options?: { withoutServiceHours?: boolean }
+    ) => {
+      const saveWithoutServiceHours =
+        options?.withoutServiceHours ?? withoutServiceHours;
       const hasDeletes = deletedExistingShiftIds.length > 0;
       const saveIntent = resolveBulkShiftSaveIntent(rowsSnapshot, hasDeletes);
 
@@ -1878,6 +2036,7 @@ export function DashboardBulkShiftModal({
         locationId,
         locationAreaId: dialog.areaId,
         deleteShiftIds: deletedExistingShiftIds,
+        withoutServiceHours: saveWithoutServiceHours,
         rows: payloadRows.map(({ row }) => ({
           employeeId: row.employeeId,
           startTime: row.startTime,
@@ -1942,11 +2101,21 @@ export function DashboardBulkShiftModal({
         error: translateActionError(failure.error, t),
       }));
 
-      setRows(partialSaveOutcome.remainingRows as BulkRow[]);
+      const submittedRowIds = new Set(payloadRows.map(({ row }) => row.id));
+      const remainingRows = freezeSubmittedBulkRowsAfterPartialSave(
+        partialSaveOutcome.remainingRows as BulkRow[],
+        submittedRowIds
+      );
+
+      if (result.undoAvailable) {
+        onSaved?.();
+      }
+
+      setRows(remainingRows);
       setPrompt({
         kind: "alert",
-        message: formatBulkShiftPartialSaveMessage(saveFailures, t),
-        refreshOnDismiss: result.undoAvailable,
+        message: t("dashboard.bulkShiftPartialSuccess"),
+        partialSaveFailures: saveFailures,
       });
     },
     [
@@ -1958,10 +2127,45 @@ export function DashboardBulkShiftModal({
       deletedExistingShiftIds,
       employeeNameById,
       timeZone,
+      withoutServiceHours,
       onClose,
       onSaved,
       router,
       t,
+    ]
+  );
+
+  const finalizeBulkSave = useCallback(
+    async (options?: { withoutServiceHours?: boolean }) => {
+      const complianceViolation = findBulkShiftDayComplianceViolation(
+        dialog.date,
+        countryCode,
+        rows,
+        effectiveLocationDayAssignments,
+        dialog.areaId,
+        employeeNameById,
+        t
+      );
+      if (complianceViolation) {
+        setPrompt({
+          kind: "alert",
+          message: complianceViolation,
+          blocking: true,
+        });
+        return;
+      }
+
+      await performSave(rows, options);
+    },
+    [
+      dialog.date,
+      dialog.areaId,
+      countryCode,
+      rows,
+      effectiveLocationDayAssignments,
+      employeeNameById,
+      t,
+      performSave,
     ]
   );
 
@@ -1981,82 +2185,61 @@ export function DashboardBulkShiftModal({
       if (row.employeeId === DASHBOARD_EMPTY_EMPLOYEE_ID) continue;
       if (!areDashboardShiftTimesComplete(row.startTime, row.endTime)) continue;
 
-      const serviceHoursCheck = validateDashboardShiftServiceHours(
-        serviceHours,
-        dialog.areaId,
-        dialog.date,
-        row.startTime,
-        row.endTime
-      );
-      if (!serviceHoursCheck.ok) {
-        setPrompt({
-          kind: "alert",
-          message: t("dashboard.bulkShiftValidationOutsideServiceHours", {
-            row: String(rowIndex + 1),
-          }),
-        });
-        return;
+      if (!withoutServiceHours) {
+        const serviceHoursCheck = validateDashboardShiftServiceHours(
+          serviceHours,
+          dialog.areaId,
+          dialog.date,
+          row.startTime,
+          row.endTime
+        );
+        if (!serviceHoursCheck.ok) {
+          setPrompt({ kind: "confirm-outside-service-hours" });
+          return;
+        }
       }
     }
 
-    const complianceViolation = findBulkShiftDayComplianceViolation(
-      dialog.date,
-      countryCode,
-      rows,
-      effectiveLocationDayAssignments,
-      dialog.areaId,
-      employeeNameById,
-      t
-    );
-    if (complianceViolation) {
-      setPrompt({
-        kind: "alert",
-        message: complianceViolation,
-        blocking: true,
-      });
-      return;
-    }
-
-    await performSave(rows);
+    await finalizeBulkSave();
   }, [
     rows,
     t,
+    withoutServiceHours,
     serviceHours,
     dialog.areaId,
     dialog.date,
-    performSave,
-    countryCode,
-    effectiveLocationDayAssignments,
-    employeeNameById,
+    finalizeBulkSave,
   ]);
 
   const dismissPrompt = useCallback(() => {
-    if (!prompt) return;
-    const refreshOnDismiss =
-      prompt.kind === "alert" && prompt.refreshOnDismiss === true;
     setPrompt(null);
-    if (refreshOnDismiss) {
-      onSaved?.();
-      router.refresh();
-    }
-  }, [prompt, onSaved, router]);
+  }, []);
 
   const handlePromptConfirm = useCallback(() => {
     if (!prompt) return;
     if (prompt.kind === "confirm-add-row") {
       setPrompt(null);
       performAddRow();
+      return;
     }
-  }, [prompt, performAddRow]);
+    if (prompt.kind === "confirm-outside-service-hours") {
+      setPrompt(null);
+      void finalizeBulkSave({ withoutServiceHours: true });
+    }
+  }, [prompt, performAddRow, finalizeBulkSave]);
 
   const promptMessage =
     prompt?.kind === "alert"
       ? prompt.message
       : prompt?.kind === "confirm-add-row"
         ? t("dashboard.bulkShiftStaffingCoveredConfirm")
-        : null;
+        : prompt?.kind === "confirm-outside-service-hours"
+          ? t("dashboard.bulkShiftOutsideServiceHoursConfirm")
+          : null;
 
-  const promptIsConfirm = prompt?.kind === "confirm-add-row";
+  const promptIsConfirm =
+    prompt?.kind === "confirm-add-row" ||
+    prompt?.kind === "confirm-outside-service-hours";
 
   const modalLocked = prompt?.kind === "alert" && prompt.blocking === true;
 
@@ -2165,7 +2348,7 @@ export function DashboardBulkShiftModal({
                     <BulkShiftColumnHeader
                       label={t("dashboard.bulkShiftQualification")}
                       sortColumn="qualification"
-                      prefillColumn="qualification"
+                      prefillColumn={withoutServiceHours ? undefined : "qualification"}
                       prefs={columnPrefs}
                       onPrefsChange={handleColumnPrefsChange}
                       sortColumnLabel={sortLabelForColumn("qualification")}
@@ -2205,7 +2388,7 @@ export function DashboardBulkShiftModal({
                     <BulkShiftColumnHeader
                       label={t("dashboard.bulkShiftEmployee")}
                       sortColumn="employee"
-                      prefillColumn="employee"
+                      prefillColumn={withoutServiceHours ? undefined : "employee"}
                       prefs={columnPrefs}
                       onPrefsChange={handleColumnPrefsChange}
                       sortColumnLabel={sortLabelForColumn("employee")}
@@ -2232,6 +2415,7 @@ export function DashboardBulkShiftModal({
                     areaQualifications={areaQualifications}
                     staffingRules={staffingRules}
                     serviceHours={serviceHours}
+                    qualifications={qualifications}
                     dateISO={dialog.date}
                     countryCode={countryCode}
                     timeZone={timeZone}
@@ -2239,6 +2423,7 @@ export function DashboardBulkShiftModal({
                     locationDayAssignments={effectiveLocationDayAssignments}
                     allRows={rows}
                     profileQualificationIds={profileQualificationIds}
+                    withoutServiceHours={withoutServiceHours}
                     disabled={loading || saving}
                     onChange={(patch) => updateRow(row.id, patch)}
                     onDelete={() => deleteRow(row.id)}
@@ -2286,62 +2471,84 @@ export function DashboardBulkShiftModal({
             {t("common.ok")}
           </Button>
         </div>
+      </div>
 
-        {prompt && promptMessage ? (
+      {prompt && promptMessage ? (
+        <div
+          className={dashboardNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !promptIsConfirm &&
+              !modalLocked
+            ) {
+              dismissPrompt();
+            }
+          }}
+        >
           <div
-            className={dashboardNestedModalOverlayClass()}
-            role="presentation"
-            onMouseDown={(event) => {
-              if (
-                event.target === event.currentTarget &&
-                !promptIsConfirm &&
-                !modalLocked
-              ) {
-                dismissPrompt();
-              }
-            }}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="dashboard-bulk-shift-validation-message"
+            className={dashboardAlertDialogClass()}
+            onMouseDown={(event) => event.stopPropagation()}
           >
-            <div
-              role="alertdialog"
-              aria-modal="true"
-              aria-labelledby="dashboard-bulk-shift-validation-message"
-              className={dashboardAlertDialogClass()}
-              onMouseDown={(event) => event.stopPropagation()}
-            >
+            {prompt.kind === "alert" &&
+            prompt.partialSaveFailures &&
+            prompt.partialSaveFailures.length > 0 ? (
+              <BulkShiftPartialSaveAlertContent
+                failures={prompt.partialSaveFailures}
+                intro={t("dashboard.bulkShiftPartialSuccess")}
+                messageId="dashboard-bulk-shift-validation-message"
+                translateEntry={(failure) =>
+                  t("dashboard.bulkShiftPartialSuccessEntry", {
+                    name: failure.name,
+                    start: failure.startTime.slice(0, 5),
+                    end: failure.endTime.slice(0, 5),
+                    error: failure.error,
+                  })
+                }
+              />
+            ) : (
               <p
                 id="dashboard-bulk-shift-validation-message"
-                className="whitespace-pre-line text-sm text-foreground"
+                className="min-h-0 flex-1 overflow-y-auto whitespace-pre-line text-sm text-foreground"
               >
                 {promptMessage}
               </p>
-              <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0 sm:justify-end")}>
-                {promptIsConfirm ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setPrompt(null)}
-                    >
-                      {t("common.no")}
-                    </Button>
-                    <Button type="button" variant="primary" onClick={handlePromptConfirm}>
-                      {t("common.yes")}
-                    </Button>
-                  </>
-                ) : (
+            )}
+            <div
+              className={settingsModalFooterClass(
+                "mt-5 shrink-0 border-0 px-0 pb-0 pt-0 sm:justify-end"
+              )}
+            >
+              {promptIsConfirm ? (
+                <>
                   <Button
                     type="button"
-                    variant="primary"
-                    onClick={dismissPrompt}
+                    variant="outline"
+                    onClick={() => setPrompt(null)}
                   >
-                    {t("common.ok")}
+                    {t("common.no")}
                   </Button>
-                )}
-              </div>
+                  <Button type="button" variant="primary" onClick={handlePromptConfirm}>
+                    {t("common.yes")}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={dismissPrompt}
+                >
+                  {t("common.ok")}
+                </Button>
+              )}
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
