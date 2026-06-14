@@ -1,27 +1,52 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { assignShiftWithTimes, removeShift } from "@/app/actions/shifts";
-import { toISODate, startOfWeek, parseISODate } from "@/lib/dates";
+import { isPastCalendarDate, toISODate, startOfWeek, parseISODate } from "@/lib/dates";
+import { PlanningCalendarGrid } from "@/components/planning/planning-calendar-grid";
+import { PlanningAssignShiftModal } from "@/components/planning/planning-assign-shift-modal";
+import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
+import { planningShiftToDashboardCard, type PlanningShift } from "@/lib/planning-shift-card";
+import { resolveNarrowDayColumnWidthsPx } from "@/lib/day-column-width";
+import {
+  createPlanningActiveDayDates,
+  PLANNING_CALENDAR_LAYOUT_ANIMATION_DELAY_MS,
+  PLANNING_DAY_HEADER_ROW_HEIGHT,
+  PLANNING_EMPLOYEE_ROW_HEIGHT,
+  PLANNING_STAFF_COLUMN_WIDTH_PX,
+  planningCalendarMinWidth,
+  planningGridTemplateColumns,
+  resolvePlanningLayoutDayDates,
+} from "@/lib/planning-calendar-layout";
+import { resolveLocationServiceDayTimeline } from "@/lib/shift-card-cell-layout";
+import { isAnyAreaOpenInCalendar, hasServiceHoursOnDate } from "@/lib/location-staffing-client";
 import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { isPastShiftDate } from "@/lib/planning-readonly";
+import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { useOrgFeatures } from "@/lib/org-features-provider";
 import { translateActionError } from "@/lib/translate-action-error";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
 import {
-  avatarColor,
   buildPlanningWarnings,
-  employeeWeekHours,
-  formatDayHeader,
+  formatPlanningHoursInParens,
   formatTimeRange,
   getDashboardWeekHeaderParts,
-  initials,
+  planningHoursUnitLabel,
   shiftHours,
   weeklySummary,
 } from "@/lib/planning-utils";
+import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import {
   areaShiftTemplatesForArea,
   dashboardAssignmentPresetsForArea,
@@ -51,30 +76,18 @@ import type {
 } from "@schichtwerk/types";
 import { LocationSelect } from "@/components/dashboard/location-select";
 import {
-  DashboardShiftTypeCombobox,
-} from "@/components/dashboard/dashboard-add-shift-modal";
-import {
   Alert,
   Button,
   ControlDisplay,
-  Field,
   IconButton,
   Select,
-  Textarea,
-  TimeInput,
-  LabelMuted,
 } from "@/components/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 
-export type PlanningShift = {
-  id: string;
-  employee_id: string;
-  shift_date: string;
-  shiftName: string;
-  color: string;
-  startTime: string;
-  endTime: string;
-};
+/** Sidebar Schichtvorlagen: w-56 (224px) minus Farbpunkt (10px) und gap-2 (8px). */
+const PLANNING_SHIFT_TEMPLATE_SIDEBAR_WIDTH_CLASS = "xl:w-[12.875rem]";
+
+export type { PlanningShift } from "@/lib/planning-shift-card";
 
 type AvailabilityRow = {
   employee_id: string;
@@ -149,11 +162,12 @@ export function ShiftPlanner({
   const router = useRouter();
   const searchParams = useSearchParams();
   const t = useTranslations();
+  const { locale } = useLocale();
   const features = useOrgFeatures();
   const atEarliestWeek = isPlanningWeekAtEarliest(weekStart);
   const simplePlanning = !features.areas;
-  const { locale } = useLocale();
   const intlLocale = toIntlLocale(locale);
+  const todayISO = useMemo(() => toISODate(new Date()), []);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [complianceNotice, setComplianceNotice] = useState<string | null>(null);
@@ -176,6 +190,273 @@ export function ShiftPlanner({
     () => dashboardAssignmentPresetsForArea(templatesForArea),
     [templatesForArea]
   );
+
+  const serviceHourAreaIds = useMemo(
+    () => (selectedAreaId ? [selectedAreaId] : areas.map((area) => area.id)),
+    [selectedAreaId, areas]
+  );
+
+  const holidayNames = useMemo(
+    () => buildHolidayNamesByDate(dates, locale === "en" ? "en" : "de"),
+    [dates, locale]
+  );
+
+  const dayHasServiceHours = useMemo(
+    () =>
+      dates.map((date) =>
+        hasServiceHoursOnDate(serviceHours, date, serviceHourAreaIds)
+      ),
+    [dates, serviceHours, serviceHourAreaIds]
+  );
+
+  const currentWeekStart = useMemo(
+    () => toISODate(startOfWeek(new Date())),
+    [todayISO]
+  );
+  const isCurrentWeek = weekStart === currentWeekStart;
+
+  const shiftsByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const shift of shifts) {
+      map.set(shift.shift_date, (map.get(shift.shift_date) ?? 0) + 1);
+    }
+    return map;
+  }, [shifts]);
+
+  const employeesById = useMemo(
+    () => new Map(employees.map((employee) => [employee.id, employee])),
+    [employees]
+  );
+
+  const dashboardShiftsByDate = useMemo(() => {
+    const map = new Map<string, DashboardShiftCard[]>();
+    for (const date of dates) {
+      map.set(
+        date,
+        shifts
+          .filter((shift) => shift.shift_date === date)
+          .flatMap((shift) => {
+            const employee = employeesById.get(shift.employee_id);
+            return employee
+              ? [planningShiftToDashboardCard(shift, employee)]
+              : [];
+          })
+      );
+    }
+    return map;
+  }, [dates, shifts, employeesById]);
+
+  const serviceTimelinesByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      ReturnType<typeof resolveLocationServiceDayTimeline>
+    >();
+    for (const date of dates) {
+      map.set(date, resolveLocationServiceDayTimeline(serviceHours, date));
+    }
+    return map;
+  }, [dates, serviceHours]);
+
+  const dayHasOpenArea = useMemo(
+    () =>
+      dates.map((date) => {
+        const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
+        if (simplePlanning) {
+          return !isPastCalendarDate(date, todayISO);
+        }
+        return isAnyAreaOpenInCalendar(
+          serviceHours,
+          serviceHourAreaIds,
+          date,
+          hasShifts
+        );
+      }),
+    [
+      dates,
+      serviceHours,
+      serviceHourAreaIds,
+      shiftsByDate,
+      simplePlanning,
+      todayISO,
+    ]
+  );
+
+  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(() =>
+    createPlanningActiveDayDates(
+      dates,
+      serviceHourAreaIds,
+      serviceHours,
+      shiftsByDate,
+      { simplePlanning, todayISO }
+    )
+  );
+  const [layoutActiveDayDates, setLayoutActiveDayDates] = useState<Set<string>>(
+    () =>
+      createPlanningActiveDayDates(
+        dates,
+        serviceHourAreaIds,
+        serviceHours,
+        shiftsByDate,
+        { simplePlanning, todayISO }
+      )
+  );
+  const layoutDayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const planningLayoutScopeRef = useRef<string | null>(null);
+  const currentWeekDayExpansionRef = useRef<Set<string>>(new Set());
+  const hasInitializedCurrentWeekDayLayoutRef = useRef(false);
+  const [isPlanningCalendarVisible, setIsPlanningCalendarVisible] =
+    useState(false);
+
+  const clearLayoutDayTimer = useCallback(() => {
+    if (layoutDayTimerRef.current !== null) {
+      clearTimeout(layoutDayTimerRef.current);
+      layoutDayTimerRef.current = null;
+    }
+  }, []);
+
+  const syncLayoutDaysImmediate = useCallback(
+    (next: Set<string>) => {
+      clearLayoutDayTimer();
+      setLayoutActiveDayDates(new Set(next));
+    },
+    [clearLayoutDayTimer]
+  );
+
+  const scheduleLayoutDays = useCallback(
+    (next: Set<string>) => {
+      clearLayoutDayTimer();
+      layoutDayTimerRef.current = setTimeout(() => {
+        setLayoutActiveDayDates(new Set(next));
+        layoutDayTimerRef.current = null;
+      }, PLANNING_CALENDAR_LAYOUT_ANIMATION_DELAY_MS);
+    },
+    [clearLayoutDayTimer]
+  );
+
+  useEffect(
+    () => () => {
+      clearLayoutDayTimer();
+    },
+    [clearLayoutDayTimer]
+  );
+
+  useLayoutEffect(() => {
+    const scopeKey = `${weekStart}:${selectedLocationId ?? ""}:${selectedAreaId ?? ""}`;
+    if (planningLayoutScopeRef.current === scopeKey) {
+      return;
+    }
+    planningLayoutScopeRef.current = scopeKey;
+
+    const isFirstCurrentWeekView =
+      weekStart === currentWeekStart &&
+      !hasInitializedCurrentWeekDayLayoutRef.current;
+    const nextDays = resolvePlanningLayoutDayDates(
+      dates,
+      serviceHourAreaIds,
+      serviceHours,
+      shiftsByDate,
+      {
+        weekStart,
+        currentWeekStart,
+        todayISO,
+        savedCurrentWeekExpansion: isFirstCurrentWeekView
+          ? null
+          : currentWeekDayExpansionRef.current,
+        isFirstCurrentWeekView,
+        simplePlanning,
+      }
+    );
+    if (weekStart === currentWeekStart) {
+      if (isFirstCurrentWeekView) {
+        hasInitializedCurrentWeekDayLayoutRef.current = true;
+      }
+      currentWeekDayExpansionRef.current = new Set(nextDays);
+    }
+    setActiveDayDates(nextDays);
+    syncLayoutDaysImmediate(nextDays);
+    setIsPlanningCalendarVisible(true);
+  }, [
+    dates,
+    weekStart,
+    currentWeekStart,
+    todayISO,
+    selectedLocationId,
+    selectedAreaId,
+    serviceHourAreaIds,
+    serviceHours,
+    shiftsByDate,
+    simplePlanning,
+    syncLayoutDaysImmediate,
+  ]);
+
+  const toggleDayActive = useCallback(
+    (date: string, active: boolean) => {
+      setActiveDayDates((prev) => {
+        const next = new Set(prev);
+        if (active) next.add(date);
+        else next.delete(date);
+        if (isCurrentWeek) {
+          currentWeekDayExpansionRef.current = new Set(next);
+        }
+        scheduleLayoutDays(next);
+        return next;
+      });
+    },
+    [isCurrentWeek, scheduleLayoutDays]
+  );
+
+  const dayUsesWideColumn = useMemo(
+    () =>
+      dates.map((date, dayIndex) => {
+        if (!layoutActiveDayDates.has(date)) return false;
+        if (!dayHasOpenArea[dayIndex]) return false;
+        const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
+        return hasShifts || dayHasServiceHours[dayIndex];
+      }),
+    [
+      dates,
+      dayHasOpenArea,
+      dayHasServiceHours,
+      shiftsByDate,
+      layoutActiveDayDates,
+    ]
+  );
+
+  const fillColumnsEqually = useMemo(
+    () => !dayUsesWideColumn.some(Boolean),
+    [dayUsesWideColumn]
+  );
+
+  const narrowDayColumnWidthsPx = useMemo(
+    () => resolveNarrowDayColumnWidthsPx(dates, holidayNames, intlLocale),
+    [dates, holidayNames, intlLocale]
+  );
+
+  const columnTemplate = useMemo(
+    () =>
+      planningGridTemplateColumns(
+        PLANNING_STAFF_COLUMN_WIDTH_PX,
+        dayUsesWideColumn,
+        narrowDayColumnWidthsPx,
+        fillColumnsEqually
+      ),
+    [dayUsesWideColumn, narrowDayColumnWidthsPx, fillColumnsEqually]
+  );
+
+  const minPlanningCalendarWidth = useMemo(() => {
+    if (fillColumnsEqually) return undefined;
+    return planningCalendarMinWidth(
+      PLANNING_STAFF_COLUMN_WIDTH_PX,
+      dayUsesWideColumn,
+      narrowDayColumnWidthsPx
+    );
+  }, [dayUsesWideColumn, narrowDayColumnWidthsPx, fillColumnsEqually]);
+
+  const planningRowTemplate = useMemo(() => {
+    const bodyRows = employees.length > 0 ? `repeat(${employees.length}, ${PLANNING_EMPLOYEE_ROW_HEIGHT})` : "";
+    const footerRow = "auto";
+    return `${PLANNING_DAY_HEADER_ROW_HEIGHT} ${bodyRows} ${footerRow}`.trim();
+  }, [employees.length]);
 
   const timesComplete = areDashboardShiftTimesComplete(startTime, endTime);
 
@@ -431,6 +712,17 @@ export function ShiftPlanner({
     );
   }
 
+  const getDayAssignBlockReasonForCell = useCallback(
+    (employeeId: string, date: string) =>
+      getDayAssignBlockReason(
+        employeeId,
+        date,
+        recurringAvailability,
+        absences
+      ),
+    [recurringAvailability, absences]
+  );
+
   const canAssign =
     Boolean(selectedLocationId) &&
     (simplePlanning ||
@@ -473,7 +765,7 @@ export function ShiftPlanner({
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3 md:gap-4">
+        <div className="mt-3 flex flex-wrap items-center gap-3 select-none md:gap-4">
           <div
             role="group"
             aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
@@ -585,7 +877,13 @@ export function ShiftPlanner({
       )}
 
       <div className="flex flex-1 flex-col gap-0 overflow-hidden xl:flex-row">
-        <aside className="hidden shrink-0 overflow-y-auto border-b border-border bg-surface p-4 xl:block xl:w-56 xl:border-b-0 xl:border-r">
+        <aside
+          className={cn(
+            "hidden shrink-0 overflow-y-auto border-b border-border bg-surface p-4 xl:block xl:border-b-0 xl:border-r",
+            PLANNING_SHIFT_TEMPLATE_SIDEBAR_WIDTH_CLASS,
+            MODAL_SCROLLBAR_CLASS
+          )}
+        >
           {!simplePlanning ? (
             <SidebarSection title={t("dashboard.shiftTemplateLabel")}>
               {assignmentPresets.length === 0 ? (
@@ -594,30 +892,24 @@ export function ShiftPlanner({
                 </p>
               ) : (
                 <ul className="space-y-2">
-                  {assignmentPresets.map((preset) => (
+                  {assignmentPresets.map((preset) => {
+                    const hours = shiftHours({
+                      start_time: preset.start_time,
+                      end_time: preset.end_time,
+                    });
+                    return (
                     <li
                       key={preset.id}
                       className="rounded-lg border border-border bg-background p-2.5"
                     >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: preset.color }}
-                        />
-                        <span className="text-sm font-medium">{preset.name}</span>
-                      </div>
-                      <p className="mt-1 pl-4.5 text-xs text-muted">
-                        {formatTimeRange(preset.start_time, preset.end_time)}
-                      </p>
-                      <p className="pl-4.5 text-xs text-muted">
-                        {shiftHours({
-                          start_time: preset.start_time,
-                          end_time: preset.end_time,
-                        })}{" "}
-                        h
+                      <div className="min-w-0 text-sm font-medium">{preset.name}</div>
+                      <p className="mt-1 text-xs text-muted">
+                        {formatTimeRange(preset.start_time, preset.end_time)}{" "}
+                        {formatPlanningHoursInParens(hours, locale)}
                       </p>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </SidebarSection>
@@ -631,322 +923,99 @@ export function ShiftPlanner({
           </SidebarSection>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-auto p-3 md:p-4">
-          <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-sm">
-            <table className="w-full min-w-[900px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-border bg-background">
-                  <th className="sticky left-0 z-20 min-w-[200px] bg-background px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                    {t("planning.staffColumn")}
-                  </th>
-                  {dates.map((date) => {
-                    const { weekday, label } = formatDayHeader(date, intlLocale);
-                    return (
-                      <th
-                        key={date}
-                        className="min-w-[110px] px-2 py-3 text-center"
-                      >
-                        <div className="text-xs font-semibold text-muted">
-                          {weekday}
-                        </div>
-                        <div className="text-sm font-medium">{label}</div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map((emp) => {
-                  const weekH = employeeWeekHours(emp.id, shifts);
-                  const targetH = emp.weekly_hours ?? 40;
-                  const overHours = weekH > targetH;
-
-                  return (
-                    <tr
-                      key={emp.id}
-                      className="border-b border-border last:border-0 hover:bg-hover"
-                    >
-                      <td className="sticky left-0 z-10 border-r border-border bg-surface px-3 py-2">
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
-                            style={{ backgroundColor: avatarColor(emp.full_name) }}
-                          >
-                            {initials(emp.full_name)}
-                          </span>
-                          <div className="min-w-0">
-                            <div className="truncate font-medium">
-                              {emp.full_name}
-                            </div>
-                            <div className="text-xs text-muted">Mitarbeiter</div>
-                            <div
-                              className={`text-xs ${overHours ? "font-medium text-amber-600" : "text-muted"}`}
-                            >
-                              {weekH} h / {targetH} h
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      {dates.map((date) => {
-                        const key = `${emp.id}:${date}`;
-                        const shift = shiftMap.get(key);
-                        const avail = availabilityMap.get(key);
-                        const blockReason = shift
-                          ? null
-                          : getDayAssignBlockReason(
-                              emp.id,
-                              date,
-                              recurringAvailability,
-                              absences
-                            );
-                        const isSelected =
-                          picker?.employeeId === emp.id && picker?.date === date;
-                        const dayReadOnly = isDayReadOnly(date);
-
-                        if (shift) {
-                          return (
-                            <td key={date} className="p-1.5 align-top">
-                              <button
-                                type="button"
-                                disabled={pending || (dayReadOnly && !shift)}
-                                onClick={() => openPicker(emp.id, date)}
-                                className={`w-full rounded-lg px-2 py-2 text-left text-white transition hover:opacity-90 disabled:opacity-50 ${isSelected ? "ring-2 ring-primary ring-offset-1" : ""}`}
-                                style={{ backgroundColor: shift.color }}
-                              >
-                                <div className="text-xs font-semibold leading-tight">
-                                  {shift.shiftName || formatTimeRange(shift.startTime, shift.endTime)}
-                                </div>
-                                <div className="mt-0.5 text-[10px] opacity-90">
-                                  {formatTimeRange(shift.startTime, shift.endTime)}
-                                </div>
-                              </button>
-                            </td>
-                          );
-                        }
-
-                        if (blockReason === "absent") {
-                          return (
-                            <td key={date} className="p-1.5 align-top">
-                              <div className="flex h-[52px] items-center justify-center rounded-lg bg-rose-50 text-xs font-medium text-rose-700">
-                                {t("planning.cellAbsent")}
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        if (blockReason === "no_availability") {
-                          return (
-                            <td key={date} className="p-1.5 align-top">
-                              <div className="flex h-[52px] items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500">
-                                {t("planning.cellNoAvailability")}
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        if (avail === "unavailable") {
-                          return (
-                            <td key={date} className="p-1.5 align-top">
-                              <div className="flex h-[52px] items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500">
-                                {t("planning.cellUnavailable")}
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        if (avail === "preferred") {
-                          return (
-                            <td key={date} className="p-1.5 align-top">
-                              <div className="flex h-[52px] items-center justify-center rounded-lg bg-amber-50 text-xs font-medium text-amber-700">
-                                {t("planning.cellPreferred")}
-                              </div>
-                            </td>
-                          );
-                        }
-
-                        return (
-                          <td key={date} className="p-1.5 align-top">
-                            <button
-                              type="button"
-                              disabled={pending || !canAssign || dayReadOnly}
-                              onClick={() => openPicker(emp.id, date)}
-                              className={`flex h-[52px] w-full flex-col items-center justify-center rounded-lg border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40 ${isSelected ? "border-primary bg-primary/5 text-primary" : ""}`}
-                            >
-                              <span className="text-lg leading-none">+</span>
-                              <span className="text-[10px]">{t("planning.cellFree")}</span>
-                            </button>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-
-                <tr className="border-t-2 border-border bg-background">
-                  <td className="sticky left-0 z-10 bg-background px-4 py-3 text-xs font-semibold text-muted">
-                    Tagesbedarf
-                  </td>
-                  {dailyCounts.map(({ date, total, byPreset }) => {
-                    const staffed = total >= Math.min(employees.length, 3);
-                    return (
-                      <td key={date} className="px-2 py-2 text-center">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <span
-                            className={`inline-block h-2 w-2 rounded-full ${staffed ? "bg-green-500" : "bg-red-500"}`}
-                          />
-                          <span className="text-xs font-medium">{total}</span>
-                          {byPreset.slice(0, 2).map(({ preset, count }) => (
-                            <span key={preset.id} className="text-[10px] text-muted">
-                              {preset.name.slice(0, 4)} {count}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        <main
+          className={cn(
+            "min-w-0 flex-1 overflow-auto p-3 md:p-4",
+            MODAL_SCROLLBAR_CLASS
+          )}
+        >
+          <PlanningCalendarGrid
+            dates={dates}
+            employees={employees}
+            shifts={shifts}
+            shiftMap={shiftMap}
+            availabilityMap={availabilityMap}
+            holidayNames={holidayNames}
+            dayHasServiceHours={dayHasServiceHours}
+            dayHasOpenArea={dayHasOpenArea}
+            activeDayDates={activeDayDates}
+            layoutActiveDayDates={layoutActiveDayDates}
+            dashboardShiftsByDate={dashboardShiftsByDate}
+            serviceTimelinesByDate={serviceTimelinesByDate}
+            columnTemplate={columnTemplate}
+            rowTemplate={planningRowTemplate}
+            minCalendarWidth={minPlanningCalendarWidth}
+            fillColumnsEqually={fillColumnsEqually}
+            narrowDayColumnWidthsPx={narrowDayColumnWidthsPx}
+            dayUsesWideColumn={dayUsesWideColumn}
+            isCalendarVisible={isPlanningCalendarVisible}
+            todayISO={todayISO}
+            intlLocale={intlLocale}
+            locale={locale}
+            pending={pending}
+            canAssign={canAssign}
+            picker={picker}
+            dailyCounts={dailyCounts}
+            t={t}
+            isDayReadOnly={isDayReadOnly}
+            getDayAssignBlockReason={getDayAssignBlockReasonForCell}
+            onToggleDayActive={toggleDayActive}
+            onOpenPicker={openPicker}
+          />
         </main>
 
-        <aside className="w-full shrink-0 overflow-y-auto border-t border-border bg-surface p-4 xl:w-72 xl:border-t-0 xl:border-l">
-          <h2 className="text-sm font-semibold">{t("planning.assignTitle")}</h2>
-
-          {picker && pickerEmployee ? (
-            <div className="mt-4 space-y-4">
-              {isDayReadOnly(picker.date) && (
-                <p className="text-xs text-muted">{t("planning.readOnlyDay")}</p>
-              )}
-              {!simplePlanning && assignmentPresets.length === 0 ? (
-                <Alert variant="info">{t("dashboard.noShiftTemplatesForArea")}</Alert>
-              ) : null}
-
-              <div className="rounded-[var(--radius-control)] bg-subtle px-3 py-2 text-sm">
-                <span className="text-muted">{t("planning.assignDateLabel")}: </span>
-                <span className="font-medium">
-                  {new Intl.DateTimeFormat(intlLocale, {
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                  }).format(parseISODate(picker.date))}
-                </span>
-              </div>
-
-              {!simplePlanning ? (
-                <div>
-                  <LabelMuted>{t("dashboard.shiftTemplateLabel")}</LabelMuted>
-                  <DashboardShiftTypeCombobox
-                    value={selectedPresetId}
-                    presets={assignmentPresets}
-                    placeholder={t("dashboard.selectShiftTemplate")}
-                    disabled={
-                      isDayReadOnly(picker.date) || assignmentPresets.length === 0
-                    }
-                    onChange={handlePresetChange}
-                  />
-                </div>
-              ) : null}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <LabelMuted>{t("shiftTypes.timeFrom")}</LabelMuted>
-                  <TimeInput
-                    className="mt-1"
-                    value={startTime}
-                    disabled={isDayReadOnly(picker.date)}
-                    onChange={(event) => setStartTime(event.target.value)}
-                  />
-                </div>
-                <div>
-                  <LabelMuted>{t("shiftTypes.timeTo")}</LabelMuted>
-                  <TimeInput
-                    className="mt-1"
-                    value={endTime}
-                    disabled={isDayReadOnly(picker.date)}
-                    onChange={(event) => setEndTime(event.target.value)}
-                  />
-                </div>
-              </div>
-
-              <Field label="Personal">
-                <div className="max-h-48 overflow-y-auto rounded-lg border border-border">
-                  <label className="flex cursor-pointer items-center gap-2 border-b border-border bg-primary/5 px-3 py-2.5">
-                    <input type="radio" checked readOnly className="accent-primary" />
-                    <span
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-                      style={{
-                        backgroundColor: avatarColor(pickerEmployee.full_name),
-                      }}
-                    >
-                      {initials(pickerEmployee.full_name)}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {pickerEmployee.full_name}
-                    </span>
-                  </label>
-                </div>
-              </Field>
-
-              <Field label={t("planning.assignNoteLabel")}>
-                <Textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={2}
-                  disabled={isDayReadOnly(picker.date)}
-                  placeholder={t("planning.assignNotePlaceholder")}
-                />
-              </Field>
-
-              {!isDayReadOnly(picker.date) && (
-                <Button
-                  type="button"
-                  className="w-full"
-                  disabled={pending || !timesComplete || !canAssign}
-                  onClick={handleAssign}
-                >
-                  {t("planning.assignSubmit")}
-                </Button>
-              )}
-
-              {shiftMap.get(`${picker.employeeId}:${picker.date}`) &&
-                !isDayReadOnly(picker.date) && (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  className="w-full"
-                  disabled={pending}
-                  onClick={() => {
-                    const shift = shiftMap.get(`${picker.employeeId}:${picker.date}`);
-                    if (shift) handleRemove(shift.id);
-                  }}
-                >
-                  {t("planning.assignRemove")}
-                </Button>
-              )}
-
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full text-muted"
-                onClick={() => setPicker(null)}
-              >
-                {t("planning.assignCancel")}
-              </Button>
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-muted">
-              {t("planning.assignPickCellHint")}
-            </p>
+        <aside
+          className={cn(
+            "hidden w-full shrink-0 border-t border-border bg-surface xl:block xl:w-72 xl:border-t-0 xl:border-l",
+            MODAL_SCROLLBAR_CLASS
           )}
-        </aside>
+          aria-hidden
+        />
+
+        {picker && pickerEmployee ? (
+          <PlanningAssignShiftModal
+            employee={pickerEmployee}
+            date={picker.date}
+            intlLocale={intlLocale}
+            t={t}
+            simplePlanning={simplePlanning}
+            assignmentPresets={assignmentPresets}
+            selectedPresetId={selectedPresetId}
+            onPresetChange={handlePresetChange}
+            startTime={startTime}
+            endTime={endTime}
+            onStartTimeChange={setStartTime}
+            onEndTimeChange={setEndTime}
+            note={note}
+            onNoteChange={setNote}
+            dayReadOnly={isDayReadOnly(picker.date)}
+            pending={pending}
+            timesComplete={timesComplete}
+            canAssign={canAssign}
+            hasExistingShift={Boolean(
+              shiftMap.get(`${picker.employeeId}:${picker.date}`)
+            )}
+            onAssign={handleAssign}
+            onRemove={() => {
+              const shift = shiftMap.get(`${picker.employeeId}:${picker.date}`);
+              if (shift) handleRemove(shift.id);
+            }}
+            onClose={() => setPicker(null)}
+          />
+        ) : null}
       </div>
 
       <footer className="grid gap-4 border-t border-border bg-surface p-4 lg:grid-cols-3">
         <FooterPanel title="Wochenzusammenfassung">
           <div className="grid grid-cols-2 gap-3">
-            <Stat label="Geplante Stunden" value={`${summary.plannedHours} h`} />
-            <Stat label="Gesamtstunden Soll" value={`${summary.targetHours} h`} />
+            <Stat
+              label="Geplante Stunden"
+              value={`${summary.plannedHours} ${planningHoursUnitLabel(locale)}`}
+            />
+            <Stat
+              label="Gesamtstunden Soll"
+              value={`${summary.targetHours} ${planningHoursUnitLabel(locale)}`}
+            />
             <Stat label="Offene Schichten" value={String(summary.openShifts)} />
             <Stat
               label="Geschätzte Personalkosten"

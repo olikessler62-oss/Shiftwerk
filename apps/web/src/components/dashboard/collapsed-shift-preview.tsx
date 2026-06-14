@@ -27,6 +27,16 @@ type Props = {
   pastDayReferenceShifts?: readonly DashboardShiftCard[];
   /** Zugeklappter Bereich — nur einzelne Pixel statt Balken. */
   areaCollapsed?: boolean;
+  /** Feste Zellbreite, wenn ResizeObserver 0 liefert (z. B. Planungs-Matrix). */
+  cellWidthPxOverride?: number;
+  /** Kurze Einzelzeile statt flex-1/h-0 (Planungs-Matrix pro Mitarbeiter). */
+  compactRow?: boolean;
+  /** Fester Abstand links (px) statt Timeline-Position — nur Schichtplan erstellen. */
+  fixedMarkerMarginLeftPx?: number;
+  /** Zusätzliche Marker-Breite (px), z. B. −3 im Schichtplan. */
+  markerWidthDeltaPx?: number;
+  /** Zusätzliche Marker-Höhe (px), z. B. +5 im Schichtplan. */
+  markerHeightDeltaPx?: number;
   className?: string;
 };
 
@@ -57,10 +67,15 @@ export function CollapsedShiftPreview({
   isPastDay,
   pastDayReferenceShifts,
   areaCollapsed = false,
+  cellWidthPxOverride,
+  compactRow = false,
+  fixedMarkerMarginLeftPx,
+  markerWidthDeltaPx = 0,
+  markerHeightDeltaPx = 0,
   className,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [cellWidthPx, setCellWidthPx] = useState(0);
+  const [measuredCellWidthPx, setMeasuredCellWidthPx] = useState(0);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -68,7 +83,7 @@ export function CollapsedShiftPreview({
 
     function updateWidth() {
       if (!container) return;
-      setCellWidthPx(container.clientWidth);
+      setMeasuredCellWidthPx(container.clientWidth);
     }
 
     updateWidth();
@@ -76,7 +91,12 @@ export function CollapsedShiftPreview({
     const observer = new ResizeObserver(updateWidth);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [shifts]);
+  }, [shifts, cellWidthPxOverride]);
+
+  const cellWidthPx =
+    cellWidthPxOverride && cellWidthPxOverride > 0
+      ? cellWidthPxOverride
+      : measuredCellWidthPx;
 
   const sortedShifts = useMemo(
     () => [...shifts].sort(compareShiftCards),
@@ -121,21 +141,36 @@ export function CollapsedShiftPreview({
       }
     );
 
-    return sortedShifts.map((shift, index) => ({
-      shift,
-      display: buildShiftCardDisplayContent(shift, null),
-      marginLeftPx: layouts[index]?.marginLeftPx ?? 0,
-      widthPx: layouts[index]?.widthPx ?? 0,
-      heightPx: layouts[index]?.heightPx ?? SHIFT_CARD_TWO_LINE_HEIGHT_PX,
-    }));
+    return sortedShifts.map((shift, index) => {
+      const baseWidthPx = layouts[index]?.widthPx ?? 0;
+      const baseHeightPx =
+        layouts[index]?.heightPx ?? SHIFT_CARD_TWO_LINE_HEIGHT_PX;
+
+      return {
+        shift,
+        display: buildShiftCardDisplayContent(shift, null),
+        marginLeftPx:
+          fixedMarkerMarginLeftPx ??
+          layouts[index]?.marginLeftPx ??
+          0,
+        widthPx: Math.max(1, baseWidthPx + markerWidthDeltaPx),
+        heightPx: Math.max(1, baseHeightPx + markerHeightDeltaPx),
+      };
+    });
   }, [
     areaCollapsed,
+    fixedMarkerMarginLeftPx,
+    markerWidthDeltaPx,
+    markerHeightDeltaPx,
     isPastDay,
     pastDayReferenceShifts,
     sortedShifts,
     cellWidthPx,
     serviceTimeline,
   ]);
+
+  const compactRowMinHeightPx =
+    SHIFT_CARD_TWO_LINE_HEIGHT_PX + markerHeightDeltaPx;
 
   const showDetail = !isPastDay && !areaCollapsed;
 
@@ -145,14 +180,21 @@ export function CollapsedShiftPreview({
       className={cn(
         areaCollapsed
           ? "relative h-0 min-h-0 flex-1 overflow-hidden"
-          : "flex h-0 min-h-0 flex-1 flex-col items-start gap-1 overflow-x-hidden pb-1",
+          : compactRow
+            ? "flex w-full flex-col items-start justify-center overflow-x-hidden pb-0"
+            : "flex h-0 min-h-0 flex-1 flex-col items-start gap-1 overflow-x-hidden pb-1",
         !areaCollapsed && isPastDay
           ? "overflow-y-hidden"
-          : !areaCollapsed
+          : !areaCollapsed && !compactRow
             ? "overflow-y-auto"
             : undefined,
         className
       )}
+      style={
+        compactRow && !areaCollapsed
+          ? { minHeight: compactRowMinHeightPx }
+          : undefined
+      }
       aria-hidden={!showDetail ? true : undefined}
     >
       {previewItems.map(({ shift, display, marginLeftPx, widthPx, heightPx }) => {

@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/sign-out";
 import { Button, IconButton } from "@/components/ui";
+import { LanguageSelect } from "@/components/i18n/language-select";
 import { useTranslations } from "@/i18n/locale-provider";
 import { SidebarNav } from "./sidebar-nav";
 
@@ -89,6 +90,10 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
               </svg>
             )}
           </IconButton>
+        </div>
+
+        <div className="flex justify-center px-3 pb-3 pt-5">
+          <LanguageSelect />
         </div>
 
         {open && (

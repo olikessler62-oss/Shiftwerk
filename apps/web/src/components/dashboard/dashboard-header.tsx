@@ -9,7 +9,6 @@ import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { getDashboardWeekHeaderParts } from "@/lib/planning-utils";
 import type { Location, ManagerNotification } from "@schichtwerk/types";
 import { Button, IconButton, ListIcon } from "@/components/ui";
-import { LanguageSelect } from "@/components/i18n/language-select";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
@@ -241,7 +240,6 @@ export function DashboardHeader({
             onNavigateToWeek={onNavigateToWeek}
           />
         ) : null}
-        <LanguageSelect className="shrink-0" />
       </div>
     </header>
   );

@@ -21,6 +21,25 @@ export function formatTimeRange(start: string, end: string): string {
   return `${formatTime(start)} – ${formatTime(end)}`;
 }
 
+export function planningHoursUnitLabel(locale: string): "Std" | "h" {
+  return locale.startsWith("de") ? "Std" : "h";
+}
+
+export function formatPlanningHoursRatio(
+  current: number,
+  target: number,
+  locale: string
+): string {
+  return `${current}/${target} ${planningHoursUnitLabel(locale)}`;
+}
+
+export function formatPlanningHoursInParens(
+  hours: number,
+  locale: string
+): string {
+  return `(${hours} ${planningHoursUnitLabel(locale)})`;
+}
+
 export function shiftHours(timeWindow: {
   start_time: string;
   end_time: string;
