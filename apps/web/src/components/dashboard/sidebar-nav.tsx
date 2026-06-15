@@ -5,15 +5,18 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import {
+  buildSettingsModalUrl as buildSettingsModalUrlFromLib,
+  isSettingsModalOpen,
+} from "@/lib/settings-modal-navigation";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
 
-const NAV_LINKS = [
-  { href: "/dashboard", labelKey: "nav.dashboard" },
-  { href: "/planung", labelKey: "nav.planning" },
+const NAV_LINKS_AFTER_PLANNING = [
   { href: "/berichte", labelKey: "nav.reports" },
 ] as const;
 
+const PLANNING_SECTION_ID = "planung";
 const SETTINGS_SECTION_ID = "einstellungen";
 
 const navItemClass = (active: boolean) =>
@@ -24,13 +27,18 @@ const navItemClass = (active: boolean) =>
       : "border-l-transparent text-foreground hover:bg-primary/5"
   );
 
-const settingsSubLinkClass = (active: boolean) =>
+const subLinkClass = (active: boolean) =>
   cn(
-    "block rounded-lg border-l-2 py-2 pl-[calc(2rem-2px)] pr-3 text-sm transition-colors",
+    "block w-full rounded-lg border-l-2 py-2 pl-[calc(2rem-2px)] pr-3 text-left text-sm transition-colors",
     active
       ? "border-l-primary bg-primary/5 font-medium text-foreground"
       : "border-l-transparent text-muted hover:bg-primary/5 hover:text-foreground"
   );
+
+const subLinkButtonClass =
+  "block w-full rounded-lg border-l-2 border-l-transparent py-2 pl-[calc(2rem-2px)] pr-3 text-left text-sm text-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+
+const settingsSubLinkClass = subLinkClass;
 
 type Props = {
   onNavigate?: () => void;
@@ -43,6 +51,7 @@ export function SidebarNav({ onNavigate, viewerRole }: Props) {
   const t = useTranslations();
   const features = useOrgFeatures();
   const organization = useOrganization();
+  const planungActive = pathname === "/planung";
   const outboxPath = "/settings/notifications-outbox";
   const outboxActive = pathname === outboxPath;
   const showOutboxLink =
@@ -57,18 +66,17 @@ export function SidebarNav({ onNavigate, viewerRole }: Props) {
   const planungsmodusOpen = searchParams.get("planungsmodus") === "1";
   const arbeitsentgeltOpen = searchParams.get("arbeitsentgelt") === "1";
   const settingsModalOpen =
-    standorteOpen ||
-    profilesOpen ||
-    rollenOpen ||
-    qualifikationenOpen ||
-    sonderzuschlaegeOpen ||
-    abwesenheitenOpen ||
-    planungsmodusOpen ||
-    arbeitsentgeltOpen ||
-    outboxActive;
+    isSettingsModalOpen(searchParams) || outboxActive;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    [PLANNING_SECTION_ID]: planungActive,
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
+
+  useEffect(() => {
+    if (planungActive) {
+      setExpanded((prev) => ({ ...prev, [PLANNING_SECTION_ID]: true }));
+    }
+  }, [planungActive]);
 
   useEffect(() => {
     if (settingsModalOpen) {
@@ -76,6 +84,7 @@ export function SidebarNav({ onNavigate, viewerRole }: Props) {
     }
   }, [settingsModalOpen]);
 
+  const planningExpanded = expanded[PLANNING_SECTION_ID] ?? false;
   const settingsExpanded = expanded[SETTINGS_SECTION_ID] ?? false;
 
   function toggleSection(id: string) {
@@ -93,14 +102,7 @@ export function SidebarNav({ onNavigate, viewerRole }: Props) {
       | "planungsmodus"
       | "arbeitsentgelt"
   ) {
-    const params = new URLSearchParams({ [flag]: "1" });
-    if (pathname === "/dashboard") {
-      const week = searchParams.get("week");
-      const location = searchParams.get("location");
-      if (week) params.set("week", week);
-      if (location) params.set("location", location);
-    }
-    return `/dashboard?${params.toString()}`;
+    return buildSettingsModalUrlFromLib(pathname, searchParams, flag);
   }
 
   const settingsLinks = [
@@ -144,9 +146,85 @@ export function SidebarNav({ onNavigate, viewerRole }: Props) {
     },
   ];
 
+  const planningPrimaryActions = [
+    { labelKey: "nav.planningApplyPreviousWeek" },
+    { labelKey: "nav.planningCreateEmpty" },
+  ] as const;
+
+  const planningExportActions = [
+    { labelKey: "nav.planningExportPdf" },
+    { labelKey: "nav.planningExportExcel" },
+    { labelKey: "nav.planningNotifyStaff" },
+  ] as const;
+
   return (
     <nav className="flex flex-col gap-0.5 p-2">
-      {NAV_LINKS.map((item) => (
+      <Link
+        href="/dashboard"
+        onClick={onNavigate}
+        className={navItemClass(pathname === "/dashboard")}
+      >
+        {t("nav.dashboard")}
+      </Link>
+
+      <div>
+        <div
+          className={cn(
+            navItemClass(planungActive || planningExpanded),
+            "flex items-center justify-between gap-1 pr-1"
+          )}
+        >
+          <Link href="/planung" onClick={onNavigate} className="min-w-0 flex-1">
+            {t("nav.planning")}
+          </Link>
+          <button
+            type="button"
+            onClick={() => toggleSection(PLANNING_SECTION_ID)}
+            aria-expanded={planningExpanded}
+            aria-label={t("nav.planning")}
+            className="shrink-0 rounded p-1 text-muted hover:bg-primary/5 hover:text-foreground"
+          >
+            <Chevron open={planningExpanded} />
+          </button>
+        </div>
+
+        <div
+          className={cn(
+            "grid transition-[grid-template-rows] duration-200 ease-out",
+            planningExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          )}
+        >
+          <div className="overflow-hidden">
+            {planningPrimaryActions.map((item, index) => (
+              <button
+                key={item.labelKey}
+                type="button"
+                disabled
+                className={cn(subLinkButtonClass, index === 0 && "mt-0.5")}
+              >
+                {t(item.labelKey)}
+              </button>
+            ))}
+            <div
+              className="mx-3 my-1 border-t border-border"
+              role="separator"
+              aria-hidden
+            />
+            {planningExportActions.map((item) => (
+              <button
+                key={item.labelKey}
+                type="button"
+                disabled
+                className={subLinkButtonClass}
+              >
+                {t(item.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {NAV_LINKS_AFTER_PLANNING.map((item) => (
         <Link
           key={item.href}
           href={item.href}

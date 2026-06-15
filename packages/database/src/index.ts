@@ -154,8 +154,13 @@ export {
   normalizeServiceHourTimeComparable,
   serviceHoursSameWindow,
   serviceHourIntervalsOverlap,
+  isOvernightServiceHour,
+  serviceHourTimeSegments,
+  serviceHourNextWeekday,
+  mapServiceHoursTimeConstraintError,
   SHIFT_OUTSIDE_SERVICE_HOURS_ERROR,
   NO_SERVICE_HOURS_FOR_DAY_ERROR,
+  SERVICE_HOUR_EQUAL_TIMES_ERROR,
   type ServiceHourInput,
   type ServiceHourWindow,
 } from "./location-service-hours-validation";

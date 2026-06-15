@@ -1,3 +1,4 @@
+import { SHIFT_CONFIRMATION_ASSIGN_GATE_ERROR } from "@schichtwerk/database";
 import type { Translator } from "@schichtwerk/i18n/translate";
 
 const SHIFT_ASSIGN_EXACT_KEYS: Record<string, string> = {
@@ -20,6 +21,8 @@ const SHIFT_ASSIGN_EXACT_KEYS: Record<string, string> = {
   "Speichern fehlgeschlagen": "shiftAssign.saveFailed",
   "Unbekannter Fehler": "shiftAssign.unknownError",
   "Überschneidung mit anderer Zeile im Batch.": "shiftAssign.batchRowOverlap",
+  [SHIFT_CONFIRMATION_ASSIGN_GATE_ERROR]:
+    "shiftConfirmation.gate.appNotRegistered",
 };
 
 const QUALIFICATION_MISSING_PREFIX =

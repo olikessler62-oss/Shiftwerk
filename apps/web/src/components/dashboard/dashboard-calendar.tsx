@@ -16,13 +16,14 @@ import { buildHolidayNamesByDate, isGermanPublicHoliday } from "@/lib/german-pub
 import { formatDayHeader } from "@/lib/planning-utils";
 import { DashboardShiftCardsList } from "@/components/dashboard/dashboard-shift-cards-list";
 import { CollapsedShiftPreview } from "@/components/dashboard/collapsed-shift-preview";
+import { DashboardAreaRowOvernightOverlay } from "@/components/dashboard/dashboard-area-row-overnight-overlay";
 import { ClosedAreaNoServiceHoursLabel } from "@/components/dashboard/closed-area-no-service-hours-label";
 import { NoServiceHoursShiftConfirmModal } from "@/components/dashboard/no-service-hours-shift-confirm-modal";
 import { DashboardShiftDeleteConfirmModal } from "@/components/dashboard/dashboard-shift-delete-confirm-modal";
 import { removeShift } from "@/app/actions/shifts";
 import { translateActionError } from "@/lib/translate-action-error";
 import { isPastShiftDate } from "@/lib/planning-readonly";
-import { resolveLocationServiceDayTimeline } from "@/lib/shift-card-cell-layout";
+import { resolveDashboardLocationServiceDayTimeline } from "@/lib/dashboard-service-day-timeline";
 import {
   createPastServiceTimelineHourGridStyle,
   createServiceTimelineHourGridStyle,
@@ -37,10 +38,20 @@ import {
 } from "@/lib/shift-card-row-layout";
 import { isCalendarAreaRowHeightDate, isAreaRowMinimizedFromTodayThroughWeek } from "@/lib/calendar-area-row-height-dates";
 import {
+  collectDashboardOvernightSpansByArea,
+  collectDashboardOvernightSpansForArea,
+  dashboardOvernightAnchorShiftIds,
+} from "@/lib/dashboard-overnight-shift-display";
+import { dashboardCellDataAttribute } from "@/lib/dashboard-overnight-span-layout";
+import {
   canOpenAssignShiftContextMenu,
   canOpenBulkShiftFromShiftCard,
   canPromptNoServiceHoursShiftAssign,
 } from "@/lib/dashboard-area-day-assign";
+import {
+  pickFirstDashboardShiftPerEmployeeDay,
+} from "@/lib/simple-calendar-display-toggle";
+import { useSimpleCalendarDisplay } from "@/lib/simple-calendar-display-context";
 export type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
@@ -76,7 +87,7 @@ import {
 } from "@/components/dashboard/calendar-corner-checkbox";
 import {
   computeTagAreaDayFooterStats,
-  formatTagAreaFooterLine,
+  formatTagAreaFooterLabels,
   type DashboardShiftCompensationByKey,
 } from "@/lib/tag-area-footer-stats";
 import { TagAreaHeaderStrip } from "@/components/dashboard/tag-area-header-strip";
@@ -177,6 +188,8 @@ const CALENDAR_CELL_CONTENT_TRANSITION_CLASS =
 
 /** Tag-Bereich-Header: Tageszeit-Verlauf + Bedarf-Overlay. */
 const TAG_AREA_HEADER_STRIP_HEIGHT = "20px";
+/** Einfache Planung ohne Bereiche — Overlay-Schlüssel für Kalenderzellen. */
+const SIMPLE_PLANNING_AREA_ID = "";
 
 /** Tag-Bereich-Footer-Streifen-Höhe. */
 const TAG_AREA_FOOTER_STRIP_HEIGHT = "18px";
@@ -408,6 +421,15 @@ export function DashboardCalendar({
   const shiftConfirmationEnabled = organization.shift_confirmation_enabled;
   const simplePlanning = !features.areas;
   const intlLocale = toIntlLocale(locale);
+  const { simpleCalendarFirstShiftOnly } = useSimpleCalendarDisplay();
+
+  const calendarShifts = useMemo(
+    () =>
+      simpleCalendarFirstShiftOnly
+        ? pickFirstDashboardShiftPerEmployeeDay(shifts)
+        : shifts,
+    [shifts, simpleCalendarFirstShiftOnly]
+  );
 
   const profileQualificationIds = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -469,14 +491,14 @@ export function DashboardCalendar({
 
   const shiftsByDate = useMemo(() => {
     const map = new Map<string, DashboardShiftCard[]>();
-    for (const shift of shifts) {
+    for (const shift of calendarShifts) {
       if (!simplePlanning && !shift.locationAreaId) continue;
       const list = map.get(shift.shift_date) ?? [];
       list.push(shift);
       map.set(shift.shift_date, list);
     }
     return map;
-  }, [shifts, simplePlanning]);
+  }, [calendarShifts, simplePlanning]);
 
   const dayHasOpenArea = useMemo(
     () =>
@@ -1124,7 +1146,7 @@ export function DashboardCalendar({
 
   const byAreaDate = useMemo(() => {
     const map = new Map<string, DashboardShiftCard[]>();
-    for (const shift of shifts) {
+    for (const shift of calendarShifts) {
       if (!shift.locationAreaId) continue;
       const key = `${shift.locationAreaId}:${shift.shift_date}`;
       const list = map.get(key) ?? [];
@@ -1132,10 +1154,30 @@ export function DashboardCalendar({
       map.set(key, list);
     }
     return map;
-  }, [shifts]);
+  }, [calendarShifts]);
 
-  const footerLabelByAreaDate = useMemo(() => {
-    const map = new Map<string, string>();
+  const overnightSpansByArea = useMemo(
+    () => collectDashboardOvernightSpansByArea(areas, dates, calendarShifts),
+    [areas, dates, calendarShifts]
+  );
+
+  const simplePlanningOvernightSpans = useMemo(
+    () =>
+      simplePlanning
+        ? collectDashboardOvernightSpansForArea(
+            SIMPLE_PLANNING_AREA_ID,
+            dates,
+            calendarShifts
+          )
+        : [],
+    [simplePlanning, dates, calendarShifts]
+  );
+
+  const footerLabelsByAreaDate = useMemo(() => {
+    const map = new Map<
+      string,
+      ReturnType<typeof formatTagAreaFooterLabels>
+    >();
     for (const area of areas) {
       for (const date of dates) {
         const dayShifts = byAreaDate.get(`${area.id}:${date}`) ?? [];
@@ -1143,7 +1185,7 @@ export function DashboardCalendar({
         const stats = computeTagAreaDayFooterStats(dayShifts, shiftCompensation);
         map.set(
           `${area.id}:${date}`,
-          formatTagAreaFooterLine(stats, t, localeKey)
+          formatTagAreaFooterLabels(stats, t, localeKey)
         );
       }
     }
@@ -1151,9 +1193,9 @@ export function DashboardCalendar({
   }, [areas, dates, byAreaDate, shiftCompensation, t, localeKey]);
 
   const locationServiceTimelinesByDate = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof resolveLocationServiceDayTimeline>>();
+    const map = new Map<string, ReturnType<typeof resolveDashboardLocationServiceDayTimeline>>();
     for (const date of dates) {
-      map.set(date, resolveLocationServiceDayTimeline(serviceHours, date));
+      map.set(date, resolveDashboardLocationServiceDayTimeline(serviceHours, date));
     }
     return map;
   }, [dates, serviceHours]);
@@ -1462,11 +1504,19 @@ export function DashboardCalendar({
               </div>
               {dates.map((date, dayIndex) => {
                 const dayShifts = shiftsByDate.get(date) ?? [];
+                const overnightAnchors = dashboardOvernightAnchorShiftIds(
+                  dayShifts,
+                  dates
+                );
                 const dayReadOnly = isPastCalendarDate(date);
                 const isDayExpanded = layoutActiveDayDates.has(date);
                 return (
                   <div
                     key={`simple-${date}`}
+                    data-dashboard-cell={dashboardCellDataAttribute(
+                      SIMPLE_PLANNING_AREA_ID,
+                      date
+                    )}
                     className={cn(
                       "relative min-h-[4.5rem] p-1",
                       dayColumnDivider(dayIndex),
@@ -1505,6 +1555,7 @@ export function DashboardCalendar({
                     {isDayExpanded ? (
                       <DashboardShiftCardsList
                         shifts={dayShifts}
+                        overnightAnchorShiftIds={overnightAnchors}
                         areaId=""
                         dateISO={date}
                         serviceTimeline={locationServiceTimelinesByDate.get(date)!}
@@ -1538,6 +1589,10 @@ export function DashboardCalendar({
                     ) : dayShifts.length > 0 ? (
                       <CollapsedShiftPreview
                         shifts={dayShifts}
+                        overnightAnchorShiftIds={overnightAnchors}
+                        assignmentPresets={dashboardAssignmentPresetsForArea(
+                          areaShiftTemplates
+                        )}
                         serviceTimeline={locationServiceTimelinesByDate.get(date)!}
                         isPastDay={dayReadOnly}
                         pastDayReferenceShifts={dayReadOnly ? dayShifts : undefined}
@@ -1547,6 +1602,26 @@ export function DashboardCalendar({
                   </div>
                 );
               })}
+              {simplePlanningOvernightSpans.length > 0 ? (
+                <DashboardAreaRowOvernightOverlay
+                  areaId={SIMPLE_PLANNING_AREA_ID}
+                  spans={simplePlanningOvernightSpans}
+                  dayColumnCount={dates.length}
+                  gridRow={2}
+                  layoutActiveDayDates={layoutActiveDayDates}
+                  layoutActiveAreaIds={layoutActiveAreaIds}
+                  forceAreaExpanded
+                  todayISO={todayISO}
+                  serviceHours={serviceHours}
+                  staffingRules={fullStaffingRules}
+                  assignmentPresets={dashboardAssignmentPresetsForArea(
+                    areaShiftTemplates
+                  )}
+                  profileQualificationIds={profileQualificationIdsRecord}
+                  qualificationNameById={qualificationNameById}
+                  qualificationSortOrder={qualificationSortOrder}
+                />
+              ) : null}
             </>
           ) : areas.length === 0 ? (
             <div
@@ -1586,6 +1661,8 @@ export function DashboardCalendar({
                 const isCompactRow =
                   !isLayoutAreaExpanded || layoutMinHeightAreaIds.has(area.id);
                 const areaRowLayout = areaRowLayouts.get(area.id);
+                const areaOvernightSpans =
+                  overnightSpansByArea.get(area.id) ?? [];
 
                 return (
                   <Fragment key={area.id}>
@@ -1622,6 +1699,10 @@ export function DashboardCalendar({
                     {dates.map((date, dayIndex) => {
                       const dayShifts =
                         byAreaDate.get(`${area.id}:${date}`) ?? [];
+                      const overnightAnchors = dashboardOvernightAnchorShiftIds(
+                        dayShifts,
+                        dates
+                      );
                       const isPastAreaWorkDay = isPastAreaWorkDayCell(
                         serviceHours,
                         area.id,
@@ -1683,6 +1764,10 @@ export function DashboardCalendar({
                       return (
                         <div
                           key={date}
+                          data-dashboard-cell={dashboardCellDataAttribute(
+                            area.id,
+                            date
+                          )}
                           className={cn(
                             "relative z-10 flex min-h-0 flex-col overflow-hidden",
                             showDayCellContent ? "p-2" : undefined,
@@ -1760,15 +1845,18 @@ export function DashboardCalendar({
                                     : undefined),
                                 }}
                               >
-                                {dayShifts.length > 0 ? (
-                                  <TagAreaFooterStrip
-                                    label={
-                                      footerLabelByAreaDate.get(
-                                        `${area.id}:${date}`
-                                      ) ?? ""
-                                    }
-                                  />
-                                ) : null}
+                                {dayShifts.length > 0 ? (() => {
+                                  const footerLabels = footerLabelsByAreaDate.get(
+                                    `${area.id}:${date}`
+                                  );
+                                  return footerLabels ? (
+                                    <TagAreaFooterStrip
+                                      label={footerLabels.line}
+                                      hoursTooltipLine={footerLabels.hoursLine}
+                                      costTooltipLine={footerLabels.costLine}
+                                    />
+                                  ) : null;
+                                })() : null}
                               </div>
                               <div
                                 className={cn(
@@ -1793,6 +1881,7 @@ export function DashboardCalendar({
                                   <DashboardShiftCardsList
                                     key={`${area.id}:${date}:${areaRowLayout?.heightPx ?? 0}`}
                                     shifts={dayShifts}
+                                    overnightAnchorShiftIds={overnightAnchors}
                                     areaId={area.id}
                                     dateISO={date}
                                     serviceTimeline={
@@ -1838,6 +1927,10 @@ export function DashboardCalendar({
                                 ) : showInactivePreviewCell && dayShifts.length > 0 ? (
                                   <CollapsedShiftPreview
                                     shifts={dayShifts}
+                                    overnightAnchorShiftIds={overnightAnchors}
+                                    assignmentPresets={dashboardAssignmentPresetsForArea(
+                                      areaShiftTemplatesForArea(area.id, areaShiftTemplates)
+                                    )}
                                     serviceTimeline={
                                       locationServiceTimelinesByDate.get(date)!
                                     }
@@ -1861,6 +1954,50 @@ export function DashboardCalendar({
                         </div>
                       );
                     })}
+                    {areaOvernightSpans.length > 0 ? (
+                      <DashboardAreaRowOvernightOverlay
+                        areaId={area.id}
+                        spans={areaOvernightSpans}
+                        dayColumnCount={dates.length}
+                        gridRow={gridRow}
+                        layoutActiveDayDates={layoutActiveDayDates}
+                        layoutActiveAreaIds={layoutActiveAreaIds}
+                        todayISO={todayISO}
+                        serviceHours={serviceHours}
+                        staffingRules={fullStaffingRules}
+                        assignmentPresets={dashboardAssignmentPresetsForArea(
+                          areaShiftTemplatesForArea(area.id, areaShiftTemplates)
+                        )}
+                        profileQualificationIds={profileQualificationIdsRecord}
+                        qualificationNameById={qualificationNameById}
+                        qualificationSortOrder={qualificationSortOrder}
+                        onShiftClick={(shift) => {
+                          const startDate = shift.shift_date;
+                          const startDayShifts =
+                            byAreaDate.get(`${area.id}:${startDate}`) ?? [];
+                          handleShiftCardClick(
+                            shift,
+                            area.id,
+                            startDate,
+                            isAreaActive,
+                            activeDayDates.has(startDate),
+                            startDayShifts.length
+                          );
+                        }}
+                        onShiftContextMenu={(shift, event) =>
+                          bindShiftContextMenu({
+                            areaId: area.id,
+                            date: shift.shift_date,
+                            isAreaActive,
+                            isDayActive: activeDayDates.has(shift.shift_date),
+                            shiftCountInArea: (
+                              byAreaDate.get(`${area.id}:${shift.shift_date}`) ??
+                              []
+                            ).length,
+                          })(shift, event)
+                        }
+                      />
+                    ) : null}
                   </Fragment>
                 );
               })}

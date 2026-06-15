@@ -6,7 +6,6 @@ import type {
   Location,
   LocationArea,
   LocationAreaStaffing,
-  LocationAreaServiceHour,
   Profile,
   Qualification,
   CompensationSurchargeType,
@@ -17,16 +16,8 @@ import type {
   AreaServiceHourRef,
   StaffingRule,
 } from "@/lib/location-staffing-client";
-import { QualificationsModal } from "@/components/settings/qualifications-modal";
-import { CompensationSurchargeTypesModal } from "@/components/settings/compensation-surcharge-types-modal";
-import { LocationsModal } from "@/components/settings/locations-modal";
-import { RolesModal } from "@/components/settings/roles-modal";
-import { AbsencesModal } from "@/components/settings/absences-modal";
-import { OrganizationPlanningModeModal } from "@/components/settings/organization-planning-mode-modal";
-import { OrganizationCompensationSettingsModal } from "@/components/settings/organization-compensation-settings-modal";
-import { ProfilesModal } from "@/components/settings/profiles-modal";
-import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
-import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
+import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
+import { useOrganization } from "@/lib/org-features-provider";
 import { DashboardHeader } from "./dashboard-header";
 import {
   DashboardCalendar,
@@ -82,7 +73,6 @@ export function DashboardView({
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const features = useOrgFeatures();
   const organization = useOrganization();
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false);
   const [confirmationsPanelOpen, setConfirmationsPanelOpen] = useState(false);
@@ -120,36 +110,6 @@ export function DashboardView({
     const query = params.toString();
     router.push(query ? `/dashboard?${query}` : "/dashboard");
   }
-  const showLocations =
-    features.areas && searchParams.get("standorte") === "1";
-  const showProfiles = searchParams.get("profiles") === "1";
-  const showRoles = searchParams.get("rollen") === "1";
-  const showQualifications =
-    features.qualifications && searchParams.get("qualifikationen") === "1";
-  const showSurcharges =
-    features.qualifications &&
-    COMPENSATION_SURCHARGES_UI_ENABLED &&
-    searchParams.get("sonderzuschlaege") === "1";
-  const showAbsences = searchParams.get("abwesenheiten") === "1";
-  const showPlanningMode = searchParams.get("planungsmodus") === "1";
-  const showCompensationSettings = searchParams.get("arbeitsentgelt") === "1";
-
-  function closeSettingsModal(
-    flag:
-      | "standorte"
-      | "profiles"
-      | "rollen"
-      | "qualifikationen"
-      | "sonderzuschlaege"
-      | "abwesenheiten"
-      | "planungsmodus"
-      | "arbeitsentgelt"
-  ) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete(flag);
-    const q = params.toString();
-    router.push(q ? `/dashboard?${q}` : "/dashboard");
-  }
 
   return (
     <div
@@ -186,58 +146,20 @@ export function DashboardView({
           reassignShiftRequest={reassignShiftRequest}
           onReassignShiftHandled={() => setReassignShiftRequest(null)}
         />
-        {showLocations && (
-          <LocationsModal
-            locations={locations}
-            initialSelectedLocationId={selectedLocationId}
-            initialAreas={areas}
-            initialSelectedAreaId={areas[0]?.id ?? null}
-            initialServiceHours={serviceHours as LocationAreaServiceHour[]}
-            initialStaffing={fullStaffingRules}
-            initialShiftTemplates={areaShiftTemplates}
-            onClose={() => closeSettingsModal("standorte")}
-          />
-        )}
-        {showProfiles && (
-          <ProfilesModal
-            profiles={profiles}
-            onClose={() => closeSettingsModal("profiles")}
-          />
-        )}
-        {showRoles && (
-          <RolesModal
-            roles={roles}
-            onClose={() => closeSettingsModal("rollen")}
-          />
-        )}
-        {showQualifications && (
-          <QualificationsModal
-            qualifications={qualifications}
-            onClose={() => closeSettingsModal("qualifikationen")}
-          />
-        )}
-        {showSurcharges && (
-          <CompensationSurchargeTypesModal
-            surchargeTypes={compensationSurchargeTypes}
-            onClose={() => closeSettingsModal("sonderzuschlaege")}
-          />
-        )}
-        {showAbsences && (
-          <AbsencesModal
-            profiles={profiles}
-            onClose={() => closeSettingsModal("abwesenheiten")}
-          />
-        )}
-        {showPlanningMode && (
-          <OrganizationPlanningModeModal
-            onClose={() => closeSettingsModal("planungsmodus")}
-          />
-        )}
-        {showCompensationSettings && (
-          <OrganizationCompensationSettingsModal
-            onClose={() => closeSettingsModal("arbeitsentgelt")}
-          />
-        )}
+        <SettingsModalsLayer
+          data={{
+            locations,
+            selectedLocationId,
+            areas,
+            serviceHours,
+            fullStaffingRules,
+            areaShiftTemplates,
+            qualifications,
+            compensationSurchargeTypes,
+            roles,
+            profiles,
+          }}
+        />
         {sendConfirmationOpen && organization.shift_confirmation_enabled ? (
           <DashboardSendConfirmationModal
             weekStart={weekStart}

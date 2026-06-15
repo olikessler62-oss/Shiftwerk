@@ -509,6 +509,41 @@ function filterEmployeesByQualificationForShift<
   );
 }
 
+/** Schichtplan „Schicht hinzufügen“: Verfügbarkeit + ausgewählter Job (Abwesenheit bereits in der Liste). */
+export function filterPlanningAssignShiftEmployees<
+  T extends {
+    id: string;
+    availabilities: readonly DashboardShiftAssignAvailability[];
+  },
+>(
+  employees: readonly T[],
+  weekday: number,
+  windowStart: string,
+  windowEnd: string,
+  options: {
+    simplePlanning: boolean;
+    qualificationId: string;
+    profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
+  }
+): T[] {
+  if (!areDashboardShiftTimesComplete(windowStart, windowEnd)) return [];
+
+  const available = filterDashboardShiftAssignEmployeesByWindow(
+    employees,
+    weekday,
+    windowStart,
+    windowEnd
+  );
+  if (options.simplePlanning) return available;
+  if (!options.qualificationId) return [];
+
+  return filterEmployeesByQualificationForShift(
+    available,
+    options.qualificationId,
+    options.profileQualificationIds
+  );
+}
+
 export function weekdayFromDashboardDate(dateISO: string): number {
   return serviceWeekdayForDate(dateISO);
 }

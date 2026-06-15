@@ -1,5 +1,5 @@
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
-import type { Profile } from "@schichtwerk/types";
+import type { Profile, ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export type PlanningShift = {
   id: string;
@@ -9,6 +9,9 @@ export type PlanningShift = {
   color: string;
   startTime: string;
   endTime: string;
+  location_area_id: string | null;
+  area_shift_template_id: string | null;
+  confirmationStatus?: ShiftConfirmationStatus;
 };
 
 export function planningShiftToDashboardCard(
@@ -18,8 +21,8 @@ export function planningShiftToDashboardCard(
   return {
     id: shift.id,
     shift_date: shift.shift_date,
-    locationAreaId: null,
-    areaShiftTemplateId: null,
+    locationAreaId: shift.location_area_id,
+    areaShiftTemplateId: shift.area_shift_template_id,
     employeeId: shift.employee_id,
     shiftName: shift.shiftName,
     color: shift.color,
@@ -27,6 +30,7 @@ export function planningShiftToDashboardCard(
     endTime: shift.endTime,
     employeeName: employee.full_name,
     employeeColor: employee.color ?? null,
+    confirmationStatus: shift.confirmationStatus,
   };
 }
 

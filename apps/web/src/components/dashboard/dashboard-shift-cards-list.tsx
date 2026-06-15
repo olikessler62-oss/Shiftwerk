@@ -14,6 +14,9 @@ import {
   resolveJobLabelsForShiftAssignment,
   resolveShiftCardDensity,
 } from "@/lib/shift-card-display-content";
+import {
+  shiftCardListItemHeightPx,
+} from "@/lib/shift-card-row-layout";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
@@ -42,6 +45,8 @@ type Props = {
   shiftConfirmationEnabled?: boolean;
   /** Vergangene Tage: kein Scroll, Inhalt abschneiden. */
   clipVerticalOverflow?: boolean;
+  /** Platzhalter für Nachtschichten, die als Durchgangs-Karte gerendert werden. */
+  overnightAnchorShiftIds?: ReadonlySet<string>;
 };
 
 function compareShiftCards(a: DashboardShiftCard, b: DashboardShiftCard): number {
@@ -127,6 +132,7 @@ export function DashboardShiftCardsList({
   onShiftContextMenu,
   shiftConfirmationEnabled = false,
   clipVerticalOverflow = false,
+  overnightAnchorShiftIds,
 }: Props) {
   const t = useTranslations();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,6 +155,17 @@ export function DashboardShiftCardsList({
     return () => observer.disconnect();
   }, [shifts]);
 
+  const tooltipOptions = useMemo(
+    () => ({
+      assignmentPresets,
+      formatShiftTooltipLine: (name: string) =>
+        t("common.shiftCardTooltipShift", { name }),
+      formatJobTooltipLine: (names: string) =>
+        t("common.shiftCardTooltipJob", { names }),
+    }),
+    [assignmentPresets, t]
+  );
+
   const shiftRows = useMemo(() => {
     const sortedShifts = [...shifts].sort(compareShiftCards);
     const shiftCountInCell = sortedShifts.length;
@@ -167,7 +184,7 @@ export function DashboardShiftCardsList({
         qualificationNameById,
         qualificationSortOrder
       );
-      const display = buildShiftCardDisplayContent(shift, jobsLabel);
+      const display = buildShiftCardDisplayContent(shift, jobsLabel, tooltipOptions);
       const layout = resolveShiftCardLayout(
         cellWidthPx,
         shift,
@@ -188,6 +205,7 @@ export function DashboardShiftCardsList({
     serviceHours,
     staffingRules,
     assignmentPresets,
+    tooltipOptions,
     profileQualificationIds,
     qualificationNameById,
     qualificationSortOrder,
@@ -247,7 +265,20 @@ export function DashboardShiftCardsList({
         className
       )}
     >
-      {shiftRows.map(({ shift, display, layout }) => (
+      {shiftRows.map(({ shift, display, layout }) => {
+        if (overnightAnchorShiftIds?.has(shift.id)) {
+          return (
+            <div
+              key={shift.id}
+              data-dashboard-overnight-span-anchor={shift.id}
+              className="max-w-full shrink-0 self-start"
+              style={{ height: shiftCardListItemHeightPx() }}
+              aria-hidden
+            />
+          );
+        }
+
+        return (
         <DashboardShiftCardView
           key={shift.id}
           shift={shift}
@@ -267,7 +298,8 @@ export function DashboardShiftCardsList({
               : undefined
           }
         />
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   buildStaffingQualificationBreakdown,
   countQualificationCoverage,
   computeBulkStaffingHeaderEntries,
+  formatStaffingEntryTooltipContent,
   type DemandWindowRef,
   type StaffingAssignmentRef,
 } from "./bulk-staffing-header";
@@ -237,11 +238,120 @@ describe("computeBulkStaffingHeaderEntries", () => {
       profileQualificationIds: new Map(),
       formatTimeLabel: (weekday, start, end) => `${weekday} ${start} bis ${end} Uhr`,
       weekdayLabel: () => "Donnerstag",
-      formatCalendarTimeLabel: (start, end) => `${start} - ${end} Uhr`,
+      formatCalendarTimeLabel: (start, end) => `${start}-${end} Uhr`,
     });
 
-    expect(entries[0]!.calendarTimeLabel).toBe("08:00 - 10:00 Uhr");
+    expect(entries[0]!.calendarTimeLabel).toBe("08:00-10:00 Uhr");
     expect(entries[0]!.timeLabel).toBe("Donnerstag 08:00 bis 10:00 Uhr");
+  });
+
+  it("sets shiftTemplateLabel when demand times match a preset", () => {
+    const dateISO = "2026-06-04";
+
+    const entries = computeBulkStaffingHeaderEntries({
+      staffingRules,
+      areaId,
+      dateISO,
+      serviceHours,
+      assignments: [],
+      assignmentPresets: [
+        {
+          id: "preset-morning",
+          name: "Frühschicht",
+          color: "#000",
+          start_time: "08:00",
+          end_time: "10:00",
+        },
+        {
+          id: "preset-evening",
+          name: "Spätschicht",
+          color: "#000",
+          start_time: "18:00",
+          end_time: "22:00",
+        },
+      ],
+      qualifications,
+      profileQualificationIds: new Map(),
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start} bis ${end} Uhr`,
+      weekdayLabel: () => "Donnerstag",
+      formatCalendarTimeLabel: (start, end) => `${start}-${end} Uhr`,
+    });
+
+    expect(entries[0]!.shiftTemplateLabel).toBe("Frühschicht");
+    expect(entries[1]!.shiftTemplateLabel).toBe("Spätschicht");
+  });
+
+  it("omits shiftTemplateLabel when demand times do not match any preset", () => {
+    const dateISO = "2026-06-04";
+
+    const entries = computeBulkStaffingHeaderEntries({
+      staffingRules,
+      areaId,
+      dateISO,
+      serviceHours,
+      assignments: [],
+      assignmentPresets: [
+        {
+          id: "preset-other",
+          name: "Andere Schicht",
+          color: "#000",
+          start_time: "09:00",
+          end_time: "17:00",
+        },
+      ],
+      qualifications,
+      profileQualificationIds: new Map(),
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start} bis ${end} Uhr`,
+      weekdayLabel: () => "Donnerstag",
+    });
+
+    expect(entries[0]!.shiftTemplateLabel).toBeUndefined();
+  });
+});
+
+describe("formatStaffingEntryTooltipContent", () => {
+  const formatQualLine = (name: string, assigned: number, required: number) =>
+    `${name}: ${assigned}/${required}`;
+
+  it("includes shift template above time when preset matches", () => {
+    const body = formatStaffingEntryTooltipContent(
+      {
+        serviceHourId: "hour-1",
+        label: "Do 08:00–10:00",
+        assigned: 1,
+        required: 2,
+        calendarTimeLabel: "08:00 - 10:00 Uhr",
+        shiftTemplateLabel: "Frühschicht",
+        qualifications: [
+          {
+            qualificationId: qualKoch,
+            name: "Koch",
+            assigned: 1,
+            required: 2,
+          },
+        ],
+      },
+      formatQualLine
+    );
+
+    expect(body).toBe(
+      "Frühschicht\n08:00 - 10:00 Uhr\nKoch: 1/2"
+    );
+  });
+
+  it("shows only time when no preset matches", () => {
+    const body = formatStaffingEntryTooltipContent(
+      {
+        serviceHourId: "hour-1",
+        label: "Do 08:00–10:00",
+        assigned: 0,
+        required: 2,
+        calendarTimeLabel: "08:00 - 10:00 Uhr",
+      },
+      formatQualLine
+    );
+
+    expect(body).toBe("08:00 - 10:00 Uhr\n0/2");
   });
 });
 

@@ -49,6 +49,8 @@ type AssignShiftWithTimesInput = {
   locationId: string;
   locationAreaId: string | null;
   withoutServiceHours?: boolean;
+  /** Bestehende Schicht per ID aktualisieren (Mehrfach-Schichten pro Tag). */
+  existingShiftId?: string;
 };
 
 function buildAssignSnapshotSource(
@@ -210,12 +212,6 @@ async function persistShiftWithTimes(
 
   const nextSnapshot = buildAssignSnapshotSource(input, starts_at, ends_at);
 
-  const existing = await db.listShiftsForEmployeeDate(
-    input.employeeId,
-    input.shiftDate
-  );
-  const overlapping = findOverlappingShifts(existing, starts_at, ends_at);
-
   const payload = {
     area_shift_template_id: input.areaShiftTemplateId,
     location_id: input.locationId,
@@ -224,6 +220,41 @@ async function persistShiftWithTimes(
     ends_at,
     created_by: userId,
   };
+
+  if (input.existingShiftId) {
+    const snapshot = await db.getShiftRecordById(
+      input.existingShiftId,
+      organizationId
+    );
+    if (!snapshot) {
+      throw new Error("Schicht nicht gefunden.");
+    }
+
+    const sameDay = await db.listShiftsForEmployeeDate(
+      input.employeeId,
+      input.shiftDate
+    );
+    const otherShifts = sameDay.filter((shift) => shift.id !== input.existingShiftId);
+    const overlapping = findOverlappingShifts(otherShifts, starts_at, ends_at);
+    if (overlapping.length > 0) {
+      throw new Error("Schichtzeiten überschneiden sich mit einer anderen Schicht.");
+    }
+
+    undoBatch.replacements.push(toUndoSnapshot(snapshot));
+    const confirmationPatch = resolveConfirmationAssignPatch({
+      shiftConfirmationEnabled,
+      existing: snapshot,
+      next: nextSnapshot,
+    });
+    await db.updateShift(input.existingShiftId, { ...payload, ...confirmationPatch });
+    return;
+  }
+
+  const existing = await db.listShiftsForEmployeeDate(
+    input.employeeId,
+    input.shiftDate
+  );
+  const overlapping = findOverlappingShifts(existing, starts_at, ends_at);
 
   if (overlapping.length > 0) {
     const primary = overlapping[0];
@@ -405,7 +436,10 @@ export async function assignShiftWithTimes(
       input.shiftDate,
       input.startTime,
       input.endTime,
-      timeZone
+      timeZone,
+      input.existingShiftId
+        ? { excludeShiftIds: new Set([input.existingShiftId]) }
+        : undefined
     );
     if (!laborCheck.ok) return laborCheck;
 

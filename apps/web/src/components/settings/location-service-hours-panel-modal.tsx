@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchLocationAreaServiceHours,
   fetchLocationServiceHourSources,
@@ -14,6 +14,7 @@ import type {
   LocationArea,
   LocationAreaServiceHour,
 } from "@schichtwerk/types";
+import { isOvernightServiceHour } from "@schichtwerk/database";
 import {
   buildHoursFromEntries,
   buildServiceHourEntriesFromHours,
@@ -22,13 +23,17 @@ import {
   type ServiceHourEntry,
 } from "@/lib/location-service-hour-entries";
 import { currentServiceHoursMatchSource } from "@/lib/location-area-copy-compare";
-import { useTranslations } from "@/i18n/locale-provider";
+import { formatServiceHourTimeRange } from "@/lib/location-staffing-client";
+import { formatOvernightAvailabilitySpan } from "@/lib/profile-availability-label";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { WeekdayChipPicker } from "./weekday-chip-picker";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
+  settingsConfirmDialogClass,
+  settingsNestedModalOverlayClass,
   settingsResponsiveWindowFieldsClass,
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
@@ -61,12 +66,148 @@ const serviceHoursEntryGridClass = () =>
   settingsResponsiveWindowFieldsClass("lg:gap-y-2");
 
 const serviceHoursDesktopGridClass =
-  "hidden lg:grid lg:grid-cols-[max-content_8.5rem_9.5rem_minmax(9.5rem,auto)] lg:items-end lg:gap-x-2 lg:gap-y-2";
+  "hidden lg:grid lg:grid-cols-[max-content_8.5rem_9.5rem_minmax(9.5rem,auto)] lg:gap-x-2 lg:gap-y-2";
 
 const serviceHoursFieldClass = "h-8 min-h-8 py-0 text-sm leading-8";
 
-function timeFieldValue(time: string): string {
-  return time.slice(0, 5);
+const serviceHoursDesktopEntryRowClass =
+  "col-span-4 grid grid-cols-subgrid gap-x-2 gap-y-0 items-center";
+
+const serviceHoursDesktopEntryWeekdayClass = "flex justify-center self-center";
+
+const serviceHoursDesktopEntryControlClass = "self-center min-w-0";
+
+const serviceHourOvernightHintClass =
+  "m-0 mt-px text-[11px] leading-none text-muted";
+
+function entryShowsOvernightHint(
+  entry: Pick<ServiceHourEntry, "start_time" | "end_time">,
+  suppressWhileEditing: boolean
+): boolean {
+  return (
+    !suppressWhileEditing &&
+    isOvernightServiceHour(entry.start_time, entry.end_time)
+  );
+}
+
+function collectOvernightConfirmLines(
+  entries: ServiceHourEntry[],
+  locale: "de" | "en"
+): string[] {
+  const lines: string[] = [];
+  for (const entry of entries) {
+    if (!isOvernightServiceHour(entry.start_time, entry.end_time)) continue;
+    for (const weekday of [...entry.weekdays].sort((a, b) => a - b)) {
+      lines.push(
+        formatOvernightAvailabilitySpan(
+          weekday,
+          entry.start_time,
+          entry.end_time,
+          locale
+        )
+      );
+    }
+  }
+  return lines;
+}
+
+function ServiceHourEndTimeInput({
+  entry,
+  saving,
+  t,
+  onChange,
+  onFocusChange,
+  className,
+}: {
+  entry: ServiceHourEntry;
+  saving: boolean;
+  t: (key: string) => string;
+  onChange: (value: string) => void;
+  onFocusChange?: (focused: boolean) => void;
+  className?: string;
+}) {
+  return (
+    <TimeInput
+      value={entry.end_time}
+      disabled={saving}
+      aria-label={t("locations.serviceHoursColumnTo")}
+      onChange={(event) => onChange(event.target.value)}
+      onFocus={() => onFocusChange?.(true)}
+      onBlur={() => onFocusChange?.(false)}
+      className={cn(
+        serviceHoursFieldClass,
+        "min-w-[9.5rem] w-full tabular-nums",
+        className
+      )}
+    />
+  );
+}
+
+function ServiceHourOvernightHint({
+  entry,
+  localeKey,
+  t,
+  className,
+  suppressWhileEditing = false,
+}: {
+  entry: ServiceHourEntry;
+  localeKey: "de" | "en";
+  t: (key: string, values?: Record<string, string>) => string;
+  className?: string;
+  suppressWhileEditing?: boolean;
+}) {
+  if (
+    suppressWhileEditing ||
+    !isOvernightServiceHour(entry.start_time, entry.end_time)
+  ) {
+    return null;
+  }
+  const overnightRange = formatServiceHourTimeRange(
+    entry.start_time,
+    entry.end_time,
+    localeKey
+  );
+  return (
+    <p className={cn(serviceHourOvernightHintClass, className)}>
+      {t("locations.serviceHoursOvernightHint", { range: overnightRange })}
+    </p>
+  );
+}
+
+function ServiceHourEndTimeField({
+  entry,
+  saving,
+  localeKey,
+  t,
+  onChange,
+  suppressOvernightHint = false,
+  onEndTimeFocusChange,
+}: {
+  entry: ServiceHourEntry;
+  saving: boolean;
+  localeKey: "de" | "en";
+  t: (key: string, values?: Record<string, string>) => string;
+  onChange: (value: string) => void;
+  suppressOvernightHint?: boolean;
+  onEndTimeFocusChange?: (focused: boolean) => void;
+}) {
+  return (
+    <div className="min-w-0 flex-1">
+      <ServiceHourEndTimeInput
+        entry={entry}
+        saving={saving}
+        t={t}
+        onChange={onChange}
+        onFocusChange={onEndTimeFocusChange}
+      />
+      <ServiceHourOvernightHint
+        entry={entry}
+        localeKey={localeKey}
+        t={t}
+        suppressWhileEditing={suppressOvernightHint}
+      />
+    </div>
+  );
 }
 
 export function LocationServiceHoursPanelModal({
@@ -78,9 +219,17 @@ export function LocationServiceHoursPanelModal({
   onCacheUpdate,
 }: Props) {
   const t = useTranslations();
+  const { locale } = useLocale();
+  const localeKey = locale === "en" ? "en" : "de";
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [overnightConfirmOpen, setOvernightConfirmOpen] = useState(false);
+  const [focusedTimeEntryId, setFocusedTimeEntryId] = useState<string | null>(null);
+
+  function setEntryTimeFieldFocus(entryId: string, focused: boolean) {
+    setFocusedTimeEntryId(focused ? entryId : null);
+  }
   const [shiftTemplates, setShiftTemplates] = useState<AreaShiftTemplateWithBreaks[]>(
     () => cachedShiftTemplates ?? []
   );
@@ -195,7 +344,7 @@ export function LocationServiceHoursPanelModal({
   }
 
   function addEntry() {
-    setEntries((prev) => [...prev, createDefaultServiceHourEntry()]);
+    setEntries((prev) => [...prev, createDefaultServiceHourEntry(prev)]);
   }
 
   function applyFromSourceArea() {
@@ -220,7 +369,12 @@ export function LocationServiceHoursPanelModal({
     });
   }
 
-  async function handleSave() {
+  const overnightConfirmLines = useMemo(
+    () => collectOvernightConfirmLines(entries, localeKey),
+    [entries, localeKey]
+  );
+
+  async function performSave() {
     setErrorMessage(null);
     const payload = buildServiceHourPayloadFromEntries(entries);
 
@@ -244,17 +398,40 @@ export function LocationServiceHoursPanelModal({
     }
   }
 
+  async function handleSave() {
+    setErrorMessage(null);
+
+    if (overnightConfirmLines.length > 0) {
+      setOvernightConfirmOpen(true);
+      return;
+    }
+
+    await performSave();
+  }
+
+  async function confirmOvernightSave() {
+    setOvernightConfirmOpen(false);
+    await performSave();
+  }
+
+  function timeFieldValue(time: string): string {
+    return time.slice(0, 5);
+  }
+
   const showModal = useDeferredSettingsModalRender(loading, onClose);
   if (!showModal) return null;
 
   return (
-    <div
-      className={cn(settingsSubModalOverlayClass(), saving && "cursor-wait")}
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) onClose();
-      }}
-    >
+    <>
+      <div
+        className={cn(settingsSubModalOverlayClass(), saving && "cursor-wait")}
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !saving && !overnightConfirmOpen) {
+            onClose();
+          }
+        }}
+      >
       <div
         role="dialog"
         aria-modal="true"
@@ -314,18 +491,32 @@ export function LocationServiceHoursPanelModal({
                     {t("locations.serviceHoursColumnFrom")}
                   </LabelMuted>
                 </div>
-                <div className="flex min-w-0 items-end gap-2">
+                <div className="flex min-w-0 items-start gap-2">
                   <div className="w-[9.5rem] text-center">
                     <LabelMuted className="mb-0 block text-center">
                       {t("locations.serviceHoursColumnTo")}
                     </LabelMuted>
                   </div>
-                  <span className="mb-0.5 w-8 shrink-0" aria-hidden />
+                  <span className="w-8 shrink-0" aria-hidden />
                 </div>
 
-                {entries.map((entry) => (
-                  <Fragment key={entry.id}>
-                    <div className="flex justify-center">
+                {entries.map((entry) => {
+                  const suppressOvernightHint =
+                    focusedTimeEntryId === entry.id;
+                  const showOvernightHint = entryShowsOvernightHint(
+                    entry,
+                    suppressOvernightHint
+                  );
+
+                  return (
+                  <div
+                    key={entry.id}
+                    className={cn(
+                      serviceHoursDesktopEntryRowClass,
+                      showOvernightHint && "pb-3.5"
+                    )}
+                  >
+                    <div className={serviceHoursDesktopEntryWeekdayClass}>
                       <WeekdayChipPicker
                         selected={entry.weekdays}
                         disabled={saving}
@@ -335,7 +526,7 @@ export function LocationServiceHoursPanelModal({
                         }
                       />
                     </div>
-                    <div className="min-w-0">
+                    <div className={serviceHoursDesktopEntryControlClass}>
                       <Select
                         className={cn(
                           serviceHoursFieldClass,
@@ -358,11 +549,13 @@ export function LocationServiceHoursPanelModal({
                         ))}
                       </Select>
                     </div>
-                    <div className="min-w-0">
+                    <div className={serviceHoursDesktopEntryControlClass}>
                       <TimeInput
                         value={entry.start_time}
                         disabled={saving}
                         aria-label={t("locations.serviceHoursColumnFrom")}
+                        onFocus={() => setEntryTimeFieldFocus(entry.id, true)}
+                        onBlur={() => setEntryTimeFieldFocus(entry.id, false)}
                         onChange={(event) =>
                           updateEntry(entry.id, {
                             start_time: event.target.value,
@@ -375,22 +568,33 @@ export function LocationServiceHoursPanelModal({
                         )}
                       />
                     </div>
-                    <div className="flex min-w-0 items-end gap-2">
-                      <div className="w-[9.5rem]">
-                        <TimeInput
-                          value={entry.end_time}
-                          disabled={saving}
-                          aria-label={t("locations.serviceHoursColumnTo")}
-                          onChange={(event) =>
+                    <div
+                      className={cn(
+                        serviceHoursDesktopEntryControlClass,
+                        "col-start-4 flex items-center gap-2"
+                      )}
+                    >
+                      <div className="relative w-[9.5rem]">
+                        <ServiceHourEndTimeInput
+                          entry={entry}
+                          saving={saving}
+                          t={t}
+                          onFocusChange={(focused) =>
+                            setEntryTimeFieldFocus(entry.id, focused)
+                          }
+                          onChange={(value) =>
                             updateEntry(entry.id, {
-                              end_time: event.target.value,
+                              end_time: value,
                               templateId: "",
                             })
                           }
-                          className={cn(
-                          serviceHoursFieldClass,
-                          "min-w-[9.5rem] w-full tabular-nums"
-                        )}
+                        />
+                        <ServiceHourOvernightHint
+                          entry={entry}
+                          localeKey={localeKey}
+                          t={t}
+                          suppressWhileEditing={suppressOvernightHint}
+                          className="absolute left-0 top-full z-[1] w-full"
                         />
                       </div>
                       <IconButton
@@ -399,13 +603,14 @@ export function LocationServiceHoursPanelModal({
                         disabled={saving || entries.length <= 1}
                         aria-label={t("locations.serviceHoursRemoveRow")}
                         onClick={() => removeEntry(entry.id)}
-                        className="mb-0.5 shrink-0 border-transparent bg-transparent hover:bg-subtle disabled:opacity-40"
+                        className="shrink-0 border-transparent bg-transparent hover:bg-subtle disabled:opacity-40"
                       >
                         <TrashIcon className="h-4 w-4" />
                       </IconButton>
                     </div>
-                  </Fragment>
-                ))}
+                  </div>
+                  );
+                })}
               </div>
 
               <div className="space-y-2 lg:hidden">
@@ -425,13 +630,13 @@ export function LocationServiceHoursPanelModal({
                       {t("locations.serviceHoursColumnFrom")}
                     </LabelMuted>
                   </div>
-                  <div className="flex min-w-0 items-end gap-2">
+                  <div className="flex min-w-0 items-start gap-2">
                     <div className="min-w-0 flex-1 text-center">
                       <LabelMuted className="mb-0 block text-center">
                         {t("locations.serviceHoursColumnTo")}
                       </LabelMuted>
                     </div>
-                    <span className="mb-0.5 w-8 shrink-0" aria-hidden />
+                    <span className="w-8 shrink-0" aria-hidden />
                   </div>
                 </div>
                 {entries.map((entry) => (
@@ -474,6 +679,8 @@ export function LocationServiceHoursPanelModal({
                         value={entry.start_time}
                         disabled={saving}
                         aria-label={t("locations.serviceHoursColumnFrom")}
+                        onFocus={() => setEntryTimeFieldFocus(entry.id, true)}
+                        onBlur={() => setEntryTimeFieldFocus(entry.id, false)}
                         onChange={(event) =>
                           updateEntry(entry.id, {
                             start_time: event.target.value,
@@ -486,31 +693,30 @@ export function LocationServiceHoursPanelModal({
                         )}
                       />
                     </div>
-                    <div className="flex min-w-0 items-end gap-2">
-                      <div className="min-w-0 flex-1">
-                        <TimeInput
-                          value={entry.end_time}
-                          disabled={saving}
-                          aria-label={t("locations.serviceHoursColumnTo")}
-                          onChange={(event) =>
-                            updateEntry(entry.id, {
-                              end_time: event.target.value,
-                              templateId: "",
-                            })
-                          }
-                          className={cn(
-                          serviceHoursFieldClass,
-                          "min-w-[9.5rem] w-full tabular-nums"
-                        )}
-                        />
-                      </div>
+                    <div className="flex min-w-0 items-start gap-2">
+                      <ServiceHourEndTimeField
+                        entry={entry}
+                        saving={saving}
+                        localeKey={localeKey}
+                        t={t}
+                        suppressOvernightHint={focusedTimeEntryId === entry.id}
+                        onEndTimeFocusChange={(focused) =>
+                          setEntryTimeFieldFocus(entry.id, focused)
+                        }
+                        onChange={(value) =>
+                          updateEntry(entry.id, {
+                            end_time: value,
+                            templateId: "",
+                          })
+                        }
+                      />
                       <IconButton
                         size="sm"
                         type="button"
                         disabled={saving || entries.length <= 1}
                         aria-label={t("locations.serviceHoursRemoveRow")}
                         onClick={() => removeEntry(entry.id)}
-                        className="mb-0.5 shrink-0 border-transparent bg-transparent hover:bg-subtle disabled:opacity-40"
+                        className="shrink-0 border-transparent bg-transparent hover:bg-subtle disabled:opacity-40"
                       >
                         <TrashIcon className="h-4 w-4" />
                       </IconButton>
@@ -622,7 +828,7 @@ export function LocationServiceHoursPanelModal({
           <Button
             type="button"
             variant="primary"
-            onClick={handleSave}
+            onClick={() => void handleSave()}
             disabled={saving}
           >
             <CheckIcon />
@@ -630,6 +836,56 @@ export function LocationServiceHoursPanelModal({
           </Button>
         </div>
       </div>
-    </div>
+      </div>
+
+      {overnightConfirmOpen && overnightConfirmLines.length > 0 ? (
+        <div
+          className={settingsNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !saving) {
+              setOvernightConfirmOpen(false);
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="location-service-hours-overnight-desc"
+            className={settingsConfirmDialogClass()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p
+              id="location-service-hours-overnight-desc"
+              className="whitespace-pre-line text-sm leading-relaxed text-foreground"
+            >
+              {t("locations.serviceHoursOvernightConfirm", {
+                ranges: overnightConfirmLines.join("\n"),
+              })}
+            </p>
+            <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOvernightConfirmOpen(false)}
+                disabled={saving}
+              >
+                <CloseIcon />
+                {t("common.no")}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => void confirmOvernightSave()}
+                disabled={saving}
+              >
+                <CheckIcon />
+                {t("common.yes")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

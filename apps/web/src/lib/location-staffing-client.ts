@@ -69,26 +69,67 @@ function parseTimeToMinutes(value: string): number | null {
   return h * 60 + m;
 }
 
+function timeSegments(
+  startTime: string,
+  endTime: string
+): { start: number; end: number }[] {
+  const startMin = parseTimeToMinutes(startTime);
+  const endMin = parseTimeToMinutes(endTime);
+  if (startMin == null || endMin == null || startMin === endMin) return [];
+  if (endMin > startMin) return [{ start: startMin, end: endMin }];
+  return [
+    { start: startMin, end: 24 * 60 },
+    { start: 0, end: endMin },
+  ];
+}
+
+function serviceHourNextWeekday(weekday: number): number {
+  if (weekday >= 0 && weekday <= 6) return weekday === 6 ? 0 : weekday + 1;
+  if (weekday === STAFFING_HOLIDAY_WEEKDAY) return 0;
+  return weekday;
+}
+
+function isOvernightServiceHourTime(startTime: string, endTime: string): boolean {
+  const startMin = parseTimeToMinutes(startTime);
+  const endMin = parseTimeToMinutes(endTime);
+  if (startMin == null || endMin == null) return false;
+  return endMin <= startMin;
+}
+
 function shiftFitsInServiceHourWindow(
   startTime: string,
   endTime: string,
   windowStart: string,
   windowEnd: string
 ): boolean {
-  const startMin = parseTimeToMinutes(startTime);
-  const endMin = parseTimeToMinutes(endTime);
-  const windowStartMin = parseTimeToMinutes(windowStart);
-  const windowEndMin = parseTimeToMinutes(windowEnd);
-  if (
-    startMin == null ||
-    endMin == null ||
-    windowStartMin == null ||
-    windowEndMin == null
-  ) {
-    return false;
+  const shiftSegments = timeSegments(startTime, endTime);
+  const windowSegments = timeSegments(windowStart, windowEnd);
+  if (shiftSegments.length === 0 || windowSegments.length === 0) return false;
+  return shiftSegments.every((shiftSegment) =>
+    windowSegments.some(
+      (windowSegment) =>
+        shiftSegment.start >= windowSegment.start &&
+        shiftSegment.end <= windowSegment.end
+    )
+  );
+}
+
+export function formatServiceHourTimeRange(
+  startTime: string,
+  endTime: string,
+  locale: WeekdayLabelLocale = "de"
+): string {
+  const from = startTime.slice(0, 5);
+  const to = endTime.slice(0, 5);
+  if (!isOvernightServiceHourTime(from, to)) {
+    return formatTimeRange(from, to);
   }
-  if (endMin <= startMin) return false;
-  return startMin >= windowStartMin && endMin <= windowEndMin;
+  const suffix = locale === "en" ? " (+1 day)" : " (+1)";
+  return `${formatTime(from)} – ${formatTime(to)}${suffix}`;
+}
+
+function formatTime(time: string): string {
+  return time.slice(0, 5);
 }
 
 export function serviceHourIdsForAreaOnDate(
@@ -151,6 +192,10 @@ export function formatServiceHourLabel(
       : weekdayLabel(hour.weekday);
   const from = (hour.start_time ?? "00:00").slice(0, 5);
   const to = (hour.end_time ?? "00:00").slice(0, 5);
+  if (isOvernightServiceHourTime(from, to)) {
+    const nextDay = weekdayLabel(serviceHourNextWeekday(hour.weekday));
+    return `${day}, ${from} – ${nextDay} ${to}`;
+  }
   return `${day}, ${formatTimeRange(from, to)}`;
 }
 
@@ -196,11 +241,12 @@ export function formatServiceHourStaffingDayLabel(
 
 export function formatServiceHourStaffingTimeLabel(
   hour: Pick<AreaServiceHourRef, "start_time" | "end_time">,
-  templates?: readonly ServiceHourShiftTemplateRef[]
+  templates?: readonly ServiceHourShiftTemplateRef[],
+  locale: WeekdayLabelLocale = "de"
 ): string {
   const from = (hour.start_time ?? "00:00").slice(0, 5);
   const to = (hour.end_time ?? "00:00").slice(0, 5);
-  const base = formatTimeRange(from, to);
+  const base = formatServiceHourTimeRange(from, to, locale);
   const templateName = templates
     ? shiftTemplateNameForServiceHour(hour, templates)
     : null;
@@ -423,6 +469,8 @@ export type TagAreaHeaderStaffingEntry = {
   timeLabel?: string;
   /** Zeitlabel ohne Wochentag (Kalender-Overlay). */
   calendarTimeLabel?: string;
+  /** Schichtvorlage, wenn Bedarfszeiten exakt einer Vorlage entsprechen. */
+  shiftTemplateLabel?: string;
   /** Bedarf und Einsatz je Funktion (Bulk-Modal-Tooltip). */
   qualifications?: StaffingQualificationCoverage[];
 };
@@ -487,10 +535,27 @@ export function staffingLabelWithoutWeekday(label: string): string {
   return spaceIndex > 0 ? trimmed.slice(spaceIndex + 1).trim() : trimmed;
 }
 
+/** Entfernt Leerzeichen um Bindestriche und Pipe-Symbole in Bedarfstexten. */
+export function compactStaffingTimeRangeLabel(label: string): string {
+  return label
+    .replace(/\s*([-–—])\s*/g, "$1")
+    .replace(/\s*\|\s*/g, "|")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function resolveCalendarStaffingTimeLabel(
-  entry: Pick<TagAreaHeaderStaffingEntry, "calendarTimeLabel" | "label">
+  entry: Pick<
+    TagAreaHeaderStaffingEntry,
+    "calendarTimeLabel" | "label" | "shiftTemplateLabel"
+  >
 ): string {
-  return entry.calendarTimeLabel ?? staffingLabelWithoutWeekday(entry.label);
+  if (entry.shiftTemplateLabel?.trim()) {
+    return entry.shiftTemplateLabel.trim();
+  }
+  const raw =
+    entry.calendarTimeLabel ?? staffingLabelWithoutWeekday(entry.label);
+  return compactStaffingTimeRangeLabel(raw);
 }
 
 export function createServiceHourStaffingLabel(
@@ -501,7 +566,7 @@ export function createServiceHourStaffingLabel(
       hour.weekday === STAFFING_HOLIDAY_WEEKDAY
         ? "FT"
         : weekdayAbbrevFromIndex(hour.weekday, locale);
-    return `${day} ${formatTimeRange(hour.start_time, hour.end_time)}`;
+    return `${day} ${formatServiceHourTimeRange(hour.start_time, hour.end_time, locale)}`;
   };
 }
 

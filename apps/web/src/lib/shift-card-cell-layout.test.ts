@@ -379,7 +379,7 @@ describe("shift-card-display-content", () => {
     expect(display.firstName).toBe("Max");
     expect(display.lastName).toBe("Mustermann");
     expect(display.jobsLabel).toBe("Koch, Bar");
-    expect(display.tooltipBody).toContain("Koch, Bar");
+    expect(display.tooltipBody).toContain("Job: Koch, Bar");
   });
 
   it("chooses density based on cell width", () => {

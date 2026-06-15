@@ -1,3 +1,4 @@
+import { STAFFING_HOLIDAY_WEEKDAY } from "./location-staffing";
 import { normalizeTime } from "./utils";
 
 export type ServiceHourInput = {
@@ -10,6 +11,13 @@ export type ServiceHourWindow = {
   start_time: string;
   end_time: string;
 };
+
+const MINUTES_PER_DAY = 24 * 60;
+
+export const SERVICE_HOUR_EQUAL_TIMES_ERROR =
+  "Start- und Endzeit dürfen nicht gleich sein.";
+
+type TimeSegment = { start: number; end: number };
 
 function normalizeTimeField(value: string): string {
   const trimmed = value.trim();
@@ -34,6 +42,62 @@ export function normalizeServiceHourTimeComparable(value: string): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/** end <= start auf dem Kalendertag = Zeitfenster endet am Folgetag (wie Verfügbarkeiten). */
+export function isOvernightServiceHour(
+  start_time: string,
+  end_time: string
+): boolean {
+  const startMin = parseServiceHourTimeToMinutes(start_time);
+  const endMin = parseServiceHourTimeToMinutes(end_time);
+  if (startMin == null || endMin == null) return false;
+  return endMin <= startMin;
+}
+
+export function serviceHourTimeSegments(
+  start_time: string,
+  end_time: string
+): TimeSegment[] {
+  const startMin = parseServiceHourTimeToMinutes(start_time);
+  const endMin = parseServiceHourTimeToMinutes(end_time);
+  if (startMin == null || endMin == null || startMin === endMin) return [];
+  if (endMin > startMin) {
+    return [{ start: startMin, end: endMin }];
+  }
+  return [
+    { start: startMin, end: MINUTES_PER_DAY },
+    { start: 0, end: endMin },
+  ];
+}
+
+/** Kalendertag des weekday-Eintrags — bei Über-Nacht nur der Abendanteil. */
+function serviceHourSameDaySegments(
+  start_time: string,
+  end_time: string
+): TimeSegment[] {
+  const startMin = parseServiceHourTimeToMinutes(start_time);
+  const endMin = parseServiceHourTimeToMinutes(end_time);
+  if (startMin == null || endMin == null || startMin === endMin) return [];
+  if (endMin > startMin) {
+    return [{ start: startMin, end: endMin }];
+  }
+  return [{ start: startMin, end: MINUTES_PER_DAY }];
+}
+
+function segmentsOverlap(a: TimeSegment[], b: TimeSegment[]): boolean {
+  for (const segA of a) {
+    for (const segB of b) {
+      if (segA.start < segB.end && segA.end > segB.start) return true;
+    }
+  }
+  return false;
+}
+
+export function serviceHourNextWeekday(weekday: number): number {
+  if (weekday >= 0 && weekday <= 6) return weekday === 6 ? 0 : weekday + 1;
+  if (weekday === STAFFING_HOLIDAY_WEEKDAY) return 0;
+  return weekday;
+}
+
 export function serviceHoursSameWindow(
   a: Pick<ServiceHourInput, "weekday" | "start_time" | "end_time">,
   b: Pick<ServiceHourInput, "weekday" | "start_time" | "end_time">
@@ -51,21 +115,56 @@ export function serviceHourIntervalsOverlap(
   a: ServiceHourInput,
   b: ServiceHourInput
 ): boolean {
-  const aStart = parseServiceHourTimeToMinutes(a.start_time);
-  const aEnd = parseServiceHourTimeToMinutes(a.end_time);
-  const bStart = parseServiceHourTimeToMinutes(b.start_time);
-  const bEnd = parseServiceHourTimeToMinutes(b.end_time);
-  if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
-    return false;
+  if (a.weekday !== b.weekday) return false;
+  return segmentsOverlap(
+    serviceHourSameDaySegments(a.start_time, a.end_time),
+    serviceHourSameDaySegments(b.start_time, b.end_time)
+  );
+}
+
+function overnightMorningSpillSegments(
+  row: ServiceHourInput
+): TimeSegment[] | null {
+  if (!isOvernightServiceHour(row.start_time, row.end_time)) return null;
+  const endMin = parseServiceHourTimeToMinutes(row.end_time);
+  if (endMin == null || endMin === 0) return null;
+  return [{ start: 0, end: endMin }];
+}
+
+function serviceHourRowsOverlap(a: ServiceHourInput, b: ServiceHourInput): boolean {
+  if (serviceHourIntervalsOverlap(a, b)) return true;
+
+  const aSpill = overnightMorningSpillSegments(a);
+  if (
+    aSpill &&
+    b.weekday === serviceHourNextWeekday(a.weekday) &&
+    segmentsOverlap(
+      aSpill,
+      serviceHourSameDaySegments(b.start_time, b.end_time)
+    )
+  ) {
+    return true;
   }
-  return aStart < bEnd && bStart < aEnd;
+
+  const bSpill = overnightMorningSpillSegments(b);
+  if (
+    bSpill &&
+    a.weekday === serviceHourNextWeekday(b.weekday) &&
+    segmentsOverlap(
+      bSpill,
+      serviceHourSameDaySegments(a.start_time, a.end_time)
+    )
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export function validateServiceHoursInput(
   rows: ServiceHourInput[]
 ): { ok: true; data: ServiceHourInput[] } | { ok: false; error: string } {
   const normalized: ServiceHourInput[] = [];
-  const byWeekday = new Map<number, ServiceHourInput[]>();
 
   for (const row of rows) {
     if (!Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 7) {
@@ -77,8 +176,8 @@ export function validateServiceHoursInput(
     if (startMin == null || endMin == null) {
       return { ok: false, error: "Bitte gültige Uhrzeiten eingeben (HH:MM)." };
     }
-    if (endMin <= startMin) {
-      return { ok: false, error: "„Uhrzeit bis“ muss nach „Uhrzeit von“ liegen." };
+    if (startMin === endMin) {
+      return { ok: false, error: SERVICE_HOUR_EQUAL_TIMES_ERROR };
     }
 
     const normalizedRow: ServiceHourInput = {
@@ -87,21 +186,15 @@ export function validateServiceHoursInput(
       end_time: normalizeTime(row.end_time),
     };
     normalized.push(normalizedRow);
-
-    const weekdayRows = byWeekday.get(row.weekday) ?? [];
-    weekdayRows.push(normalizedRow);
-    byWeekday.set(row.weekday, weekdayRows);
   }
 
-  for (const weekdayRows of byWeekday.values()) {
-    for (let i = 0; i < weekdayRows.length; i++) {
-      for (let j = i + 1; j < weekdayRows.length; j++) {
-        if (serviceHourIntervalsOverlap(weekdayRows[i]!, weekdayRows[j]!)) {
-          return {
-            ok: false,
-            error: "Zeitfenster am selben Tag dürfen sich nicht überlappen.",
-          };
-        }
+  for (let i = 0; i < normalized.length; i++) {
+    for (let j = i + 1; j < normalized.length; j++) {
+      if (serviceHourRowsOverlap(normalized[i]!, normalized[j]!)) {
+        return {
+          ok: false,
+          error: "Zeitfenster dürfen sich nicht überlappen.",
+        };
       }
     }
   }
@@ -119,17 +212,23 @@ export function shiftTimesWithinServiceHours(
   endTime: string,
   windows: ServiceHourWindow[]
 ): boolean {
-  const startMin = parseServiceHourTimeToMinutes(startTime);
-  const endMin = parseServiceHourTimeToMinutes(endTime);
-  if (startMin == null || endMin == null) return false;
-  if (endMin <= startMin) return false;
+  const shiftSegments = serviceHourTimeSegments(startTime, endTime);
+  if (shiftSegments.length === 0) return false;
   if (windows.length === 0) return false;
 
   return windows.some((window) => {
-    const windowStart = parseServiceHourTimeToMinutes(window.start_time);
-    const windowEnd = parseServiceHourTimeToMinutes(window.end_time);
-    if (windowStart == null || windowEnd == null) return false;
-    return startMin >= windowStart && endMin <= windowEnd;
+    const windowSegments = serviceHourTimeSegments(
+      window.start_time,
+      window.end_time
+    );
+    if (windowSegments.length === 0) return false;
+    return shiftSegments.every((shiftSegment) =>
+      windowSegments.some(
+        (windowSegment) =>
+          shiftSegment.start >= windowSegment.start &&
+          shiftSegment.end <= windowSegment.end
+      )
+    );
   });
 }
 
@@ -174,4 +273,11 @@ export function validateShiftAgainstServiceHours(
   }
 
   return { ok: true };
+}
+
+export function mapServiceHoursTimeConstraintError(message: string): string | null {
+  if (message.includes("location_area_service_hours_time_order")) {
+    return SERVICE_HOUR_EQUAL_TIMES_ERROR;
+  }
+  return null;
 }

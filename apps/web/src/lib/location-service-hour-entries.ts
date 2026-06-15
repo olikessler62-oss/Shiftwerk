@@ -29,6 +29,9 @@ export type ServiceHourEntry = {
 
 const DEFAULT_START = "09:00";
 const DEFAULT_END = "18:00";
+const MINUTES_PER_DAY = 24 * 60;
+const LATE_EVENING_START_MINUTES = 23 * 60;
+const LAST_MINUTE_OF_DAY = 23 * 60 + 59;
 
 function timeToInput(value: string): string {
   const parts = value.trim().split(":");
@@ -37,13 +40,79 @@ function timeToInput(value: string): string {
   return `${h}:${m}`;
 }
 
-export function createDefaultServiceHourEntry(): ServiceHourEntry {
+function parseTimeToMinutes(time: string): number | null {
+  const trimmed = timeToInput(time);
+  if (!/^\d{2}:\d{2}$/.test(trimmed)) return null;
+  const [h, m] = trimmed.split(":").map(Number);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
+function minutesToTimeInput(minutes: number): string {
+  const dayMinutes =
+    ((minutes % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
+  const h = Math.floor(dayMinutes / 60);
+  const m = dayMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function endTimeAbsoluteMinutes(start_time: string, end_time: string): number {
+  const startMin = parseTimeToMinutes(start_time);
+  const endMin = parseTimeToMinutes(end_time);
+  if (startMin == null || endMin == null) return -1;
+  if (endMin > startMin) return endMin;
+  return endMin + MINUTES_PER_DAY;
+}
+
+function suggestEndMinutesFromStart(vonMin: number): number {
+  if (vonMin === LAST_MINUTE_OF_DAY) {
+    return 60;
+  }
+  if (vonMin >= LATE_EVENING_START_MINUTES) {
+    return vonMin + 1;
+  }
+  return vonMin + 60;
+}
+
+export function suggestNextServiceHourEntryTimes(
+  existing: readonly Pick<ServiceHourEntry, "start_time" | "end_time">[]
+): { start_time: string; end_time: string } {
+  if (existing.length === 0) {
+    return { start_time: DEFAULT_START, end_time: DEFAULT_END };
+  }
+
+  let latestEnd = -1;
+  let latestEndTime = DEFAULT_START;
+  for (const entry of existing) {
+    const absoluteEnd = endTimeAbsoluteMinutes(entry.start_time, entry.end_time);
+    if (absoluteEnd > latestEnd) {
+      latestEnd = absoluteEnd;
+      latestEndTime = timeToInput(entry.end_time);
+    }
+  }
+
+  const vonMin = parseTimeToMinutes(latestEndTime);
+  if (vonMin == null) {
+    return { start_time: DEFAULT_START, end_time: DEFAULT_END };
+  }
+
+  const bisMin = suggestEndMinutesFromStart(vonMin);
+  return {
+    start_time: minutesToTimeInput(vonMin),
+    end_time: minutesToTimeInput(bisMin),
+  };
+}
+
+export function createDefaultServiceHourEntry(
+  existing: readonly Pick<ServiceHourEntry, "start_time" | "end_time">[] = []
+): ServiceHourEntry {
+  const times = suggestNextServiceHourEntryTimes(existing);
   return {
     id: crypto.randomUUID(),
     weekdays: new Set<number>(),
     templateId: "",
-    start_time: DEFAULT_START,
-    end_time: DEFAULT_END,
+    start_time: times.start_time,
+    end_time: times.end_time,
   };
 }
 

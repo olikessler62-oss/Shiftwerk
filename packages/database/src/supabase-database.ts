@@ -54,7 +54,7 @@ import {
   isServiceHoursTableUnavailable,
   SERVICE_HOURS_MIGRATION_HINT,
 } from "./location-service-hours";
-import { validateServiceHoursInput, serviceHoursSameWindow } from "./location-service-hours-validation";
+import { validateServiceHoursInput, serviceHoursSameWindow, mapServiceHoursTimeConstraintError } from "./location-service-hours-validation";
 import {
   parseAvailabilityTimeRange,
   parseAvailabilityWeekday,
@@ -109,6 +109,8 @@ function throwServiceHoursDbError(message: string): never {
   if (isServiceHoursTableUnavailable(message)) {
     throw new Error(SERVICE_HOURS_MIGRATION_HINT);
   }
+  const mapped = mapServiceHoursTimeConstraintError(message);
+  if (mapped) throw new Error(mapped);
   throw new Error(message);
 }
 

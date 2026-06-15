@@ -19,6 +19,8 @@ import {
 } from "@/components/planning/shift-planner";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
+import { hasSettingsModalSearchParam } from "@/lib/settings-modal-navigation";
+import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
@@ -28,9 +30,26 @@ function relation<T>(value: T | T[] | null | undefined): T | null {
 export default async function PlanungPage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string; location?: string; area?: string }>;
+  searchParams: Promise<{
+    week?: string;
+    location?: string;
+    area?: string;
+    standorte?: string;
+    profiles?: string;
+    rollen?: string;
+    qualifikationen?: string;
+    sonderzuschlaege?: string;
+    abwesenheiten?: string;
+    planungsmodus?: string;
+    arbeitsentgelt?: string;
+  }>;
 }) {
-  const { week, location: locationParam, area: areaParam } = await searchParams;
+  const params = await searchParams;
+  const {
+    week,
+    location: locationParam,
+    area: areaParam,
+  } = params;
   const db = await getDatabase();
 
   const user = await db.authGetUser();
@@ -48,52 +67,80 @@ export default async function PlanungPage({
     week,
     location: locationParam,
     area: areaParam,
+    ...params,
   });
   const dates = weekDates(weekStart);
   const from = dates[0];
   const to = dates[6];
   const readOnlyWeek = isPastWeek(to);
 
-  const [employees, recurringAvailability, absences, availability, locations] =
-    await Promise.all([
-      db.listActiveEmployees(orgId),
-      db.listOrganizationRecurringAvailability(orgId),
-      db.listOrganizationAbsences(orgId, "approved"),
-      db.listAvailabilityForWeek(orgId, from, to),
-      db.listLocations(orgId),
-    ]);
+  const loadSettingsModalsData =
+    SETTINGS_MODALS_ON_CURRENT_PAGE && hasSettingsModalSearchParam(params);
+
+  const [
+    employees,
+    recurringAvailability,
+    absences,
+    availability,
+    locations,
+    qualifications,
+    profileQualificationIdsMap,
+    settingsRoles,
+    settingsProfiles,
+    settingsCompensationSurchargeTypes,
+  ] = await Promise.all([
+    db.listActiveEmployees(orgId),
+    db.listOrganizationRecurringAvailability(orgId),
+    db.listOrganizationAbsences(orgId, "approved"),
+    db.listAvailabilityForWeek(orgId, from, to),
+    db.listLocations(orgId),
+    db.listQualifications(orgId),
+    db.listProfileQualificationIdsByOrganization(orgId),
+    loadSettingsModalsData
+      ? db.listRoles(orgId).then(async (roles) => {
+          if (!roles.length) {
+            await db.seedDefaultRoles(orgId);
+            return db.listRoles(orgId);
+          }
+          return roles;
+        })
+      : Promise.resolve([]),
+    loadSettingsModalsData
+      ? db.listOrganizationProfiles(orgId)
+      : Promise.resolve([]),
+    loadSettingsModalsData
+      ? db.listCompensationSurchargeTypes(orgId)
+      : Promise.resolve([]),
+  ]);
 
   const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
 
-  const [areas, areaShiftTemplates, serviceHours, shiftRows] = selectedLocationId
-    ? await Promise.all([
-        db.listLocationAreas(selectedLocationId),
-        db
-          .listAreaShiftTemplatesWithBreaksForLocation(selectedLocationId)
-          .catch(() => []),
-        db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),
-        getCachedDashboardShifts(
-          orgId,
-          selectedLocationId,
-          weekStart,
-          from,
-          to
-        ),
-      ])
-    : [[], [], [], []];
+  const [areas, areaShiftTemplates, serviceHours, shiftRows, staffingRules] =
+    selectedLocationId
+      ? await Promise.all([
+          db.listLocationAreas(selectedLocationId),
+          db
+            .listAreaShiftTemplatesWithBreaksForLocation(selectedLocationId)
+            .catch(() => []),
+          db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),
+          getCachedDashboardShifts(
+            orgId,
+            selectedLocationId,
+            weekStart,
+            from,
+            to
+          ),
+          db.listLocationAreaStaffing(selectedLocationId).catch(() => []),
+        ])
+      : [[], [], [], [], []];
+
+  const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
 
   const selectedAreaId = resolveSelectedAreaId(areas, areaParam);
 
   const shifts: PlanningShift[] = [];
+  const locationShifts: PlanningShift[] = [];
   for (const s of shiftRows) {
-    if (
-      orgFeatures.areas &&
-      selectedAreaId &&
-      s.location_area_id !== selectedAreaId
-    ) {
-      continue;
-    }
-
     const template = relation(s.area_shift_templates);
     const startFromTs = s.starts_at
       ? shiftTimeFromTimestamp(s.starts_at, timeZone)
@@ -111,7 +158,7 @@ export default async function PlanungPage({
           )
         : null;
 
-    shifts.push({
+    const planningShift: PlanningShift = {
       id: s.id,
       employee_id: s.employee_id,
       shift_date: s.shift_date,
@@ -119,7 +166,23 @@ export default async function PlanungPage({
       color: template?.color ?? areaTemplate?.color ?? "#64748b",
       startTime: startFromTs,
       endTime: endFromTs,
-    });
+      location_area_id: s.location_area_id,
+      area_shift_template_id:
+        s.area_shift_template_id ?? areaTemplate?.id ?? null,
+      confirmationStatus: s.confirmation_status,
+    };
+
+    locationShifts.push(planningShift);
+
+    if (
+      orgFeatures.areas &&
+      selectedAreaId &&
+      s.location_area_id !== selectedAreaId
+    ) {
+      continue;
+    }
+
+    shifts.push(planningShift);
   }
 
   return (
@@ -128,6 +191,7 @@ export default async function PlanungPage({
       dates={dates}
       employees={employees}
       shifts={shifts}
+      locationShifts={locationShifts}
       availability={availability}
       recurringAvailability={recurringAvailability}
       absences={absences}
@@ -137,7 +201,19 @@ export default async function PlanungPage({
       selectedAreaId={selectedAreaId}
       areaShiftTemplates={areaShiftTemplates}
       serviceHours={serviceHours}
+      staffingRules={staffingRules}
+      qualifications={qualifications}
+      profileQualificationIds={profileQualificationIds}
       readOnlyWeek={readOnlyWeek}
+      settingsModals={
+        loadSettingsModalsData
+          ? {
+              profiles: settingsProfiles,
+              roles: settingsRoles,
+              compensationSurchargeTypes: settingsCompensationSurchargeTypes,
+            }
+          : undefined
+      }
     />
   );
 }

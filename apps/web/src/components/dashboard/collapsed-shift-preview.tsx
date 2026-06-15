@@ -3,6 +3,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import { buildShiftCardDisplayContent } from "@/components/dashboard/dashboard-shift-card-view";
+import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import {
   COLLAPSED_PAST_AREA_PIXEL_COLOR,
   COLLAPSED_PAST_DAY_SHIFT_COLOR,
@@ -12,9 +13,14 @@ import {
   computePastDayUniformLineWidthPx,
 } from "@/lib/shift-card-cell-layout";
 import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
-import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
+import {
+  SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+  shiftCardListItemHeightPx,
+} from "@/lib/shift-card-row-layout";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
+import { useTranslations } from "@/i18n/locale-provider";
 
 const COLLAPSED_SHIFT_LINE_FALLBACK_COLOR = "#94a3b8";
 
@@ -37,7 +43,13 @@ type Props = {
   markerWidthDeltaPx?: number;
   /** Zusätzliche Marker-Höhe (px), z. B. +5 im Schichtplan. */
   markerHeightDeltaPx?: number;
+  onShiftClick?: (shift: DashboardShiftCard) => void;
+  selectedShiftId?: string | null;
+  disabled?: boolean;
   className?: string;
+  /** Platzhalter für Nachtschichten, die als Durchgangs-Karte gerendert werden. */
+  overnightAnchorShiftIds?: ReadonlySet<string>;
+  assignmentPresets?: readonly DashboardAssignmentPreset[];
 };
 
 function compareShiftCards(a: DashboardShiftCard, b: DashboardShiftCard): number {
@@ -72,8 +84,24 @@ export function CollapsedShiftPreview({
   fixedMarkerMarginLeftPx,
   markerWidthDeltaPx = 0,
   markerHeightDeltaPx = 0,
+  onShiftClick,
+  selectedShiftId = null,
+  disabled = false,
   className,
+  overnightAnchorShiftIds,
+  assignmentPresets = [],
 }: Props) {
+  const t = useTranslations();
+  const tooltipOptions = useMemo(
+    () => ({
+      assignmentPresets,
+      formatShiftTooltipLine: (name: string) =>
+        t("common.shiftCardTooltipShift", { name }),
+      formatJobTooltipLine: (names: string) =>
+        t("common.shiftCardTooltipJob", { names }),
+    }),
+    [assignmentPresets, t]
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const [measuredCellWidthPx, setMeasuredCellWidthPx] = useState(0);
 
@@ -107,7 +135,7 @@ export function CollapsedShiftPreview({
     if (areaCollapsed) {
       return sortedShifts.map((shift) => ({
         shift,
-        display: buildShiftCardDisplayContent(shift, null),
+        display: buildShiftCardDisplayContent(shift, null, tooltipOptions),
         marginLeftPx: computeCollapsedShiftPixelLeftPx(
           cellWidthPx,
           shift.startTime,
@@ -148,7 +176,7 @@ export function CollapsedShiftPreview({
 
       return {
         shift,
-        display: buildShiftCardDisplayContent(shift, null),
+        display: buildShiftCardDisplayContent(shift, null, tooltipOptions),
         marginLeftPx:
           fixedMarkerMarginLeftPx ??
           layouts[index]?.marginLeftPx ??
@@ -167,12 +195,14 @@ export function CollapsedShiftPreview({
     sortedShifts,
     cellWidthPx,
     serviceTimeline,
+    tooltipOptions,
   ]);
 
   const compactRowMinHeightPx =
     SHIFT_CARD_TWO_LINE_HEIGHT_PX + markerHeightDeltaPx;
 
   const showDetail = !isPastDay && !areaCollapsed;
+  const interactive = Boolean(onShiftClick) && !disabled;
 
   return (
     <div
@@ -198,9 +228,57 @@ export function CollapsedShiftPreview({
       aria-hidden={!showDetail ? true : undefined}
     >
       {previewItems.map(({ shift, display, marginLeftPx, widthPx, heightPx }) => {
+        if (overnightAnchorShiftIds?.has(shift.id)) {
+          return (
+            <div
+              key={shift.id}
+              data-dashboard-overnight-span-anchor={shift.id}
+              className="self-start shrink-0"
+              style={{
+                height: areaCollapsed
+                  ? COLLAPSED_SHIFT_PIXEL_SIZE_PX
+                  : shiftCardListItemHeightPx(heightPx),
+                width: 1,
+              }}
+              aria-hidden
+            />
+          );
+        }
+
         const color = resolvePreviewColor(shift, isPastDay, areaCollapsed);
+        const isSelected = selectedShiftId === shift.id;
 
         if (areaCollapsed) {
+          const marker = (
+            <div
+              className="h-full w-full"
+              style={{ backgroundColor: color }}
+              aria-hidden
+            />
+          );
+
+          if (interactive) {
+            return (
+              <button
+                key={shift.id}
+                type="button"
+                onClick={() => onShiftClick!(shift)}
+                className={cn(
+                  "absolute top-1/2 -translate-y-1/2 cursor-pointer border-0 bg-transparent p-0",
+                  isSelected && "ring-2 ring-primary ring-offset-1"
+                )}
+                style={{
+                  left: marginLeftPx,
+                  width: widthPx,
+                  height: heightPx,
+                }}
+                aria-label={display.tooltipBody}
+              >
+                {marker}
+              </button>
+            );
+          }
+
           return (
             <div
               key={shift.id}
@@ -216,18 +294,52 @@ export function CollapsedShiftPreview({
           );
         }
 
+        const markerStyle = {
+          marginLeft: marginLeftPx,
+          width: widthPx > 0 ? widthPx : undefined,
+          height: heightPx,
+          minHeight: heightPx,
+          backgroundColor: color,
+        };
+
+        const markerClass = cn(
+          "self-start shrink-0 rounded-sm shadow-sm",
+          isSelected && "ring-2 ring-primary ring-offset-1"
+        );
+
+        if (interactive) {
+          const button = (
+            <button
+              type="button"
+              onClick={() => onShiftClick!(shift)}
+              className={cn(markerClass, "cursor-pointer border-0 p-0")}
+              style={markerStyle}
+              aria-label={display.tooltipBody}
+            />
+          );
+
+          if (!showDetail) {
+            return <div key={shift.id}>{button}</div>;
+          }
+
+          return (
+            <Tooltip
+              key={shift.id}
+              content={<ShiftCardTooltipContent data={display.tooltip} />}
+              className="self-start max-w-full"
+              placement={{
+                anchorLeftToTriggerCenter: true,
+                gapPx: 2,
+                side: "above",
+              }}
+            >
+              {button}
+            </Tooltip>
+          );
+        }
+
         const marker = (
-          <div
-            className="self-start shrink-0 rounded-sm shadow-sm"
-            style={{
-              marginLeft: marginLeftPx,
-              width: widthPx > 0 ? widthPx : undefined,
-              height: heightPx,
-              minHeight: heightPx,
-              backgroundColor: color,
-            }}
-            aria-hidden
-          />
+          <div className={markerClass} style={markerStyle} aria-hidden />
         );
 
         if (!showDetail) {
@@ -237,7 +349,7 @@ export function CollapsedShiftPreview({
         return (
           <Tooltip
             key={shift.id}
-            content={display.tooltipBody}
+            content={<ShiftCardTooltipContent data={display.tooltip} />}
             className="self-start max-w-full"
             placement={{
               anchorLeftToTriggerCenter: true,

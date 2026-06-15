@@ -9,8 +9,12 @@ export const PLANNING_CELL_PADDING_PX = 4;
 export const PLANNING_COLLAPSED_SHIFT_LEFT_INSET_PX = 5;
 export const PLANNING_COLLAPSED_SHIFT_WIDTH_DELTA_PX = -2;
 export const PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX = 5;
+/** Aufgeklappte Tagzellen: Schichtkarten nutzen diese Breite weniger — visueller Abstand zum nächsten Tag. */
+export const PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX = 10;
 export const PLANNING_EMPLOYEE_ROW_HEIGHT = `${PLANNING_CELL_HEIGHT_PX + PLANNING_CELL_PADDING_PX * 2}px`;
 export const PLANNING_DAY_HEADER_ROW_HEIGHT = "3.5rem";
+export const PLANNING_DAY_FOOTER_ROW_HEIGHT = PLANNING_DAY_HEADER_ROW_HEIGHT;
+export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT = "18px";
 export const PLANNING_STAFF_COLUMN_WIDTH_PX = 200;
 export const PLANNING_PAST_DAY_CELL_BG = "#f3f6f9";
 export const PLANNING_CLOSED_DAY_CELL_BG = "#e6edf2";

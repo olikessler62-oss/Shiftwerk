@@ -233,11 +233,6 @@ function applyRemainderToLastArea(
     heights.set(area.id, clampAreaRowHeightPx(current + remainderPx));
     return;
   }
-
-  const lastArea = areas[areas.length - 1];
-  const current = heights.get(lastArea.id);
-  if (current === undefined) return;
-  heights.set(lastArea.id, clampAreaRowHeightPx(current + remainderPx));
 }
 
 function equalizeShiftAreasTowardTarget(

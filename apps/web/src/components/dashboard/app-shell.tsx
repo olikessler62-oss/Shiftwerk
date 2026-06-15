@@ -9,6 +9,8 @@ import { Button, IconButton } from "@/components/ui";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useTranslations } from "@/i18n/locale-provider";
 import { SidebarNav } from "./sidebar-nav";
+import { SimpleCalendarDisplaySidebarToggle } from "@/components/dashboard/simple-calendar-display-sidebar-toggle";
+import { SettingsModalsAppShellFallback } from "@/components/settings/settings-modals-app-shell-fallback";
 
 interface AppShellProps {
   orgName?: string;
@@ -92,11 +94,11 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
           </IconButton>
         </div>
 
-        <div className="flex justify-center px-3 pb-3 pt-5">
+        <div className="flex justify-center px-3 pb-3 md:-mt-[3px] md:justify-start">
           <LanguageSelect />
         </div>
 
-        {open && (
+        {open ? (
           <>
             <button
               type="button"
@@ -132,14 +134,17 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
                   </Button>
                 </form>
               </div>
+
+              <SimpleCalendarDisplaySidebarToggle />
             </div>
           </>
-        )}
+        ) : null}
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
           {children}
+          <SettingsModalsAppShellFallback />
         </main>
       </div>
     </div>

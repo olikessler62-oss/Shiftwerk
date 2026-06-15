@@ -17,6 +17,7 @@ import {
 } from "@/lib/shift-card-display-content";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import { Tooltip } from "@/components/ui";
+import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { cn } from "@/lib/cn";
 import {
   shiftConfirmationBadgeSymbol,
@@ -138,9 +139,10 @@ export function DashboardShiftCardView({
     confirmationStatus &&
     shiftConfirmationShowsOverlay(confirmationStatus);
 
-  const tooltipBody = showConfirmationOverlay && confirmationStatusLabel
-    ? `${display.tooltipBody}\n${confirmationStatusLabel}`
-    : display.tooltipBody;
+  const tooltipData =
+    showConfirmationOverlay && confirmationStatusLabel
+      ? { ...display.tooltip, confirmationStatusLine: confirmationStatusLabel }
+      : display.tooltip;
 
   return (
     <div
@@ -151,7 +153,7 @@ export function DashboardShiftCardView({
       }}
     >
       <Tooltip
-        content={tooltipBody}
+        content={<ShiftCardTooltipContent data={tooltipData} />}
         className="inline-flex w-fit max-w-full"
         placement={{
           anchorLeftToTriggerCenter: true,

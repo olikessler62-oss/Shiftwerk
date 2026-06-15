@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeTagAreaDayFooterStats,
+  formatTagAreaFooterLabels,
   formatTagAreaFooterLine,
   shiftCompensationKey,
 } from "./tag-area-footer-stats";
@@ -50,5 +51,23 @@ describe("tag-area-footer-stats", () => {
       "de"
     );
     expect(line).toBe("Gesamte Stunden: 8:00 | Gesamte Kosten: 160,00 EUR");
+  });
+
+  it("formats footer tooltip lines separately", () => {
+    const labels = formatTagAreaFooterLabels(
+      { totalHours: 8, totalCost: 160, currency: "EUR" },
+      (key, params) => {
+        if (key === "dashboard.tagAreaFooterTotalHours") {
+          return `Gesamte Stunden: ${params?.hours ?? ""}`;
+        }
+        return `Gesamte Kosten: ${params?.amount ?? ""} ${params?.currency ?? ""}`;
+      },
+      "de"
+    );
+    expect(labels.hoursLine).toBe("Gesamte Stunden: 8:00");
+    expect(labels.costLine).toBe("Gesamte Kosten: 160,00 EUR");
+    expect(labels.line).toBe(
+      "Gesamte Stunden: 8:00 | Gesamte Kosten: 160,00 EUR"
+    );
   });
 });

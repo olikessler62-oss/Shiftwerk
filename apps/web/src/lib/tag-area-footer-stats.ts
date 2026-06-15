@@ -81,17 +81,50 @@ export function formatTagAreaFooterMoney(
   }).format(amount);
 }
 
+function formatTagAreaFooterHoursLabel(
+  stats: TagAreaDayFooterStats,
+  translate: (key: string, params?: Record<string, string>) => string
+): string {
+  return translate("dashboard.tagAreaFooterTotalHours", {
+    hours: formatDurationHours(stats.totalHours),
+  });
+}
+
+function formatTagAreaFooterCostLabel(
+  stats: TagAreaDayFooterStats,
+  translate: (key: string, params?: Record<string, string>) => string,
+  locale: "de" | "en"
+): string {
+  return translate("dashboard.tagAreaFooterTotalCost", {
+    amount: formatTagAreaFooterMoney(stats.totalCost, locale),
+    currency: stats.currency,
+  });
+}
+
+export type TagAreaFooterLabels = {
+  line: string;
+  hoursLine: string;
+  costLine: string;
+};
+
+export function formatTagAreaFooterLabels(
+  stats: TagAreaDayFooterStats,
+  translate: (key: string, params?: Record<string, string>) => string,
+  locale: "de" | "en"
+): TagAreaFooterLabels {
+  const hoursLine = formatTagAreaFooterHoursLabel(stats, translate);
+  const costLine = formatTagAreaFooterCostLabel(stats, translate, locale);
+  return {
+    line: `${hoursLine} | ${costLine}`,
+    hoursLine,
+    costLine,
+  };
+}
+
 export function formatTagAreaFooterLine(
   stats: TagAreaDayFooterStats,
   translate: (key: string, params?: Record<string, string>) => string,
   locale: "de" | "en"
 ): string {
-  const hoursLabel = translate("dashboard.tagAreaFooterTotalHours", {
-    hours: formatDurationHours(stats.totalHours),
-  });
-  const costLabel = translate("dashboard.tagAreaFooterTotalCost", {
-    amount: formatTagAreaFooterMoney(stats.totalCost, locale),
-    currency: stats.currency,
-  });
-  return `${hoursLabel} | ${costLabel}`;
+  return formatTagAreaFooterLabels(stats, translate, locale).line;
 }

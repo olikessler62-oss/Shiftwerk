@@ -78,6 +78,45 @@ export function filterAssignmentPresetsMatchingTimes(
   );
 }
 
+/** Anzeigename(n) passender Schichtvorlagen für exakte Von/Bis-Zeiten. */
+export function shiftTemplateLabelForDemandTimes(
+  startTime: string,
+  endTime: string,
+  presets: readonly DashboardAssignmentPreset[]
+): string | undefined {
+  const matching = filterAssignmentPresetsMatchingTimes(
+    startTime,
+    endTime,
+    presets
+  );
+  if (matching.length === 0) return undefined;
+  return matching
+    .map((preset) => preset.name)
+    .sort((a, b) => a.localeCompare(b, "de"))
+    .join(", ");
+}
+
+/** Name der passenden Schichtvorlage für exakte Von/Bis-Zeiten (Tooltip). */
+export function resolveShiftTemplateNameForAssignment(
+  startTime: string,
+  endTime: string,
+  areaShiftTemplateId: string | null | undefined,
+  presets: readonly DashboardAssignmentPreset[]
+): string | null {
+  const matching = filterAssignmentPresetsMatchingTimes(
+    startTime,
+    endTime,
+    presets
+  );
+  if (matching.length === 0) return null;
+  if (matching.length === 1) return matching[0]!.name;
+  if (areaShiftTemplateId) {
+    const byId = matching.find((preset) => preset.id === areaShiftTemplateId);
+    if (byId) return byId.name;
+  }
+  return null;
+}
+
 /** Eine passende Vorlage vorauswählen; bei mehreren Treffern leer lassen. */
 export function resolvePresetShiftTemplateForDemandTimes(
   startTime: string,

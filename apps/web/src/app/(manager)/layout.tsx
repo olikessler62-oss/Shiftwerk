@@ -4,6 +4,7 @@ import { LocaleProvider } from "@/i18n/locale-provider";
 import { getServerLocale } from "@/i18n/server";
 import { getDatabase } from "@/lib/db";
 import { OrgFeaturesProvider } from "@/lib/org-features-provider";
+import { SimpleCalendarDisplayProvider } from "@/lib/simple-calendar-display-context";
 import { loadManagerOrganization } from "@/lib/manager";
 
 export default async function ManagerLayout({
@@ -30,13 +31,15 @@ export default async function ManagerLayout({
   return (
     <LocaleProvider initialLocale={locale}>
       <OrgFeaturesProvider organization={organization}>
-        <AppShell
-          orgName={organization.name || orgName || undefined}
-          userName={profile.full_name}
-          role={profile.role}
-        >
-          {children}
-        </AppShell>
+        <SimpleCalendarDisplayProvider>
+          <AppShell
+            orgName={organization.name || orgName || undefined}
+            userName={profile.full_name}
+            role={profile.role}
+          >
+            {children}
+          </AppShell>
+        </SimpleCalendarDisplayProvider>
       </OrgFeaturesProvider>
     </LocaleProvider>
   );

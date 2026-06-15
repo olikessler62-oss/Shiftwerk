@@ -75,8 +75,9 @@ function segmentCountsOnly(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSeg
   };
 }
 
-/** Flex-Layout misst Pipes + gap-1 separat — für segments-Modus. */
+/** Flex-Layout misst Abstände zwischen Segmenten — Pipes ohne Zwischenraum. */
 const SEGMENT_FLEX_GAP_PX = 4;
+const STAFFING_PIPE_FLEX_GAP_PX = 0;
 /** px-1 links/rechts je interaktivem Segment im segments-Modus. */
 const STAFFING_SEGMENT_LABEL_PADDING_PX = 8;
 /** px-1 links/rechts an der Gruppe im text-Modus. */
@@ -112,7 +113,7 @@ function measureRenderedSegments(
   const gapCount = Math.max(0, segments.length + pipeCount - 1);
   const segmentPadding = segments.length * STAFFING_SEGMENT_LABEL_PADDING_PX;
   return (
-    textWidth + pipeWidth + gapCount * SEGMENT_FLEX_GAP_PX + segmentPadding
+    textWidth + pipeWidth + gapCount * STAFFING_PIPE_FLEX_GAP_PX + segmentPadding
   );
 }
 
@@ -139,10 +140,11 @@ function measureTextModeGroup(
   }
 
   const gapCount = Math.max(0, segments.length + dividerCount - 1);
+  const flexGapPx = joinWith === "pipe" ? STAFFING_PIPE_FLEX_GAP_PX : SEGMENT_FLEX_GAP_PX;
   return (
     textWidth +
     dividerWidth +
-    gapCount * SEGMENT_FLEX_GAP_PX +
+    gapCount * flexGapPx +
     STAFFING_GROUP_LABEL_PADDING_PX
   );
 }

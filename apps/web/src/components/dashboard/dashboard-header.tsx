@@ -16,21 +16,10 @@ import { useOrgFeatures } from "@/lib/org-features-provider";
 import { LocationSelect } from "./location-select";
 import { DashboardNotificationCenter } from "./dashboard-notification-center";
 
+import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
+
 /** Gleiche Höhe wie IconButton size="md" (h-9). */
 const HEADER_CONTROL_H = "h-9 min-h-9";
-
-const SETTINGS_MODAL_PARAMS = [
-  "standorte",
-  "profiles",
-  "rollen",
-  "qualifikationen",
-  "sonderzuschlaege",
-  "abwesenheiten",
-] as const;
-
-function isSettingsModalOpen(params: URLSearchParams): boolean {
-  return SETTINGS_MODAL_PARAMS.some((key) => params.get(key) === "1");
-}
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

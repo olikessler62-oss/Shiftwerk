@@ -1,4 +1,4 @@
-import { parseServiceHourTimeToMinutes } from "./location-service-hours-validation";
+import { serviceHourTimeSegments } from "./location-service-hours-validation";
 
 export type ServiceHourSlotTime = {
   start_time: string;
@@ -18,13 +18,13 @@ function minutesToTimeField(minutes: number): string {
 
 function validSlotIntervals(slots: ServiceHourSlotTime[]): MinuteInterval[] {
   return slots
-    .map((slot) => {
-      const startMin = parseServiceHourTimeToMinutes(slot.start_time);
-      const endMin = parseServiceHourTimeToMinutes(slot.end_time);
-      if (startMin == null || endMin == null || endMin <= startMin) return null;
-      return { startMin, endMin };
-    })
-    .filter((interval): interval is MinuteInterval => interval != null)
+    .flatMap((slot) =>
+      serviceHourTimeSegments(slot.start_time, slot.end_time).map((segment) => ({
+        startMin: segment.start,
+        endMin: segment.end,
+      }))
+    )
+    .filter((interval) => interval.endMin > interval.startMin)
     .sort((a, b) => a.startMin - b.startMin);
 }
 

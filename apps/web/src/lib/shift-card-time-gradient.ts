@@ -153,3 +153,19 @@ export function buildShiftCardTimeGradientCss(
   );
   return `linear-gradient(to right, ${parts.join(", ")})`;
 }
+
+/** Farbverlauf für eine Hälfte einer Nachtschicht (Von-Tag / Bis-Tag). */
+export function buildPlanningShiftSegmentGradientCss(
+  part: "full" | "overnight-start" | "overnight-end",
+  startTime: string,
+  endTime: string,
+  opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY
+): string {
+  if (part === "full") {
+    return buildShiftCardTimeGradientCss(startTime, endTime, opacity);
+  }
+  if (part === "overnight-start") {
+    return buildShiftCardTimeGradientCss(startTime, "23:59", opacity);
+  }
+  return buildShiftCardTimeGradientCss("00:00", endTime, opacity);
+}

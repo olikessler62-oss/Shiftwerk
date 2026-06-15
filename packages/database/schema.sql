@@ -248,7 +248,7 @@ create table public.location_area_service_hours (
   weekday smallint not null check (weekday >= 0 and weekday <= 7),
   start_time time not null,
   end_time time not null,
-  constraint location_area_service_hours_time_order check (end_time > start_time)
+  constraint location_area_service_hours_time_order check (start_time <> end_time)
 );
 
 create index location_area_service_hours_area_id_idx

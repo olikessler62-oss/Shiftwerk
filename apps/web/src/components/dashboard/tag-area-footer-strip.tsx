@@ -1,15 +1,25 @@
 "use client";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 
 type Props = {
   label: string;
+  hoursTooltipLine: string;
+  costTooltipLine: string;
   className?: string;
 };
 
 /** Tag-Bereich-Footer: Gesamtstunden und Gesamtkosten. */
-export function TagAreaFooterStrip({ label, className }: Props) {
+export function TagAreaFooterStrip({
+  label,
+  hoursTooltipLine,
+  costTooltipLine,
+  className,
+}: Props) {
   if (!label.trim()) return null;
+
+  const tooltipContent = `${hoursTooltipLine}\n${costTooltipLine}`;
 
   return (
     <div
@@ -18,12 +28,11 @@ export function TagAreaFooterStrip({ label, className }: Props) {
         className
       )}
     >
-      <span
-        className="truncate text-[11px] font-medium leading-none text-neutral-600"
-        title={label}
-      >
-        {label}
-      </span>
+      <Tooltip content={tooltipContent}>
+        <span className="min-w-0 max-w-full cursor-default truncate text-[11px] font-medium leading-none text-neutral-600">
+          {label}
+        </span>
+      </Tooltip>
     </div>
   );
 }

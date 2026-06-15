@@ -3,6 +3,7 @@ import { shortenShiftTypeDisplayName } from "@/lib/profile-availability-label";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import { staffingQualificationIdsForAssignment } from "@/lib/bulk-shift-qualification";
 import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
+import { resolveShiftTemplateNameForAssignment } from "@/lib/dashboard-assignment-presets";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 
@@ -11,7 +12,66 @@ export type ShiftCardDisplayInput = {
   startTime: string;
   endTime: string;
   shiftName: string;
+  areaShiftTemplateId?: string | null;
 };
+
+export type ShiftCardTooltipFormatOptions = {
+  assignmentPresets?: readonly DashboardAssignmentPreset[];
+  formatShiftTooltipLine?: (name: string) => string;
+  formatJobTooltipLine?: (jobs: string) => string;
+};
+
+export function formatShiftCardTooltipShiftLine(name: string): string {
+  return `Schicht: ${name}`;
+}
+
+export function formatShiftCardTooltipJobLine(names: string): string {
+  return `Job: ${names}`;
+}
+
+export type ShiftCardTooltipData = {
+  employeeName?: string;
+  shiftTemplateName?: string | null;
+  /** Schichtname ohne passende Vorlage (Dashboard). */
+  shiftNameWithoutTemplate?: string | null;
+  timeLabel?: string;
+  jobsLabel?: string;
+  confirmationStatusLine?: string;
+};
+
+export function formatShiftCardTooltipPlainText(
+  data: ShiftCardTooltipData,
+  options?: {
+    formatShiftLine?: (name: string) => string;
+    formatJobLine?: (names: string) => string;
+  }
+): string {
+  const lines: string[] = [];
+  if (data.employeeName?.trim()) {
+    lines.push(data.employeeName.trim());
+  }
+  if (data.shiftTemplateName?.trim()) {
+    lines.push(
+      options?.formatShiftLine?.(data.shiftTemplateName.trim()) ??
+        formatShiftCardTooltipShiftLine(data.shiftTemplateName.trim())
+    );
+  } else if (data.shiftNameWithoutTemplate?.trim()) {
+    lines.push(data.shiftNameWithoutTemplate.trim());
+  }
+  if (data.timeLabel?.trim()) {
+    lines.push(data.timeLabel.trim());
+  }
+  if (data.jobsLabel?.trim()) {
+    lines.push(
+      options?.formatJobLine?.(data.jobsLabel.trim()) ??
+        formatShiftCardTooltipJobLine(data.jobsLabel.trim())
+    );
+  }
+  if (data.confirmationStatusLine?.trim()) {
+    lines.push(data.confirmationStatusLine.trim());
+  }
+  return lines.join("\n");
+}
 
 export type ShiftCardDensity = "two-line" | "compact" | "marker";
 
@@ -24,6 +84,7 @@ export type ShiftCardDisplayContent = {
   timeLabel: string;
   shiftLabel: string;
   jobsLabel: string;
+  tooltip: ShiftCardTooltipData;
   tooltipBody: string;
 };
 
@@ -108,21 +169,40 @@ function pickShorterSecondaryLabel(
 
 export function buildShiftCardDisplayContent(
   shift: ShiftCardDisplayInput,
-  jobsLabel: string
+  jobsLabel: string,
+  tooltipOptions?: ShiftCardTooltipFormatOptions
 ): ShiftCardDisplayContent {
   const { firstName, lastName } = splitEmployeeDisplayName(shift.employeeName);
   const timeLabel = formatTimeRange(shift.startTime, shift.endTime);
   const shiftLabel = shift.shiftName.trim()
     ? shortenShiftTypeDisplayName(shift.shiftName)
     : "";
+
+  const templateName =
+    tooltipOptions?.assignmentPresets &&
+    tooltipOptions.assignmentPresets.length > 0
+      ? resolveShiftTemplateNameForAssignment(
+          shift.startTime,
+          shift.endTime,
+          shift.areaShiftTemplateId,
+          tooltipOptions.assignmentPresets
+        )
+      : null;
+
   const line1Secondary = pickShorterSecondaryLabel(shiftLabel, timeLabel);
 
-  const tooltipLines = [
-    shift.employeeName.trim(),
-    shiftLabel || null,
+  const tooltip: ShiftCardTooltipData = {
+    employeeName: shift.employeeName,
+    shiftTemplateName: templateName,
+    shiftNameWithoutTemplate: templateName ? null : shiftLabel || null,
     timeLabel,
-    jobsLabel || null,
-  ].filter((line): line is string => Boolean(line?.trim()));
+    jobsLabel: jobsLabel.trim() || undefined,
+  };
+
+  const tooltipBody = formatShiftCardTooltipPlainText(tooltip, {
+    formatShiftLine: tooltipOptions?.formatShiftTooltipLine,
+    formatJobLine: tooltipOptions?.formatJobTooltipLine,
+  });
 
   return {
     firstName,
@@ -131,7 +211,8 @@ export function buildShiftCardDisplayContent(
     timeLabel,
     shiftLabel,
     jobsLabel,
-    tooltipBody: tooltipLines.join("\n"),
+    tooltip,
+    tooltipBody,
   };
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveCalendarStaffingTimeLabel, compactStaffingTimeRangeLabel } from "@/lib/location-staffing-client";
 import {
   resolveStaffingHeaderDisplay,
   type StaffingHeaderSegment,
@@ -18,6 +19,33 @@ function entry(
     required,
   };
 }
+
+describe("resolveCalendarStaffingTimeLabel", () => {
+  it("prefers shift template name over time in calendar overlay", () => {
+    expect(
+      resolveCalendarStaffingTimeLabel({
+        label: "Do 08:00–10:00",
+        calendarTimeLabel: "08:00-10:00 Uhr",
+        shiftTemplateLabel: "Früh",
+      })
+    ).toBe("Früh");
+  });
+
+  it("compacts spaces around time range dashes when no template matches", () => {
+    expect(
+      resolveCalendarStaffingTimeLabel({
+        label: "Do 08:00 - 10:00 Uhr",
+        calendarTimeLabel: "08:00 - 10:00 Uhr",
+      })
+    ).toBe("08:00-10:00 Uhr");
+  });
+
+  it("compacts spaces around pipe symbols in combined labels", () => {
+    expect(
+      compactStaffingTimeRangeLabel("Früh: 0/1 | Spät: 0/1")
+    ).toBe("Früh: 0/1|Spät: 0/1");
+  });
+});
 
 describe("resolveStaffingHeaderDisplay", () => {
   it("shows indicator when counts-only text would overflow", () => {

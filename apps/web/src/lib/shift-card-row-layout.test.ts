@@ -236,6 +236,40 @@ describe("shift-card-row-layout", () => {
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(900);
   });
 
+  it("T10: sole service-dormant area stays at 50 px without absorbing slack", () => {
+    const areas = [{ id: "bar" }];
+    const layouts = computeAreaRowLayouts(
+      areas,
+      new Set(["bar"]),
+      new Map([["bar", 0]]),
+      900,
+      new Set(["bar"]),
+    );
+
+    expect(layouts.get("bar")!.heightPx).toBe(AREA_ROW_MIN_HEIGHT_PX);
+    expect(totalAssignedRowHeightPx(areas, layouts)).toBe(AREA_ROW_MIN_HEIGHT_PX);
+  });
+
+  it("T11: all service-dormant areas stay at 50 px", () => {
+    const areas = [{ id: "bar" }, { id: "kitchen" }];
+    const layouts = computeAreaRowLayouts(
+      areas,
+      new Set(["bar", "kitchen"]),
+      new Map([
+        ["bar", 0],
+        ["kitchen", 0],
+      ]),
+      600,
+      new Set(["bar", "kitchen"]),
+    );
+
+    expect(layouts.get("bar")!.heightPx).toBe(AREA_ROW_MIN_HEIGHT_PX);
+    expect(layouts.get("kitchen")!.heightPx).toBe(AREA_ROW_MIN_HEIGHT_PX);
+    expect(totalAssignedRowHeightPx(areas, layouts)).toBe(
+      AREA_ROW_MIN_HEIGHT_PX * 2
+    );
+  });
+
   it("never assigns less than the minimum row height", () => {
     const areas = [{ id: "a" }, { id: "b" }, { id: "c" }];
     const layouts = computeAreaRowLayouts(

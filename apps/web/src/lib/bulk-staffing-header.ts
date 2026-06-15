@@ -1,4 +1,7 @@
-import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
+import {
+  shiftTemplateLabelForDemandTimes,
+  type DashboardAssignmentPreset,
+} from "@/lib/dashboard-assignment-presets";
 import { availabilityRangeContainedInWindow } from "@/lib/available-employees-for-shift";
 import { personalbedarfDemandTimesForEntry } from "@/lib/bulk-shift-staffing";
 import {
@@ -396,6 +399,13 @@ export function computeBulkStaffingHeaderEntries(input: {
       calendarTimeLabel: demandTimes
         ? formatCalendarTimeLabel?.(demandTimes.startTime, demandTimes.endTime)
         : undefined,
+      shiftTemplateLabel: demandTimes
+        ? shiftTemplateLabelForDemandTimes(
+            demandTimes.startTime,
+            demandTimes.endTime,
+            assignmentPresets
+          )
+        : undefined,
       qualifications: buildStaffingQualificationBreakdown(
         hourAssignments,
         qualRules,
@@ -411,7 +421,11 @@ export function formatStaffingEntryTooltipContent(
   entry: TagAreaHeaderStaffingEntry,
   formatQualLine: (name: string, assigned: number, required: number) => string
 ): string {
-  const header = entry.timeLabel ?? entry.label;
+  const timeHeader =
+    entry.calendarTimeLabel ?? entry.timeLabel ?? entry.label;
+  const headerLines = entry.shiftTemplateLabel
+    ? [entry.shiftTemplateLabel, timeHeader]
+    : [timeHeader];
   const qualLines = entry.qualifications
     ?.filter((qualification) => qualification.required > 0)
     .map((qualification) =>
@@ -422,9 +436,9 @@ export function formatStaffingEntryTooltipContent(
       )
     );
   if (qualLines?.length) {
-    return [header, ...qualLines].join("\n");
+    return [...headerLines, ...qualLines].join("\n");
   }
-  return `${header}\n${entry.assigned}/${entry.required}`;
+  return [...headerLines, `${entry.assigned}/${entry.required}`].join("\n");
 }
 
 export function formatStaffingEntriesTooltipContent(

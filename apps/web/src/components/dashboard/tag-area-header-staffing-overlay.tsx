@@ -20,6 +20,8 @@ type Props = {
   entries: TagAreaHeaderStaffingEntry[];
   /** Vergangener Kalendertag — dunklere Grün-/Rot-Töne. */
   dimmed?: boolean;
+  /** Eingeklappter Kalendertag — Bedarf nur als „!“ (Tooltip mit Volltext). */
+  dayCollapsed?: boolean;
 };
 
 const EMPTY_DISPLAY: StaffingHeaderDisplay = { mode: "empty" };
@@ -109,7 +111,13 @@ function StaffingOverlaySegmentGroup({
   const divider = joinWith === "pipe" ? "|" : " ";
 
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-1", className)}>
+    <span
+      className={cn(
+        "inline-flex min-w-0 items-center",
+        joinWith === "pipe" ? "gap-0" : "gap-1",
+        className
+      )}
+    >
       {segments.map((segment, index) => (
         <Fragment key={segment.serviceHourId}>
           {index > 0 ? (
@@ -133,11 +141,12 @@ function StaffingOverlaySegmentGroup({
 export function TagAreaHeaderStaffingOverlay({
   entries,
   dimmed = false,
+  dayCollapsed = false,
 }: Props) {
   const t = useTranslations();
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(Number.POSITIVE_INFINITY);
+  const [containerWidth, setContainerWidth] = useState(0);
   const [contentOverflows, setContentOverflows] = useState(false);
 
   const formatQualLine = useCallback(
@@ -186,7 +195,7 @@ export function TagAreaHeaderStaffingOverlay({
       entries
         .map(
           (entry) =>
-            `${entry.serviceHourId}:${entry.assigned}/${entry.required}:${entry.calendarTimeLabel ?? entry.timeLabel ?? entry.label}:${entry.qualifications?.map((qualification) => `${qualification.name}:${qualification.assigned}/${qualification.required}`).join(",") ?? ""}`
+            `${entry.serviceHourId}:${entry.assigned}/${entry.required}:${entry.shiftTemplateLabel ?? ""}:${entry.calendarTimeLabel ?? entry.timeLabel ?? entry.label}:${entry.qualifications?.map((qualification) => `${qualification.name}:${qualification.assigned}/${qualification.required}`).join(",") ?? ""}`
         )
         .join("|"),
     [entries]
@@ -210,9 +219,11 @@ export function TagAreaHeaderStaffingOverlay({
 
   const display = useMemo((): StaffingHeaderDisplay => {
     if (entries.length === 0) return EMPTY_DISPLAY;
+    const effectiveWidth =
+      containerWidth > 0 && Number.isFinite(containerWidth) ? containerWidth : 0;
     return resolveStaffingHeaderDisplay(
       entries,
-      containerWidth,
+      effectiveWidth,
       measureStaffingHeaderText
     );
   }, [entries, entryKey, containerWidth]);
@@ -232,7 +243,14 @@ export function TagAreaHeaderStaffingOverlay({
 
     function updateOverflow() {
       if (!container || !content) return;
-      setContentOverflows(content.scrollWidth > container.clientWidth + 1);
+      const horizontalOverflow = content.scrollWidth > container.clientWidth + 1;
+      const childOverflow = Array.from(content.querySelectorAll("*")).some(
+        (node) =>
+          node instanceof HTMLElement &&
+          (node.scrollWidth > node.clientWidth + 1 ||
+            node.scrollHeight > node.clientHeight + 1)
+      );
+      setContentOverflows(horizontalOverflow || childOverflow);
     }
 
     updateOverflow();
@@ -240,11 +258,14 @@ export function TagAreaHeaderStaffingOverlay({
     const observer = new ResizeObserver(updateOverflow);
     observer.observe(container);
     observer.observe(content);
+    for (const child of content.querySelectorAll("*")) {
+      if (child instanceof HTMLElement) observer.observe(child);
+    }
     return () => observer.disconnect();
   }, [display, entryKey, containerWidth]);
 
   const showIndicator =
-    display.mode === "indicator" || contentOverflows;
+    dayCollapsed || display.mode === "indicator" || contentOverflows;
   const indicatorAllMet =
     display.mode === "indicator" ? display.allMet : !hasUnderstaffed;
 
@@ -288,7 +309,7 @@ export function TagAreaHeaderStaffingOverlay({
           ) : null}
 
           {display.mode === "segments" ? (
-            <div className="flex min-w-0 items-center justify-center gap-1 overflow-hidden">
+            <div className="flex min-w-0 items-center justify-center gap-0 overflow-hidden">
               {display.segments.map((segment, segmentIndex) => (
                 <Fragment key={segment.serviceHourId}>
                   {segmentIndex > 0 ? (
