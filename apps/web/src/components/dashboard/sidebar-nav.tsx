@@ -9,10 +9,12 @@ import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
   buildSettingsModalUrl as buildSettingsModalUrlFromLib,
+  type SettingsModalQueryFlag,
 } from "@/lib/settings-modal-navigation";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useOrgFeatures } from "@/lib/org-features-provider";
 import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
+import { useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
 import { useSuperadminModal } from "@/components/settings/superadmin-modal-context";
 
 const NAV_LINKS_AFTER_PLANNING = [
@@ -67,8 +69,8 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
   const sonderzuschlaegeOpen = searchParams.get("sonderzuschlaege") === "1";
   const abwesenheitenOpen = searchParams.get("abwesenheiten") === "1";
-  const arbeitsentgeltOpen = searchParams.get("arbeitsentgelt") === "1";
   const { open: superadminOpen, openSuperadminModal } = useSuperadminModal();
+  const beginMainNavPending = useBeginMainNavPending();
   const settingsModalOpen =
     standorteOpen ||
     profilesOpen ||
@@ -76,7 +78,6 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     qualifikationenOpen ||
     sonderzuschlaegeOpen ||
     abwesenheitenOpen ||
-    arbeitsentgeltOpen ||
     outboxActive;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [PLANNING_SECTION_ID]: planungActive,
@@ -102,25 +103,11 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
-  function buildSettingsModalUrl(
-    flag:
-      | "standorte"
-      | "profiles"
-      | "rollen"
-      | "qualifikationen"
-      | "sonderzuschlaege"
-      | "abwesenheiten"
-      | "arbeitsentgelt"
-  ) {
+  function buildSettingsModalUrl(flag: SettingsModalQueryFlag) {
     return buildSettingsModalUrlFromLib(pathname, searchParams, flag);
   }
 
   const settingsLinks = [
-    {
-      flag: "arbeitsentgelt" as const,
-      labelKey: "nav.compensationSettings",
-      open: arbeitsentgeltOpen,
-    },
     ...(features.areas
       ? [{ flag: "standorte" as const, labelKey: "nav.locations", open: standorteOpen }]
       : []),
@@ -162,11 +149,21 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     { labelKey: "nav.planningNotifyStaff" },
   ] as const;
 
+  function handlePageNav(pathname: string) {
+    beginMainNavPending({ kind: "page", pathname });
+    onNavigate?.();
+  }
+
+  function handleSettingsNav(flag: SettingsModalQueryFlag) {
+    beginMainNavPending({ kind: "settings-modal", flag });
+    onNavigate?.();
+  }
+
   return (
     <nav className="flex flex-col gap-0.5 p-2">
       <Link
         href="/dashboard"
-        onClick={onNavigate}
+        onClick={() => handlePageNav("/dashboard")}
         className={navItemClass(pathname === "/dashboard")}
       >
         {t("nav.dashboard")}
@@ -179,7 +176,11 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
             "flex items-center justify-between gap-1 pr-1"
           )}
         >
-          <Link href="/planung" onClick={onNavigate} className="min-w-0 flex-1">
+          <Link
+            href="/planung"
+            onClick={() => handlePageNav("/planung")}
+            className="min-w-0 flex-1"
+          >
             {t("nav.planning")}
           </Link>
           <button
@@ -233,7 +234,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
         <Link
           key={item.href}
           href={item.href}
-          onClick={onNavigate}
+          onClick={() => handlePageNav(item.href)}
           className={navItemClass(pathname === item.href)}
         >
           {t(item.labelKey)}
@@ -265,7 +266,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
               <Link
                 key={item.flag}
                 href={buildSettingsModalUrl(item.flag)}
-                onClick={onNavigate}
+                onClick={() => handleSettingsNav(item.flag)}
                 className={cn(settingsSubLinkClass(item.open), index === 0 && "mt-0.5")}
               >
                 {t(item.labelKey)}
@@ -274,7 +275,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
             {showOutboxLink ? (
               <Link
                 href={outboxPath}
-                onClick={onNavigate}
+                onClick={() => handlePageNav(outboxPath)}
                 className={settingsSubLinkClass(outboxActive)}
               >
                 {t("nav.notificationOutbox")}
@@ -288,6 +289,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
         <button
           type="button"
           onClick={() => {
+            beginMainNavPending({ kind: "superadmin" });
             openSuperadminModal();
             onNavigate?.();
           }}

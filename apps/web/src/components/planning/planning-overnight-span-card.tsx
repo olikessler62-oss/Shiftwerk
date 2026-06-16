@@ -77,10 +77,9 @@ export function PlanningOvernightSpanCard({
   const textContentRef = useRef<HTMLDivElement>(null);
   const [textOverflows, setTextOverflows] = useState(false);
 
-  const confirmationStatusLine =
-    shift.confirmationStatus && shift.confirmationStatus !== "confirmed"
-      ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
-      : undefined;
+  const confirmationStatusLine = shift.confirmationStatus
+    ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
+    : undefined;
   const jobsLabel = resolvePlanningShiftJobsLabel(shift, shiftJobContext);
   const jobsLine = jobsLabel.trim()
     ? t("common.shiftCardTooltipJob", { names: jobsLabel })
@@ -96,6 +95,8 @@ export function PlanningOvernightSpanCard({
         t("common.shiftCardTooltipShift", { name: templateName }),
       formatJobTooltipLine: (names) =>
         t("common.shiftCardTooltipJob", { names }),
+      formatStatusTooltipLine: (status) =>
+        `${t("common.shiftCardTooltipStatusLabel")} ${status}`,
     }
   );
   const showAnyText =

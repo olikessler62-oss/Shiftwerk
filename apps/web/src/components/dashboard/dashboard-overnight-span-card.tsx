@@ -9,8 +9,10 @@ import { PlanningShiftCardConfirmationOverlay } from "@/components/planning/plan
 import { PlanningShiftCardOverflowIndicator } from "@/components/planning/planning-shift-card-overflow-indicator";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
+import { useTranslations } from "@/i18n/locale-provider";
 import { formatShiftCardTooltipPlainText } from "@/lib/shift-card-display-content";
 import { cn } from "@/lib/cn";
+import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
 import type { PlanningOvernightSpanDisplayMode } from "@/lib/planning-overnight-span-layout";
 import { DASHBOARD_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/dashboard-overnight-span-layout";
 import { PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX } from "@/lib/planning-calendar-layout";
@@ -96,8 +98,22 @@ export function DashboardOvernightSpanCard({
   onShiftClick,
   onShiftContextMenu,
 }: Props) {
+  const t = useTranslations();
   const textContentRef = useRef<HTMLDivElement>(null);
   const [textOverflows, setTextOverflows] = useState(false);
+
+  const confirmationStatusLabel = shift.confirmationStatus
+    ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
+    : undefined;
+  const tooltipData = confirmationStatusLabel
+    ? { ...display.tooltip, confirmationStatusLine: confirmationStatusLabel }
+    : display.tooltip;
+  const tooltipPlainText = confirmationStatusLabel
+    ? formatShiftCardTooltipPlainText(tooltipData, {
+        formatStatusLine: (status) =>
+          `${t("common.shiftCardTooltipStatusLabel")} ${status}`,
+      })
+    : display.tooltipBody;
 
   const employeeColor =
     shift.employeeColor?.trim() || "#94a3b8";
@@ -138,7 +154,7 @@ export function DashboardOvernightSpanCard({
 
     return (
       <Tooltip
-        content={<ShiftCardTooltipContent data={display.tooltip} />}
+        content={<ShiftCardTooltipContent data={tooltipData} />}
         className="inline-flex h-full"
       >
         <button
@@ -154,7 +170,7 @@ export function DashboardOvernightSpanCard({
             height: markerHeightPx,
             backgroundColor: markerColor,
           }}
-          aria-label={formatShiftCardTooltipPlainText(display.tooltip)}
+          aria-label={tooltipPlainText}
         />
       </Tooltip>
     );
@@ -165,7 +181,7 @@ export function DashboardOvernightSpanCard({
 
   return (
     <Tooltip
-      content={<ShiftCardTooltipContent data={display.tooltip} />}
+      content={<ShiftCardTooltipContent data={tooltipData} />}
       className="inline-flex h-full w-full min-w-0"
       placement={{
         anchorLeftToTriggerCenter: true,
@@ -192,7 +208,7 @@ export function DashboardOvernightSpanCard({
           height: cardHeightPx,
           minHeight: cardHeightPx,
         }}
-        aria-label={display.tooltipBody}
+        aria-label={tooltipPlainText}
       >
         <div
           className="shrink-0 self-stretch"

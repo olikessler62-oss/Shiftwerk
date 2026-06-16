@@ -69,6 +69,7 @@ import {
   useSimulatedProposedOnAssignRequest,
 } from "@/lib/shift-confirmation-simulation-context";
 import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
+import { useAppShellModalLockActive } from "@/lib/app-shell-modal-lock";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type {
   AreaShiftTemplateWithBreaks,
@@ -572,6 +573,12 @@ export function DashboardCalendar({
     areaId: string;
     date: string;
   } | null>(null);
+  useAppShellModalLockActive(
+    Boolean(addShiftDialog) ||
+      Boolean(bulkShiftDialog) ||
+      Boolean(shiftDeleteConfirm) ||
+      Boolean(noServiceHoursConfirm)
+  );
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const shiftContextMenuRef = useRef<HTMLDivElement>(null);
   const skipContextMenuCloseRef = useRef(false);
@@ -1561,6 +1568,7 @@ export function DashboardCalendar({
             const holiday = holidayNames[date];
             const isHoliday = isGermanPublicHoliday(date);
             const isToday = date === todayISO;
+            const isPastDay = isPastCalendarDate(date, todayISO);
             const mutedHeader = !dayHasServiceHours[dayIndex];
             return (
               <div
@@ -1601,7 +1609,12 @@ export function DashboardCalendar({
                     <div className="shrink-0 whitespace-nowrap text-xs font-semibold leading-none text-muted">
                       {weekday}
                     </div>
-                    <div className="shrink-0 whitespace-nowrap text-sm font-medium leading-none">
+                    <div
+                      className={cn(
+                        "shrink-0 whitespace-nowrap text-sm font-medium leading-none",
+                        isPastDay && "text-muted"
+                      )}
+                    >
                       {label}
                     </div>
                   </>
@@ -1959,7 +1972,7 @@ export function DashboardCalendar({
                             gridRow,
                             ...(isPastWorkDayCell
                               ? { backgroundColor: PAST_TAG_AREA_CELL_BG }
-                              : !showDayCellContent
+                              : !showDayCellContent && !showNoServiceHoursLabel
                                 ? { backgroundColor: CLOSED_AREA_DAY_BG }
                                 : undefined),
                           }}

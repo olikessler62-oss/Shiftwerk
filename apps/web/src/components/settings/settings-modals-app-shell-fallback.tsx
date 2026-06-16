@@ -7,6 +7,7 @@ import type { SettingsModalsData } from "@/app/actions/settings-modals-data";
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
 import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
+import { useClearMainNavPendingOptional } from "@/lib/app-shell-main-nav-pending";
 
 const PAGE_HOSTED_SETTINGS_PATHS = ["/dashboard", "/planung"] as const;
 
@@ -15,6 +16,7 @@ function SettingsModalsAppShellFallbackInner() {
   const searchParams = useSearchParams();
   const [data, setData] = useState<SettingsModalsData | null>(null);
   const [loading, setLoading] = useState(false);
+  const clearMainNavPending = useClearMainNavPendingOptional();
 
   const modalOpen = isSettingsModalOpen(searchParams);
   const pageHostsModals = PAGE_HOSTED_SETTINGS_PATHS.includes(
@@ -51,6 +53,12 @@ function SettingsModalsAppShellFallbackInner() {
       cancelled = true;
     };
   }, [modalOpen, pageHostsModals, pathname, searchParams]);
+
+  useEffect(() => {
+    if (data && modalOpen && !pageHostsModals) {
+      clearMainNavPending();
+    }
+  }, [data, modalOpen, pageHostsModals, clearMainNavPending]);
 
   if (
     !SETTINGS_MODALS_ON_CURRENT_PAGE ||

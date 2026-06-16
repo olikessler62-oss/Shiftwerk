@@ -6,10 +6,26 @@ import { useState, useEffect, useRef, Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { IconButton } from "@/components/ui";
 import { PlanningAppSidebarSlotMount } from "@/components/planning/planning-app-sidebar-slot";
+import { cn } from "@/lib/cn";
 import { useTranslations } from "@/i18n/locale-provider";
 import { SidebarNav } from "./sidebar-nav";
 import { SettingsModalsAppShellFallback } from "@/components/settings/settings-modals-app-shell-fallback";
 import { SuperadminModalProvider } from "@/components/settings/superadmin-modal-context";
+import { AppShellModalLockBridge } from "@/components/dashboard/app-shell-modal-lock-bridge";
+import {
+  AppShellMainNavPendingBridge,
+  AppShellMainNavPendingProvider,
+} from "@/lib/app-shell-main-nav-pending";
+import {
+  APP_SHELL_BRAND_HEADER_CLASS,
+  APP_SHELL_CONTENT_OFFSET_CLASS,
+} from "@/lib/app-shell-layout";
+import {
+  AppShellControlsGuard,
+  AppShellModalLockProvider,
+  useIsAppShellLocked,
+  useIsAppShellWaitCursor,
+} from "@/lib/app-shell-modal-lock";
 
 interface AppShellProps {
   orgName?: string;
@@ -26,7 +42,6 @@ export function AppShell({
   superadminEnabled = false,
   children,
 }: AppShellProps) {
-  const t = useTranslations();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const showAppSidebarSlot =
@@ -49,12 +64,71 @@ export function AppShell({
 
   return (
     <SuperadminModalProvider enabled={superadminEnabled}>
-      <div className="flex h-dvh min-h-0 flex-col overflow-hidden md:flex-row">
+      <AppShellModalLockProvider>
+        <AppShellMainNavPendingProvider>
+          <Suspense fallback={null}>
+            <AppShellModalLockBridge />
+          </Suspense>
+          <Suspense fallback={null}>
+            <AppShellMainNavPendingBridge />
+          </Suspense>
+          <AppShellLayout
+          orgName={orgName}
+          open={open}
+          setOpen={setOpen}
+          showAppSidebarSlot={showAppSidebarSlot}
+          sidebarRef={sidebarRef}
+          superadminEnabled={superadminEnabled}
+          role={role}
+        >
+          {children}
+        </AppShellLayout>
+        </AppShellMainNavPendingProvider>
+      </AppShellModalLockProvider>
+    </SuperadminModalProvider>
+  );
+}
+
+function AppShellLayout({
+  orgName,
+  open,
+  setOpen,
+  showAppSidebarSlot,
+  sidebarRef,
+  superadminEnabled,
+  role,
+  children,
+}: {
+  orgName?: string;
+  open: boolean;
+  setOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
+  showAppSidebarSlot: boolean;
+  sidebarRef: React.RefObject<HTMLDivElement | null>;
+  superadminEnabled: boolean;
+  role?: string;
+  children: React.ReactNode;
+}) {
+  const t = useTranslations();
+  const shellLocked = useIsAppShellLocked();
+  const shellWaitCursor = useIsAppShellWaitCursor();
+
+  return (
+    <div
+      className={cn(
+        "flex h-dvh min-h-0 flex-col overflow-hidden md:flex-row",
+        shellWaitCursor && "cursor-wait [&_*]:cursor-wait"
+      )}
+    >
       <div
         ref={sidebarRef}
         className="relative z-50 flex w-full shrink-0 flex-col border-b border-border bg-surface md:h-full md:w-56 md:border-b-0 md:border-r"
       >
-        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-20">
+        <div
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-b border-border px-3",
+            APP_SHELL_BRAND_HEADER_CLASS
+          )}
+        >
           <div className="grid h-9 w-9 shrink-0 grid-cols-2 gap-0.5 rounded-lg bg-primary p-1">
             <span className="rounded-sm bg-primary-foreground/90" />
             <span className="rounded-sm bg-primary-foreground/60" />
@@ -71,6 +145,7 @@ export function AppShell({
           <IconButton
             size="sm"
             onClick={() => setOpen((v) => !v)}
+            disabled={shellLocked}
             aria-expanded={open}
             aria-label={open ? t("nav.closeMenu") : t("nav.openMenu")}
             className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
@@ -104,7 +179,12 @@ export function AppShell({
         </div>
 
         {showAppSidebarSlot ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2 md:pt-4">
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3",
+              APP_SHELL_CONTENT_OFFSET_CLASS
+            )}
+          >
             <PlanningAppSidebarSlotMount />
           </div>
         ) : null}
@@ -118,17 +198,19 @@ export function AppShell({
               onClick={() => setOpen(false)}
             />
             <div className="fixed inset-x-0 top-14 z-50 flex max-h-[min(70vh,calc(100dvh-3.5rem))] flex-col overflow-y-auto border-t border-border bg-surface shadow-lg md:absolute md:inset-x-0 md:bottom-0 md:top-20 md:max-h-none md:border-t-0 md:shadow-xl">
-              <Suspense
-                fallback={
-                  <nav className="p-2 text-sm text-muted">{t("common.loading")}</nav>
-                }
-              >
-                <SidebarNav
-                  onNavigate={() => setOpen(false)}
-                  viewerRole={role}
-                  superadminEnabled={superadminEnabled}
-                />
-              </Suspense>
+              <AppShellControlsGuard>
+                <Suspense
+                  fallback={
+                    <nav className="p-2 text-sm text-muted">{t("common.loading")}</nav>
+                  }
+                >
+                  <SidebarNav
+                    onNavigate={() => setOpen(false)}
+                    viewerRole={role}
+                    superadminEnabled={superadminEnabled}
+                  />
+                </Suspense>
+              </AppShellControlsGuard>
             </div>
           </>
         ) : null}
@@ -141,6 +223,5 @@ export function AppShell({
         </main>
       </div>
     </div>
-    </SuperadminModalProvider>
   );
 }

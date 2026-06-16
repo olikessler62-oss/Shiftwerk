@@ -21,7 +21,6 @@ const PLANNING_SHIFT_TEMPLATE_CARD_META_CLASS =
   "mt-[0.16rem] text-xs leading-none text-black/70";
 
 type Props = {
-  title: string;
   presets: readonly DashboardAssignmentPreset[];
   emptyLabel: string;
   locale: string;
@@ -29,7 +28,6 @@ type Props = {
 };
 
 export function PlanningShiftTemplateSidebarList({
-  title,
   presets,
   emptyLabel,
   locale,
@@ -43,9 +41,6 @@ export function PlanningShiftTemplateSidebarList({
         className
       )}
     >
-      <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">
-        {title}
-      </h2>
       {presets.length === 0 ? (
         <p className="text-xs text-muted">{emptyLabel}</p>
       ) : (

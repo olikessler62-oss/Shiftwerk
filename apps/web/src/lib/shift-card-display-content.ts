@@ -44,6 +44,7 @@ export function formatShiftCardTooltipPlainText(
   options?: {
     formatShiftLine?: (name: string) => string;
     formatJobLine?: (names: string) => string;
+    formatStatusLine?: (status: string) => string;
   }
 ): string {
   const lines: string[] = [];
@@ -68,7 +69,10 @@ export function formatShiftCardTooltipPlainText(
     );
   }
   if (data.confirmationStatusLine?.trim()) {
-    lines.push(data.confirmationStatusLine.trim());
+    lines.push(
+      options?.formatStatusLine?.(data.confirmationStatusLine.trim()) ??
+        `Status: ${data.confirmationStatusLine.trim()}`
+    );
   }
   return lines.join("\n");
 }

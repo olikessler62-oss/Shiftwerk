@@ -57,6 +57,7 @@ import {
   staffingAssignmentsForPlanningAreaDay,
 } from "@/lib/bulk-staffing-header";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
+import { resolvePlanningAssignPrefillFromOpenDemand } from "@/lib/planning-assign-prefill";
 import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
@@ -68,6 +69,7 @@ import {
   useSimulatedProposedOnAssignRequest,
 } from "@/lib/shift-confirmation-simulation-context";
 import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
+import { useAppShellModalLockActive, useAppShellWaitCursorActive, useIsAppShellLocked } from "@/lib/app-shell-modal-lock";
 import { translateActionError } from "@/lib/translate-action-error";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
@@ -101,6 +103,10 @@ import { pickFirstPlanningShiftPerEmployeeDay } from "@/lib/simple-calendar-disp
 import { useSimpleCalendarDisplay } from "@/lib/simple-calendar-display-context";
 import { usePlanningStaffColumnWidthPx } from "@/lib/use-planning-staff-column-width";
 import {
+  APP_PAGE_TOOLBAR_HEADER_CLASS,
+  APP_SHELL_CONTENT_OFFSET_CLASS,
+} from "@/lib/app-shell-layout";
+import {
   computeTagAreaDayFooterStats,
   formatTagAreaFooterLabels,
   type DashboardShiftCompensationByKey,
@@ -116,8 +122,10 @@ import type {
   ProfileRecurringAvailability,
   Qualification,
   Role,
+  ManagerNotification,
 } from "@schichtwerk/types";
 import { LocationSelect } from "@/components/dashboard/location-select";
+import { DashboardNotificationCenter } from "@/components/dashboard/dashboard-notification-center";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import {
   Alert,
@@ -150,6 +158,7 @@ type Props = {
   profileQualificationIds: Record<string, string[]>;
   shiftCompensation?: DashboardShiftCompensationByKey;
   readOnlyWeek?: boolean;
+  managerNotifications?: ManagerNotification[];
   settingsModals?: {
     profiles: Profile[];
     roles: Role[];
@@ -264,6 +273,7 @@ export function ShiftPlanner({
   profileQualificationIds: profileQualificationIdsRecord,
   shiftCompensation = {},
   readOnlyWeek = false,
+  managerNotifications = [],
   settingsModals,
 }: Props) {
   const router = useRouter();
@@ -294,6 +304,7 @@ export function ShiftPlanner({
   const [deleteShiftError, setDeleteShiftError] = useState<string | null>(null);
   const [deleteShiftPending, startDeleteShift] = useTransition();
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false);
+  const [sendConfirmationBusy, setSendConfirmationBusy] = useState(false);
   const [confirmationsPanelOpen, setConfirmationsPanelOpen] = useState(false);
   const [confirmationsPanelTab, setConfirmationsPanelTab] =
     useState<ConfirmationsPanelTab>("pending");
@@ -309,6 +320,33 @@ export function ShiftPlanner({
   const [endTime, setEndTime] = useState("00:00");
   const [note, setNote] = useState("");
   const skipPresetFromTimesSyncRef = useRef(false);
+
+  const shellLocked = useIsAppShellLocked();
+  const controlsDisabled = pending || shellLocked;
+
+  useAppShellModalLockActive(
+    Boolean(picker) ||
+      Boolean(bulkShiftDialog) ||
+      Boolean(shiftDeleteConfirmId) ||
+      sendConfirmationOpen ||
+      confirmationsPanelOpen
+  );
+  useAppShellWaitCursorActive(sendConfirmationBusy);
+
+  function openSendConfirmation() {
+    setSendConfirmationBusy(true);
+    setSendConfirmationOpen(true);
+  }
+
+  function closeSendConfirmation() {
+    setSendConfirmationOpen(false);
+    setSendConfirmationBusy(false);
+  }
+
+  function openConfirmationsPanel(tab: ConfirmationsPanelTab = "pending") {
+    setConfirmationsPanelTab(tab);
+    setConfirmationsPanelOpen(true);
+  }
 
   const templatesForArea = useMemo(
     () =>
@@ -328,7 +366,6 @@ export function ShiftPlanner({
       <div className="space-y-4">
         {!simplePlanning ? (
           <PlanningShiftTemplateSidebarList
-            title={t("dashboard.shiftTemplateLabel")}
             presets={assignmentPresets}
             emptyLabel={t("dashboard.noShiftTemplatesForArea")}
             locale={locale}
@@ -884,6 +921,14 @@ export function ShiftPlanner({
     pushPlanungQuery({ week: toISODate(startOfWeek(new Date())) });
   }, [pushPlanungQuery]);
 
+  const navigateToWeekFromNotification = useCallback(
+    (nextWeekStart: string) => {
+      if (nextWeekStart === weekStart) return;
+      pushPlanungQuery({ week: nextWeekStart });
+    },
+    [pushPlanungQuery, weekStart]
+  );
+
   function isDayReadOnly(date: string) {
     return readOnlyWeek || isPastShiftDate(date);
   }
@@ -942,14 +987,56 @@ export function ShiftPlanner({
       } else {
         setQualificationId("");
       }
-    } else if (assignmentPresets[0]) {
-      applyPreset(assignmentPresets[0]);
-      setQualificationId("");
     } else {
-      setSelectedPresetId("");
-      setStartTime("00:00");
-      setEndTime("00:00");
-      setQualificationId("");
+      const demandPrefill =
+        !simplePlanning && selectedAreaId && showStaffingHeaderRow
+          ? resolvePlanningAssignPrefillFromOpenDemand({
+              employeeId,
+              dateISO: date,
+              areaId: selectedAreaId,
+              staffingEntries: dailyStaffingByDate.get(date) ?? [],
+              serviceHours,
+              assignmentPresets,
+      staffingRules,
+      profileQualificationIds,
+              recurringAvailability,
+              absences,
+              employees,
+            })
+          : null;
+
+      if (demandPrefill) {
+        setSelectedPresetId(demandPrefill.presetId);
+        setStartTime(demandPrefill.startTime);
+        setEndTime(demandPrefill.endTime);
+        setQualificationId(demandPrefill.qualificationId);
+      } else if (assignmentPresets[0]) {
+        applyPreset(assignmentPresets[0]);
+        if (selectedAreaId) {
+          const preset = assignmentPresets[0];
+          const serviceHourId = findServiceHourIdForShift(
+            serviceHours,
+            selectedAreaId,
+            date,
+            timeFieldValue(preset.start_time),
+            timeFieldValue(preset.end_time)
+          );
+          setQualificationId(
+            presetQualificationForServiceHour(
+              staffingRules,
+              selectedAreaId,
+              serviceHourId
+            )
+          );
+        } else {
+          setQualificationId("");
+        }
+      } else {
+        setSelectedPresetId("");
+        setStartTime("00:00");
+        setEndTime("00:00");
+        setQualificationId("");
+      }
     }
   }
 
@@ -1194,7 +1281,7 @@ export function ShiftPlanner({
     const { employeeId, date } = cellContextMenu;
     setCellContextMenu(null);
     openPicker(employeeId, date);
-  }, [cellContextMenu]);
+  }, [cellContextMenu, openPicker]);
 
   const handleContextAssignBulk = useCallback(() => {
     if (!cellContextMenu || !selectedAreaId) return;
@@ -1365,14 +1452,20 @@ export function ShiftPlanner({
 
   return (
     <div className="-m-4 flex min-h-[calc(100vh-4.5rem)] flex-col bg-subtle md:-m-6">
-      <header className="border-b border-border bg-surface px-4 py-4 md:px-6 md:py-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center">
-          <h1 className="shrink-0 text-2xl font-semibold tracking-tight">
+      <header
+        className={cn(
+          APP_PAGE_TOOLBAR_HEADER_CLASS,
+          shellLocked && "pointer-events-none opacity-50"
+        )}
+        aria-hidden={shellLocked || undefined}
+        {...(shellLocked ? { inert: true } : {})}
+      >
+        <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4">
+          <h1 className="shrink-0 text-2xl font-semibold tracking-tight md:text-xl">
             Schichtplan erstellen
           </h1>
 
-          <div className="ml-10 flex min-w-0 flex-wrap items-center gap-3 select-none md:gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 select-none md:gap-4 md:ml-2">
             <div
               role="group"
               aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
@@ -1381,7 +1474,7 @@ export function ShiftPlanner({
               <IconButton
                 size="md"
                 onClick={() => navigateWeek(-1)}
-                disabled={pending || atEarliestWeek}
+                disabled={controlsDisabled || atEarliestWeek}
                 aria-label={t("common.prevWeek")}
                 className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
               >
@@ -1393,7 +1486,7 @@ export function ShiftPlanner({
                 variant="outline"
                 size="header"
                 onClick={goToToday}
-                disabled={pending}
+                disabled={controlsDisabled}
                 className={cn(HEADER_CONTROL_H, "shrink-0 font-semibold")}
               >
                 {t("common.today")}
@@ -1402,7 +1495,7 @@ export function ShiftPlanner({
               <IconButton
                 size="md"
                 onClick={() => navigateWeek(1)}
-                disabled={pending}
+                disabled={controlsDisabled}
                 aria-label={t("common.nextWeek")}
                 className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
               >
@@ -1421,22 +1514,20 @@ export function ShiftPlanner({
             </p>
 
             {features.areas ? (
-              <div className="flex shrink-0 flex-nowrap items-center">
-                <span className="shrink-0 text-sm text-foreground">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3 md:ml-2">
+                <span className="hidden shrink-0 text-sm text-foreground sm:inline">
                   {t("dashboard.location")}
                 </span>
-                <div className="ml-2 w-[11rem] shrink-0">
-                  <LocationSelect
-                    locations={locations}
-                    selectedLocationId={selectedLocationId}
-                    basePath="/planung"
-                    className="!mt-0 w-full font-semibold"
-                  />
-                </div>
-                <span className="ml-5 shrink-0 text-sm text-foreground">
+                <LocationSelect
+                  locations={locations}
+                  selectedLocationId={selectedLocationId}
+                  basePath="/planung"
+                  className="!mt-0 min-w-0 flex-1 font-semibold sm:w-[11rem] sm:flex-none sm:shrink-0"
+                />
+                <span className="shrink-0 text-sm text-foreground">
                   {t("planning.area")}
                 </span>
-                <div className="ml-2 w-[11rem] shrink-0">
+                <div className="w-[11rem] shrink-0">
                   {areas.length === 0 ? (
                     <ControlDisplay className="w-full py-2 text-muted">
                       {t("planning.noAreas")}
@@ -1444,7 +1535,7 @@ export function ShiftPlanner({
                   ) : (
                     <Select
                       value={selectedAreaId ?? areas[0].id}
-                      disabled={pending || areas.length === 0}
+                      disabled={controlsDisabled || areas.length === 0}
                       aria-label={t("planning.selectArea")}
                       className="w-full font-semibold"
                       onChange={(event) =>
@@ -1462,46 +1553,50 @@ export function ShiftPlanner({
                 </div>
               </div>
             ) : null}
+          </div>
+        </div>
 
-            {shiftConfirmationEnabled ? (
-              <div className="flex shrink-0 items-center gap-2">
-                {proposedSendCount > 0 ? (
-                  <Button
-                    type="button"
-                    size="header"
-                    onClick={() => setSendConfirmationOpen(true)}
-                    disabled={pending || sendConfirmationPending}
-                    className={cn(HEADER_CONTROL_H, "font-semibold")}
-                  >
-                    {t("shiftConfirmation.actions.requestConfirmation")}
-                    <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
-                      {proposedSendCount}
-                    </span>
-                  </Button>
-                ) : null}
-                <IconButton
-                  type="button"
-                  size="md"
-                  aria-label={t("shiftConfirmation.panel.title")}
-                  title={t("shiftConfirmation.panel.title")}
-                  className="relative"
-                  onClick={() => {
-                    setConfirmationsPanelTab("pending");
-                    setConfirmationsPanelOpen(true);
-                  }}
-                >
-                  <ListIcon />
-                  {openConfirmationsCount > 0 ? (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
-                      {openConfirmationsCount > 9 ? "9+" : openConfirmationsCount}
-                    </span>
-                  ) : null}
-                </IconButton>
-              </div>
-            ) : null}
-          </div>
-          </div>
-          <LanguageSelect className="shrink-0 self-end md:self-auto" />
+        <div className="flex shrink-0 items-center gap-2 self-end md:self-auto">
+          {shiftConfirmationEnabled && proposedSendCount > 0 ? (
+            <Button
+              type="button"
+              size="header"
+              onClick={openSendConfirmation}
+              disabled={controlsDisabled || sendConfirmationPending}
+              className={cn(HEADER_CONTROL_H, "font-semibold")}
+            >
+              {t("shiftConfirmation.actions.requestConfirmation")}
+              <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
+                {proposedSendCount}
+              </span>
+            </Button>
+          ) : null}
+          {shiftConfirmationEnabled ? (
+            <IconButton
+              type="button"
+              size="md"
+              aria-label={t("shiftConfirmation.panel.title")}
+              title={t("shiftConfirmation.panel.title")}
+              className="relative"
+              onClick={() => openConfirmationsPanel()}
+            >
+              <ListIcon />
+              {openConfirmationsCount > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
+                  {openConfirmationsCount > 9 ? "9+" : openConfirmationsCount}
+                </span>
+              ) : null}
+            </IconButton>
+          ) : null}
+          {shiftConfirmationEnabled ? (
+            <DashboardNotificationCenter
+              enabled={shiftConfirmationEnabled}
+              initialNotifications={managerNotifications}
+              onOpenConfirmationsPanel={openConfirmationsPanel}
+              onNavigateToWeek={navigateToWeekFromNotification}
+            />
+          ) : null}
+          <LanguageSelect className="shrink-0" />
         </div>
       </header>
 
@@ -1514,7 +1609,8 @@ export function ShiftPlanner({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <main
           className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-3 md:p-4"
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-3 pb-3 md:px-4 md:pb-4",
+            APP_SHELL_CONTENT_OFFSET_CLASS
           )}
         >
           <PlanningCalendarGrid
@@ -1657,6 +1753,21 @@ export function ShiftPlanner({
             timesComplete={timesComplete}
             canAssign={canAssign}
             hasExistingShift={Boolean(picker.shiftId)}
+            presetEmployeeId={
+              picker.shiftId ? undefined : picker.employeeId
+            }
+            presetEmployee={(() => {
+              if (picker.shiftId) return undefined;
+              const profile = employees.find(
+                (entry) => entry.id === picker.employeeId
+              );
+              if (!profile) return undefined;
+              return {
+                id: profile.id,
+                full_name: profile.full_name,
+                color: profile.color ?? null,
+              };
+            })()}
             onAssign={handleAssign}
             onRemove={async () => {
               if (!picker.shiftId) {
@@ -1753,7 +1864,8 @@ export function ShiftPlanner({
         <DashboardSendConfirmationModal
           weekStart={weekStart}
           locationId={selectedLocationId}
-          onClose={() => setSendConfirmationOpen(false)}
+          onClose={closeSendConfirmation}
+          onBusyChange={setSendConfirmationBusy}
         />
       ) : null}
 
@@ -1766,7 +1878,7 @@ export function ShiftPlanner({
           onReassign={handleReassignFromPanel}
           onSendConfirmation={() => {
             setConfirmationsPanelOpen(false);
-            setSendConfirmationOpen(true);
+            openSendConfirmation();
           }}
         />
       ) : null}

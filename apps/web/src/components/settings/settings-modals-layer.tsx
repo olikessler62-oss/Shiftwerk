@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type {
   AreaShiftTemplateWithBreaks,
@@ -26,6 +27,7 @@ import {
   closeSettingsModal,
   type SettingsModalQueryFlag,
 } from "@/lib/settings-modal-navigation";
+import { useClearMainNavPendingOptional } from "@/lib/app-shell-main-nav-pending";
 
 export type SettingsModalsLayerData = {
   locations: Location[];
@@ -66,6 +68,22 @@ export function SettingsModalsLayer({ data }: Props) {
     searchParams.get("sonderzuschlaege") === "1";
   const showAbsences = searchParams.get("abwesenheiten") === "1";
   const showCompensationSettings = searchParams.get("arbeitsentgelt") === "1";
+
+  const clearMainNavPending = useClearMainNavPendingOptional();
+  const anyModalOpen =
+    showLocations ||
+    showProfiles ||
+    showRoles ||
+    showQualifications ||
+    showSurcharges ||
+    showAbsences ||
+    showCompensationSettings;
+
+  useEffect(() => {
+    if (anyModalOpen) {
+      clearMainNavPending();
+    }
+  }, [anyModalOpen, clearMainNavPending]);
 
   const initialAreaId =
     searchParams.get("area") ?? data.areas[0]?.id ?? null;

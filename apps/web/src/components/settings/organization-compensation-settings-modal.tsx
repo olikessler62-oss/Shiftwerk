@@ -17,13 +17,16 @@ import {
   settingsModalBodyPaddingClass,
   settingsModalDialogClass,
   settingsModalHeaderPaddingClass,
+  settingsSubModalDialogClass,
+  settingsSubModalOverlayClass,
 } from "./settings-list-ui";
 
 type Props = {
   onClose: () => void;
+  nested?: boolean;
 };
 
-export function OrganizationCompensationSettingsModal({ onClose }: Props) {
+export function OrganizationCompensationSettingsModal({ onClose, nested = false }: Props) {
   const organization = useOrganization();
   const router = useRouter();
   const t = useTranslations();
@@ -97,30 +100,26 @@ export function OrganizationCompensationSettingsModal({ onClose }: Props) {
     shiftConfirmationEnabled !== organization.shift_confirmation_enabled ||
     normalizedDisclaimer !== savedDisclaimer;
 
-  return (
+  const dialog = (
     <div
-      className={settingsModalBackdropClass()}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !pending) onClose();
-      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="org-compensation-settings-title"
+      className={cn(
+        nested ? settingsSubModalDialogClass("lg") : cn(settingsModalDialogClass(), "max-w-lg")
+      )}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="org-compensation-settings-title"
-        className={cn(settingsModalDialogClass(), "max-w-lg")}
-        onMouseDown={(e) => e.stopPropagation()}
+        className={cn(
+          settingsModalHeaderPaddingClass(),
+          "flex items-start justify-between gap-3 border-b border-border"
+        )}
       >
-        <div
-          className={cn(
-            settingsModalHeaderPaddingClass(),
-            "flex items-start justify-between gap-3 border-b border-border"
-          )}
-        >
-          <h2 id="org-compensation-settings-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-            {t("organization.compensationSettingsTitle")}
-          </h2>
+        <h2 id="org-compensation-settings-title" className={SETTINGS_MODAL_TITLE_CLASS}>
+          {t("organization.compensationSettingsTitle")}
+        </h2>
+        {!nested ? (
           <IconButton
             type="button"
             aria-label={t("common.close")}
@@ -129,84 +128,110 @@ export function OrganizationCompensationSettingsModal({ onClose }: Props) {
           >
             <CloseIcon />
           </IconButton>
-        </div>
+        ) : null}
+      </div>
 
-        <div className={cn(settingsModalBodyPaddingClass(), "space-y-4")}>
-          {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
+      <div className={cn(settingsModalBodyPaddingClass(), "space-y-4")}>
+        {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
 
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={allowed}
-              onChange={(e) => setAllowed(e.target.checked)}
-              disabled={pending}
-              className="mt-0.5 h-4 w-4 rounded border-border"
-            />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground">
-                {t("organization.allowRetroactiveCompensationLabel")}
-              </span>
-              <span className="mt-1 block text-xs leading-snug text-muted">
-                {t("organization.allowRetroactiveCompensationHint")}
-              </span>
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={allowed}
+            onChange={(e) => setAllowed(e.target.checked)}
+            disabled={pending}
+            className="mt-0.5 h-4 w-4 rounded border-border"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-foreground">
+              {t("organization.allowRetroactiveCompensationLabel")}
             </span>
-          </label>
-
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={shiftConfirmationEnabled}
-              onChange={(e) => setShiftConfirmationEnabled(e.target.checked)}
-              disabled={pending}
-              className="mt-0.5 h-4 w-4 rounded border-border"
-            />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-foreground">
-                {t("organization.shiftConfirmationEnabledLabel")}
-              </span>
-              <span className="mt-1 block text-xs leading-snug text-muted">
-                {t("organization.shiftConfirmationEnabledHint")}
-              </span>
+            <span className="mt-1 block text-xs leading-snug text-muted">
+              {t("organization.allowRetroactiveCompensationHint")}
             </span>
-          </label>
+          </span>
+        </label>
 
-          {shiftConfirmationEnabled ? (
-            <div className="space-y-1.5">
-              <label
-                htmlFor="shift-confirmation-disclaimer"
-                className="block text-sm font-medium text-foreground"
-              >
-                {t("organization.shiftConfirmationDisclaimerLabel")}
-              </label>
-              <Textarea
-                id="shift-confirmation-disclaimer"
-                value={shiftConfirmationDisclaimer}
-                onChange={(e) => setShiftConfirmationDisclaimer(e.target.value)}
-                disabled={pending}
-                rows={4}
-                placeholder={t("shiftConfirmation.disclaimer.default")}
-              />
-              <p className="text-xs leading-snug text-muted">
-                {t("organization.shiftConfirmationDisclaimerHint")}
-              </p>
-            </div>
-          ) : null}
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={shiftConfirmationEnabled}
+            onChange={(e) => setShiftConfirmationEnabled(e.target.checked)}
+            disabled={pending}
+            className="mt-0.5 h-4 w-4 rounded border-border"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-foreground">
+              {t("organization.shiftConfirmationEnabledLabel")}
+            </span>
+            <span className="mt-1 block text-xs leading-snug text-muted">
+              {t("organization.shiftConfirmationEnabledHint")}
+            </span>
+          </span>
+        </label>
 
-          <p className="text-xs leading-snug text-muted">
-            {t("organization.compensationPlanningDisclaimer")}
-          </p>
-
-          <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
-              <CloseIcon />
-              {t("common.cancel")}
-            </Button>
-            <Button type="button" onClick={handleSave} disabled={pending || !hasChanges}>
-              {t("common.save")}
-            </Button>
+        {shiftConfirmationEnabled ? (
+          <div className="space-y-1.5">
+            <label
+              htmlFor="shift-confirmation-disclaimer"
+              className="block text-sm font-medium text-foreground"
+            >
+              {t("organization.shiftConfirmationDisclaimerLabel")}
+            </label>
+            <Textarea
+              id="shift-confirmation-disclaimer"
+              value={shiftConfirmationDisclaimer}
+              onChange={(e) => setShiftConfirmationDisclaimer(e.target.value)}
+              disabled={pending}
+              rows={4}
+              placeholder={t("shiftConfirmation.disclaimer.default")}
+            />
+            <p className="text-xs leading-snug text-muted">
+              {t("organization.shiftConfirmationDisclaimerHint")}
+            </p>
           </div>
+        ) : null}
+
+        <p className="text-xs leading-snug text-muted">
+          {t("organization.compensationPlanningDisclaimer")}
+        </p>
+
+        <div className="flex justify-end gap-2 pt-1">
+          <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+            <CloseIcon />
+            {t("common.cancel")}
+          </Button>
+          <Button type="button" onClick={handleSave} disabled={pending || !hasChanges}>
+            {t("common.save")}
+          </Button>
         </div>
       </div>
+    </div>
+  );
+
+  if (nested) {
+    return (
+      <div
+        className={settingsSubModalOverlayClass()}
+        role="presentation"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !pending) onClose();
+        }}
+      >
+        {dialog}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={settingsModalBackdropClass()}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !pending) onClose();
+      }}
+    >
+      {dialog}
     </div>
   );
 }

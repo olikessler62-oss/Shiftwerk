@@ -12,18 +12,17 @@ import {
 import {
   buildShiftCardDisplayContent,
   resolveJobLabelsForEmployee,
+  formatShiftCardTooltipPlainText,
   type ShiftCardDisplayContent,
   type ShiftCardDensity,
 } from "@/lib/shift-card-display-content";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import { Tooltip } from "@/components/ui";
+import { PlanningShiftCardConfirmationOverlay } from "@/components/planning/planning-shift-card-confirmation-overlay";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
+import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import {
-  shiftConfirmationBadgeSymbol,
-  shiftConfirmationShowsOverlay,
-  shiftConfirmationStatusLabelKey,
-} from "@/lib/shift-confirmation-display";
+import { shiftConfirmationShowsOverlay } from "@/lib/shift-confirmation-display";
 
 export type DashboardShiftCard = {
   id: string;
@@ -127,6 +126,7 @@ export function DashboardShiftCardView({
   onContextMenu,
   confirmationStatusLabel,
 }: Props) {
+  const t = useTranslations();
   const employeeColor =
     shift.employeeColor?.trim() || DASHBOARD_SHIFT_CARD_EMPLOYEE_FALLBACK_COLOR;
 
@@ -141,10 +141,15 @@ export function DashboardShiftCardView({
     confirmationStatus &&
     shiftConfirmationShowsOverlay(confirmationStatus);
 
-  const tooltipData =
-    showConfirmationOverlay && confirmationStatusLabel
-      ? { ...display.tooltip, confirmationStatusLine: confirmationStatusLabel }
-      : display.tooltip;
+  const tooltipData = confirmationStatusLabel
+    ? { ...display.tooltip, confirmationStatusLine: confirmationStatusLabel }
+    : display.tooltip;
+  const tooltipPlainText = confirmationStatusLabel
+    ? formatShiftCardTooltipPlainText(tooltipData, {
+        formatStatusLine: (status) =>
+          `${t("common.shiftCardTooltipStatusLabel")} ${status}`,
+      })
+    : display.tooltipBody;
 
   return (
     <div
@@ -231,19 +236,8 @@ export function DashboardShiftCardView({
             }}
           >
             <ShiftCardTextRows display={display} density={density} />
-            {showConfirmationOverlay && confirmationStatus ? (
-              <>
-                <div
-                  className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-black/25"
-                  aria-hidden
-                />
-                <div
-                  className="pointer-events-none absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-sm bg-white/90 px-0.5 text-[10px] font-semibold leading-none text-foreground shadow-sm"
-                  aria-hidden
-                >
-                  {shiftConfirmationBadgeSymbol(confirmationStatus)}
-                </div>
-              </>
+            {showConfirmationOverlay ? (
+              <PlanningShiftCardConfirmationOverlay status={confirmationStatus} />
             ) : null}
           </div>
         )}

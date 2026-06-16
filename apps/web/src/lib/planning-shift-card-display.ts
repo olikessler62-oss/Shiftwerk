@@ -127,6 +127,7 @@ export function buildPlanningShiftSegmentCardContent(
     jobsLabel?: string;
     formatTemplateTooltipLine?: (templateName: string) => string;
     formatJobTooltipLine?: (jobs: string) => string;
+    formatStatusTooltipLine?: (status: string) => string;
   }
 ): PlanningExpandedShiftCardContent {
   const timeLabel = buildPlanningShiftSegmentTimeLabel(
@@ -150,6 +151,7 @@ export function buildPlanningShiftSegmentCardContent(
     tooltipBody: formatShiftCardTooltipPlainText(tooltip, {
       formatShiftLine: options?.formatTemplateTooltipLine,
       formatJobLine: options?.formatJobTooltipLine,
+      formatStatusLine: options?.formatStatusTooltipLine,
     }),
   };
 }
@@ -163,6 +165,7 @@ export function buildPlanningExpandedShiftCardContent(
     jobsLabel?: string;
     formatTemplateTooltipLine?: (templateName: string) => string;
     formatJobTooltipLine?: (jobs: string) => string;
+    formatStatusTooltipLine?: (status: string) => string;
   }
 ): PlanningExpandedShiftCardContent {
   const timeLabel = formatTimeRange(shift.startTime, shift.endTime);
@@ -177,6 +180,7 @@ export function buildPlanningExpandedShiftCardContent(
     tooltipBody: formatShiftCardTooltipPlainText(tooltip, {
       formatShiftLine: options?.formatTemplateTooltipLine,
       formatJobLine: options?.formatJobTooltipLine,
+      formatStatusLine: options?.formatStatusTooltipLine,
     }),
   };
 }

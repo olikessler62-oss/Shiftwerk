@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { cn } from "@/lib/cn";
+import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
+import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 import {
   collectWeekLegendEmployeesFromDashboardShifts,
   dashboardEmployeeWeekHours,
@@ -65,8 +67,10 @@ export function DashboardEmployeeLegendSidebar({
                 )}
               >
                 <span
-                  className="h-5 w-[7px] shrink-0"
+                  className="shrink-0 rounded-l"
                   style={{
+                    width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
+                    height: SHIFT_CARD_TWO_LINE_HEIGHT_PX,
                     backgroundColor:
                       employee.color?.trim() || EMPLOYEE_COLOR_FALLBACK,
                   }}

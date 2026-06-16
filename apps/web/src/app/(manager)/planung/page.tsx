@@ -63,6 +63,9 @@ export default async function PlanungPage({
 
   const orgName = await db.getOrganizationName(orgId);
   const organization = await loadManagerOrganization(orgId, orgName);
+  const managerNotifications = organization.shift_confirmation_enabled
+    ? await db.listManagerNotificationsForRecipient(user.id, { limit: 50 })
+    : [];
   const orgFeatures = getOrgFeatures(organization);
   const timeZone = resolveOrganizationTimeZone(organization);
 
@@ -224,6 +227,7 @@ export default async function PlanungPage({
       profileQualificationIds={profileQualificationIds}
       shiftCompensation={shiftCompensation}
       readOnlyWeek={readOnlyWeek}
+      managerNotifications={managerNotifications}
       settingsModals={
         loadSettingsModalsData
           ? {

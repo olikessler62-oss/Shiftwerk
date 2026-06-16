@@ -18,6 +18,8 @@ import { LocationSelect } from "./location-select";
 import { DashboardNotificationCenter } from "./dashboard-notification-center";
 
 import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
+import { useIsAppShellLocked } from "@/lib/app-shell-modal-lock";
+import { APP_PAGE_TOOLBAR_HEADER_CLASS } from "@/lib/app-shell-layout";
 
 /** Gleiche Höhe wie IconButton size="md" (h-9). */
 const HEADER_CONTROL_H = "h-9 min-h-9";
@@ -61,6 +63,8 @@ export function DashboardHeader({
   const t = useTranslations();
   const features = useOrgFeatures();
   const headerRef = useRef<HTMLElement>(null);
+  const shellLocked = useIsAppShellLocked();
+  const controlsDisabled = pending || shellLocked;
 
   const weekHeader = useMemo(
     () => getDashboardWeekHeaderParts(weekStart, toIntlLocale(locale)),
@@ -104,7 +108,7 @@ export function DashboardHeader({
     const headerNode: HTMLElement = headerEl;
 
     function onKeyDown(e: KeyboardEvent) {
-      if (pending || isSettingsModalOpen(searchParams)) return;
+      if (pending || shellLocked || isSettingsModalOpen(searchParams)) return;
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       if (!(e.target instanceof Node) || !headerNode.contains(e.target)) return;
       if (isEditableTarget(e.target)) return;
@@ -115,14 +119,19 @@ export function DashboardHeader({
 
     headerNode.addEventListener("keydown", onKeyDown);
     return () => headerNode.removeEventListener("keydown", onKeyDown);
-  }, [navigateWeek, pending, searchParams]);
+  }, [navigateWeek, pending, searchParams, shellLocked]);
 
   return (
     <header
       ref={headerRef}
-      className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-3 md:h-20 md:max-h-20 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-0"
+      className={cn(
+        APP_PAGE_TOOLBAR_HEADER_CLASS,
+        shellLocked && "pointer-events-none opacity-50"
+      )}
+      aria-hidden={shellLocked || undefined}
+      {...(shellLocked ? { inert: true } : {})}
     >
-      <div className="flex min-w-0 select-none flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center md:gap-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-3 md:gap-4">
         <div
           role="group"
           aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
@@ -137,7 +146,7 @@ export function DashboardHeader({
           <IconButton
             size="md"
             onClick={() => navigateWeek(-1)}
-            disabled={pending || atEarliestWeek}
+            disabled={controlsDisabled || atEarliestWeek}
             aria-label={t("common.prevWeek")}
             className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
           >
@@ -149,7 +158,7 @@ export function DashboardHeader({
             variant="outline"
             size="header"
             onClick={goToToday}
-            disabled={pending}
+            disabled={controlsDisabled}
             className={cn(HEADER_CONTROL_H, "shrink-0 font-semibold")}
           >
             {t("common.today")}
@@ -158,7 +167,7 @@ export function DashboardHeader({
           <IconButton
             size="md"
             onClick={() => navigateWeek(1)}
-            disabled={pending}
+            disabled={controlsDisabled}
             aria-label={t("common.nextWeek")}
             className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
           >
@@ -196,7 +205,7 @@ export function DashboardHeader({
             type="button"
             size="header"
             onClick={onOpenSendConfirmation}
-            disabled={pending}
+            disabled={controlsDisabled}
             className={cn(HEADER_CONTROL_H, "font-semibold")}
           >
             {t("shiftConfirmation.actions.requestConfirmation")}

@@ -30,10 +30,11 @@ type Props = {
   weekStart: string;
   locationId: string | null;
   onClose: () => void;
+  onBusyChange?: (busy: boolean) => void;
 };
 
 const ROW_GRID_CLASS =
-  "grid grid-cols-[12.5rem_minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)] items-center gap-x-4";
+  "grid grid-cols-[10rem_minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,1.3fr)] items-center gap-x-4";
 
 const LIST_MAX_HEIGHT_CLASS = "max-h-40";
 
@@ -55,6 +56,7 @@ export function DashboardSendConfirmationModal({
   weekStart,
   locationId,
   onClose,
+  onBusyChange,
 }: Props) {
   const t = useTranslations();
   const { locale } = useLocale();
@@ -112,6 +114,10 @@ export function DashboardSendConfirmationModal({
       cancelled = true;
     };
   }, [weekStart, locationId, simulatedProposedOnAssign]);
+
+  useEffect(() => {
+    onBusyChange?.(loading || pending);
+  }, [loading, onBusyChange, pending]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -277,6 +283,8 @@ export function DashboardSendConfirmationModal({
                       ? row.templateName!.trim()
                       : t("shiftConfirmation.send.noTemplate");
 
+                    const rowSelectionInactive = !row.sendable;
+
                     return (
                       <li key={row.shiftId} className={cn(ROW_GRID_CLASS, "px-3 py-2")}>
                         <label className={CHECKBOX_LABEL_CLASS}>
@@ -284,13 +292,20 @@ export function DashboardSendConfirmationModal({
                             type="checkbox"
                             className="h-4 w-4 shrink-0 rounded border-border"
                             checked={selected.has(row.shiftId)}
-                            disabled={pending || !row.sendable}
+                            disabled={pending || rowSelectionInactive}
                             onChange={() => toggleShift(row.shiftId)}
                             aria-label={t("shiftConfirmation.send.rowRequestConfirmation")}
                           />
                           <span>{t("shiftConfirmation.send.rowRequestConfirmation")}</span>
                         </label>
-                        <span className={cn(CELL_CLASS, "font-medium text-foreground")}>
+                        <span
+                          className={cn(
+                            CELL_CLASS,
+                            rowSelectionInactive
+                              ? "text-muted"
+                              : "font-medium text-foreground"
+                          )}
+                        >
                           {row.employeeName}
                         </span>
                         <span className={cn(CELL_CLASS, "text-muted")}>
@@ -299,17 +314,24 @@ export function DashboardSendConfirmationModal({
                         <span
                           className={cn(
                             CELL_CLASS,
-                            hasTemplate
-                              ? "font-medium text-foreground"
-                              : "text-muted"
+                            rowSelectionInactive || !hasTemplate
+                              ? "text-muted"
+                              : "font-medium text-foreground"
                           )}
                         >
                           {templateLabel}
                         </span>
                         <span className={cn(CELL_CLASS, "whitespace-nowrap text-muted")}>
-                          {row.startTime}–{row.endTime}
+                          {row.startTime} - {row.endTime}
                         </span>
-                        <span className={cn(CELL_CLASS, "font-medium text-foreground/80")}>
+                        <span
+                          className={cn(
+                            CELL_CLASS,
+                            rowSelectionInactive
+                              ? "text-muted"
+                              : "font-medium text-foreground/80"
+                          )}
+                        >
                           {t(statusLabelKey(row))}
                         </span>
                       </li>
@@ -356,7 +378,7 @@ export function DashboardSendConfirmationModal({
               <Button
                 type="button"
                 onClick={handleSend}
-                disabled={pending || sendableShifts.length === 0}
+                disabled={pending || !someSendableSelected}
               >
                 {t("shiftConfirmation.actions.requestConfirmation")}
               </Button>

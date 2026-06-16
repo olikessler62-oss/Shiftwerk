@@ -18,6 +18,7 @@ import type {
 } from "@/lib/location-staffing-client";
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
 import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
+import { useAppShellModalLockActive, useAppShellWaitCursorActive } from "@/lib/app-shell-modal-lock";
 import { usePlanningAppSidebarContent } from "@/components/planning/planning-app-sidebar-slot";
 import { DashboardEmployeeLegendSidebar } from "./dashboard-employee-legend-sidebar";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
@@ -30,6 +31,8 @@ import { DashboardSendConfirmationModal } from "./dashboard-send-confirmation-mo
 import { OpenConfirmationsPanel } from "./open-confirmations-panel";
 import type { DashboardShiftCompensationByKey } from "@/lib/tag-area-footer-stats";
 import type { ManagerNotification } from "@schichtwerk/types";
+import { APP_SHELL_CONTENT_OFFSET_CLASS } from "@/lib/app-shell-layout";
+import { cn } from "@/lib/cn";
 
 type PanelTab = "pending" | "rejected" | "proposed";
 
@@ -80,6 +83,7 @@ export function DashboardView({
   const { locale } = useLocale();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false);
+  const [sendConfirmationBusy, setSendConfirmationBusy] = useState(false);
   const [confirmationsPanelOpen, setConfirmationsPanelOpen] = useState(false);
   const [confirmationsPanelTab, setConfirmationsPanelTab] = useState<PanelTab>("pending");
   const [reassignShiftRequest, setReassignShiftRequest] =
@@ -118,6 +122,19 @@ export function DashboardView({
 
   usePlanningAppSidebarContent(dashboardSidebarContent);
 
+  useAppShellModalLockActive(sendConfirmationOpen || confirmationsPanelOpen);
+  useAppShellWaitCursorActive(sendConfirmationBusy);
+
+  function openSendConfirmation() {
+    setSendConfirmationBusy(true);
+    setSendConfirmationOpen(true);
+  }
+
+  function closeSendConfirmation() {
+    setSendConfirmationOpen(false);
+    setSendConfirmationBusy(false);
+  }
+
   function openConfirmationsPanel(tab: PanelTab = "pending") {
     setConfirmationsPanelTab(tab);
     setConfirmationsPanelOpen(true);
@@ -144,11 +161,16 @@ export function DashboardView({
         openConfirmationsCount={openConfirmationsCount}
         shiftConfirmationEnabled={shiftConfirmationEnabled}
         managerNotifications={managerNotifications}
-        onOpenSendConfirmation={() => setSendConfirmationOpen(true)}
+        onOpenSendConfirmation={openSendConfirmation}
         onOpenConfirmationsPanel={openConfirmationsPanel}
         onNavigateToWeek={navigateToWeek}
       />
-      <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-2 pt-2 md:px-4 md:pt-4">
+      <section
+        className={cn(
+          "relative flex min-h-0 flex-1 flex-col overflow-hidden px-2 md:px-4",
+          APP_SHELL_CONTENT_OFFSET_CLASS
+        )}
+      >
         <DashboardCalendar
           weekStart={weekStart}
           dates={dates}
@@ -185,7 +207,8 @@ export function DashboardView({
           <DashboardSendConfirmationModal
             weekStart={weekStart}
             locationId={selectedLocationId}
-            onClose={() => setSendConfirmationOpen(false)}
+            onClose={closeSendConfirmation}
+            onBusyChange={setSendConfirmationBusy}
           />
         ) : null}
         {confirmationsPanelOpen && shiftConfirmationEnabled ? (
@@ -200,7 +223,7 @@ export function DashboardView({
             }}
             onSendConfirmation={() => {
               setConfirmationsPanelOpen(false);
-              setSendConfirmationOpen(true);
+              openSendConfirmation();
             }}
           />
         ) : null}

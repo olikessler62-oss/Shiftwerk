@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { resetOrganizationDatabase } from "@/app/actions/db-reset";
 import { OrganizationPlanningModeModal } from "@/components/settings/organization-planning-mode-modal";
+import { OrganizationCompensationSettingsModal } from "@/components/settings/organization-compensation-settings-modal";
 import { Alert, Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -27,6 +28,7 @@ type Props = {
 export function SuperadminModal({ onClose }: Props) {
   const t = useTranslations();
   const [planningModeOpen, setPlanningModeOpen] = useState(false);
+  const [compensationSettingsOpen, setCompensationSettingsOpen] = useState(false);
   const [dbResetConfirmOpen, setDbResetConfirmOpen] = useState(false);
   const [dbResetError, setDbResetError] = useState<string | null>(null);
   const [dbResetPending, startDbResetTransition] = useTransition();
@@ -39,7 +41,8 @@ export function SuperadminModal({ onClose }: Props) {
     setSimulatedProposedOnAssign,
   } = useShiftConfirmationSimulation();
 
-  const overlayOpen = planningModeOpen || dbResetConfirmOpen || dbResetPending;
+  const overlayOpen =
+    planningModeOpen || compensationSettingsOpen || dbResetConfirmOpen || dbResetPending;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -48,12 +51,12 @@ export function SuperadminModal({ onClose }: Props) {
         setDbResetConfirmOpen(false);
         return;
       }
-      if (planningModeOpen) return;
+      if (planningModeOpen || compensationSettingsOpen) return;
       onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dbResetConfirmOpen, dbResetPending, onClose, planningModeOpen]);
+  }, [compensationSettingsOpen, dbResetConfirmOpen, dbResetPending, onClose, planningModeOpen]);
 
   function handleDbResetConfirm() {
     setDbResetError(null);
@@ -113,6 +116,14 @@ export function SuperadminModal({ onClose }: Props) {
                 {t("nav.superadminActionsTitle")}
               </p>
               <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={dbResetPending}
+                  onClick={() => setCompensationSettingsOpen(true)}
+                >
+                  {t("nav.compensationSettings")}
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
@@ -213,6 +224,13 @@ export function SuperadminModal({ onClose }: Props) {
           <OrganizationPlanningModeModal
             nested
             onClose={() => setPlanningModeOpen(false)}
+          />
+        ) : null}
+
+        {compensationSettingsOpen ? (
+          <OrganizationCompensationSettingsModal
+            nested
+            onClose={() => setCompensationSettingsOpen(false)}
           />
         ) : null}
 

@@ -39,7 +39,10 @@ export function ShiftCardTooltipContent({ data }: Props) {
         </div>
       ) : null}
       {confirmationStatusLine ? (
-        <div>{confirmationStatusLine}</div>
+        <div>
+          {t("common.shiftCardTooltipStatusLabel")}{" "}
+          <span className="font-bold">{confirmationStatusLine}</span>
+        </div>
       ) : null}
     </div>
   );

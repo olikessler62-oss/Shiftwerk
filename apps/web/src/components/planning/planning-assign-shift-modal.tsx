@@ -55,6 +55,23 @@ type MessagePrompt = {
   closeAssignModalOnDismiss?: boolean;
 };
 
+export type PlanningAssignPresetEmployee = Pick<
+  DashboardShiftAssignEmployee,
+  "id" | "full_name" | "color"
+>;
+
+function planningAssignPresetEmployeeStub(
+  preset: PlanningAssignPresetEmployee
+): DashboardShiftAssignEmployee {
+  return {
+    id: preset.id,
+    full_name: preset.full_name,
+    color: preset.color,
+    last_shift_date: null,
+    availabilities: [],
+  };
+}
+
 type Props = {
   date: string;
   areaName: string;
@@ -90,6 +107,10 @@ type Props = {
   ) => Promise<PlanningShiftActionResult>;
   onRemove: () => Promise<PlanningShiftActionResult>;
   onClose: () => void;
+  /** Mitarbeiter aus Planer-Zelle (Kontextmenü / Klick) — bis Qualifikation geladen ist behalten. */
+  presetEmployeeId?: string;
+  /** Profil aus Planer-Grid für Anzeige, falls Server-Liste noch lädt oder filtert. */
+  presetEmployee?: PlanningAssignPresetEmployee;
 };
 
 export function PlanningAssignShiftModal({
@@ -125,6 +146,8 @@ export function PlanningAssignShiftModal({
   onAssign,
   onRemove,
   onClose,
+  presetEmployeeId,
+  presetEmployee,
 }: Props) {
   const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
   const [employees, setEmployees] = useState<DashboardShiftAssignEmployee[]>([]);
@@ -280,24 +303,47 @@ export function PlanningAssignShiftModal({
     [matchingEmployees]
   );
 
-  const selectedEmployee = useMemo(
-    () => employees.find((employee) => employee.id === selectedEmployeeId) ?? null,
-    [employees, selectedEmployeeId]
+  const presetEmployeeStub = useMemo(
+    () =>
+      presetEmployee ? planningAssignPresetEmployeeStub(presetEmployee) : null,
+    [presetEmployee]
   );
 
+  const selectedEmployee = useMemo(() => {
+    if (!selectedEmployeeId) return null;
+    return (
+      employees.find((employee) => employee.id === selectedEmployeeId) ??
+      (presetEmployeeStub?.id === selectedEmployeeId ? presetEmployeeStub : null)
+    );
+  }, [employees, selectedEmployeeId, presetEmployeeStub]);
+
   const employeesForCombobox = useMemo(() => {
+    const employeeForSelection =
+      selectedEmployee ??
+      (presetEmployeeId &&
+      selectedEmployeeId === presetEmployeeId &&
+      presetEmployeeStub
+        ? presetEmployeeStub
+        : null);
+
+    const shouldIncludeSelected =
+      selectedEmployeeId &&
+      employeeForSelection &&
+      !matchingEmployees.some((employee) => employee.id === selectedEmployeeId);
+
     if (
-      !hasExistingShift ||
-      !selectedEmployeeId ||
-      !selectedEmployee ||
-      matchingEmployees.some((employee) => employee.id === selectedEmployeeId)
+      shouldIncludeSelected &&
+      (hasExistingShift ||
+        (presetEmployeeId && selectedEmployeeId === presetEmployeeId))
     ) {
-      return matchingEmployees;
+      return [employeeForSelection, ...matchingEmployees];
     }
-    return [selectedEmployee, ...matchingEmployees];
+    return matchingEmployees;
   }, [
     hasExistingShift,
+    presetEmployeeId,
     matchingEmployees,
+    presetEmployeeStub,
     selectedEmployee,
     selectedEmployeeId,
   ]);
@@ -309,6 +355,12 @@ export function PlanningAssignShiftModal({
       return;
     }
     if (!simplePlanning && !qualificationId) {
+      if (
+        presetEmployeeId &&
+        selectedEmployeeId === presetEmployeeId
+      ) {
+        return;
+      }
       if (selectedEmployeeId) onEmployeeChange("");
       return;
     }
@@ -316,6 +368,9 @@ export function PlanningAssignShiftModal({
       selectedEmployeeId &&
       !matchingEmployees.some((employee) => employee.id === selectedEmployeeId)
     ) {
+      if (presetEmployeeId && selectedEmployeeId === presetEmployeeId) {
+        return;
+      }
       onEmployeeChange("");
     }
   }, [
@@ -328,6 +383,7 @@ export function PlanningAssignShiftModal({
     matchingEmployeeIdsKey,
     matchingEmployees,
     onEmployeeChange,
+    presetEmployeeId,
   ]);
 
   const dayAvailabilities = useMemo(() => {
@@ -571,7 +627,10 @@ export function PlanningAssignShiftModal({
                 busy ||
                 dayReadOnly ||
                 !timesComplete ||
-                (!simplePlanning && !qualificationId && !hasExistingShift)
+                (!simplePlanning &&
+                  !qualificationId &&
+                  !hasExistingShift &&
+                  !presetEmployeeId)
               }
               onApplyAvailability={handleApplyAvailability}
               weekdayLabelStyle="long"
@@ -582,7 +641,11 @@ export function PlanningAssignShiftModal({
           timesComplete &&
           qualificationId &&
           !loadingEmployees &&
-          matchingEmployees.length === 0 ? (
+          matchingEmployees.length === 0 &&
+          !(
+            presetEmployeeId &&
+            selectedEmployeeId === presetEmployeeId
+          ) ? (
             <p className="text-xs text-muted">
               {t("dashboard.bulkShiftNoEligibleEmployees")}
             </p>

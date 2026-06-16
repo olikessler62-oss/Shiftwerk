@@ -9,7 +9,6 @@ import { PlanningDayColumnWidthReporter } from "@/components/planning/planning-d
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { isPastCalendarDate } from "@/lib/dates";
 import { cn } from "@/lib/cn";
-import { computeExpandedDayUniformShiftWidths } from "@/lib/planning-expanded-shift-layout";
 import {
   employeeWeekHours,
   formatDayHeader,
@@ -28,7 +27,6 @@ import {
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
   PLANNING_EMPLOYEE_ROW_HEIGHT,
-  PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX,
   PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
   PLANNING_HEADER_ROW_BORDER_CLASS,
   PLANNING_ROW_DIVIDER_CLASS,
@@ -58,6 +56,8 @@ import {
   resolveOvernightSpanDisplayMode,
 } from "@/lib/planning-overnight-shift-display";
 import { planningCellDataAttribute } from "@/lib/planning-overnight-span-layout";
+import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
+import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 
 const DAY_HEADER_ROW_HEIGHT = "3.5rem";
 const MUTED_DAY_HEADER_CLASS = "bg-calendar-muted-header";
@@ -256,35 +256,6 @@ export function PlanningCalendarGrid({
     return map;
   }, [shiftsByCellDisplay, dates]);
 
-  const expandedUniformShiftWidthsByDate = useMemo(() => {
-    const byDate = new Map<string, Map<string, number>>();
-    for (const date of dates) {
-      if (!layoutActiveDayDates.has(date)) continue;
-      const innerWidthPx = dayColumnInnerWidthPxByDate.get(date);
-      if (innerWidthPx === undefined || innerWidthPx <= 0) continue;
-      const layoutWidthPx = Math.max(
-        0,
-        innerWidthPx - PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX
-      );
-      byDate.set(
-        date,
-        computeExpandedDayUniformShiftWidths(
-          layoutWidthPx,
-          employees,
-          shiftsByCellForRendering,
-          date
-        )
-      );
-    }
-    return byDate;
-  }, [
-    dates,
-    layoutActiveDayDates,
-    dayColumnInnerWidthPxByDate,
-    employees,
-    shiftsByCellForRendering,
-  ]);
-
   const employeeBodyStartRow = showStaffingHeaderRow ? 3 : 2;
   const staffingHeaderRow = showStaffingHeaderRow ? 2 : null;
   const footerStatsGridRow = employees.length + employeeBodyStartRow;
@@ -365,6 +336,7 @@ export function PlanningCalendarGrid({
           const { weekday, label } = formatDayHeader(date, intlLocale);
           const holiday = holidayNames[date];
           const isToday = date === todayISO;
+          const isPastDay = isPastCalendarDate(date, todayISO);
           const mutedHeader = !dayHasServiceHours[dayIndex];
 
           return (
@@ -410,7 +382,12 @@ export function PlanningCalendarGrid({
                   <div className="shrink-0 whitespace-nowrap text-xs font-semibold leading-none text-muted">
                     {weekday}
                   </div>
-                  <div className="shrink-0 whitespace-nowrap text-sm font-medium leading-none">
+                  <div
+                    className={cn(
+                      "shrink-0 whitespace-nowrap text-sm font-medium leading-none",
+                      isPastDay && "text-muted"
+                    )}
+                  >
                     {label}
                   </div>
                 </>
@@ -481,10 +458,12 @@ export function PlanningCalendarGrid({
                 )}
                 style={{ gridColumn: 1, gridRow }}
               >
-                <div className="flex min-w-0 items-center gap-2 py-1 pl-3 pr-2">
+                <div className="flex min-w-0 items-center gap-2 py-0 pl-3 pr-2">
                   <span
-                    className="h-5 w-[7px] shrink-0"
+                    className="shrink-0 rounded-l"
                     style={{
+                      width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
+                      height: SHIFT_CARD_TWO_LINE_HEIGHT_PX,
                       backgroundColor:
                         emp.color?.trim() || EMPLOYEE_COLOR_FALLBACK,
                     }}
@@ -541,10 +520,6 @@ export function PlanningCalendarGrid({
                 const canOpenNewShiftInCell =
                   !pending && canAssign && !dayReadOnly;
                 const openNewShiftInCell = () => onOpenPicker(emp.id, date);
-                const emptyAreaPickerSelected =
-                  picker?.employeeId === emp.id &&
-                  picker?.date === date &&
-                  !picker?.shiftId;
                 const emptyAreaLabel = t("planning.addShiftTitle");
                 const collapsedOvernightAnchors = !isDayExpanded
                   ? employeeOvernightSpans.filter(
@@ -584,16 +559,7 @@ export function PlanningCalendarGrid({
                       pending={pending}
                       selectedShiftId={selectedShiftId}
                       onShiftClick={onShiftClick}
-                      onEmptyAreaClick={openNewShiftInCell}
-                      emptyAreaDisabled={!canOpenNewShiftInCell}
-                      emptyAreaSelected={emptyAreaPickerSelected}
-                      emptyAreaLabel={emptyAreaLabel}
                       shiftJobContext={shiftJobContextByDate.get(date)!}
-                      uniformShiftWidthPxByKey={
-                        isDayExpanded
-                          ? expandedUniformShiftWidthsByDate.get(date)
-                          : undefined
-                      }
                       onShiftContextMenu={
                         isDayExpanded && !isPastDay
                           ? (shiftId, event) =>
