@@ -4,11 +4,11 @@ import { PLANNING_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/planning-overn
 
 import { SHIFT_CARD_CELL_PADDING_PX } from "@/lib/shift-card-cell-layout";
 
-import { dashboardOvernightShiftDurationMinutes } from "@/lib/dashboard-service-day-timeline";
-
 import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
 
 import { timelineLeftPx } from "@/lib/shift-card-service-timeline";
+
+import { resolveOvernightSpanWidthPx } from "@/lib/shift-card-proportional-width";
 
 
 
@@ -124,36 +124,16 @@ export function computeDashboardExpandedOvernightSpanGeometry(
 
   const combinedCellWidthPx = startCellRect.width + endCellRect.width;
 
-  const totalServiceSpanMin =
-
-    layout.startDayServiceSpanMin + layout.endDayServiceSpanMin;
-
-  const shiftDurationMin = dashboardOvernightShiftDurationMinutes(
-
-    layout.startTime,
-
-    layout.endTime
-
-  );
-
-  const widthPx =
-
-    totalServiceSpanMin > 0
-
-      ? (shiftDurationMin / totalServiceSpanMin) * combinedCellWidthPx
-
-      : combinedCellWidthPx;
-
-
+  const widthPx = resolveOvernightSpanWidthPx({
+    startTime: layout.startTime,
+    endTime: layout.endTime,
+    combinedCellWidthPx,
+  });
 
   return {
-
     leftPx: startX - overlayRect.left,
-
     widthPx: Math.max(1, widthPx),
-
   };
-
 }
 
 

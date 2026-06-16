@@ -8,7 +8,6 @@ export const SETTINGS_MODAL_QUERY_FLAGS = [
   "qualifikationen",
   "sonderzuschlaege",
   "abwesenheiten",
-  "planungsmodus",
   "arbeitsentgelt",
 ] as const;
 

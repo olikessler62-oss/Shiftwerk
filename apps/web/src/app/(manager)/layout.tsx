@@ -5,7 +5,10 @@ import { getServerLocale } from "@/i18n/server";
 import { getDatabase } from "@/lib/db";
 import { OrgFeaturesProvider } from "@/lib/org-features-provider";
 import { SimpleCalendarDisplayProvider } from "@/lib/simple-calendar-display-context";
+import { ShiftConfirmationSimulationProvider } from "@/lib/shift-confirmation-simulation-context";
+import { PlanningAppSidebarSlotProvider } from "@/components/planning/planning-app-sidebar-slot";
 import { loadManagerOrganization } from "@/lib/manager";
+import { isSuperadminDeveloperEmail } from "@/lib/superadmin-access";
 
 export default async function ManagerLayout({
   children,
@@ -28,17 +31,24 @@ export default async function ManagerLayout({
   );
   const locale = await getServerLocale();
 
+  const superadminEnabled = isSuperadminDeveloperEmail(profile.email);
+
   return (
     <LocaleProvider initialLocale={locale}>
       <OrgFeaturesProvider organization={organization}>
         <SimpleCalendarDisplayProvider>
-          <AppShell
-            orgName={organization.name || orgName || undefined}
-            userName={profile.full_name}
-            role={profile.role}
-          >
-            {children}
-          </AppShell>
+          <ShiftConfirmationSimulationProvider>
+            <PlanningAppSidebarSlotProvider>
+              <AppShell
+                orgName={organization.name || orgName || undefined}
+                userName={profile.full_name}
+                role={profile.role}
+                superadminEnabled={superadminEnabled}
+              >
+                {children}
+              </AppShell>
+            </PlanningAppSidebarSlotProvider>
+          </ShiftConfirmationSimulationProvider>
         </SimpleCalendarDisplayProvider>
       </OrgFeaturesProvider>
     </LocaleProvider>

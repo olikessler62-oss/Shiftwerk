@@ -18,10 +18,13 @@ import {
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
   settingsNestedModalOverlayClass,
+  settingsSubModalDialogClass,
+  settingsSubModalOverlayClass,
 } from "./settings-list-ui";
 
 type Props = {
   onClose: () => void;
+  nested?: boolean;
 };
 
 function planningModeLabel(mode: PlanningMode, t: (key: string) => string): string {
@@ -38,7 +41,7 @@ function planningModeHint(mode: PlanningMode, t: (key: string) => string): strin
   );
 }
 
-export function OrganizationPlanningModeModal({ onClose }: Props) {
+export function OrganizationPlanningModeModal({ onClose, nested = false }: Props) {
   const organization = useOrganization();
   const router = useRouter();
   const t = useTranslations();
@@ -77,30 +80,26 @@ export function OrganizationPlanningModeModal({ onClose }: Props) {
     });
   }
 
-  return (
+  const dialog = (
     <div
-      className={settingsModalBackdropClass()}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !pending && !confirmUpgrade) onClose();
-      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="org-planning-mode-title"
+      className={cn(
+        nested ? settingsSubModalDialogClass("lg") : cn(settingsModalDialogClass(), "max-w-lg")
+      )}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="org-planning-mode-title"
-        className={cn(settingsModalDialogClass(), "max-w-lg")}
-        onMouseDown={(e) => e.stopPropagation()}
+        className={cn(
+          settingsModalHeaderPaddingClass(),
+          "flex items-start justify-between gap-3 border-b border-border"
+        )}
       >
-        <div
-          className={cn(
-            settingsModalHeaderPaddingClass(),
-            "flex items-start justify-between gap-3 border-b border-border"
-          )}
-        >
-          <h2 id="org-planning-mode-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-            {t("organization.planningModeTitle")}
-          </h2>
+        <h2 id="org-planning-mode-title" className={SETTINGS_MODAL_TITLE_CLASS}>
+          {t("organization.planningModeTitle")}
+        </h2>
+        {!nested ? (
           <IconButton
             type="button"
             aria-label={t("common.close")}
@@ -109,88 +108,126 @@ export function OrganizationPlanningModeModal({ onClose }: Props) {
           >
             <CloseIcon />
           </IconButton>
-        </div>
-
-        <div className={cn(settingsModalBodyPaddingClass(), "space-y-4")}>
-          {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
-          {successMessage ? <Alert variant="success">{successMessage}</Alert> : null}
-
-          <div>
-            <p className="text-xs font-medium text-muted">
-              {t("organization.planningModeCurrent")}
-            </p>
-            <div className="mt-2 rounded-lg border border-primary bg-primary/5 px-3 py-2.5">
-              <p className="text-sm font-medium text-foreground">
-                {planningModeLabel(currentMode, t)}
-              </p>
-              <p className="mt-1 text-xs leading-snug text-muted">
-                {planningModeHint(currentMode, t)}
-              </p>
-            </div>
-          </div>
-
-          {isSimple ? (
-            <>
-              <p className="text-sm leading-relaxed text-muted">
-                {t("organization.planningModeUpgradeIntro")}
-              </p>
-              <Button
-                type="button"
-                onClick={() => setConfirmUpgrade(true)}
-                disabled={pending || Boolean(successMessage)}
-              >
-                {t("organization.planningModeUpgradeAction")}
-              </Button>
-            </>
-          ) : (
-            <p className="text-sm leading-relaxed text-muted">
-              {t("organization.planningModeDowngradeHint")}
-            </p>
-          )}
-        </div>
+        ) : null}
       </div>
 
-      {confirmUpgrade ? (
-        <div
-          className={settingsNestedModalOverlayClass()}
-          role="presentation"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !pending) setConfirmUpgrade(false);
-          }}
-        >
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="org-planning-mode-confirm-title"
-            className={settingsConfirmDialogClass()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <h3
-              id="org-planning-mode-confirm-title"
-              className="text-base font-semibold text-foreground"
-            >
-              {t("organization.planningModeUpgradeConfirmTitle")}
-            </h3>
-            <p className="mt-2 text-sm text-muted">
-              {t("organization.planningModeUpgradeConfirmBody")}
+      <div className={cn(settingsModalBodyPaddingClass(), "space-y-4")}>
+        {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
+        {successMessage ? <Alert variant="success">{successMessage}</Alert> : null}
+
+        <div>
+          <p className="text-xs font-medium text-muted">
+            {t("organization.planningModeCurrent")}
+          </p>
+          <div className="mt-2 rounded-lg border border-primary bg-primary/5 px-3 py-2.5">
+            <p className="text-sm font-medium text-foreground">
+              {planningModeLabel(currentMode, t)}
             </p>
-            <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setConfirmUpgrade(false)}
-                disabled={pending}
-              >
-                <CloseIcon />
-                {t("common.cancel")}
-              </Button>
-              <Button type="button" onClick={handleUpgrade} disabled={pending}>
-                {t("organization.planningModeUpgradeAction")}
-              </Button>
-            </div>
+            <p className="mt-1 text-xs leading-snug text-muted">
+              {planningModeHint(currentMode, t)}
+            </p>
           </div>
         </div>
+
+        {isSimple ? (
+          <>
+            <p className="text-sm leading-relaxed text-muted">
+              {t("organization.planningModeUpgradeIntro")}
+            </p>
+            <Button
+              type="button"
+              onClick={() => setConfirmUpgrade(true)}
+              disabled={pending || Boolean(successMessage)}
+            >
+              {t("organization.planningModeUpgradeAction")}
+            </Button>
+          </>
+        ) : (
+          <p className="text-sm leading-relaxed text-muted">
+            {t("organization.planningModeDowngradeHint")}
+          </p>
+        )}
+      </div>
+
+      {nested ? (
+        <div className={settingsModalFooterClass()}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+            {t("common.close")}
+          </Button>
+        </div>
       ) : null}
+    </div>
+  );
+
+  const confirmUpgradeDialog = confirmUpgrade ? (
+    <div
+      className={settingsNestedModalOverlayClass()}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !pending) setConfirmUpgrade(false);
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="org-planning-mode-confirm-title"
+        className={settingsConfirmDialogClass()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <h3
+          id="org-planning-mode-confirm-title"
+          className="text-base font-semibold text-foreground"
+        >
+          {t("organization.planningModeUpgradeConfirmTitle")}
+        </h3>
+        <p className="mt-2 text-sm text-muted">
+          {t("organization.planningModeUpgradeConfirmBody")}
+        </p>
+        <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setConfirmUpgrade(false)}
+            disabled={pending}
+          >
+            <CloseIcon />
+            {t("common.cancel")}
+          </Button>
+          <Button type="button" onClick={handleUpgrade} disabled={pending}>
+            {t("organization.planningModeUpgradeAction")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (nested) {
+    return (
+      <>
+        <div
+          className={settingsSubModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !pending && !confirmUpgrade) onClose();
+          }}
+        >
+          {dialog}
+        </div>
+        {confirmUpgradeDialog}
+      </>
+    );
+  }
+
+  return (
+    <div
+      className={settingsModalBackdropClass()}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !pending && !confirmUpgrade) onClose();
+      }}
+    >
+      {dialog}
+      {confirmUpgradeDialog}
     </div>
   );
 }

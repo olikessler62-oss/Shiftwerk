@@ -5,6 +5,7 @@ import {
   countQualificationCoverage,
   computeBulkStaffingHeaderEntries,
   formatStaffingEntryTooltipContent,
+  staffingAssignmentsForPlanningAreaDay,
   type DemandWindowRef,
   type StaffingAssignmentRef,
 } from "./bulk-staffing-header";
@@ -177,6 +178,77 @@ describe("allocateAssignmentsToDemandWindows", () => {
 
     expect(allocation.get(hourMorning)).toEqual([0]);
     expect(allocation.get(hourLunch)).toEqual([1]);
+  });
+
+  it("prefers exact demand times over a wider overlapping demand window", () => {
+    const hourFrueh = "hour-frueh";
+    const hourMittel = "hour-mittel";
+    const windows: DemandWindowRef[] = [
+      { serviceHourId: hourFrueh, startTime: "08:00", endTime: "10:00" },
+      { serviceHourId: hourMittel, startTime: "08:00", endTime: "15:00" },
+    ];
+    const assignments: StaffingAssignmentRef[] = [
+      { startTime: "08:00", endTime: "10:00", employeeId: "emp-a" },
+      { startTime: "08:00", endTime: "10:00", employeeId: "emp-b" },
+      { startTime: "12:00", endTime: "15:00", employeeId: "emp-c" },
+    ];
+
+    const allocation = allocateAssignmentsToDemandWindows(assignments, windows);
+
+    expect(allocation.get(hourFrueh)).toEqual([0, 1]);
+    expect(allocation.get(hourMittel)).toEqual([2]);
+  });
+});
+
+describe("staffingAssignmentsForPlanningAreaDay", () => {
+  const areaId = "area-restaurant";
+  const dateISO = "2026-06-15";
+  const visibleEmployeeIds = new Set(["emp-a", "emp-b"]);
+
+  it("keeps only area, date, and visible employee shifts", () => {
+    const assignments = staffingAssignmentsForPlanningAreaDay(
+      [
+        {
+          shift_date: dateISO,
+          location_area_id: areaId,
+          employee_id: "emp-a",
+          startTime: "08:00",
+          endTime: "10:00",
+        },
+        {
+          shift_date: dateISO,
+          location_area_id: "area-bar",
+          employee_id: "emp-a",
+          startTime: "08:00",
+          endTime: "10:00",
+        },
+        {
+          shift_date: dateISO,
+          location_area_id: areaId,
+          employee_id: "emp-hidden",
+          startTime: "12:00",
+          endTime: "15:00",
+        },
+        {
+          shift_date: "2026-06-16",
+          location_area_id: areaId,
+          employee_id: "emp-b",
+          startTime: "08:00",
+          endTime: "10:00",
+        },
+      ],
+      dateISO,
+      areaId,
+      visibleEmployeeIds
+    );
+
+    expect(assignments).toEqual([
+      {
+        startTime: "08:00",
+        endTime: "10:00",
+        employeeId: "emp-a",
+      },
+    ]);
   });
 });
 

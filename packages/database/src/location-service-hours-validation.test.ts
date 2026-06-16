@@ -4,6 +4,7 @@ import {
   serviceHourIntervalsOverlap,
   shiftTimesWithinServiceHours,
   validateServiceHoursInput,
+  validateShiftAgainstServiceHours,
 } from "./location-service-hours-validation";
 
 describe("validateServiceHoursInput", () => {
@@ -127,6 +128,32 @@ describe("shiftTimesWithinServiceHours", () => {
         { start_time: "21:00", end_time: "05:00" },
       ])
     ).toBe(false);
+  });
+});
+
+describe("validateShiftAgainstServiceHours overnight spill", () => {
+  it("accepts morning shift on spill day from previous overnight service hour", () => {
+    const result = validateShiftAgainstServiceHours(
+      [
+        {
+          location_area_id: "area-1",
+          weekday: 1,
+          start_time: "22:00",
+          end_time: "04:00",
+        },
+        {
+          location_area_id: "area-1",
+          weekday: 2,
+          start_time: "08:00",
+          end_time: "12:00",
+        },
+      ],
+      "area-1",
+      2,
+      "00:00",
+      "04:00"
+    );
+    expect(result).toEqual({ ok: true });
   });
 });
 

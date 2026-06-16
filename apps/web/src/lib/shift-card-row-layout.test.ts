@@ -7,7 +7,7 @@ import {
   AREA_ROW_LIST_FIT_SLACK_PX,
   AREA_ROW_VISIBLE_SPACE_BELOW_LAST_SHIFT_PX,
   buildAreaRowGridTrack,
-  cellShiftListNeedsScroll,
+  calendarAvailableBodyHeightPx,
   cellShiftListNeedsScroll,
   cellShiftListShouldEnableScroll,
   computeAreaRowLayouts,
@@ -305,5 +305,10 @@ describe("shift-card-row-layout", () => {
         ]),
       ),
     ).toBe("restaurant");
+  });
+
+  it("reserves header and footer chrome when measuring calendar body height", () => {
+    expect(calendarAvailableBodyHeightPx(800)).toBe(694);
+    expect(calendarAvailableBodyHeightPx(100)).toBe(0);
   });
 });

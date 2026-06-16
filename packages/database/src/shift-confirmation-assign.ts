@@ -17,6 +17,9 @@ export type ShiftConfirmationAssignPatch = {
 export const SHIFT_CONFIRMATION_ASSIGN_GATE_ERROR =
   "Personal ohne App-Registrierung kann nicht eingeplant werden.";
 
+export const SHIFT_ASSIGN_NOT_SCHEDULABLE_ERROR =
+  "Personal ist nicht planbar.";
+
 /** App registriert oder E-Mail-Fallback (Spec 008 §7.1). */
 export function profileEligibleForShiftConfirmationAssignment(
   profile: Pick<Profile, "app_registered_at" | "email_fallback_mode">
@@ -36,19 +39,24 @@ export function validateProfileForShiftConfirmationAssign(
     "organization_id" | "is_active" | "schedulable" | "app_registered_at" | "email_fallback_mode"
   > | null,
   organizationId: string,
-  shiftConfirmationEnabled: boolean
+  shiftConfirmationEnabled: boolean,
+  options?: { relaxAppRegistrationGate?: boolean }
 ): { ok: true } | { ok: false; error: string } {
   if (
     !profile ||
     profile.organization_id !== organizationId ||
-    !profile.is_active ||
-    !profile.schedulable
+    !profile.is_active
   ) {
     return { ok: false, error: "Personal nicht gefunden" };
   }
 
+  if (!profile.schedulable) {
+    return { ok: false, error: SHIFT_ASSIGN_NOT_SCHEDULABLE_ERROR };
+  }
+
   if (
     shiftConfirmationEnabled &&
+    !options?.relaxAppRegistrationGate &&
     !profileEligibleForShiftConfirmationAssignment(profile)
   ) {
     return { ok: false, error: SHIFT_CONFIRMATION_ASSIGN_GATE_ERROR };

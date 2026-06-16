@@ -17,7 +17,10 @@ import type {
   StaffingRule,
 } from "@/lib/location-staffing-client";
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
-import { useOrganization } from "@/lib/org-features-provider";
+import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
+import { usePlanningAppSidebarContent } from "@/components/planning/planning-app-sidebar-slot";
+import { DashboardEmployeeLegendSidebar } from "./dashboard-employee-legend-sidebar";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { DashboardHeader } from "./dashboard-header";
 import {
   DashboardCalendar,
@@ -73,7 +76,9 @@ export function DashboardView({
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const organization = useOrganization();
+  const t = useTranslations();
+  const { locale } = useLocale();
+  const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false);
   const [confirmationsPanelOpen, setConfirmationsPanelOpen] = useState(false);
   const [confirmationsPanelTab, setConfirmationsPanelTab] = useState<PanelTab>("pending");
@@ -81,22 +86,37 @@ export function DashboardView({
     useState<DashboardShiftCard | null>(null);
   const proposedSendCount = useMemo(
     () =>
-      organization.shift_confirmation_enabled
+      shiftConfirmationEnabled
         ? shifts.filter((shift) => shift.confirmationStatus === "proposed").length
         : 0,
-    [organization.shift_confirmation_enabled, shifts]
+    [shiftConfirmationEnabled, shifts]
   );
   const openConfirmationsCount = useMemo(
     () =>
-      organization.shift_confirmation_enabled
+      shiftConfirmationEnabled
         ? shifts.filter((shift) =>
             shift.confirmationStatus === "pending" ||
             shift.confirmationStatus === "rejected" ||
             shift.confirmationStatus === "proposed"
           ).length
         : 0,
-    [organization.shift_confirmation_enabled, shifts]
+    [shiftConfirmationEnabled, shifts]
   );
+
+  const dashboardSidebarContent = useMemo(
+    () => (
+      <DashboardEmployeeLegendSidebar
+        shifts={shifts}
+        profiles={profiles}
+        locale={locale}
+        employeeHoursLabel={t("common.basic")}
+        emptyLabel={t("dashboard.weekEmployeeLegendEmpty")}
+      />
+    ),
+    [shifts, profiles, locale, t]
+  );
+
+  usePlanningAppSidebarContent(dashboardSidebarContent);
 
   function openConfirmationsPanel(tab: PanelTab = "pending") {
     setConfirmationsPanelTab(tab);
@@ -122,7 +142,7 @@ export function DashboardView({
         selectedLocationId={selectedLocationId}
         proposedSendCount={proposedSendCount}
         openConfirmationsCount={openConfirmationsCount}
-        shiftConfirmationEnabled={organization.shift_confirmation_enabled}
+        shiftConfirmationEnabled={shiftConfirmationEnabled}
         managerNotifications={managerNotifications}
         onOpenSendConfirmation={() => setSendConfirmationOpen(true)}
         onOpenConfirmationsPanel={openConfirmationsPanel}
@@ -143,6 +163,7 @@ export function DashboardView({
           profileQualificationIds={profileQualificationIds}
           fullStaffingRules={fullStaffingRules}
           shiftCompensation={shiftCompensation}
+          profiles={profiles}
           reassignShiftRequest={reassignShiftRequest}
           onReassignShiftHandled={() => setReassignShiftRequest(null)}
         />
@@ -160,14 +181,14 @@ export function DashboardView({
             profiles,
           }}
         />
-        {sendConfirmationOpen && organization.shift_confirmation_enabled ? (
+        {sendConfirmationOpen && shiftConfirmationEnabled ? (
           <DashboardSendConfirmationModal
             weekStart={weekStart}
             locationId={selectedLocationId}
             onClose={() => setSendConfirmationOpen(false)}
           />
         ) : null}
-        {confirmationsPanelOpen && organization.shift_confirmation_enabled ? (
+        {confirmationsPanelOpen && shiftConfirmationEnabled ? (
           <OpenConfirmationsPanel
             key={confirmationsPanelTab}
             shifts={shifts}

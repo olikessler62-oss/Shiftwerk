@@ -19,49 +19,41 @@ const SUBTITLE_EMPHASIS_FONT =
 const HEADER_FONT =
   "600 12px Inter, ui-sans-serif, system-ui, sans-serif";
 
-function measureWithFont(text: string, font: string): number {
-  if (!text) return 0;
-  if (typeof document === "undefined") {
-    return text.length * (font === NAME_FONT ? 7.8 : 6.8);
-  }
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) return text.length * 6.8;
-  context.font = font;
-  return context.measureText(text).width;
-}
-
-function measurePlanningStaffColumnNameText(text: string): number {
-  return measureWithFont(text, NAME_FONT);
-}
-
-function measurePlanningStaffColumnSecondaryText(
-  text: string,
-  emphasis = false
-): number {
-  return measureWithFont(text, emphasis ? SUBTITLE_EMPHASIS_FONT : SUBTITLE_FONT);
-}
-
-function measurePlanningStaffColumnHeaderText(text: string): number {
-  return measureWithFont(text, HEADER_FONT);
-}
-
-/** Breite der Personal-Spalte aus dem längsten vorhandenen Anzeigetext (+ Toleranz). */
-export function resolvePlanningStaffColumnWidthPx(input: {
+export type PlanningStaffColumnWidthInput = {
   employees: readonly Pick<Profile, "id" | "full_name" | "weekly_hours">[];
   shifts: readonly PlanningShiftRef[];
   locale: string;
   staffColumnHeaderLabel: string;
   employeeHoursLabel: string;
-}): number {
-  let maxContentWidthPx = measurePlanningStaffColumnHeaderText(
-    input.staffColumnHeaderLabel
-  );
+};
+
+function estimateTextWidthPx(text: string, font: string): number {
+  if (!text) return 0;
+  return text.length * (font === NAME_FONT ? 7.8 : 6.8);
+}
+
+function measureTextWidthPx(text: string, font: string): number {
+  if (!text) return 0;
+  if (typeof document === "undefined") {
+    return estimateTextWidthPx(text, font);
+  }
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return estimateTextWidthPx(text, font);
+  context.font = font;
+  return context.measureText(text).width;
+}
+
+function computePlanningStaffColumnWidthPx(
+  input: PlanningStaffColumnWidthInput,
+  measureText: (text: string, font: string) => number
+): number {
+  let maxContentWidthPx = measureText(input.staffColumnHeaderLabel, HEADER_FONT);
 
   for (const employee of input.employees) {
     maxContentWidthPx = Math.max(
       maxContentWidthPx,
-      measurePlanningStaffColumnNameText(employee.full_name)
+      measureText(employee.full_name, NAME_FONT)
     );
 
     const weekH = employeeWeekHours(employee.id, input.shifts);
@@ -73,9 +65,9 @@ export function resolvePlanningStaffColumnWidthPx(input: {
     )}`;
     maxContentWidthPx = Math.max(
       maxContentWidthPx,
-      measurePlanningStaffColumnSecondaryText(
+      measureText(
         hoursLine,
-        weekH > targetH
+        weekH > targetH ? SUBTITLE_EMPHASIS_FONT : SUBTITLE_FONT
       )
     );
   }
@@ -88,4 +80,18 @@ export function resolvePlanningStaffColumnWidthPx(input: {
         PLANNING_STAFF_COLUMN_WIDTH_TOLERANCE_PX
     )
   );
+}
+
+/** SSR/Hydration: deterministische Schätzung ohne Canvas. */
+export function estimatePlanningStaffColumnWidthPx(
+  input: PlanningStaffColumnWidthInput
+): number {
+  return computePlanningStaffColumnWidthPx(input, estimateTextWidthPx);
+}
+
+/** Client: präzise Canvas-Messung nach dem Mount. */
+export function resolvePlanningStaffColumnWidthPx(
+  input: PlanningStaffColumnWidthInput
+): number {
+  return computePlanningStaffColumnWidthPx(input, measureTextWidthPx);
 }

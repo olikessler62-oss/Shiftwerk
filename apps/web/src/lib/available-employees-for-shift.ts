@@ -110,7 +110,8 @@ export function profileAvailabilitiesForWeekday<
 export function filterEmployeesAvailableOnWeekday(
   profiles: readonly Profile[],
   availability: readonly ProfileRecurringAvailability[],
-  weekday: number
+  weekday: number,
+  organizationId?: string
 ): Profile[] {
   const profileIdsWithSlot = new Set(
     availability
@@ -120,9 +121,20 @@ export function filterEmployeesAvailableOnWeekday(
 
   return profiles.filter(
     (profile) =>
-      profile.is_active &&
-      profile.schedulable &&
+      (organizationId
+        ? profileCanReceiveShiftAssignment(profile, organizationId)
+        : profile.is_active && profile.schedulable) &&
       profileIdsWithSlot.has(profile.id)
+  );
+}
+
+/** Aktive, planbare Profile (inkl. Admins/Manager mit schedulable). */
+export function filterProfilesForShiftAssignment(
+  profiles: readonly Profile[],
+  organizationId: string
+): Profile[] {
+  return profiles.filter((profile) =>
+    profileCanReceiveShiftAssignment(profile, organizationId)
   );
 }
 
@@ -145,9 +157,10 @@ export function profileCanReceiveShiftAssignment(
 /** Filtert MA ohne App-Registrierung wenn Schichtbestätigung aktiv (Spec 008). */
 export function filterProfilesForShiftConfirmationAssign(
   profiles: readonly Profile[],
-  shiftConfirmationEnabled: boolean
+  shiftConfirmationEnabled: boolean,
+  relaxAppRegistrationGate = false
 ): Profile[] {
-  if (!shiftConfirmationEnabled) {
+  if (!shiftConfirmationEnabled || relaxAppRegistrationGate) {
     return [...profiles];
   }
   return profiles.filter((profile) =>

@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  COLLAPSED_DAY_COLUMN_LINE_MAX_WIDTH_PX,
   computeCollapsedDayShiftLineLayouts,
   computeCollapsedShiftLineLayout,
   computeCollapsedShiftPixelLeftPx,
+  computeCollapsedDayColumnLineWidthPx,
   computePastDayUniformLineWidthPx,
   computeShiftCardCellLayout,
+  applyDurationMonotonicShiftCardWidths,
+  applySubThreeHourUniformShiftCardWidths,
+  resolveShiftCardDurationWidthPx,
+  resolveSubThreeHourUniformTargetWidthPx,
+  resolveThreeHourTierDisplayWidthPx,
+  SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS,
+  timelineThreeHourReferenceWidthPx,
   sparseCellFairShareWidthPx,
 } from "./shift-card-cell-layout";
 import {
@@ -230,6 +239,41 @@ describe("shift-card-cell-layout", () => {
     expect(layouts[1]!.widthPx).toBeGreaterThan(layouts[0]!.widthPx);
   });
 
+  it("caps collapsed-day preview line width for a single long shift", () => {
+    const timeline = resolveAreaServiceDayTimeline(
+      SERVICE_HOURS,
+      "area-1",
+      "2026-06-01"
+    );
+    const wideSingle = computeCollapsedShiftLineLayout(
+      120,
+      "08:00",
+      "17:00",
+      timeline,
+      31
+    );
+    const capped = computeCollapsedDayColumnLineWidthPx(
+      120,
+      [{ startTime: "08:00", endTime: "17:00" }],
+      timeline
+    );
+    const collapsedLayouts = computeCollapsedDayShiftLineLayouts(
+      120,
+      [{ startTime: "08:00", endTime: "17:00" }],
+      timeline,
+      31,
+      { uniformMinWidth: true, uniformWidthPx: capped }
+    );
+
+    expect(wideSingle.widthPx).toBeGreaterThan(
+      COLLAPSED_DAY_COLUMN_LINE_MAX_WIDTH_PX
+    );
+    expect(capped).toBe(COLLAPSED_DAY_COLUMN_LINE_MAX_WIDTH_PX);
+    expect(collapsedLayouts[0]!.widthPx).toBe(
+      COLLAPSED_DAY_COLUMN_LINE_MAX_WIDTH_PX
+    );
+  });
+
   it("uses the smallest duration width for past collapsed-day preview lines only", () => {
     const timeline = resolveAreaServiceDayTimeline(
       SERVICE_HOURS,
@@ -329,18 +373,187 @@ describe("shift-card-cell-layout", () => {
       ).marginLeftPx,
       0
     );
-    expect(
-      computeShiftCardCellLayout(
-        400,
-        "08:00",
-        "10:00",
-        locationTimeline,
-        "compact",
-        72,
-        { shiftCountInCell: 12, uniformShiftDurationWidth: true }
-      ).widthPx
-    ).toBe(locationLayout.widthPx);
+    const uniformWidth = computeShiftCardCellLayout(
+      400,
+      "08:00",
+      "10:00",
+      locationTimeline,
+      "compact",
+      72,
+      { shiftCountInCell: 12, uniformShiftDurationWidth: true }
+    ).widthPx;
+    expect(uniformWidth).toBe(locationLayout.widthPx);
     expect(kitchenLayout.widthPx).toBeGreaterThan(locationLayout.widthPx);
+  });
+
+  it("uniform mode keeps longer shifts at least as wide as shorter shifts", () => {
+    const timeline = resolveLocationServiceDayTimeline(
+      MULTI_AREA_SERVICE_HOURS,
+      "2026-06-01"
+    );
+    const cellWidthPx = 280;
+
+    const mittel = computeShiftCardCellLayout(
+      cellWidthPx,
+      "12:00",
+      "15:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 4, uniformShiftDurationWidth: true }
+    );
+    const spaet = computeShiftCardCellLayout(
+      cellWidthPx,
+      "17:00",
+      "21:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 4, uniformShiftDurationWidth: true }
+    );
+
+    expect(spaet.widthPx).toBeGreaterThanOrEqual(mittel.widthPx);
+    expect(spaet.widthPx).toBeGreaterThan(
+      timelineDurationWidthPx("12:00", "15:00", cellWidthPx - 8, timeline)
+    );
+  });
+
+  it("applyDurationMonotonicShiftCardWidths raises shorter-duration cards to longer peers", () => {
+    const timeline = resolveLocationServiceDayTimeline(
+      MULTI_AREA_SERVICE_HOURS,
+      "2026-06-01"
+    );
+    const cellWidthPx = 280;
+
+    const longer = computeShiftCardCellLayout(
+      cellWidthPx,
+      "17:00",
+      "21:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 2, uniformShiftDurationWidth: true }
+    );
+    const shorter = computeShiftCardCellLayout(
+      cellWidthPx,
+      "12:00",
+      "15:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 2, uniformShiftDurationWidth: true }
+    );
+
+    shorter.widthPx = longer.widthPx + 4;
+    longer.widthPx = shorter.widthPx - 8;
+
+    applyDurationMonotonicShiftCardWidths(
+      cellWidthPx,
+      [
+        { layout: shorter, startTime: "12:00", endTime: "15:00" },
+        { layout: longer, startTime: "17:00", endTime: "21:00" },
+      ],
+      timeline
+    );
+
+    expect(longer.widthPx).toBeGreaterThanOrEqual(shorter.widthPx);
+  });
+
+  it("uses one uniform width for all sub-3-hour shifts, slightly below 3-hour cards", () => {
+    const timeline = resolveLocationServiceDayTimeline(
+      MULTI_AREA_SERVICE_HOURS,
+      "2026-06-01"
+    );
+    const cellWidthPx = 400;
+    const trackWidthPx = cellWidthPx - 8;
+    const threeHourDisplayPx = resolveThreeHourTierDisplayWidthPx(
+      trackWidthPx,
+      timeline
+    );
+
+    const oneHour = computeShiftCardCellLayout(
+      cellWidthPx,
+      "08:00",
+      "09:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 3, uniformShiftDurationWidth: true }
+    );
+    const twoHour = computeShiftCardCellLayout(
+      cellWidthPx,
+      "10:00",
+      "12:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 3, uniformShiftDurationWidth: true }
+    );
+    const threeHour = computeShiftCardCellLayout(
+      cellWidthPx,
+      "12:00",
+      "15:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 3, uniformShiftDurationWidth: true }
+    );
+
+    const shortTargetPx = resolveSubThreeHourUniformTargetWidthPx(
+      trackWidthPx,
+      timeline
+    );
+    expect(shortTargetPx).toBeCloseTo(
+      threeHourDisplayPx * SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS,
+      0
+    );
+    expect(resolveShiftCardDurationWidthPx("08:00", "09:00", trackWidthPx, timeline))
+      .toBe(shortTargetPx);
+    expect(resolveShiftCardDurationWidthPx("10:00", "12:00", trackWidthPx, timeline))
+      .toBe(shortTargetPx);
+
+    const shortLayouts = [
+      { layout: { ...oneHour }, startTime: "08:00", endTime: "09:00" },
+      { layout: { ...twoHour }, startTime: "10:00", endTime: "12:00" },
+    ];
+    applySubThreeHourUniformShiftCardWidths(cellWidthPx, shortLayouts, timeline);
+
+    expect(shortLayouts[0]!.layout.widthPx).toBe(shortLayouts[1]!.layout.widthPx);
+    expect(shortLayouts[0]!.layout.widthPx).toBeLessThan(threeHour.widthPx);
+    expect(shortLayouts[0]!.layout.widthPx / threeHour.widthPx).toBeCloseTo(
+      SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS,
+      1
+    );
+  });
+
+  it("keeps uniform short shifts at timeline width with two-line density", () => {
+    const timeline = resolveAreaServiceDayTimeline(
+      SERVICE_HOURS,
+      "area-1",
+      "2026-06-01"
+    );
+    const narrowLayout = computeShiftCardCellLayout(
+      400,
+      "08:00",
+      "10:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 1, uniformShiftDurationWidth: true }
+    );
+    const wideLayout = computeShiftCardCellLayout(
+      800,
+      "08:00",
+      "10:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 1, uniformShiftDurationWidth: true }
+    );
+
+    expect(narrowLayout.density).toBe("two-line");
+    expect(narrowLayout.widthPx).toBeLessThan(100);
+    expect(wideLayout.widthPx).toBeGreaterThan(narrowLayout.widthPx);
   });
 });
 

@@ -169,7 +169,7 @@ function pickShorterSecondaryLabel(
 
 export function buildShiftCardDisplayContent(
   shift: ShiftCardDisplayInput,
-  jobsLabel: string,
+  jobsLabel?: string | null,
   tooltipOptions?: ShiftCardTooltipFormatOptions
 ): ShiftCardDisplayContent {
   const { firstName, lastName } = splitEmployeeDisplayName(shift.employeeName);
@@ -177,6 +177,7 @@ export function buildShiftCardDisplayContent(
   const shiftLabel = shift.shiftName.trim()
     ? shortenShiftTypeDisplayName(shift.shiftName)
     : "";
+  const normalizedJobsLabel = (jobsLabel ?? "").trim();
 
   const templateName =
     tooltipOptions?.assignmentPresets &&
@@ -196,7 +197,7 @@ export function buildShiftCardDisplayContent(
     shiftTemplateName: templateName,
     shiftNameWithoutTemplate: templateName ? null : shiftLabel || null,
     timeLabel,
-    jobsLabel: jobsLabel.trim() || undefined,
+    jobsLabel: normalizedJobsLabel || undefined,
   };
 
   const tooltipBody = formatShiftCardTooltipPlainText(tooltip, {
@@ -210,7 +211,7 @@ export function buildShiftCardDisplayContent(
     line1Secondary,
     timeLabel,
     shiftLabel,
-    jobsLabel,
+    jobsLabel: normalizedJobsLabel,
     tooltip,
     tooltipBody,
   };

@@ -44,6 +44,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 SUPABASE_SERVICE_ROLE_KEY=eyJ...   # Pflicht für Mitarbeiter-Einladungen
+SUPERADMIN_EMAILS=deine@email.de   # Nur diese E-Mail(s) sehen den Menüpunkt Superadmin
 ```
 
 Für Mobile `apps/mobile/.env`:

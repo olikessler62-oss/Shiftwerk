@@ -67,3 +67,11 @@ export async function requireManager(): Promise<ManagerContext> {
     orgFeatures: getOrgFeatures(organization),
   };
 }
+
+export async function requireAdmin(): Promise<ManagerContext> {
+  const ctx = await requireManager();
+  if (ctx.profile.role !== "admin") {
+    throw new Error("Keine Berechtigung");
+  }
+  return ctx;
+}

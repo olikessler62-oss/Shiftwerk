@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolvePlanningStaffColumnWidthPx } from "./planning-staff-column-width";
+import {
+  estimatePlanningStaffColumnWidthPx,
+  resolvePlanningStaffColumnWidthPx,
+} from "./planning-staff-column-width";
 
 describe("resolvePlanningStaffColumnWidthPx", () => {
   it("uses the longest name and hours line plus tolerance", () => {
@@ -43,5 +46,25 @@ describe("resolvePlanningStaffColumnWidthPx", () => {
         employeeHoursLabel: "Mitarbeiter",
       })
     ).toBe(120);
+  });
+
+  it("estimate matches resolve when canvas is unavailable", () => {
+    const input = {
+      employees: [
+        {
+          id: "emp-1",
+          full_name: "Maximilian Mustermann",
+          weekly_hours: 40,
+        },
+      ],
+      shifts: [],
+      locale: "de",
+      staffColumnHeaderLabel: "Personal",
+      employeeHoursLabel: "Mitarbeiter",
+    };
+
+    expect(estimatePlanningStaffColumnWidthPx(input)).toBe(
+      resolvePlanningStaffColumnWidthPx(input)
+    );
   });
 });

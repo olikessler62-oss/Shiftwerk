@@ -98,6 +98,73 @@ export function serviceHourNextWeekday(weekday: number): number {
   return weekday;
 }
 
+export function serviceHourPreviousWeekday(weekday: number): number {
+  if (weekday >= 0 && weekday <= 6) return weekday === 0 ? 6 : weekday - 1;
+  if (weekday === STAFFING_HOLIDAY_WEEKDAY) return 6;
+  return weekday;
+}
+
+function normalizeServiceHourWeekday(value: number | string): number {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isInteger(parsed) ? parsed : -1;
+}
+
+/** Morgenanteil einer Über-Nacht-Servicezeit (00:00–Ende) am Folgetag. */
+export function overnightMorningSpillServiceWindows(
+  end_time: string
+): ServiceHourWindow[] {
+  const endMin = parseServiceHourTimeToMinutes(end_time);
+  if (endMin == null || endMin === 0) return [];
+  return [
+    {
+      start_time: "00:00",
+      end_time: normalizeServiceHourTimeComparable(end_time),
+    },
+  ];
+}
+
+/** Servicezeit-Fenster für Schichtvalidierung inkl. Über-Nacht-Spill vom Vortag. */
+export function collectServiceHourWindowsForAreaShiftDay(
+  serviceHours: readonly {
+    location_area_id: string;
+    weekday: number | string;
+    start_time: string;
+    end_time: string;
+  }[],
+  areaId: string,
+  weekday: number
+): ServiceHourWindow[] {
+  const sameDay = serviceHours
+    .filter(
+      (hour) =>
+        hour.location_area_id === areaId &&
+        normalizeServiceHourWeekday(hour.weekday) === weekday &&
+        hour.start_time &&
+        hour.end_time
+    )
+    .map((hour) => ({
+      start_time: hour.start_time,
+      end_time: hour.end_time,
+    }));
+
+  const previousWeekday = serviceHourPreviousWeekday(weekday);
+  const spill = serviceHours
+    .filter(
+      (hour) =>
+        hour.location_area_id === areaId &&
+        normalizeServiceHourWeekday(hour.weekday) === previousWeekday &&
+        hour.start_time &&
+        hour.end_time &&
+        isOvernightServiceHour(hour.start_time, hour.end_time)
+    )
+    .flatMap((hour) => overnightMorningSpillServiceWindows(hour.end_time));
+
+  return [...spill, ...sameDay].sort((a, b) =>
+    a.start_time.localeCompare(b.start_time)
+  );
+}
+
 export function serviceHoursSameWindow(
   a: Pick<ServiceHourInput, "weekday" | "start_time" | "end_time">,
   b: Pick<ServiceHourInput, "weekday" | "start_time" | "end_time">
@@ -250,19 +317,11 @@ export function validateShiftAgainstServiceHours(
   startTime: string,
   endTime: string
 ): { ok: true } | { ok: false; error: string } {
-  const windows = serviceHours
-    .filter(
-      (hour) =>
-        hour.location_area_id === areaId &&
-        hour.weekday === weekday &&
-        hour.start_time &&
-        hour.end_time
-    )
-    .map((hour) => ({
-      start_time: hour.start_time,
-      end_time: hour.end_time,
-    }))
-    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const windows = collectServiceHourWindowsForAreaShiftDay(
+    serviceHours,
+    areaId,
+    weekday
+  );
 
   if (windows.length === 0) {
     return { ok: false, error: NO_SERVICE_HOURS_FOR_DAY_ERROR };

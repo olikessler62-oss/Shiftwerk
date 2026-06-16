@@ -28,7 +28,6 @@ export const Schema = {
     confirmationRequestItems: "confirmation_request_items",
     notificationOutbox: "notification_outbox",
     managerNotifications: "manager_notifications",
-    availability: "availability",
     absenceRequests: "absence_requests",
     swapRequests: "swap_requests",
   },

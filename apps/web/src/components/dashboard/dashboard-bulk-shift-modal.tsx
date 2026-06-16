@@ -49,7 +49,6 @@ import {
   dedupeDashboardAssignmentWindows,
   filterBulkShiftAssignEmployeesForRow,
   filterBulkShiftAssignEmployeesWithoutTimeWindow,
-  pickEmployeeLongestWithoutShift,
   profileAvailabilitiesForWeekday,
   profileAvailabilityWeekdayFromDashboardDate,
   resolveShiftAssignmentRequestWindow,
@@ -87,7 +86,7 @@ import {
   type BulkShiftColumnPrefs,
 } from "@/lib/bulk-shift-column-prefs";
 import { sortBulkShiftRowsByColumn } from "@/lib/bulk-shift-row-sort";
-import { buildPrefilledBulkRow } from "@/lib/bulk-shift-row-prefill";
+import { buildPrefilledBulkRow, pickEmployeeForBulkPrefill } from "@/lib/bulk-shift-row-prefill";
 import {
   insertBulkShiftRowInList,
   isBulkShiftEmployeeSortActive,
@@ -125,6 +124,7 @@ import {
 } from "@/lib/shift-overlap";
 import { cn } from "@/lib/cn";
 import { translateActionError } from "@/lib/translate-action-error";
+import { useSimulatedProposedOnAssignRequest } from "@/lib/shift-confirmation-simulation-context";
 import {
   resolveBulkShiftPartialSaveOutcome,
   type BulkShiftPartialSaveFailure,
@@ -158,7 +158,7 @@ const MAX_ROWS = 20;
 const PENDING_NEW_BULK_ROW_ID = "__pending-new-bulk-row__";
 
 function bulkStaffingStatusClass(met: boolean): string {
-  return met ? "text-emerald-600" : "text-red-600";
+  return met ? "text-neutral-600" : "text-red-600";
 }
 
 function BulkShiftStaffingTable({
@@ -886,6 +886,7 @@ type BulkShiftRowEditorProps = {
   locationDayAssignments: LocationDayAssignment[];
   allRows: BulkRow[];
   profileQualificationIds: Map<string, Set<string>>;
+  profileShiftPreferences: Record<string, ProfileShiftPreferenceEntry[]>;
   withoutServiceHours?: boolean;
   onChange: (patch: Partial<BulkRow>) => void;
   onDelete: () => void;
@@ -914,6 +915,7 @@ function BulkShiftRowEditor({
   locationDayAssignments,
   allRows,
   profileQualificationIds,
+  profileShiftPreferences,
   withoutServiceHours = false,
   onChange,
   onDelete,
@@ -1141,7 +1143,13 @@ function BulkShiftRowEditor({
 
     let nextEmployeeId = row.employeeId;
     if (!row.employeeManuallySelected && columnPrefill.employee) {
-      const preferred = pickEmployeeLongestWithoutShift(matchingEmployees);
+      const preferred = pickEmployeeForBulkPrefill(
+        matchingEmployees,
+        requestWindow.startTime,
+        requestWindow.endTime,
+        areaId,
+        profileShiftPreferences
+      );
       nextEmployeeId = preferred?.id ?? DASHBOARD_EMPTY_EMPLOYEE_ID;
       if (nextEmployeeId !== row.employeeId) {
         patch.employeeId = nextEmployeeId;
@@ -1218,6 +1226,7 @@ function BulkShiftRowEditor({
     columnPrefill.template,
     columnPrefill.employee,
     columnPrefill.qualification,
+    profileShiftPreferences,
     serviceHours,
   ]);
 
@@ -1451,6 +1460,7 @@ export function DashboardBulkShiftModal({
   const router = useRouter();
   const { locale } = useLocale();
   const t = useTranslations();
+  const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
   const intlLocale = toIntlLocale(locale);
   const weekday = profileAvailabilityWeekdayFromDashboardDate(dialog.date);
 
@@ -1530,6 +1540,8 @@ export function DashboardBulkShiftModal({
     resolveBulkShiftRowIdForShiftFocus([], dialog.focusShiftId)
   );
   const pendingFocusShiftIdRef = useRef(dialog.focusShiftId);
+  const autoPrefillAppendedForScopeRef = useRef<string | null>(null);
+  const dialogScopeKey = `${dialog.areaId}:${dialog.date}:${withoutServiceHours ? "nsh" : "sh"}`;
 
   const staffingEntries = useMemo(
     () =>
@@ -1702,7 +1714,9 @@ export function DashboardBulkShiftModal({
     async function load() {
       setLoading(true);
       setPrompt(null);
-      const result = await fetchDashboardBulkShiftContext(dialog.date);
+      const result = await fetchDashboardBulkShiftContext(dialog.date, {
+        simulatedProposedOnAssign,
+      });
       if (cancelled) return;
       if (!result.ok) {
         setPrompt({ kind: "alert", message: translateActionError(result.error, t) });
@@ -1730,7 +1744,7 @@ export function DashboardBulkShiftModal({
     return () => {
       cancelled = true;
     };
-  }, [dialog.date]);
+  }, [dialog.date, simulatedProposedOnAssign, t]);
 
   const updateRow = useCallback((id: string, patch: Partial<BulkRow>) => {
     setActiveRowId(id);
@@ -1873,6 +1887,37 @@ export function DashboardBulkShiftModal({
   const performAddRow = useCallback(() => {
     appendPrefilledBulkRow();
   }, [appendPrefilledBulkRow]);
+
+  useEffect(() => {
+    if (loading || saving) return;
+    if (autoPrefillAppendedForScopeRef.current === dialogScopeKey) return;
+
+    const hasUnsavedRow = rows.some((row) => !row.existingShiftId);
+    if (hasUnsavedRow) {
+      autoPrefillAppendedForScopeRef.current = dialogScopeKey;
+      return;
+    }
+
+    const needsPrefilledRow = withoutServiceHours
+      ? rows.length === 0
+      : staffingEntries.some((entry) => entry.assigned < entry.required);
+
+    if (!needsPrefilledRow) {
+      autoPrefillAppendedForScopeRef.current = dialogScopeKey;
+      return;
+    }
+
+    autoPrefillAppendedForScopeRef.current = dialogScopeKey;
+    appendPrefilledBulkRow();
+  }, [
+    loading,
+    saving,
+    dialogScopeKey,
+    rows,
+    staffingEntries,
+    withoutServiceHours,
+    appendPrefilledBulkRow,
+  ]);
 
   const performStaffingSpeedAdd = useCallback(
     (serviceHourId: string, qualificationId: string) => {
@@ -2043,6 +2088,7 @@ export function DashboardBulkShiftModal({
           endTime: row.endTime,
           areaShiftTemplateId: areaShiftTemplateIdForAssign(row.shiftTypeId),
         })),
+        simulatedProposedOnAssign,
       });
       setSaving(false);
 
@@ -2423,6 +2469,7 @@ export function DashboardBulkShiftModal({
                     locationDayAssignments={effectiveLocationDayAssignments}
                     allRows={rows}
                     profileQualificationIds={profileQualificationIds}
+                    profileShiftPreferences={profileShiftPreferences}
                     withoutServiceHours={withoutServiceHours}
                     disabled={loading || saving}
                     onChange={(patch) => updateRow(row.id, patch)}

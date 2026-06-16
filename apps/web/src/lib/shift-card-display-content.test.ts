@@ -43,4 +43,19 @@ describe("buildShiftCardDisplayContent tooltips", () => {
     expect(display.tooltipBody).toContain("Sonder");
     expect(display.tooltipBody).not.toContain("Schicht:");
   });
+
+  it("accepts null jobsLabel", () => {
+    const display = buildShiftCardDisplayContent(
+      {
+        employeeName: "Alexa Bello",
+        startTime: "08:00",
+        endTime: "10:00",
+        shiftName: "Früh",
+      },
+      null
+    );
+
+    expect(display.jobsLabel).toBe("");
+    expect(display.tooltipBody).not.toContain("Job:");
+  });
 });

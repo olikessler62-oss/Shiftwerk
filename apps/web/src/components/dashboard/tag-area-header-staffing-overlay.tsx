@@ -44,8 +44,8 @@ function staffingLabelClass(
   return cn(
     STAFFING_LABEL_INTERACTIVE_CLASS,
     dimmed
-      ? "text-success-foreground hover:bg-success-foreground/10 hover:text-emerald-700"
-      : "text-green-600 hover:bg-green-600/12 hover:text-green-500"
+      ? "text-neutral-500 hover:bg-neutral-500/10 hover:text-neutral-600"
+      : "text-neutral-600 hover:bg-neutral-500/10 hover:text-neutral-700"
   );
 }
 

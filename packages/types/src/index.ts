@@ -18,8 +18,6 @@ export interface Role {
   archived_at: string | null;
 }
 
-export type AvailabilityStatus = "available" | "unavailable" | "preferred";
-
 export type AbsenceType = "vacation" | "sick" | "other";
 
 export type RequestStatus = "pending" | "approved" | "rejected" | "cancelled";
@@ -359,14 +357,6 @@ export interface ConfirmationRespondItem {
 
 export interface ConfirmationRespondBody {
   items: ConfirmationRespondItem[];
-}
-
-export interface Availability {
-  id: string;
-  organization_id: string;
-  employee_id: string;
-  available_date: string;
-  status: AvailabilityStatus;
 }
 
 export interface AbsenceRequest {

@@ -233,3 +233,5 @@ export function weeklySummary(
     estimatedCost: Math.round(plannedHours * 14.5),
   };
 }
+
+export type PlanningWeeklySummary = ReturnType<typeof weeklySummary>;

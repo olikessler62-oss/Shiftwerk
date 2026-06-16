@@ -6,28 +6,38 @@ import {
   weekStartsForShiftCacheInvalidation,
 } from "@/lib/cached-dashboard-shifts";
 import { getDatabase } from "@/lib/db";
+import { shiftTimeFromTimestamp } from "@/lib/dates";
 import { requireManager } from "@/lib/manager";
+import { resolveSimulatedProposedAssignOptions } from "@/lib/shift-confirmation-assign-mode";
 import {
   filterSendableProposedShifts,
   filterShiftsForConfirmationSendScope,
   isoWeekEndFromWeekStart,
   isShiftEligibleForConfirmationSend,
+  isShiftProposedForSend,
   profileEligibleForShiftConfirmationAssignment,
+  resolveOrganizationTimeZone,
 } from "@schichtwerk/database";
-import type { ConfirmationRequestScope } from "@schichtwerk/types";
+import type { ConfirmationRequestScope, ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export type ConfirmationSendActionResult =
   | { ok: true; sentCount: number; batchId: string; isDelta: boolean }
   | { ok: false; error: string };
 
-export type ConfirmationSendCandidate = {
+export type ConfirmationSendShiftRow = {
+  shiftId: string;
   employeeId: string;
-  fullName: string;
-  proposedCount: number;
+  employeeName: string;
+  shiftDate: string;
+  templateName: string | null;
+  startTime: string;
+  endTime: string;
+  confirmationStatus: ShiftConfirmationStatus;
+  sendable: boolean;
 };
 
-export type ListConfirmationSendCandidatesResult =
-  | { ok: true; candidates: ConfirmationSendCandidate[] }
+export type ListConfirmationSendShiftsResult =
+  | { ok: true; shifts: ConfirmationSendShiftRow[] }
   | { ok: false; error: string };
 
 function revalidateConfirmationPaths(input: {
@@ -54,11 +64,21 @@ async function sendConfirmationForEmployee(input: {
   shiftDate?: string;
   shiftId?: string;
   locationId?: string;
+  simulatedProposedOnAssign?: boolean;
 }): Promise<ConfirmationSendActionResult> {
-  const { organizationId, userId, organization } = await requireManager();
+  const { organizationId, userId, organization, profile: managerProfile } =
+    await requireManager();
+  const assignMode = resolveSimulatedProposedAssignOptions({
+    organizationEnabled: organization.shift_confirmation_enabled,
+    simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+    managerEmail: managerProfile.email,
+  });
 
-  if (!organization.shift_confirmation_enabled) {
-    return { ok: false, error: "Schichtbestätigung ist für diese Organisation nicht aktiv." };
+  if (!assignMode.shiftConfirmationEnabled) {
+    return {
+      ok: false,
+      error: "Schichtbestätigung ist für diese Organisation nicht aktiv.",
+    };
   }
 
   const db = await getDatabase();
@@ -80,16 +100,23 @@ async function sendConfirmationForEmployee(input: {
   if (!profile || profile.organization_id !== organizationId) {
     return { ok: false, error: "Mitarbeiter nicht gefunden." };
   }
-  if (!profileEligibleForShiftConfirmationAssignment(profile)) {
-    return {
-      ok: false,
-      error: "Mitarbeiter ohne App-Registrierung kann keine Anfrage erhalten.",
-    };
+
+  if (!assignMode.relaxAppRegistrationGate) {
+    if (!profileEligibleForShiftConfirmationAssignment(profile)) {
+      return {
+        ok: false,
+        error: "Mitarbeiter ohne App-Registrierung kann keine Anfrage erhalten.",
+      };
+    }
   }
 
-  const eligible = scoped.filter((shift) =>
-    isShiftEligibleForConfirmationSend(shift, profile)
-  );
+  const eligible = assignMode.relaxAppRegistrationGate
+    ? scoped.filter(
+        (shift) =>
+          shift.employee_id === profile.id && isShiftProposedForSend(shift)
+      )
+    : scoped.filter((shift) => isShiftEligibleForConfirmationSend(shift, profile));
+
   const latestSnapshots = await db.getLatestConfirmationSnapshotsByShiftIds(
     eligible.map((shift) => shift.id)
   );
@@ -108,6 +135,7 @@ async function sendConfirmationForEmployee(input: {
     weekEnd,
     shifts: sendable,
     profile,
+    skipNotificationOutbox: assignMode.relaxAppRegistrationGate,
   });
 
   revalidateConfirmationPaths({
@@ -128,6 +156,7 @@ export async function sendConfirmationRequestForShift(input: {
   shiftId: string;
   weekStart: string;
   locationId?: string;
+  simulatedProposedOnAssign?: boolean;
 }): Promise<ConfirmationSendActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -143,6 +172,7 @@ export async function sendConfirmationRequestForShift(input: {
       employeeId: shift.employee_id,
       shiftId: input.shiftId,
       locationId: input.locationId ?? shift.location_id ?? undefined,
+      simulatedProposedOnAssign: input.simulatedProposedOnAssign,
     });
   } catch (e) {
     return {
@@ -157,6 +187,7 @@ export async function sendConfirmationRequestForEmployeeDay(input: {
   shiftDate: string;
   weekStart: string;
   locationId?: string;
+  simulatedProposedOnAssign?: boolean;
 }): Promise<ConfirmationSendActionResult> {
   try {
     return sendConfirmationForEmployee({
@@ -165,6 +196,7 @@ export async function sendConfirmationRequestForEmployeeDay(input: {
       employeeId: input.employeeId,
       shiftDate: input.shiftDate,
       locationId: input.locationId,
+      simulatedProposedOnAssign: input.simulatedProposedOnAssign,
     });
   } catch (e) {
     return {
@@ -178,6 +210,7 @@ export async function sendConfirmationRequestForEmployeeWeek(input: {
   employeeId: string;
   weekStart: string;
   locationId?: string;
+  simulatedProposedOnAssign?: boolean;
 }): Promise<ConfirmationSendActionResult> {
   try {
     return sendConfirmationForEmployee({
@@ -185,7 +218,78 @@ export async function sendConfirmationRequestForEmployeeWeek(input: {
       weekStart: input.weekStart,
       employeeId: input.employeeId,
       locationId: input.locationId,
+      simulatedProposedOnAssign: input.simulatedProposedOnAssign,
     });
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Senden fehlgeschlagen.",
+    };
+  }
+}
+
+export async function sendConfirmationRequestForSelectedShifts(input: {
+  shiftIds: string[];
+  weekStart: string;
+  locationId?: string;
+  simulatedProposedOnAssign?: boolean;
+}): Promise<
+  | {
+      ok: true;
+      results: Array<
+        | { shiftId: string; ok: true; sentCount: number; batchId: string }
+        | { shiftId: string; ok: false; error: string }
+      >;
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const uniqueShiftIds = [...new Set(input.shiftIds.filter(Boolean))];
+    if (!uniqueShiftIds.length) {
+      return { ok: false, error: "Keine Schichten ausgewählt." };
+    }
+
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    const results: Array<
+      | { shiftId: string; ok: true; sentCount: number; batchId: string }
+      | { shiftId: string; ok: false; error: string }
+    > = [];
+
+    for (const shiftId of uniqueShiftIds) {
+      const shift = await db.getShiftRecordById(shiftId, organizationId);
+      if (!shift) {
+        results.push({ shiftId, ok: false, error: "Schicht nicht gefunden." });
+        continue;
+      }
+
+      const result = await sendConfirmationForEmployee({
+        scope: "single_shift",
+        weekStart: input.weekStart,
+        employeeId: shift.employee_id,
+        shiftId,
+        locationId: input.locationId,
+        simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      });
+      if (result.ok) {
+        results.push({
+          shiftId,
+          ok: true,
+          sentCount: result.sentCount,
+          batchId: result.batchId,
+        });
+      } else {
+        results.push({ shiftId, ok: false, error: result.error });
+      }
+    }
+
+    revalidateConfirmationPaths({
+      organizationId,
+      locationId: input.locationId,
+      weekStart: input.weekStart,
+    });
+
+    return { ok: true, results };
   } catch (e) {
     return {
       ok: false,
@@ -198,6 +302,7 @@ export async function sendConfirmationRequestBulkWeek(input: {
   weekStart: string;
   employeeIds: string[];
   locationId?: string;
+  simulatedProposedOnAssign?: boolean;
 }): Promise<
   | {
       ok: true;
@@ -209,10 +314,7 @@ export async function sendConfirmationRequestBulkWeek(input: {
   | { ok: false; error: string }
 > {
   try {
-    const { organizationId, organization } = await requireManager();
-    if (!organization.shift_confirmation_enabled) {
-      return { ok: false, error: "Schichtbestätigung ist für diese Organisation nicht aktiv." };
-    }
+    const { organizationId } = await requireManager();
 
     const uniqueEmployeeIds = [...new Set(input.employeeIds.filter(Boolean))];
     if (!uniqueEmployeeIds.length) {
@@ -230,6 +332,7 @@ export async function sendConfirmationRequestBulkWeek(input: {
         weekStart: input.weekStart,
         employeeId,
         locationId: input.locationId,
+        simulatedProposedOnAssign: input.simulatedProposedOnAssign,
       });
       if (result.ok) {
         results.push({
@@ -258,54 +361,84 @@ export async function sendConfirmationRequestBulkWeek(input: {
   }
 }
 
-export async function listConfirmationSendCandidates(input: {
+export async function listConfirmationSendShifts(input: {
   weekStart: string;
   locationId?: string;
-}): Promise<ListConfirmationSendCandidatesResult> {
+  simulatedProposedOnAssign?: boolean;
+}): Promise<ListConfirmationSendShiftsResult> {
   try {
-    const { organizationId, organization } = await requireManager();
-    if (!organization.shift_confirmation_enabled) {
-      return { ok: true, candidates: [] };
+    const { organizationId, organization, profile } = await requireManager();
+    const assignMode = resolveSimulatedProposedAssignOptions({
+      organizationEnabled: organization.shift_confirmation_enabled,
+      simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      managerEmail: profile.email,
+    });
+    if (!assignMode.shiftConfirmationEnabled) {
+      return { ok: true, shifts: [] };
     }
 
     const db = await getDatabase();
+    const timeZone = resolveOrganizationTimeZone(organization);
     const weekEnd = isoWeekEndFromWeekStart(input.weekStart);
-    const proposed = await db.listProposedShiftsForConfirmationSend(organizationId, {
+    const rows = await db.listShiftsForConfirmationSendModal(organizationId, {
       weekStart: input.weekStart,
       weekEnd,
       locationId: input.locationId,
     });
 
-    if (!proposed.length) {
-      return { ok: true, candidates: [] };
+    if (!rows.length) {
+      return { ok: true, shifts: [] };
     }
 
     const profiles = await db.listOrganizationProfiles(organizationId);
-    const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+    const profileById = new Map(profiles.map((entry) => [entry.id, entry]));
+    const proposedRows = rows.filter((row) => row.confirmation_status === "proposed");
     const latestSnapshots = await db.getLatestConfirmationSnapshotsByShiftIds(
-      proposed.map((shift) => shift.id)
+      proposedRows.map((row) => row.id)
     );
 
-    const counts = new Map<string, number>();
-    for (const shift of proposed) {
-      const profile = profileById.get(shift.employee_id);
-      if (!profile || !profileEligibleForShiftConfirmationAssignment(profile)) {
-        continue;
+    const shifts: ConfirmationSendShiftRow[] = [];
+
+    for (const row of rows) {
+      const employeeProfile = profileById.get(row.employee_id);
+      if (!employeeProfile) continue;
+
+      const status = row.confirmation_status ?? "confirmed";
+      let sendable = false;
+
+      if (status === "proposed") {
+        if (assignMode.relaxAppRegistrationGate) {
+          sendable = isShiftProposedForSend(row);
+        } else if (
+          profileEligibleForShiftConfirmationAssignment(employeeProfile) &&
+          isShiftEligibleForConfirmationSend(row, employeeProfile)
+        ) {
+          sendable = filterSendableProposedShifts([row], latestSnapshots).length > 0;
+        }
       }
-      if (!isShiftEligibleForConfirmationSend(shift, profile)) continue;
-      if (!filterSendableProposedShifts([shift], latestSnapshots).length) continue;
-      counts.set(shift.employee_id, (counts.get(shift.employee_id) ?? 0) + 1);
+
+      shifts.push({
+        shiftId: row.id,
+        employeeId: row.employee_id,
+        employeeName: row.employee_full_name || employeeProfile.full_name,
+        shiftDate: row.shift_date,
+        templateName: row.template_name,
+        startTime: shiftTimeFromTimestamp(row.starts_at, timeZone),
+        endTime: shiftTimeFromTimestamp(row.ends_at, timeZone),
+        confirmationStatus: status,
+        sendable,
+      });
     }
 
-    const candidates = [...counts.entries()]
-      .map(([employeeId, proposedCount]) => ({
-        employeeId,
-        fullName: profileById.get(employeeId)?.full_name ?? employeeId,
-        proposedCount,
-      }))
-      .sort((a, b) => a.fullName.localeCompare(b.fullName, "de"));
+    shifts.sort((a, b) => {
+      const dateDiff = a.shiftDate.localeCompare(b.shiftDate);
+      if (dateDiff !== 0) return dateDiff;
+      const timeDiff = a.startTime.localeCompare(b.startTime);
+      if (timeDiff !== 0) return timeDiff;
+      return a.employeeName.localeCompare(b.employeeName, "de");
+    });
 
-    return { ok: true, candidates };
+    return { ok: true, shifts };
   } catch (e) {
     return {
       ok: false,

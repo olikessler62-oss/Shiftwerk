@@ -1,4 +1,6 @@
 /** Vertikale Metriken für Schichtkarten-Zeilen im Kalender. */
+import { PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX } from "./planning-calendar-layout";
+
 /** Zusätzliche sichtbare Breite/Höhe pro Schichtkarte. */
 export const SHIFT_CARD_EXTRA_WIDTH_PX = 1;
 export const SHIFT_CARD_EXTRA_HEIGHT_PX = 1;
@@ -29,7 +31,20 @@ export const AREA_ROW_EMPTY_HEIGHT_PX = 50;
 export const AREA_ROW_MIN_HEIGHT_PX = AREA_ROW_EMPTY_HEIGHT_PX;
 /** Größter Bereich muss mindestens so viel höher sein als der zweitgrößte. */
 export const DOMINANT_AREA_MIN_LEAD_RATIO = 1.25;
+
 export const CALENDAR_HEADER_HEIGHT_PX = 56;
+export { PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX as CALENDAR_FOOTER_HEIGHT_PX };
+
+export function calendarAvailableBodyHeightPx(
+  scrollClientHeightPx: number
+): number {
+  return Math.max(
+    0,
+    scrollClientHeightPx -
+      CALENDAR_HEADER_HEIGHT_PX -
+      PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX
+  );
+}
 
 function clampAreaRowHeightPx(heightPx: number): number {
   return Math.max(AREA_ROW_MIN_HEIGHT_PX, heightPx);

@@ -16,6 +16,8 @@ import {
   formatPlanningHoursRatio,
 } from "@/lib/planning-utils";
 import { TagAreaHeaderStaffingOverlay } from "@/components/dashboard/tag-area-header-staffing-overlay";
+import { PlanningWeeklySummaryFooter } from "@/components/planning/planning-weekly-summary-footer";
+import { TagAreaFooterStrip } from "@/components/dashboard/tag-area-footer-strip";
 import {
   PLANNING_CALENDAR_GRID_TRANSITION_CLASS,
   PLANNING_CELL_CONTENT_TRANSITION_CLASS,
@@ -24,18 +26,21 @@ import {
   PLANNING_COLUMN_DIVIDER_CLASS,
   PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
+  PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
   PLANNING_EMPLOYEE_ROW_HEIGHT,
   PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX,
   PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
   PLANNING_HEADER_ROW_BORDER_CLASS,
   PLANNING_ROW_DIVIDER_CLASS,
+  PLANNING_STAFF_COLUMN_BOTTOM_EDGE_CLASS,
   resolvePlanningCellBackground,
 } from "@/lib/planning-calendar-layout";
 import type { TagAreaHeaderStaffingEntry, AreaServiceHourRef } from "@/lib/location-staffing-client";
+import type { TagAreaFooterLabels } from "@/lib/tag-area-footer-stats";
+import type { PlanningWeeklySummary } from "@/lib/planning-utils";
 import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
 import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
 import type {
-  AvailabilityStatus,
   LocationAreaStaffing,
   Profile,
   Qualification,
@@ -50,6 +55,7 @@ import {
   collectPlanningOvernightSpansByEmployee,
   filterPlanningCellSegmentsForRendering,
   planningCellTouchesOvernightSpan,
+  resolveOvernightSpanDisplayMode,
 } from "@/lib/planning-overnight-shift-display";
 import { planningCellDataAttribute } from "@/lib/planning-overnight-span-layout";
 
@@ -72,12 +78,12 @@ type Props = {
   calendarDisplayShifts?: PlanningShift[];
   shiftsByCell: Map<string, PlanningShift[]>;
   shiftsByCellDisplay: Map<string, PlanningShiftDisplaySegment[]>;
-  availabilityMap: Map<string, AvailabilityStatus>;
   holidayNames: Record<string, string>;
   dayHasServiceHours: boolean[];
   dayHasOpenArea: boolean[];
   activeDayDates: Set<string>;
   layoutActiveDayDates: Set<string>;
+  layoutTransitionEnabled?: boolean;
   dayReferenceShiftTimesByDate: Map<
     string,
     readonly { startTime: string; endTime: string }[]
@@ -100,7 +106,9 @@ type Props = {
   picker: { employeeId: string; date: string; shiftId?: string } | null;
   showStaffingHeaderRow?: boolean;
   dailyStaffingByDate?: Map<string, TagAreaHeaderStaffingEntry[]>;
-  t: (key: string) => string;
+  dailyFooterLabelsByDate?: Map<string, TagAreaFooterLabels>;
+  weeklySummary?: PlanningWeeklySummary;
+  t: (key: string, params?: Record<string, string>) => string;
   isDayReadOnly: (date: string) => boolean;
   getDayAssignBlockReason: (
     employeeId: string,
@@ -145,12 +153,12 @@ export function PlanningCalendarGrid({
   calendarDisplayShifts,
   shiftsByCell,
   shiftsByCellDisplay,
-  availabilityMap,
   holidayNames,
   dayHasServiceHours,
   dayHasOpenArea,
   activeDayDates,
   layoutActiveDayDates,
+  layoutTransitionEnabled = false,
   dayReferenceShiftTimesByDate,
   serviceTimelinesByDate,
   columnTemplate,
@@ -170,6 +178,8 @@ export function PlanningCalendarGrid({
   picker,
   showStaffingHeaderRow = false,
   dailyStaffingByDate,
+  dailyFooterLabelsByDate,
+  weeklySummary,
   t,
   isDayReadOnly,
   getDayAssignBlockReason,
@@ -277,12 +287,14 @@ export function PlanningCalendarGrid({
 
   const employeeBodyStartRow = showStaffingHeaderRow ? 3 : 2;
   const staffingHeaderRow = showStaffingHeaderRow ? 2 : null;
-  const footerGridRow = employees.length + employeeBodyStartRow;
+  const footerStatsGridRow = employees.length + employeeBodyStartRow;
+  const footerGridRow = footerStatsGridRow + 1;
 
   const fullRowTemplate = useMemo(() => {
     const parts = [
       headerRowTemplate,
       bodyRowTemplate,
+      PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
       PLANNING_DAY_FOOTER_ROW_HEIGHT,
     ].filter((part) => part.length > 0);
     return parts.join(" ");
@@ -311,7 +323,11 @@ export function PlanningCalendarGrid({
         )}
       >
         <div
-          className={cn("grid text-sm", PLANNING_CALENDAR_GRID_TRANSITION_CLASS)}
+          data-planning-calendar-grid
+          className={cn(
+            "grid min-h-full text-sm",
+            layoutTransitionEnabled && PLANNING_CALENDAR_GRID_TRANSITION_CLASS
+          )}
           style={{
             gridTemplateColumns: columnTemplate,
             gridTemplateRows: fullRowTemplate,
@@ -333,7 +349,8 @@ export function PlanningCalendarGrid({
           <div
             className={cn(
               "sticky left-0 top-[3.5rem] z-[45] border-t border-slate-300 bg-calendar-active-header",
-              PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS
+              PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
+              PLANNING_STAFF_COLUMN_BOTTOM_EDGE_CLASS
             )}
             style={{
               gridColumn: 1,
@@ -458,7 +475,7 @@ export function PlanningCalendarGrid({
             <div key={`staff-${emp.id}`} className="contents">
               <div
                 className={cn(
-                  "sticky left-0 z-20 flex min-h-0 items-center bg-surface px-0",
+                  "sticky left-0 z-20 flex min-h-0 items-center self-stretch bg-surface px-0",
                   PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
                   !isLastEmployee && PLANNING_ROW_DIVIDER_CLASS
                 )}
@@ -501,7 +518,6 @@ export function PlanningCalendarGrid({
                 );
                 const cellHasShift =
                   allCellSegments.length > 0 || hasOvernightSpanOnCell;
-                const avail = availabilityMap.get(key);
                 const blockReason =
                   cellHasShift
                     ? null
@@ -522,6 +538,24 @@ export function PlanningCalendarGrid({
                   serviceTimelinesByDate.values().next().value!;
                 const onShiftClick = (shiftId: string) =>
                   onOpenPicker(emp.id, date, shiftId);
+                const canOpenNewShiftInCell =
+                  !pending && canAssign && !dayReadOnly;
+                const openNewShiftInCell = () => onOpenPicker(emp.id, date);
+                const emptyAreaPickerSelected =
+                  picker?.employeeId === emp.id &&
+                  picker?.date === date &&
+                  !picker?.shiftId;
+                const emptyAreaLabel = t("planning.addShiftTitle");
+                const collapsedOvernightAnchors = !isDayExpanded
+                  ? employeeOvernightSpans.filter(
+                      (span) =>
+                        span.startDate === date &&
+                        resolveOvernightSpanDisplayMode(
+                          span,
+                          layoutActiveDayDates
+                        ) === "collapsed"
+                    )
+                  : [];
                 const collapsedMarkers =
                   cellSegments.length > 0 ? (
                     <PlanningCellCollapsedShiftMarkers
@@ -535,6 +569,9 @@ export function PlanningCalendarGrid({
                       pending={pending}
                       selectedShiftId={selectedShiftId}
                       onShiftClick={onShiftClick}
+                      onEmptyAreaClick={openNewShiftInCell}
+                      emptyAreaDisabled={!canOpenNewShiftInCell}
+                      emptyAreaLabel={emptyAreaLabel}
                     />
                   ) : null;
                 const expandedShiftRow =
@@ -547,6 +584,10 @@ export function PlanningCalendarGrid({
                       pending={pending}
                       selectedShiftId={selectedShiftId}
                       onShiftClick={onShiftClick}
+                      onEmptyAreaClick={openNewShiftInCell}
+                      emptyAreaDisabled={!canOpenNewShiftInCell}
+                      emptyAreaSelected={emptyAreaPickerSelected}
+                      emptyAreaLabel={emptyAreaLabel}
                       shiftJobContext={shiftJobContextByDate.get(date)!}
                       uniformShiftWidthPxByKey={
                         isDayExpanded
@@ -573,7 +614,7 @@ export function PlanningCalendarGrid({
                     key={key}
                     data-planning-cell={planningCellDataAttribute(emp.id, date)}
                     className={cn(
-                      "relative flex min-h-0 flex-col overflow-hidden",
+                      "relative flex min-h-0 flex-col self-stretch overflow-hidden",
                       dayColumnDivider(dayIndex, dates.length),
                       !isLastEmployee && PLANNING_ROW_DIVIDER_CLASS
                     )}
@@ -603,15 +644,32 @@ export function PlanningCalendarGrid({
                         onWidthChange={handleDayColumnWidthChange}
                       />
                     ) : null}
-                    {!isDayExpanded && cellSegments.length > 0
-                      ? collapsedMarkers
-                      : null}
+                    {!isDayExpanded &&
+                    (cellSegments.length > 0 ||
+                      collapsedOvernightAnchors.length > 0) ? (
+                      <div
+                        className="flex w-full min-w-0 flex-1 items-center"
+                        style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
+                      >
+                        {cellSegments.length > 0 ? collapsedMarkers : null}
+                        {collapsedOvernightAnchors.map((span) => (
+                          <div
+                            key={`overnight-anchor-${span.shift.id}`}
+                            data-planning-overnight-span-anchor={span.shift.id}
+                            className="ml-auto shrink-0"
+                            style={{ width: 1, height: 1 }}
+                            aria-hidden
+                          />
+                        ))}
+                      </div>
+                    ) : null}
 
                     {isDayExpanded ? (
                       <div
                         className={cn(
                           "flex min-h-0 flex-1 flex-col",
-                          PLANNING_CELL_CONTENT_TRANSITION_CLASS,
+                          layoutTransitionEnabled &&
+                            PLANNING_CELL_CONTENT_TRANSITION_CLASS,
                           "opacity-100"
                         )}
                       >
@@ -620,35 +678,22 @@ export function PlanningCalendarGrid({
                         ) : hasOvernightSpanOnCell ? (
                           <div
                             aria-hidden
-                            style={{ height: PLANNING_CELL_HEIGHT_PX }}
+                            className="min-h-0 flex-1"
+                            style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
                           />
                         ) : blockReason === "absent" ? (
                           <div
-                            className="flex items-center justify-center rounded-lg bg-rose-50 text-xs font-medium text-rose-700"
-                            style={{ height: PLANNING_CELL_HEIGHT_PX }}
+                            className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-rose-50 text-xs font-medium text-rose-700"
+                            style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
                           >
                             {t("planning.cellAbsent")}
                           </div>
                         ) : blockReason === "no_availability" ? (
                           <div
-                            className="flex items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500"
-                            style={{ height: PLANNING_CELL_HEIGHT_PX }}
+                            className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500"
+                            style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
                           >
                             {t("planning.cellNoAvailability")}
-                          </div>
-                        ) : avail === "unavailable" ? (
-                          <div
-                            className="flex items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500"
-                            style={{ height: PLANNING_CELL_HEIGHT_PX }}
-                          >
-                            {t("planning.cellUnavailable")}
-                          </div>
-                        ) : avail === "preferred" ? (
-                          <div
-                            className="flex items-center justify-center rounded-lg bg-amber-50 text-xs font-medium text-amber-700"
-                            style={{ height: PLANNING_CELL_HEIGHT_PX }}
-                          >
-                            {t("planning.cellPreferred")}
                           </div>
                         ) : (
                           <button
@@ -656,13 +701,13 @@ export function PlanningCalendarGrid({
                             disabled={pending || !canAssign || dayReadOnly}
                             onClick={() => onOpenPicker(emp.id, date)}
                             className={cn(
-                              "flex w-full flex-col items-center justify-center rounded-lg border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40",
+                              "flex min-h-0 w-full flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40",
                               picker?.employeeId === emp.id &&
                                 picker?.date === date &&
                                 !picker?.shiftId &&
                                 "border-primary bg-primary/5 text-primary"
                             )}
-                            style={{ height: PLANNING_CELL_HEIGHT_PX }}
+                            style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
                           >
                             <span className="text-lg leading-none">+</span>
                             <span className="text-[10px]">
@@ -684,10 +729,13 @@ export function PlanningCalendarGrid({
                   dayColumnCount={dates.length}
                   gridRow={gridRow}
                   layoutActiveDayDates={layoutActiveDayDates}
+                  layoutTransitionEnabled={layoutTransitionEnabled}
                   employeeColor={employeeColor}
                   todayISO={todayISO}
                   assignmentPresets={assignmentPresets}
                   shiftJobContextByDate={shiftJobContextByDate}
+                  serviceTimelinesByDate={serviceTimelinesByDate}
+                  dayReferenceShiftTimesByDate={dayReferenceShiftTimesByDate}
                   pending={pending}
                   selectedShiftId={rowSelectedShiftId}
                   onShiftClick={(shiftId, startDate) =>
@@ -715,14 +763,84 @@ export function PlanningCalendarGrid({
         })}
 
         <div
-          className="sticky bottom-0 z-40 border-t border-slate-400 bg-calendar-active-header"
+          className={cn(
+            "sticky left-0 z-[41] border-t border-slate-400 bg-calendar-active-header",
+            PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS
+          )}
           style={{
-            gridColumn: "1 / -1",
-            gridRow: footerGridRow,
-            height: PLANNING_DAY_FOOTER_ROW_HEIGHT,
+            gridColumn: 1,
+            gridRow: footerStatsGridRow,
+            height: PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
+            bottom: PLANNING_DAY_FOOTER_ROW_HEIGHT,
           }}
           aria-hidden
         />
+
+        {dates.map((date, dayIndex) => {
+          const mutedFooter = !dayHasServiceHours[dayIndex];
+          const footerLabels = dailyFooterLabelsByDate?.get(date);
+
+          return (
+            <div
+              key={`footer-stats-${date}`}
+              data-planning-day-footer-stats={date}
+              className={cn(
+                "sticky z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-400",
+                mutedFooter ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
+                dayHeaderColumnDivider(dayIndex, dates.length)
+              )}
+              style={{
+                gridColumn: dayIndex + 2,
+                gridRow: footerStatsGridRow,
+                height: PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
+                bottom: PLANNING_DAY_FOOTER_ROW_HEIGHT,
+              }}
+            >
+              {footerLabels ? (
+                <TagAreaFooterStrip
+                  label={footerLabels.line}
+                  hoursTooltipLine={footerLabels.hoursLine}
+                  costTooltipLine={footerLabels.costLine}
+                  dayCollapsed={!layoutActiveDayDates.has(date)}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+
+        {weeklySummary ? (
+          <PlanningWeeklySummaryFooter
+            summary={weeklySummary}
+            locale={locale}
+            gridRow={footerGridRow}
+            t={t}
+          />
+        ) : (
+          <>
+            <div
+              className={cn(
+                "sticky left-0 bottom-0 z-40 border-t border-slate-400 bg-calendar-active-header",
+                PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS
+              )}
+              style={{
+                gridColumn: 1,
+                gridRow: footerGridRow,
+                height: PLANNING_DAY_FOOTER_ROW_HEIGHT,
+              }}
+              aria-hidden
+            />
+
+            <div
+              className="sticky bottom-0 z-40 border-t border-slate-400 bg-calendar-active-header"
+              style={{
+                gridColumn: "2 / -1",
+                gridRow: footerGridRow,
+                height: PLANNING_DAY_FOOTER_ROW_HEIGHT,
+              }}
+              aria-hidden
+            />
+          </>
+        )}
         </div>
       </div>
     </div>

@@ -17,8 +17,11 @@ import {
   ShiftPlanner,
   type PlanningShift,
 } from "@/components/planning/shift-planner";
+import { planningShiftToDashboardCard } from "@/lib/planning-shift-card";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
+import { loadDashboardShiftCompensation } from "@/lib/load-dashboard-shift-compensation";
+import { resolvePlanningEmployeesForShifts } from "@/lib/planning-page-employees";
 import { hasSettingsModalSearchParam } from "@/lib/settings-modal-navigation";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
 
@@ -40,7 +43,7 @@ export default async function PlanungPage({
     qualifikationen?: string;
     sonderzuschlaege?: string;
     abwesenheiten?: string;
-    planungsmodus?: string;
+    superadmin?: string;
     arbeitsentgelt?: string;
   }>;
 }) {
@@ -81,7 +84,6 @@ export default async function PlanungPage({
     employees,
     recurringAvailability,
     absences,
-    availability,
     locations,
     qualifications,
     profileQualificationIdsMap,
@@ -89,10 +91,9 @@ export default async function PlanungPage({
     settingsProfiles,
     settingsCompensationSurchargeTypes,
   ] = await Promise.all([
-    db.listActiveEmployees(orgId),
+    db.listPlanningEmployees(orgId),
     db.listOrganizationRecurringAvailability(orgId),
     db.listOrganizationAbsences(orgId, "approved"),
-    db.listAvailabilityForWeek(orgId, from, to),
     db.listLocations(orgId),
     db.listQualifications(orgId),
     db.listProfileQualificationIdsByOrganization(orgId),
@@ -185,14 +186,31 @@ export default async function PlanungPage({
     shifts.push(planningShift);
   }
 
+  const planningEmployees = await resolvePlanningEmployeesForShifts(
+    employees,
+    shifts,
+    (id) => db.getProfileById(id),
+    orgId
+  );
+
+  const employeeById = new Map(planningEmployees.map((employee) => [employee.id, employee]));
+  const compensationCards = shifts.flatMap((shift) => {
+    const employee = employeeById.get(shift.employee_id);
+    if (!employee) return [];
+    return [planningShiftToDashboardCard(shift, employee)];
+  });
+  const shiftCompensation =
+    compensationCards.length > 0
+      ? await loadDashboardShiftCompensation(db, orgId, compensationCards)
+      : {};
+
   return (
     <ShiftPlanner
       weekStart={weekStart}
       dates={dates}
-      employees={employees}
+      employees={planningEmployees}
       shifts={shifts}
       locationShifts={locationShifts}
-      availability={availability}
       recurringAvailability={recurringAvailability}
       absences={absences}
       locations={locations}
@@ -204,6 +222,7 @@ export default async function PlanungPage({
       staffingRules={staffingRules}
       qualifications={qualifications}
       profileQualificationIds={profileQualificationIds}
+      shiftCompensation={shiftCompensation}
       readOnlyWeek={readOnlyWeek}
       settingsModals={
         loadSettingsModalsData

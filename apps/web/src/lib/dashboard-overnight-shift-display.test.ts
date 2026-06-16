@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDashboardCellShiftRows,
+  collectDashboardIncomingOvernightTailRowsByIndex,
   collectDashboardOvernightSpansForArea,
+  countDashboardCellVisualRows,
   dashboardOvernightAnchorShiftIds,
   isDashboardOvernightShift,
   isDashboardOvernightSpanRenderable,
   resolveDashboardOvernightSpanDisplayMode,
+  resolveDashboardOvernightStartDayRowIndex,
 } from "./dashboard-overnight-shift-display";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 
@@ -117,5 +121,93 @@ describe("resolveDashboardOvernightSpanDisplayMode", () => {
         { forceAreaExpanded: true }
       )
     ).toBe("expanded");
+  });
+});
+
+describe("buildDashboardCellShiftRows", () => {
+  const dayShift = (id: string, startTime: string, endTime: string) =>
+    overnightShift({
+      id,
+      startTime,
+      endTime,
+      shift_date: "2026-06-03",
+    });
+
+  it("places same-day shifts below incoming overnight tail row", () => {
+    const overnight = overnightShift();
+    const morning = dayShift("s2", "08:00", "12:00");
+    const rows = buildDashboardCellShiftRows([morning], {
+      incomingOvernightTailRowsByIndex: new Map([[0, overnight.id]]),
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual([
+      "overnight-tail-spacer",
+      "shift",
+    ]);
+  });
+
+  it("inserts row gaps before a higher tail row when needed", () => {
+    const overnight = overnightShift();
+    const rows = buildDashboardCellShiftRows([], {
+      incomingOvernightTailRowsByIndex: new Map([[1, overnight.id]]),
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["row-gap", "overnight-tail-spacer"]);
+  });
+
+  it("keeps overnight anchor in sorted position on start day", () => {
+    const overnight = overnightShift();
+    const morning = dayShift("s2", "08:00", "12:00");
+    const rows = buildDashboardCellShiftRows([morning, overnight], {
+      overnightAnchorShiftIds: new Set([overnight.id]),
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["shift", "overnight-anchor"]);
+  });
+});
+
+describe("collectDashboardIncomingOvernightTailRowsByIndex", () => {
+  it("maps end-day tail rows from start-day order", () => {
+    const overnight = overnightShift();
+    const morning = overnightShift({
+      id: "s2",
+      startTime: "08:00",
+      endTime: "16:00",
+      shift_date: "2026-06-02",
+    });
+    const spans = collectDashboardOvernightSpansForArea(
+      "a1",
+      ["2026-06-02", "2026-06-03"],
+      [morning, overnight]
+    );
+
+    expect(
+      resolveDashboardOvernightStartDayRowIndex(spans[0]!, [morning, overnight])
+    ).toBe(1);
+
+    const tailRows = collectDashboardIncomingOvernightTailRowsByIndex(
+      "a1",
+      "2026-06-03",
+      spans,
+      (startDate) =>
+        startDate === "2026-06-02" ? [morning, overnight] : []
+    );
+
+    expect([...tailRows.entries()]).toEqual([[1, overnight.id]]);
+    expect(
+      countDashboardCellVisualRows(
+        [
+          overnightShift({
+            id: "s3",
+            startTime: "09:00",
+            endTime: "13:00",
+            shift_date: "2026-06-03",
+          }),
+        ],
+        {
+          incomingOvernightTailRowsByIndex: tailRows,
+        }
+      )
+    ).toBe(2);
   });
 });

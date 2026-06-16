@@ -1,5 +1,4 @@
 import type {
-  AvailabilityStatus,
   AbsenceRequest,
   AbsenceType,
   Profile,
@@ -25,7 +24,10 @@ import type {
   ConfirmationRequestScope,
 } from "@schichtwerk/types";
 import type { ShiftConfirmationSnapshot } from "./shift-confirmation-snapshot";
-import type { ProposedShiftForSend } from "./shift-confirmation-send";
+import type {
+  ProposedShiftForSend,
+  ConfirmationSendModalShiftRecord,
+} from "./shift-confirmation-send";
 import type { ShiftConfirmationPendingJobResult } from "./shift-confirmation-pending";
 
 export type { ShiftConfirmationPendingJobResult };
@@ -81,12 +83,6 @@ export type ShiftConfirmationWriteFields = {
   requested_at?: string | null;
   pending_since?: string | null;
   pending_reminder_sent_at?: string | null;
-};
-
-export type AvailabilityRow = {
-  employee_id: string;
-  available_date: string;
-  status: AvailabilityStatus;
 };
 
 export type AuthSignUpResult = {
@@ -212,6 +208,8 @@ export interface SchichtwerkDatabase {
   ): Promise<string | null>;
   listOrganizationProfiles(organizationId: string): Promise<Profile[]>;
   listActiveEmployees(organizationId: string): Promise<Profile[]>;
+  /** Aktive, planbare Profile (Mitarbeiter + Admins/Manager mit schedulable). */
+  listPlanningEmployees(organizationId: string): Promise<Profile[]>;
   getNextProfileSortOrder(organizationId: string): Promise<number>;
   reorderProfiles(organizationId: string, orderedIds: string[]): Promise<void>;
   countActiveEmployees(organizationId: string): Promise<number>;
@@ -718,6 +716,15 @@ export interface SchichtwerkDatabase {
     }
   ): Promise<ProposedShiftForSend[]>;
 
+  listShiftsForConfirmationSendModal(
+    organizationId: string,
+    options: {
+      weekStart: string;
+      weekEnd: string;
+      locationId?: string;
+    }
+  ): Promise<ConfirmationSendModalShiftRecord[]>;
+
   getLatestConfirmationSnapshotsByShiftIds(
     shiftIds: string[]
   ): Promise<Map<string, ShiftConfirmationSnapshot>>;
@@ -731,6 +738,7 @@ export interface SchichtwerkDatabase {
     weekEnd: string;
     shifts: ProposedShiftForSend[];
     profile: Pick<Profile, "email_fallback_mode">;
+    skipNotificationOutbox?: boolean;
   }): Promise<{ batchId: string; sentCount: number; isDelta: boolean }>;
 
   runShiftConfirmationPendingJob(
@@ -778,12 +786,7 @@ export interface SchichtwerkDatabase {
     items: import("@schichtwerk/types").ConfirmationRespondItem[];
   }): Promise<{ updatedCount: number }>;
 
-  // —— Availability ——
-  listAvailabilityForWeek(
-    organizationId: string,
-    from: string,
-    to: string
-  ): Promise<AvailabilityRow[]>;
+  resetOrganizationOperationalData(organizationId: string): Promise<void>;
 
   // —— Absence requests ——
   listOrganizationAbsences(

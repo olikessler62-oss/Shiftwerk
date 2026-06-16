@@ -63,11 +63,24 @@ function createBaseInput(
       {
         id: "emp-1",
         full_name: "Anna",
+        last_shift_date: "2026-06-01",
+        availabilities: [
+          { weekday: 1, start_time: "08:00", end_time: "12:00" },
+        ],
+      },
+      {
+        id: "emp-2",
+        full_name: "Ben",
         last_shift_date: null,
-        availabilities: [],
+        availabilities: [
+          { weekday: 1, start_time: "08:00", end_time: "12:00" },
+        ],
       },
     ],
-    profileQualificationIds: new Map([["emp-1", new Set(["qual-1"])]]),
+    profileQualificationIds: new Map([
+      ["emp-1", new Set(["qual-1"])],
+      ["emp-2", new Set(["qual-1"])],
+    ]),
     profileShiftPreferences: {},
     areaQualifications: [{ id: "qual-1", name: "Kellner" }],
     areaExistingAssignments: [],
@@ -137,5 +150,40 @@ describe("buildPrefilledBulkRow", () => {
     expect(row.shiftTypeId).toBe("preset-1");
     expect(row.employeeId).toBe(EMPTY_EMPLOYEE_ID);
     expect(row.employeeManuallySelected).toBe(true);
+  });
+
+  it("prefills the next eligible employee when one is already assigned", () => {
+    const existingRow = {
+      id: "row-existing",
+      employeeId: "emp-1",
+      qualificationId: "qual-1",
+      shiftTypeId: "preset-1",
+      startTime: "08:00",
+      endTime: "12:00",
+      requestedStartTime: "08:00",
+      requestedEndTime: "12:00",
+      demandServiceHourId: "hour-1",
+      employeeManuallySelected: true,
+      shiftTypeManuallySelected: true,
+      qualificationManuallySelected: true,
+    };
+
+    const row = buildPrefilledBulkRow({
+      ...createBaseInput({
+        template: true,
+        qualification: true,
+        employee: true,
+      }),
+      existingRows: [existingRow],
+      areaExistingAssignments: [
+        {
+          employeeId: "emp-1",
+          startTime: "08:00",
+          endTime: "12:00",
+        },
+      ],
+    });
+
+    expect(row.employeeId).toBe("emp-2");
   });
 });

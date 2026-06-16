@@ -96,6 +96,34 @@ function isOvernightServiceHourTime(startTime: string, endTime: string): boolean
   return endMin <= startMin;
 }
 
+function serviceHourPreviousWeekday(weekday: number): number {
+  if (weekday >= 0 && weekday <= 6) return weekday === 0 ? 6 : weekday - 1;
+  if (weekday === STAFFING_HOLIDAY_WEEKDAY) return 6;
+  return weekday;
+}
+
+function overnightMorningSpillWindows(endTime: string): { start: number; end: number }[] {
+  const endMin = parseTimeToMinutes(endTime);
+  if (endMin == null || endMin === 0) return [];
+  return [{ start: 0, end: endMin }];
+}
+
+function shiftFitsInMorningSpillWindow(
+  startTime: string,
+  endTime: string,
+  spillEndTime: string
+): boolean {
+  const shiftSegments = timeSegments(startTime, endTime);
+  const spillSegments = overnightMorningSpillWindows(spillEndTime);
+  if (shiftSegments.length === 0 || spillSegments.length === 0) return false;
+  return shiftSegments.every((shiftSegment) =>
+    spillSegments.some(
+      (windowSegment) =>
+        shiftSegment.start >= windowSegment.start &&
+        shiftSegment.end <= windowSegment.end
+    )
+  );
+}
 function shiftFitsInServiceHourWindow(
   startTime: string,
   endTime: string,
@@ -179,6 +207,24 @@ export function findServiceHourIdForShift(
       return hour.id;
     }
   }
+
+  const previousWeekday = serviceHourPreviousWeekday(weekday);
+  for (const hour of serviceHours) {
+    if (
+      hour.location_area_id !== areaId ||
+      normalizeWeekday(hour.weekday) !== previousWeekday ||
+      !hour.id ||
+      !hour.start_time ||
+      !hour.end_time ||
+      !isOvernightServiceHourTime(hour.start_time, hour.end_time)
+    ) {
+      continue;
+    }
+    if (shiftFitsInMorningSpillWindow(startTime, endTime, hour.end_time)) {
+      return hour.id;
+    }
+  }
+
   return null;
 }
 

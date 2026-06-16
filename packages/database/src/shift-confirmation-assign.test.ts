@@ -75,6 +75,16 @@ describe("validateProfileForShiftConfirmationAssign", () => {
       validateProfileForShiftConfirmationAssign(baseProfile, "org-1", false)
     ).toEqual({ ok: true });
   });
+
+  it("blocks non-schedulable profiles", () => {
+    expect(
+      validateProfileForShiftConfirmationAssign(
+        { ...baseProfile, schedulable: false },
+        "org-1",
+        false
+      )
+    ).toEqual({ ok: false, error: expect.stringContaining("nicht planbar") });
+  });
 });
 
 describe("resolveConfirmationAssignPatch", () => {

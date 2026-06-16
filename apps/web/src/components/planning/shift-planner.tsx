@@ -14,6 +14,9 @@ import { assignShiftWithTimes, removeShift } from "@/app/actions/shifts";
 import { sendConfirmationRequestForShift } from "@/app/actions/shift-confirmations";
 import { isPastCalendarDate, toISODate, startOfWeek, parseISODate } from "@/lib/dates";
 import { PlanningCalendarGrid } from "@/components/planning/planning-calendar-grid";
+import { usePlanningAppSidebarContent } from "@/components/planning/planning-app-sidebar-slot";
+import { PlanningShiftTemplateSidebarList } from "@/components/planning/planning-shift-template-sidebar-list";
+import { PlanningAvailabilityLegendSidebar } from "@/components/planning/planning-availability-legend-sidebar";
 import {
   PlanningAssignShiftModal,
   type PlanningShiftActionResult,
@@ -49,25 +52,29 @@ import {
   weekdayLabelFromIndex,
   type AreaServiceHourRef,
 } from "@/lib/location-staffing-client";
-import { computeBulkStaffingHeaderEntries } from "@/lib/bulk-staffing-header";
+import {
+  computeBulkStaffingHeaderEntries,
+  staffingAssignmentsForPlanningAreaDay,
+} from "@/lib/bulk-staffing-header";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
 import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
+import { useOrgFeatures } from "@/lib/org-features-provider";
+import {
+  useEffectiveShiftConfirmationEnabled,
+  useShiftConfirmationSimulation,
+  useSimulatedProposedOnAssignRequest,
+} from "@/lib/shift-confirmation-simulation-context";
+import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
 import { translateActionError } from "@/lib/translate-action-error";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
 import {
-  formatPlanningHoursInParens,
-  formatTimeRange,
   getDashboardWeekHeaderParts,
-  planningHoursUnitLabel,
-  shiftHours,
   weeklySummary,
 } from "@/lib/planning-utils";
-import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
 import {
@@ -78,10 +85,6 @@ import {
   type DashboardAssignmentPreset,
 } from "@/lib/dashboard-assignment-presets";
 import { validateDashboardShiftServiceHours } from "@/lib/service-hours-shift-validation";
-import {
-  buildShiftCardTimeGradientCss,
-} from "@/lib/shift-card-time-gradient";
-import { DASHBOARD_SHIFT_CARD_BOX_SHADOW } from "@/components/dashboard/dashboard-shift-card-view";
 import {
   areDashboardShiftTimesComplete,
   profileAvailabilityWeekdayFromDashboardDate,
@@ -96,11 +99,15 @@ import {
 } from "@/lib/planning-overnight-shift-display";
 import { pickFirstPlanningShiftPerEmployeeDay } from "@/lib/simple-calendar-display-toggle";
 import { useSimpleCalendarDisplay } from "@/lib/simple-calendar-display-context";
-import { resolvePlanningStaffColumnWidthPx } from "@/lib/planning-staff-column-width";
+import { usePlanningStaffColumnWidthPx } from "@/lib/use-planning-staff-column-width";
+import {
+  computeTagAreaDayFooterStats,
+  formatTagAreaFooterLabels,
+  type DashboardShiftCompensationByKey,
+} from "@/lib/tag-area-footer-stats";
 import type {
   AbsenceRequest,
   AreaShiftTemplateWithBreaks,
-  AvailabilityStatus,
   CompensationSurchargeType,
   Location,
   LocationArea,
@@ -111,6 +118,7 @@ import type {
   Role,
 } from "@schichtwerk/types";
 import { LocationSelect } from "@/components/dashboard/location-select";
+import { LanguageSelect } from "@/components/i18n/language-select";
 import {
   Alert,
   Button,
@@ -121,16 +129,7 @@ import {
 } from "@/components/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 
-/** Sidebar Schichtvorlagen: w-56 (224px). */
-const PLANNING_SHIFT_TEMPLATE_SIDEBAR_WIDTH_CLASS = "xl:w-[12.875rem]";
-
 export type { PlanningShift } from "@/lib/planning-shift-card";
-
-type AvailabilityRow = {
-  employee_id: string;
-  available_date: string;
-  status: AvailabilityStatus;
-};
 
 type Props = {
   weekStart: string;
@@ -138,7 +137,6 @@ type Props = {
   employees: Profile[];
   shifts: PlanningShift[];
   locationShifts: PlanningShift[];
-  availability: AvailabilityRow[];
   recurringAvailability: ProfileRecurringAvailability[];
   absences: AbsenceRequest[];
   locations: Location[];
@@ -150,6 +148,7 @@ type Props = {
   staffingRules: LocationAreaStaffing[];
   qualifications: Qualification[];
   profileQualificationIds: Record<string, string[]>;
+  shiftCompensation?: DashboardShiftCompensationByKey;
   readOnlyWeek?: boolean;
   settingsModals?: {
     profiles: Profile[];
@@ -252,7 +251,6 @@ export function ShiftPlanner({
   employees,
   shifts,
   locationShifts,
-  availability,
   recurringAvailability,
   absences,
   locations,
@@ -264,6 +262,7 @@ export function ShiftPlanner({
   staffingRules,
   qualifications,
   profileQualificationIds: profileQualificationIdsRecord,
+  shiftCompensation = {},
   readOnlyWeek = false,
   settingsModals,
 }: Props) {
@@ -272,8 +271,9 @@ export function ShiftPlanner({
   const t = useTranslations();
   const { locale } = useLocale();
   const features = useOrgFeatures();
-  const organization = useOrganization();
-  const shiftConfirmationEnabled = organization.shift_confirmation_enabled;
+  const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
+  const { blocksOutboundSend } = useShiftConfirmationSimulation();
+  const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
   const atEarliestWeek = isPlanningWeekAtEarliest(weekStart);
   const simplePlanning = !features.areas;
   const intlLocale = toIntlLocale(locale);
@@ -322,6 +322,30 @@ export function ShiftPlanner({
     () => dashboardAssignmentPresetsForArea(templatesForArea),
     [templatesForArea]
   );
+
+  const planningAppSidebarContent = useMemo(
+    () => (
+      <div className="space-y-4">
+        {!simplePlanning ? (
+          <PlanningShiftTemplateSidebarList
+            title={t("dashboard.shiftTemplateLabel")}
+            presets={assignmentPresets}
+            emptyLabel={t("dashboard.noShiftTemplatesForArea")}
+            locale={locale}
+          />
+        ) : null}
+        <PlanningAvailabilityLegendSidebar
+          title={t("planning.legendAvailability")}
+          availableLabel={t("planning.legendAvailable")}
+          noAvailabilityLabel={t("planning.legendNoAvailability")}
+          absentLabel={t("planning.legendAbsent")}
+        />
+      </div>
+    ),
+    [simplePlanning, assignmentPresets, locale, t]
+  );
+
+  usePlanningAppSidebarContent(planningAppSidebarContent);
 
   const serviceHourAreaIds = useMemo(
     () => (selectedAreaId ? [selectedAreaId] : areas.map((area) => area.id)),
@@ -434,6 +458,7 @@ export function ShiftPlanner({
   const hasInitializedCurrentWeekDayLayoutRef = useRef(false);
   const [isPlanningCalendarVisible, setIsPlanningCalendarVisible] =
     useState(false);
+  const [layoutTransitionEnabled, setLayoutTransitionEnabled] = useState(false);
 
   const clearLayoutDayTimer = useCallback(() => {
     if (layoutDayTimerRef.current !== null) {
@@ -501,6 +526,7 @@ export function ShiftPlanner({
       currentWeekDayExpansionRef.current = new Set(nextDays);
     }
     setActiveDayDates(nextDays);
+    setLayoutTransitionEnabled(false);
     syncLayoutDaysImmediate(nextDays);
     setIsPlanningCalendarVisible(true);
   }, [
@@ -519,6 +545,7 @@ export function ShiftPlanner({
 
   const toggleDayActive = useCallback(
     (date: string, active: boolean) => {
+      setLayoutTransitionEnabled(true);
       setActiveDayDates((prev) => {
         const next = new Set(prev);
         if (active) next.add(date);
@@ -560,17 +587,13 @@ export function ShiftPlanner({
     [dates, holidayNames, intlLocale]
   );
 
-  const staffColumnWidthPx = useMemo(
-    () =>
-      resolvePlanningStaffColumnWidthPx({
-        employees,
-        shifts,
-        locale,
-        staffColumnHeaderLabel: t("planning.staffColumn"),
-        employeeHoursLabel: t("common.basic"),
-      }),
-    [employees, shifts, locale, t]
-  );
+  const staffColumnWidthPx = usePlanningStaffColumnWidthPx({
+    employees,
+    shifts,
+    locale,
+    staffColumnHeaderLabel: t("planning.staffColumn"),
+    employeeHoursLabel: t("common.basic"),
+  });
 
   const columnTemplate = useMemo(
     () =>
@@ -626,6 +649,33 @@ export function ShiftPlanner({
     [t]
   );
 
+  const planningHeaderRowTemplate = useMemo(() => {
+    return showStaffingHeaderRow
+      ? `${PLANNING_DAY_HEADER_ROW_HEIGHT} ${PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT}`
+      : PLANNING_DAY_HEADER_ROW_HEIGHT;
+  }, [showStaffingHeaderRow]);
+
+  const planningBodyRowTemplate = useMemo(() => {
+    return employees.length > 0
+      ? `repeat(${employees.length}, minmax(${PLANNING_EMPLOYEE_ROW_HEIGHT}, 1fr))`
+      : "";
+  }, [employees.length]);
+
+  const timesComplete = areDashboardShiftTimesComplete(startTime, endTime);
+
+  const calendarDisplayShifts = useMemo(
+    () =>
+      simpleCalendarFirstShiftOnly
+        ? pickFirstPlanningShiftPerEmployeeDay(shifts)
+        : shifts,
+    [shifts, simpleCalendarFirstShiftOnly]
+  );
+
+  const visibleEmployeeIds = useMemo(
+    () => new Set(employees.map((employee) => employee.id)),
+    [employees]
+  );
+
   const dailyStaffingByDate = useMemo(() => {
     const map = new Map<
       string,
@@ -634,7 +684,6 @@ export function ShiftPlanner({
     if (!showStaffingHeaderRow || !selectedAreaId) return map;
 
     for (const date of dates) {
-      const dayShifts = shifts.filter((shift) => shift.shift_date === date);
       map.set(
         date,
         computeBulkStaffingHeaderEntries({
@@ -642,11 +691,12 @@ export function ShiftPlanner({
           areaId: selectedAreaId,
           dateISO: date,
           serviceHours,
-          assignments: dayShifts.map((shift) => ({
-            startTime: shift.startTime,
-            endTime: shift.endTime,
-            employeeId: shift.employee_id,
-          })),
+          assignments: staffingAssignmentsForPlanningAreaDay(
+            calendarDisplayShifts,
+            date,
+            selectedAreaId,
+            visibleEmployeeIds
+          ),
           assignmentPresets,
           qualifications,
           profileQualificationIds,
@@ -661,7 +711,8 @@ export function ShiftPlanner({
     showStaffingHeaderRow,
     selectedAreaId,
     dates,
-    shifts,
+    calendarDisplayShifts,
+    visibleEmployeeIds,
     staffingRules,
     serviceHours,
     assignmentPresets,
@@ -672,27 +723,32 @@ export function ShiftPlanner({
     formatCalendarStaffingTimeLabel,
   ]);
 
-  const planningHeaderRowTemplate = useMemo(() => {
-    return showStaffingHeaderRow
-      ? `${PLANNING_DAY_HEADER_ROW_HEIGHT} ${PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT}`
-      : PLANNING_DAY_HEADER_ROW_HEIGHT;
-  }, [showStaffingHeaderRow]);
-
-  const planningBodyRowTemplate = useMemo(() => {
-    return employees.length > 0
-      ? `repeat(${employees.length}, ${PLANNING_EMPLOYEE_ROW_HEIGHT})`
-      : "";
-  }, [employees.length]);
-
-  const timesComplete = areDashboardShiftTimesComplete(startTime, endTime);
-
-  const calendarDisplayShifts = useMemo(
-    () =>
-      simpleCalendarFirstShiftOnly
-        ? pickFirstPlanningShiftPerEmployeeDay(shifts)
-        : shifts,
-    [shifts, simpleCalendarFirstShiftOnly]
-  );
+  const dailyFooterLabelsByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      ReturnType<typeof formatTagAreaFooterLabels>
+    >();
+    for (const date of dates) {
+      const dayShifts = calendarDisplayShifts.filter(
+        (shift) => shift.shift_date === date
+      );
+      if (dayShifts.length === 0) continue;
+      const stats = computeTagAreaDayFooterStats(
+        dayShifts.map((shift) => ({
+          employeeId: shift.employee_id,
+          shift_date: shift.shift_date,
+          startTime: shift.startTime,
+          endTime: shift.endTime,
+        })),
+        shiftCompensation
+      );
+      map.set(
+        date,
+        formatTagAreaFooterLabels(stats, t, locale === "en" ? "en" : "de")
+      );
+    }
+    return map;
+  }, [dates, calendarDisplayShifts, shiftCompensation, t, locale]);
 
   const shiftsByCellDisplay = useMemo(
     () => buildPlanningShiftsByCellDisplay(dates, calendarDisplayShifts),
@@ -778,17 +834,9 @@ export function ShiftPlanner({
     return map;
   }, [locationShifts]);
 
-  const availabilityMap = useMemo(() => {
-    const map = new Map<string, AvailabilityStatus>();
-    for (const a of availability) {
-      map.set(`${a.employee_id}:${a.available_date}`, a.status);
-    }
-    return map;
-  }, [availability]);
-
   const summary = useMemo(
-    () => weeklySummary(shifts, employees),
-    [shifts, employees]
+    () => weeklySummary(calendarDisplayShifts, employees),
+    [calendarDisplayShifts, employees]
   );
 
   const selectedAreaName = useMemo(
@@ -1011,6 +1059,7 @@ export function ShiftPlanner({
       withoutServiceHours: options?.withoutServiceHours,
       existingShiftId:
         reassigningToDifferentEmployee ? undefined : editingShift?.id,
+      simulatedProposedOnAssign,
     });
 
     if (!result.ok) {
@@ -1199,10 +1248,17 @@ export function ShiftPlanner({
     setCellContextMenu(null);
     setConfirmationSendError(null);
     startSendConfirmation(async () => {
+      if (blocksOutboundSend && !simulatedProposedOnAssign) {
+        setConfirmationSendError(
+          getShiftConfirmationSimulationSendBlockedResult().error
+        );
+        return;
+      }
       const result = await sendConfirmationRequestForShift({
         shiftId,
         weekStart,
         locationId: selectedLocationId,
+        simulatedProposedOnAssign,
       });
       if (!result.ok) {
         setConfirmationSendError(translateActionError(result.error, t));
@@ -1218,6 +1274,8 @@ export function ShiftPlanner({
     weekStart,
     router,
     t,
+    blocksOutboundSend,
+    simulatedProposedOnAssign,
   ]);
 
   const handleReassignFromPanel = useCallback(
@@ -1308,137 +1366,142 @@ export function ShiftPlanner({
   return (
     <div className="-m-4 flex min-h-[calc(100vh-4.5rem)] flex-col bg-subtle md:-m-6">
       <header className="border-b border-border bg-surface px-4 py-4 md:px-6 md:py-5">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Schichtplan erstellen
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center">
+          <h1 className="shrink-0 text-2xl font-semibold tracking-tight">
+            Schichtplan erstellen
+          </h1>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3 select-none md:gap-4">
-          <div
-            role="group"
-            aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
-            className="flex shrink-0 items-center gap-1.5 sm:gap-2"
-          >
-            <IconButton
-              size="md"
-              onClick={() => navigateWeek(-1)}
-              disabled={pending || atEarliestWeek}
-              aria-label={t("common.prevWeek")}
-              className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
+          <div className="ml-10 flex min-w-0 flex-wrap items-center gap-3 select-none md:gap-4">
+            <div
+              role="group"
+              aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
+              className="flex shrink-0 items-center gap-1.5 sm:gap-2"
             >
-              <ChevronIcon direction="left" />
-            </IconButton>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="header"
-              onClick={goToToday}
-              disabled={pending}
-              className={cn(HEADER_CONTROL_H, "shrink-0 font-semibold")}
-            >
-              {t("common.today")}
-            </Button>
-
-            <IconButton
-              size="md"
-              onClick={() => navigateWeek(1)}
-              disabled={pending}
-              aria-label={t("common.nextWeek")}
-              className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
-            >
-              <ChevronIcon direction="right" />
-            </IconButton>
-          </div>
-
-          <p
-            className="min-w-0 select-none text-sm leading-none"
-            title={weekLabelTitle}
-          >
-            <span className="font-semibold">{weekHeader.monthYearLabel}</span>
-            <span className="ml-1.5 text-xs font-normal text-muted">
-              KW {weekHeader.calendarWeek}
-            </span>
-          </p>
-
-          {features.areas ? (
-            <div className="flex shrink-0 flex-nowrap items-center">
-              <span className="shrink-0 text-sm text-foreground">
-                {t("dashboard.location")}
-              </span>
-              <div className="ml-2 w-[11rem] shrink-0">
-                <LocationSelect
-                  locations={locations}
-                  selectedLocationId={selectedLocationId}
-                  basePath="/planung"
-                  className="!mt-0 w-full font-semibold"
-                />
-              </div>
-              <span className="ml-5 shrink-0 text-sm text-foreground">
-                {t("planning.area")}
-              </span>
-              <div className="ml-2 w-[11rem] shrink-0">
-                {areas.length === 0 ? (
-                  <ControlDisplay className="w-full py-2 text-muted">
-                    {t("planning.noAreas")}
-                  </ControlDisplay>
-                ) : (
-                  <Select
-                    value={selectedAreaId ?? areas[0].id}
-                    disabled={pending || areas.length === 0}
-                    aria-label={t("planning.selectArea")}
-                    className="w-full font-semibold"
-                    onChange={(event) =>
-                      pushPlanungQuery({ area: event.target.value })
-                    }
-                  >
-                    {areas.map((area) => (
-                      <option key={area.id} value={area.id}>
-                        {area.name}
-                        {area.archived_at ? ` (${t("common.archived")})` : ""}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </div>
-            </div>
-          ) : null}
-
-          {shiftConfirmationEnabled ? (
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              {proposedSendCount > 0 ? (
-                <Button
-                  type="button"
-                  size="header"
-                  onClick={() => setSendConfirmationOpen(true)}
-                  disabled={pending || sendConfirmationPending}
-                  className={cn(HEADER_CONTROL_H, "font-semibold")}
-                >
-                  {t("shiftConfirmation.actions.requestConfirmation")}
-                  <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
-                    {proposedSendCount}
-                  </span>
-                </Button>
-              ) : null}
               <IconButton
-                type="button"
                 size="md"
-                aria-label={t("shiftConfirmation.panel.title")}
-                title={t("shiftConfirmation.panel.title")}
-                className="relative"
-                onClick={() => {
-                  setConfirmationsPanelTab("pending");
-                  setConfirmationsPanelOpen(true);
-                }}
+                onClick={() => navigateWeek(-1)}
+                disabled={pending || atEarliestWeek}
+                aria-label={t("common.prevWeek")}
+                className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
               >
-                <ListIcon />
-                {openConfirmationsCount > 0 ? (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
-                    {openConfirmationsCount > 9 ? "9+" : openConfirmationsCount}
-                  </span>
-                ) : null}
+                <ChevronIcon direction="left" />
+              </IconButton>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="header"
+                onClick={goToToday}
+                disabled={pending}
+                className={cn(HEADER_CONTROL_H, "shrink-0 font-semibold")}
+              >
+                {t("common.today")}
+              </Button>
+
+              <IconButton
+                size="md"
+                onClick={() => navigateWeek(1)}
+                disabled={pending}
+                aria-label={t("common.nextWeek")}
+                className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
+              >
+                <ChevronIcon direction="right" />
               </IconButton>
             </div>
-          ) : null}
+
+            <p
+              className="min-w-0 select-none text-sm leading-none"
+              title={weekLabelTitle}
+            >
+              <span className="font-semibold">{weekHeader.monthYearLabel}</span>
+              <span className="ml-1.5 text-xs font-normal text-muted">
+                KW {weekHeader.calendarWeek}
+              </span>
+            </p>
+
+            {features.areas ? (
+              <div className="flex shrink-0 flex-nowrap items-center">
+                <span className="shrink-0 text-sm text-foreground">
+                  {t("dashboard.location")}
+                </span>
+                <div className="ml-2 w-[11rem] shrink-0">
+                  <LocationSelect
+                    locations={locations}
+                    selectedLocationId={selectedLocationId}
+                    basePath="/planung"
+                    className="!mt-0 w-full font-semibold"
+                  />
+                </div>
+                <span className="ml-5 shrink-0 text-sm text-foreground">
+                  {t("planning.area")}
+                </span>
+                <div className="ml-2 w-[11rem] shrink-0">
+                  {areas.length === 0 ? (
+                    <ControlDisplay className="w-full py-2 text-muted">
+                      {t("planning.noAreas")}
+                    </ControlDisplay>
+                  ) : (
+                    <Select
+                      value={selectedAreaId ?? areas[0].id}
+                      disabled={pending || areas.length === 0}
+                      aria-label={t("planning.selectArea")}
+                      className="w-full font-semibold"
+                      onChange={(event) =>
+                        pushPlanungQuery({ area: event.target.value })
+                      }
+                    >
+                      {areas.map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {area.name}
+                          {area.archived_at ? ` (${t("common.archived")})` : ""}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {shiftConfirmationEnabled ? (
+              <div className="flex shrink-0 items-center gap-2">
+                {proposedSendCount > 0 ? (
+                  <Button
+                    type="button"
+                    size="header"
+                    onClick={() => setSendConfirmationOpen(true)}
+                    disabled={pending || sendConfirmationPending}
+                    className={cn(HEADER_CONTROL_H, "font-semibold")}
+                  >
+                    {t("shiftConfirmation.actions.requestConfirmation")}
+                    <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
+                      {proposedSendCount}
+                    </span>
+                  </Button>
+                ) : null}
+                <IconButton
+                  type="button"
+                  size="md"
+                  aria-label={t("shiftConfirmation.panel.title")}
+                  title={t("shiftConfirmation.panel.title")}
+                  className="relative"
+                  onClick={() => {
+                    setConfirmationsPanelTab("pending");
+                    setConfirmationsPanelOpen(true);
+                  }}
+                >
+                  <ListIcon />
+                  {openConfirmationsCount > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
+                      {openConfirmationsCount > 9 ? "9+" : openConfirmationsCount}
+                    </span>
+                  ) : null}
+                </IconButton>
+              </div>
+            ) : null}
+          </div>
+          </div>
+          <LanguageSelect className="shrink-0 self-end md:self-auto" />
         </div>
       </header>
 
@@ -1448,74 +1511,7 @@ export function ShiftPlanner({
         </Alert>
       )}
 
-      <div className="flex flex-1 flex-col gap-0 overflow-hidden xl:flex-row">
-        <aside
-          className={cn(
-            "hidden shrink-0 overflow-y-auto border-b border-border bg-surface p-4 xl:block xl:border-b-0 xl:border-r",
-            PLANNING_SHIFT_TEMPLATE_SIDEBAR_WIDTH_CLASS,
-            MODAL_SCROLLBAR_CLASS
-          )}
-        >
-          {!simplePlanning ? (
-            <SidebarSection title={t("dashboard.shiftTemplateLabel")}>
-              {assignmentPresets.length === 0 ? (
-                <p className="text-xs text-muted">
-                  {t("dashboard.noShiftTemplatesForArea")}
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {assignmentPresets.map((preset) => {
-                    const hours = shiftHours({
-                      start_time: preset.start_time,
-                      end_time: preset.end_time,
-                    });
-                    const hasShiftCardGradient = areDashboardShiftTimesComplete(
-                      preset.start_time,
-                      preset.end_time
-                    );
-                    return (
-                    <li
-                      key={preset.id}
-                      className="overflow-hidden rounded-lg border border-border"
-                      style={{ boxShadow: DASHBOARD_SHIFT_CARD_BOX_SHADOW }}
-                    >
-                      <div
-                        className="relative flex min-w-0 flex-col bg-white p-2.5"
-                        style={
-                          hasShiftCardGradient
-                            ? {
-                                backgroundImage: buildShiftCardTimeGradientCss(
-                                  preset.start_time,
-                                  preset.end_time
-                                ),
-                              }
-                            : undefined
-                        }
-                      >
-                        <div className="min-w-0 text-sm font-medium text-black">
-                          {preset.name}
-                        </div>
-                        <p className="mt-1 text-xs text-black/70">
-                          {formatTimeRange(preset.start_time, preset.end_time)}{" "}
-                          {formatPlanningHoursInParens(hours, locale)}
-                        </p>
-                      </div>
-                    </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </SidebarSection>
-          ) : null}
-
-          <SidebarSection title={t("planning.legendAvailability")} className={simplePlanning ? "" : "mt-6"}>
-            <LegendDot color="#22c55e" label={t("planning.legendAvailable")} />
-            <LegendDot color="#eab308" label={t("planning.legendPreferred")} />
-            <LegendDot color="#ef4444" label={t("planning.legendUnavailable")} />
-            <LegendDot color="#94a3b8" label={t("planning.legendAbsent")} />
-          </SidebarSection>
-        </aside>
-
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <main
           className={cn(
             "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-3 md:p-4"
@@ -1528,12 +1524,12 @@ export function ShiftPlanner({
             calendarDisplayShifts={calendarDisplayShifts}
             shiftsByCell={calendarShiftsByCell}
             shiftsByCellDisplay={shiftsByCellDisplay}
-            availabilityMap={availabilityMap}
             holidayNames={holidayNames}
             dayHasServiceHours={dayHasServiceHours}
             dayHasOpenArea={dayHasOpenArea}
             activeDayDates={activeDayDates}
             layoutActiveDayDates={layoutActiveDayDates}
+            layoutTransitionEnabled={layoutTransitionEnabled}
             dayReferenceShiftTimesByDate={dayReferenceShiftTimesByDate}
             serviceTimelinesByDate={serviceTimelinesByDate}
             columnTemplate={columnTemplate}
@@ -1553,6 +1549,8 @@ export function ShiftPlanner({
             picker={picker}
             showStaffingHeaderRow={showStaffingHeaderRow}
             dailyStaffingByDate={dailyStaffingByDate}
+            dailyFooterLabelsByDate={dailyFooterLabelsByDate}
+            weeklySummary={summary}
             t={t}
             isDayReadOnly={isDayReadOnly}
             getDayAssignBlockReason={getDayAssignBlockReasonForCell}
@@ -1791,81 +1789,6 @@ export function ShiftPlanner({
         />
       ) : null}
       </div>
-
-      <footer className="border-t border-border bg-surface p-4">
-        <FooterPanel title="Wochenzusammenfassung">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat
-              label="Geplante Stunden"
-              value={`${summary.plannedHours} ${planningHoursUnitLabel(locale)}`}
-            />
-            <Stat
-              label="Gesamtstunden Soll"
-              value={`${summary.targetHours} ${planningHoursUnitLabel(locale)}`}
-            />
-            <Stat label="Offene Schichten" value={String(summary.openShifts)} />
-            <Stat
-              label="Geschätzte Personalkosten"
-              value={`${summary.estimatedCost} €`}
-            />
-          </div>
-        </FooterPanel>
-      </footer>
-    </div>
-  );
-}
-
-function SidebarSection({
-  title,
-  children,
-  className = "",
-}: {
-  title: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={className}>
-      <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <div className="mb-2 flex items-center gap-2 text-xs text-muted">
-      <span
-        className="h-2.5 w-2.5 rounded-full"
-        style={{ backgroundColor: color }}
-      />
-      {label}
-    </div>
-  );
-}
-
-function FooterPanel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-background p-4">
-      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-xs text-muted">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
     </div>
   );
 }

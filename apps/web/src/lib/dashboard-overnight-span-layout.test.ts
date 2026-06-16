@@ -19,7 +19,7 @@ const timeline0800To2359: ShiftCardServiceTimeline = {
 };
 
 describe("computeDashboardExpandedOvernightSpanGeometry", () => {
-  it("keeps start position on the start-day timeline and scales width by service-hour share", () => {
+  it("uses 24h duration fraction for width with start-day timeline position", () => {
     const overlayRect = { left: 0, top: 0, width: 400, height: 52 } as DOMRect;
     const startCellRect = {
       left: 0,
@@ -61,15 +61,12 @@ describe("computeDashboardExpandedOvernightSpanGeometry", () => {
       184,
       timeline0800To2359
     );
-    const expectedWidth =
-      (shiftDurationMin / (startDayServiceSpanMin + endDayServiceSpanMin)) *
-      400;
+    const expectedWidth = (shiftDurationMin / (24 * 60)) * 400;
 
     expect(geometry.leftPx).toBeCloseTo(8 + startOffset, 0);
     expect(geometry.widthPx).toBeCloseTo(expectedWidth, 0);
-    expect(shiftDurationMin / (startDayServiceSpanMin + endDayServiceSpanMin)).toBeCloseTo(
-      8 / 26,
-      2
+    expect(geometry.widthPx).toBeGreaterThan(
+      (shiftDurationMin / (startDayServiceSpanMin + endDayServiceSpanMin)) * 400
     );
   });
 });

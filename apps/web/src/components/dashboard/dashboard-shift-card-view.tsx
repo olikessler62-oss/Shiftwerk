@@ -78,12 +78,14 @@ function ShiftCardTextRows({
   }
 
   if (density === "compact") {
-    const name = display.lastName
-      ? `${display.firstName} ${display.lastName}`
-      : display.firstName;
     return (
       <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]">
-        <span className="min-w-0 truncate font-medium leading-none">{name}</span>
+        <span className="shrink-0 font-medium leading-none">{display.firstName}</span>
+        {display.lastName ? (
+          <span className="min-w-0 truncate font-medium leading-none">
+            {display.lastName}
+          </span>
+        ) : null}
         <span className="shrink-0 whitespace-nowrap leading-none tabular-nums">
           {display.line1Secondary}
         </span>
@@ -94,9 +96,9 @@ function ShiftCardTextRows({
   return (
     <div className="flex min-w-0 flex-1 flex-col justify-center gap-px">
       <div className="flex min-w-0 items-baseline gap-1.5 text-[11px] leading-none">
-        <span className="min-w-0 truncate font-medium">{display.firstName}</span>
+        <span className="shrink-0 font-medium">{display.firstName}</span>
         {display.lastName ? (
-          <span className="min-w-0 truncate font-medium">{display.lastName}</span>
+          <span className="min-w-0 flex-1 truncate font-medium">{display.lastName}</span>
         ) : null}
       </div>
       <div className="flex min-w-0 items-baseline gap-1.5 text-[10px] leading-none text-black/85">

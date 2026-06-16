@@ -47,9 +47,15 @@ export function InviteForm({ employeeCount, embedded = false, onSuccess }: Props
         </Alert>
       )}
 
-      <form action={formAction} className="mt-4 space-y-3">
+      <form action={formAction} className="mt-4 space-y-3" autoComplete="off">
         <Field label="Name" htmlFor="fullName">
-          <Input id="fullName" name="fullName" required placeholder="Max Mustermann" />
+          <Input
+            id="fullName"
+            name="fullName"
+            required
+            placeholder="Max Mustermann"
+            autoComplete="off"
+          />
         </Field>
         <Field label="E-Mail" htmlFor="email">
           <Input
@@ -58,6 +64,7 @@ export function InviteForm({ employeeCount, embedded = false, onSuccess }: Props
             type="email"
             required
             placeholder="max@beispiel.de"
+            autoComplete="off"
           />
         </Field>
         <Button type="submit" disabled={pending || employeeCount >= 20}>

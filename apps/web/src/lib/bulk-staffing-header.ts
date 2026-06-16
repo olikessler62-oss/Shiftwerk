@@ -2,7 +2,10 @@ import {
   shiftTemplateLabelForDemandTimes,
   type DashboardAssignmentPreset,
 } from "@/lib/dashboard-assignment-presets";
-import { availabilityRangeContainedInWindow } from "@/lib/available-employees-for-shift";
+import {
+  availabilityRangeContainedInWindow,
+  dashboardTimeKey,
+} from "@/lib/available-employees-for-shift";
 import { personalbedarfDemandTimesForEntry } from "@/lib/bulk-shift-staffing";
 import {
   serviceWeekdayForDate,
@@ -90,6 +93,32 @@ function shiftFitsInDemandWindow(
   );
 }
 
+function demandWindowAssignmentScore(
+  assignment: StaffingAssignmentRef,
+  demand: DemandWindowRef
+): number | null {
+  const overlapMin = shiftClockRangesOverlapMinutes(
+    assignment.startTime,
+    assignment.endTime,
+    demand.startTime,
+    demand.endTime
+  );
+  if (overlapMin <= 0) return null;
+
+  const fits = shiftFitsInDemandWindow(
+    assignment.startTime,
+    assignment.endTime,
+    demand.startTime,
+    demand.endTime
+  );
+  const exactMatch =
+    dashboardTimeKey(assignment.startTime) ===
+      dashboardTimeKey(demand.startTime) &&
+    dashboardTimeKey(assignment.endTime) === dashboardTimeKey(demand.endTime);
+
+  return (exactMatch ? 2_000_000 : 0) + (fits ? 1_000_000 : 0) + overlapMin;
+}
+
 /**
  * Ordnet jede Zuweisung höchstens einem Bedarf-Fenster zu (beste Übereinstimmung).
  * Zuweisungen haben Vorrang — breite Schichten werden nicht doppelt gezählt.
@@ -109,23 +138,12 @@ export function allocateAssignmentsToDemandWindows(
   for (let i = 0; i < assignments.length; i++) {
     const assignment = assignments[i]!;
     for (const demand of demandWindows) {
-      const overlapMin = shiftClockRangesOverlapMinutes(
-        assignment.startTime,
-        assignment.endTime,
-        demand.startTime,
-        demand.endTime
-      );
-      if (overlapMin <= 0) continue;
-      const fits = shiftFitsInDemandWindow(
-        assignment.startTime,
-        assignment.endTime,
-        demand.startTime,
-        demand.endTime
-      );
+      const score = demandWindowAssignmentScore(assignment, demand);
+      if (score == null) continue;
       pairs.push({
         assignmentIndex: i,
         serviceHourId: demand.serviceHourId,
-        score: (fits ? 1_000_000 : 0) + overlapMin,
+        score,
       });
     }
   }
@@ -157,26 +175,46 @@ export function resolveBestDemandServiceHourForAssignment(
   let best: { serviceHourId: string; score: number } | null = null;
 
   for (const demand of demandWindows) {
-    const overlapMin = shiftClockRangesOverlapMinutes(
-      startTime,
-      endTime,
-      demand.startTime,
-      demand.endTime
+    const score = demandWindowAssignmentScore(
+      { startTime, endTime },
+      demand
     );
-    if (overlapMin <= 0) continue;
-    const fits = shiftFitsInDemandWindow(
-      startTime,
-      endTime,
-      demand.startTime,
-      demand.endTime
-    );
-    const score = (fits ? 1_000_000 : 0) + overlapMin;
+    if (score == null) continue;
     if (!best || score > best.score) {
       best = { serviceHourId: demand.serviceHourId, score };
     }
   }
 
   return best?.serviceHourId ?? null;
+}
+
+type PlanningStaffingShiftRef = {
+  shift_date: string;
+  location_area_id?: string | null;
+  employee_id: string;
+  startTime: string;
+  endTime: string;
+};
+
+/** Schichten, die im Schichtplan-Kalender für Bereich/Tag sichtbar gezählt werden. */
+export function staffingAssignmentsForPlanningAreaDay(
+  shifts: readonly PlanningStaffingShiftRef[],
+  dateISO: string,
+  areaId: string,
+  visibleEmployeeIds: ReadonlySet<string>
+): StaffingAssignmentRef[] {
+  return shifts
+    .filter(
+      (shift) =>
+        shift.shift_date === dateISO &&
+        shift.location_area_id === areaId &&
+        visibleEmployeeIds.has(shift.employee_id)
+    )
+    .map((shift) => ({
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      employeeId: shift.employee_id,
+    }));
 }
 
 export function buildDemandWindowsForAreaDay(

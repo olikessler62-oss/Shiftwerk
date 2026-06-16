@@ -8,6 +8,7 @@ import {
 } from "@/lib/cached-dashboard-shifts";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
+import { resolveSimulatedProposedAssignOptions } from "@/lib/shift-confirmation-assign-mode";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { shiftsOverlapIso } from "@/lib/shift-overlap";
 import {
@@ -51,6 +52,8 @@ type AssignShiftWithTimesInput = {
   withoutServiceHours?: boolean;
   /** Bestehende Schicht per ID aktualisieren (Mehrfach-Schichten pro Tag). */
   existingShiftId?: string;
+  /** Superadmin-Simulation: Zuweisungen als proposed speichern. */
+  simulatedProposedOnAssign?: boolean;
 };
 
 function buildAssignSnapshotSource(
@@ -304,7 +307,8 @@ async function validateAssignContext(
   locationId: string,
   locationAreaId: string | null,
   requireArea: boolean,
-  shiftConfirmationEnabled: boolean
+  shiftConfirmationEnabled: boolean,
+  relaxAppRegistrationGate = false
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (isPastShiftDate(shiftDate)) {
     return { ok: false, error: "Vergangene Tage können nicht mehr geplant werden." };
@@ -330,7 +334,8 @@ async function validateAssignContext(
   const gate = validateProfileForShiftConfirmationAssign(
     profile,
     organizationId,
-    shiftConfirmationEnabled
+    shiftConfirmationEnabled,
+    { relaxAppRegistrationGate }
   );
   if (!gate.ok) return gate;
 
@@ -392,8 +397,13 @@ export async function assignShiftWithTimes(
   input: AssignShiftWithTimesInput
 ): Promise<ShiftActionResult> {
   try {
-    const { organizationId, userId, orgFeatures, organization } =
+    const { organizationId, userId, orgFeatures, organization, profile } =
       await requireManager();
+    const assignMode = resolveSimulatedProposedAssignOptions({
+      organizationEnabled: organization.shift_confirmation_enabled,
+      simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      managerEmail: profile.email,
+    });
     const context = await validateAssignContext(
       organizationId,
       input.employeeId,
@@ -401,7 +411,8 @@ export async function assignShiftWithTimes(
       input.locationId,
       input.locationAreaId,
       orgFeatures.areas,
-      organization.shift_confirmation_enabled
+      assignMode.shiftConfirmationEnabled,
+      assignMode.relaxAppRegistrationGate
     );
     if (!context.ok) return context;
 
@@ -455,7 +466,7 @@ export async function assignShiftWithTimes(
       input,
       undoBatch,
       timeZone,
-      organization.shift_confirmation_enabled
+      assignMode.shiftConfirmationEnabled
     );
     setShiftAssignUndoBatch(userId, undoBatch);
     revalidateShiftPaths({
@@ -483,9 +494,15 @@ export async function assignShiftBatch(input: {
   rows: AssignShiftBatchRowInput[];
   deleteShiftIds?: string[];
   withoutServiceHours?: boolean;
+  simulatedProposedOnAssign?: boolean;
 }): Promise<AssignShiftBatchResult> {
   try {
-    const { organizationId, userId, organization } = await requireManager();
+    const { organizationId, userId, organization, profile } = await requireManager();
+    const assignMode = resolveSimulatedProposedAssignOptions({
+      organizationEnabled: organization.shift_confirmation_enabled,
+      simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      managerEmail: profile.email,
+    });
     const timeZone = resolveOrganizationTimeZone(organization);
     const db = await getDatabase();
 
@@ -573,7 +590,8 @@ export async function assignShiftBatch(input: {
         input.locationId,
         input.locationAreaId,
         true,
-        organization.shift_confirmation_enabled
+        assignMode.shiftConfirmationEnabled,
+        assignMode.relaxAppRegistrationGate
       );
       if (!context.ok) {
         results.push({ rowIndex, ok: false, error: context.error });
@@ -744,7 +762,7 @@ export async function assignShiftBatch(input: {
           },
           undoBatch,
           timeZone,
-          organization.shift_confirmation_enabled
+          assignMode.shiftConfirmationEnabled
         );
         results.push({ rowIndex: row.rowIndex, ok: true, warnings: row.warnings });
         anySuccess = true;

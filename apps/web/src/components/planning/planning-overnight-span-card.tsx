@@ -46,6 +46,7 @@ type Props = {
   shift: PlanningShift;
   widthPx: number;
   displayMode: PlanningOvernightSpanDisplayMode;
+  collapsedMarkerWidthPx?: number;
   employeeName: string;
   employeeColor: string;
   isPastDay: boolean;
@@ -61,6 +62,7 @@ export function PlanningOvernightSpanCard({
   shift,
   widthPx,
   displayMode,
+  collapsedMarkerWidthPx,
   employeeName,
   employeeColor,
   isPastDay,
@@ -153,7 +155,8 @@ export function PlanningOvernightSpanCard({
             isSelected && "ring-2 ring-primary ring-offset-1"
           )}
           style={{
-            width: PLANNING_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX,
+            width:
+              collapsedMarkerWidthPx ?? PLANNING_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX,
             height: markerHeightPx,
             backgroundColor: markerColor,
           }}
@@ -191,7 +194,8 @@ export function PlanningOvernightSpanCard({
         )}
         style={{
           boxShadow: DASHBOARD_SHIFT_CARD_BOX_SHADOW,
-          height: PLANNING_CELL_HEIGHT_PX,
+          height: "100%",
+          minHeight: PLANNING_CELL_HEIGHT_PX,
         }}
         aria-label={cardContent.tooltipBody}
       >

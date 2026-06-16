@@ -1,6 +1,9 @@
 import { isPublicHolidayForCountry } from "@schichtwerk/compliance";
 import type { AreaServiceHourRef } from "./location-service-hours";
 import {
+  isOvernightServiceHour,
+  overnightMorningSpillServiceWindows,
+  serviceHourPreviousWeekday,
   shiftTimesWithinServiceHours,
   validateShiftAgainstServiceHours,
 } from "./location-service-hours-validation";
@@ -46,6 +49,25 @@ export function findServiceHourIdForShift(
       return hour.id;
     }
   }
+
+  const previousWeekday = serviceHourPreviousWeekday(weekday);
+  for (const hour of serviceHours) {
+    if (
+      hour.location_area_id !== areaId ||
+      normalizeWeekday(hour.weekday) !== previousWeekday ||
+      !hour.id ||
+      !hour.start_time ||
+      !hour.end_time ||
+      !isOvernightServiceHour(hour.start_time, hour.end_time)
+    ) {
+      continue;
+    }
+    const spillWindows = overnightMorningSpillServiceWindows(hour.end_time);
+    if (shiftTimesWithinServiceHours(startTime, endTime, spillWindows)) {
+      return hour.id;
+    }
+  }
+
   return null;
 }
 

@@ -251,7 +251,7 @@ function employeeWishScore(
   return best;
 }
 
-function pickEmployeeForBulkPrefill(
+export function pickEmployeeForBulkPrefill(
   candidates: readonly DashboardShiftAssignEmployee[],
   demandStart: string,
   demandEnd: string,

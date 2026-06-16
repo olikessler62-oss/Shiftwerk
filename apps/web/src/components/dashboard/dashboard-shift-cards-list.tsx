@@ -6,7 +6,11 @@ import {
   DashboardShiftCardView,
   buildShiftCardDisplayContent,
 } from "@/components/dashboard/dashboard-shift-card-view";
-import { computeShiftCardCellLayout } from "@/lib/shift-card-cell-layout";
+import {
+  applyDurationMonotonicShiftCardWidths,
+  applySubThreeHourUniformShiftCardWidths,
+  computeShiftCardCellLayout,
+} from "@/lib/shift-card-cell-layout";
 import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
 import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
 import {
@@ -23,6 +27,7 @@ import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { cn } from "@/lib/cn";
 import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
 import { useTranslations } from "@/i18n/locale-provider";
+import { buildDashboardCellShiftRows } from "@/lib/dashboard-overnight-shift-display";
 
 type Props = {
   shifts: DashboardShiftCard[];
@@ -47,6 +52,8 @@ type Props = {
   clipVerticalOverflow?: boolean;
   /** Platzhalter für Nachtschichten, die als Durchgangs-Karte gerendert werden. */
   overnightAnchorShiftIds?: ReadonlySet<string>;
+  /** Endtag: Zeilenindex → Schicht-ID für eingehende Nachtschicht-Fortsetzung. */
+  incomingOvernightTailRowsByIndex?: ReadonlyMap<number, string>;
 };
 
 function compareShiftCards(a: DashboardShiftCard, b: DashboardShiftCard): number {
@@ -66,6 +73,20 @@ function resolveShiftCardLayout(
   uniformShiftDurationWidth = true
 ) {
   const minWidths = estimateShiftCardMinWidths(display);
+
+  if (uniformShiftDurationWidth) {
+    const layout = computeShiftCardCellLayout(
+      cellWidthPx,
+      shift.startTime,
+      shift.endTime,
+      serviceTimeline,
+      "two-line",
+      minWidths.twoLinePx,
+      { shiftCountInCell, uniformShiftDurationWidth: true }
+    );
+    return { ...layout, density: "two-line" as const };
+  }
+
   let density = resolveShiftCardDensity(
     cellWidthPx,
     minWidths.twoLinePx,
@@ -133,6 +154,7 @@ export function DashboardShiftCardsList({
   shiftConfirmationEnabled = false,
   clipVerticalOverflow = false,
   overnightAnchorShiftIds,
+  incomingOvernightTailRowsByIndex,
 }: Props) {
   const t = useTranslations();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -170,7 +192,19 @@ export function DashboardShiftCardsList({
     const sortedShifts = [...shifts].sort(compareShiftCards);
     const shiftCountInCell = sortedShifts.length;
 
-    return sortedShifts.map((shift) => {
+    const cellRows = buildDashboardCellShiftRows(shifts, {
+      overnightAnchorShiftIds,
+      incomingOvernightTailRowsByIndex,
+    });
+
+    const layoutByShiftId = new Map<
+      string,
+      ReturnType<typeof resolveShiftCardLayout>
+    >();
+
+    for (const shift of sortedShifts) {
+      if (overnightAnchorShiftIds?.has(shift.id)) continue;
+
       const jobsLabel = resolveJobLabelsForShiftAssignment(
         shift.employeeId,
         shift.locationAreaId ?? areaId,
@@ -185,16 +219,71 @@ export function DashboardShiftCardsList({
         qualificationSortOrder
       );
       const display = buildShiftCardDisplayContent(shift, jobsLabel, tooltipOptions);
-      const layout = resolveShiftCardLayout(
-        cellWidthPx,
-        shift,
-        display,
-        serviceTimeline,
-        shiftCountInCell,
-        true
+      layoutByShiftId.set(
+        shift.id,
+        resolveShiftCardLayout(
+          cellWidthPx,
+          shift,
+          display,
+          serviceTimeline,
+          shiftCountInCell,
+          true
+        )
       );
+    }
 
-      return { shift, display, layout };
+    const layoutInputs = sortedShifts
+      .filter((shift) => !overnightAnchorShiftIds?.has(shift.id))
+      .map((shift) => ({
+        layout: layoutByShiftId.get(shift.id)!,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+      }));
+
+    applySubThreeHourUniformShiftCardWidths(
+      cellWidthPx,
+      layoutInputs,
+      serviceTimeline
+    );
+    applyDurationMonotonicShiftCardWidths(
+      cellWidthPx,
+      layoutInputs,
+      serviceTimeline
+    );
+
+    return cellRows.flatMap((cellRow) => {
+      if (cellRow.kind === "row-gap") {
+        return [{ kind: "row-gap" as const }];
+      }
+
+      if (cellRow.kind === "overnight-anchor") {
+        return [{ kind: "overnight-anchor" as const, shiftId: cellRow.shiftId }];
+      }
+
+      if (cellRow.kind === "overnight-tail-spacer") {
+        return [
+          { kind: "overnight-tail-spacer" as const, shiftId: cellRow.shiftId },
+        ];
+      }
+
+      const shift = cellRow.shift;
+      const jobsLabel = resolveJobLabelsForShiftAssignment(
+        shift.employeeId,
+        shift.locationAreaId ?? areaId,
+        dateISO,
+        shift.startTime,
+        shift.endTime,
+        staffingRules,
+        serviceHours,
+        assignmentPresets,
+        profileQualificationIds,
+        qualificationNameById,
+        qualificationSortOrder
+      );
+      const display = buildShiftCardDisplayContent(shift, jobsLabel, tooltipOptions);
+      const layout = layoutByShiftId.get(shift.id)!;
+
+      return [{ kind: "shift" as const, shift, display, layout }];
     });
   }, [
     shifts,
@@ -209,6 +298,8 @@ export function DashboardShiftCardsList({
     profileQualificationIds,
     qualificationNameById,
     qualificationSortOrder,
+    overnightAnchorShiftIds,
+    incomingOvernightTailRowsByIndex,
   ]);
 
   useLayoutEffect(() => {
@@ -265,12 +356,11 @@ export function DashboardShiftCardsList({
         className
       )}
     >
-      {shiftRows.map(({ shift, display, layout }) => {
-        if (overnightAnchorShiftIds?.has(shift.id)) {
+      {shiftRows.map((row, rowIndex) => {
+        if (row.kind === "row-gap") {
           return (
             <div
-              key={shift.id}
-              data-dashboard-overnight-span-anchor={shift.id}
+              key={`gap-${rowIndex}`}
               className="max-w-full shrink-0 self-start"
               style={{ height: shiftCardListItemHeightPx() }}
               aria-hidden
@@ -278,6 +368,31 @@ export function DashboardShiftCardsList({
           );
         }
 
+        if (row.kind === "overnight-anchor") {
+          return (
+            <div
+              key={row.shiftId}
+              data-dashboard-overnight-span-anchor={row.shiftId}
+              className="max-w-full shrink-0 self-start"
+              style={{ height: shiftCardListItemHeightPx() }}
+              aria-hidden
+            />
+          );
+        }
+
+        if (row.kind === "overnight-tail-spacer") {
+          return (
+            <div
+              key={`tail-${row.shiftId}`}
+              data-dashboard-overnight-tail-spacer={row.shiftId}
+              className="max-w-full shrink-0 self-start"
+              style={{ height: shiftCardListItemHeightPx() }}
+              aria-hidden
+            />
+          );
+        }
+
+        const { shift, display, layout } = row;
         return (
         <DashboardShiftCardView
           key={shift.id}

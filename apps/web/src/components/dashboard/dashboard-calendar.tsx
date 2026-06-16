@@ -13,7 +13,12 @@ import {
 import { useRouter } from "next/navigation";
 import { isPastCalendarDate, parseISODate, startOfWeek, toISODate } from "@/lib/dates";
 import { buildHolidayNamesByDate, isGermanPublicHoliday } from "@/lib/german-public-holidays";
-import { formatDayHeader } from "@/lib/planning-utils";
+import { formatDayHeader, weeklySummary } from "@/lib/planning-utils";
+import {
+  PLANNING_DAY_FOOTER_ROW_HEIGHT,
+  PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
+} from "@/lib/planning-calendar-layout";
+import { PlanningWeeklySummaryFooter } from "@/components/planning/planning-weekly-summary-footer";
 import { DashboardShiftCardsList } from "@/components/dashboard/dashboard-shift-cards-list";
 import { CollapsedShiftPreview } from "@/components/dashboard/collapsed-shift-preview";
 import { DashboardAreaRowOvernightOverlay } from "@/components/dashboard/dashboard-area-row-overnight-overlay";
@@ -31,8 +36,8 @@ import {
 import {
   AREA_ROW_MIN_HEIGHT_PX,
   buildAreaRowGridTrack,
-  CALENDAR_HEADER_HEIGHT_PX,
   areaRowRequiredHeightPx,
+  calendarAvailableBodyHeightPx,
   cellShiftListNeedsScroll,
   computeAreaRowLayouts,
 } from "@/lib/shift-card-row-layout";
@@ -40,6 +45,8 @@ import { isCalendarAreaRowHeightDate, isAreaRowMinimizedFromTodayThroughWeek } f
 import {
   collectDashboardOvernightSpansByArea,
   collectDashboardOvernightSpansForArea,
+  collectDashboardIncomingOvernightTailRowsByIndex,
+  countDashboardCellVisualRows,
   dashboardOvernightAnchorShiftIds,
 } from "@/lib/dashboard-overnight-shift-display";
 import { dashboardCellDataAttribute } from "@/lib/dashboard-overnight-span-layout";
@@ -55,7 +62,13 @@ import { useSimpleCalendarDisplay } from "@/lib/simple-calendar-display-context"
 export type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
+import { useOrgFeatures } from "@/lib/org-features-provider";
+import {
+  useEffectiveShiftConfirmationEnabled,
+  useShiftConfirmationSimulation,
+  useSimulatedProposedOnAssignRequest,
+} from "@/lib/shift-confirmation-simulation-context";
+import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type {
   AreaShiftTemplateWithBreaks,
@@ -108,7 +121,7 @@ import {
   DashboardBulkShiftModal,
   type DashboardBulkShiftDialogState,
 } from "@/components/dashboard/dashboard-bulk-shift-modal";
-import type { LocationAreaStaffing, Qualification } from "@schichtwerk/types";
+import type { LocationAreaStaffing, Profile, Qualification } from "@schichtwerk/types";
 import { sendConfirmationRequestForShift } from "@/app/actions/shift-confirmations";
 import { Alert } from "@/components/ui";
 
@@ -126,6 +139,7 @@ type Props = {
   profileQualificationIds: Record<string, string[]>;
   fullStaffingRules: LocationAreaStaffing[];
   shiftCompensation: DashboardShiftCompensationByKey;
+  profiles: Profile[];
   reassignShiftRequest?: DashboardShiftCard | null;
   onReassignShiftHandled?: () => void;
 };
@@ -353,31 +367,25 @@ function resolveCalendarLayoutDayDates(
     weekStart: string;
     currentWeekStart: string;
     todayISO: string;
-    savedCurrentWeekExpansion: Set<string> | null;
-    isFirstCurrentWeekView: boolean;
+    savedWeekExpansion: Set<string> | undefined;
   }
 ): Set<string> {
   const openDays = createActiveDayDates(dates, areaIds, serviceHours, shifts);
-  const isCurrentWeek = options.weekStart === options.currentWeekStart;
 
-  if (!isCurrentWeek) {
-    return openDays;
-  }
-
-  if (options.isFirstCurrentWeekView) {
+  if (options.savedWeekExpansion !== undefined) {
     const expanded = new Set<string>();
     for (const date of openDays) {
-      if (!isPastCalendarDate(date, options.todayISO)) {
+      if (options.savedWeekExpansion.has(date)) {
         expanded.add(date);
       }
     }
     return expanded;
   }
 
-  if (options.savedCurrentWeekExpansion) {
+  if (options.weekStart === options.currentWeekStart) {
     const expanded = new Set<string>();
     for (const date of openDays) {
-      if (options.savedCurrentWeekExpansion.has(date)) {
+      if (!isPastCalendarDate(date, options.todayISO)) {
         expanded.add(date);
       }
     }
@@ -409,6 +417,7 @@ export function DashboardCalendar({
   profileQualificationIds: profileQualificationIdsRecord,
   fullStaffingRules,
   shiftCompensation,
+  profiles,
   reassignShiftRequest,
   onReassignShiftHandled,
 }: Props) {
@@ -417,8 +426,9 @@ export function DashboardCalendar({
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
   const features = useOrgFeatures();
-  const organization = useOrganization();
-  const shiftConfirmationEnabled = organization.shift_confirmation_enabled;
+  const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
+  const { blocksOutboundSend } = useShiftConfirmationSimulation();
+  const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
   const simplePlanning = !features.areas;
   const intlLocale = toIntlLocale(locale);
   const { simpleCalendarFirstShiftOnly } = useSimpleCalendarDisplay();
@@ -538,9 +548,9 @@ export function DashboardCalendar({
   const layoutAreaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutDayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const calendarLayoutScopeRef = useRef<string | null>(null);
-  const currentWeekDayExpansionRef = useRef<Set<string>>(new Set());
-  const hasInitializedCurrentWeekDayLayoutRef = useRef(false);
+  const weekDayExpansionRef = useRef<Map<string, Set<string>>>(new Map());
   const [isCalendarVisible, setIsCalendarVisible] = useState(false);
+  const [layoutTransitionEnabled, setLayoutTransitionEnabled] = useState(false);
   const [contextMenu, setContextMenu] = useState<AreaDayContextMenuState | null>(
     null
   );
@@ -635,9 +645,6 @@ export function DashboardCalendar({
     calendarLayoutScopeRef.current = scopeKey;
 
     const nextAreas = createActiveAreaIds(areas);
-    const isFirstCurrentWeekView =
-      weekStart === currentWeekStart &&
-      !hasInitializedCurrentWeekDayLayoutRef.current;
     const nextDays = resolveCalendarLayoutDayDates(
       dates,
       areaIds,
@@ -647,18 +654,11 @@ export function DashboardCalendar({
         weekStart,
         currentWeekStart,
         todayISO,
-        savedCurrentWeekExpansion: isFirstCurrentWeekView
-          ? null
-          : currentWeekDayExpansionRef.current,
-        isFirstCurrentWeekView,
+        savedWeekExpansion: weekDayExpansionRef.current.get(weekStart),
       }
     );
-    if (weekStart === currentWeekStart) {
-      if (isFirstCurrentWeekView) {
-        hasInitializedCurrentWeekDayLayoutRef.current = true;
-      }
-      currentWeekDayExpansionRef.current = new Set(nextDays);
-    }
+    weekDayExpansionRef.current.set(weekStart, new Set(nextDays));
+    setLayoutTransitionEnabled(false);
     setActiveAreaIds(nextAreas);
     setActiveDayDates(nextDays);
     syncLayoutAreasImmediate(nextAreas);
@@ -814,10 +814,17 @@ export function DashboardCalendar({
     setShiftContextMenu(null);
     setConfirmationSendError(null);
     startSendConfirmation(async () => {
+      if (blocksOutboundSend && !simulatedProposedOnAssign) {
+        setConfirmationSendError(
+          getShiftConfirmationSimulationSendBlockedResult().error
+        );
+        return;
+      }
       const result = await sendConfirmationRequestForShift({
         shiftId: shift.id,
         weekStart,
         locationId: locationId ?? undefined,
+        simulatedProposedOnAssign,
       });
       if (!result.ok) {
         setConfirmationSendError(result.error);
@@ -825,7 +832,14 @@ export function DashboardCalendar({
       }
       router.refresh();
     });
-  }, [shiftContextMenu, weekStart, locationId, router]);
+  }, [
+    shiftContextMenu,
+    weekStart,
+    locationId,
+    router,
+    blocksOutboundSend,
+    simulatedProposedOnAssign,
+  ]);
 
   const dayUsesWideColumn = useMemo(
     () =>
@@ -905,6 +919,7 @@ export function DashboardCalendar({
 
   const toggleAreaActive = useCallback(
     (areaId: string, active: boolean) => {
+      setLayoutTransitionEnabled(true);
       setActiveAreaIds((prev) => {
         const next = new Set(prev);
         if (active) next.add(areaId);
@@ -918,18 +933,17 @@ export function DashboardCalendar({
 
   const toggleDayActive = useCallback(
     (date: string, active: boolean) => {
+      setLayoutTransitionEnabled(true);
       setActiveDayDates((prev) => {
         const next = new Set(prev);
         if (active) next.add(date);
         else next.delete(date);
-        if (isCurrentWeek) {
-          currentWeekDayExpansionRef.current = new Set(next);
-        }
+        weekDayExpansionRef.current.set(weekStart, new Set(next));
         scheduleLayoutDays(next);
         return next;
       });
     },
-    [isCurrentWeek, scheduleLayoutDays]
+    [weekStart, scheduleLayoutDays]
   );
 
   const showAreaDayContextMenu = useCallback(
@@ -1192,6 +1206,66 @@ export function DashboardCalendar({
     return map;
   }, [areas, dates, byAreaDate, shiftCompensation, t, localeKey]);
 
+  const dailyFooterLabelsByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      ReturnType<typeof formatTagAreaFooterLabels>
+    >();
+    for (const date of dates) {
+      const dayShifts = simplePlanning
+        ? (shiftsByDate.get(date) ?? [])
+        : areas.flatMap(
+            (area) => byAreaDate.get(`${area.id}:${date}`) ?? []
+          );
+      if (dayShifts.length === 0) continue;
+      const stats = computeTagAreaDayFooterStats(dayShifts, shiftCompensation);
+      map.set(date, formatTagAreaFooterLabels(stats, t, localeKey));
+    }
+    return map;
+  }, [
+    areas,
+    byAreaDate,
+    dates,
+    shiftCompensation,
+    shiftsByDate,
+    simplePlanning,
+    t,
+    localeKey,
+  ]);
+
+  const calendarFooterShifts = useMemo(() => {
+    if (simplePlanning) {
+      return calendarShifts;
+    }
+    return areas.flatMap((area) =>
+      dates.flatMap((date) => byAreaDate.get(`${area.id}:${date}`) ?? [])
+    );
+  }, [areas, byAreaDate, calendarShifts, dates, simplePlanning]);
+
+  const weeklySummaryData = useMemo(
+    () =>
+      weeklySummary(
+        calendarFooterShifts.map((shift) => ({
+          employee_id: shift.employeeId,
+          shift_date: shift.shift_date,
+          startTime: shift.startTime,
+          endTime: shift.endTime,
+        })),
+        profiles
+      ),
+    [calendarFooterShifts, profiles]
+  );
+
+  const calendarBodyRowCount = useMemo(() => {
+    if (simplePlanning && locationId) return 1;
+    if (areas.length === 0) return 1;
+    return areas.length;
+  }, [areas.length, locationId, simplePlanning]);
+
+  const footerStatsGridRow = 2 + calendarBodyRowCount;
+  const footerGridRow = footerStatsGridRow + 1;
+  const calendarFooterRowTemplate = `${PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT} ${PLANNING_DAY_FOOTER_ROW_HEIGHT}`;
+
   const locationServiceTimelinesByDate = useMemo(() => {
     const map = new Map<string, ReturnType<typeof resolveDashboardLocationServiceDayTimeline>>();
     for (const date of dates) {
@@ -1232,6 +1306,7 @@ export function DashboardCalendar({
     const map = new Map<string, number>();
     for (const area of areas) {
       let max = 0;
+      const areaOvernightSpans = overnightSpansByArea.get(area.id) ?? [];
       for (const date of dates) {
         if (
           !isCalendarAreaRowHeightDate(date, layoutActiveDayDates, todayISO)
@@ -1239,12 +1314,35 @@ export function DashboardCalendar({
           continue;
         }
         const dayShifts = byAreaDate.get(`${area.id}:${date}`) ?? [];
-        max = Math.max(max, dayShifts.length);
+        const overnightAnchors = dashboardOvernightAnchorShiftIds(
+          dayShifts,
+          dates
+        );
+        const incomingTailRows = collectDashboardIncomingOvernightTailRowsByIndex(
+          area.id,
+          date,
+          areaOvernightSpans,
+          (startDate) => byAreaDate.get(`${area.id}:${startDate}`) ?? []
+        );
+        max = Math.max(
+          max,
+          countDashboardCellVisualRows(dayShifts, {
+            overnightAnchorShiftIds: overnightAnchors,
+            incomingOvernightTailRowsByIndex: incomingTailRows,
+          })
+        );
       }
       map.set(area.id, max);
     }
     return map;
-  }, [areas, dates, layoutActiveDayDates, byAreaDate, todayISO]);
+  }, [
+    areas,
+    dates,
+    layoutActiveDayDates,
+    byAreaDate,
+    todayISO,
+    overnightSpansByArea,
+  ]);
 
   const layoutMinHeightAreaIds = useMemo(() => {
     const set = new Set<string>();
@@ -1278,7 +1376,7 @@ export function DashboardCalendar({
     function updateHeight() {
       if (!scrollRoot) return;
       setCalendarBodyHeightPx(
-        Math.max(0, scrollRoot.clientHeight - CALENDAR_HEADER_HEIGHT_PX)
+        calendarAvailableBodyHeightPx(scrollRoot.clientHeight)
       );
     }
 
@@ -1294,16 +1392,21 @@ export function DashboardCalendar({
 
     const remeasure = () => {
       setCalendarBodyHeightPx(
-        Math.max(0, scrollRoot.clientHeight - CALENDAR_HEADER_HEIGHT_PX)
+        calendarAvailableBodyHeightPx(scrollRoot.clientHeight)
       );
     };
+
+    if (!layoutTransitionEnabled) {
+      remeasure();
+      return;
+    }
 
     const timer = window.setTimeout(
       remeasure,
       CALENDAR_LAYOUT_ANIMATION_DELAY_MS + 280
     );
     return () => window.clearTimeout(timer);
-  }, [layoutActiveAreaIds]);
+  }, [layoutActiveAreaIds, layoutTransitionEnabled]);
 
   const areaRowLayouts = useMemo(
     () =>
@@ -1330,7 +1433,24 @@ export function DashboardCalendar({
       ) {
         return max;
       }
-      return Math.max(max, (shiftsByDate.get(date) ?? []).length);
+      const dayShifts = shiftsByDate.get(date) ?? [];
+      const overnightAnchors = dashboardOvernightAnchorShiftIds(
+        dayShifts,
+        dates
+      );
+      const incomingTailRows = collectDashboardIncomingOvernightTailRowsByIndex(
+        SIMPLE_PLANNING_AREA_ID,
+        date,
+        simplePlanningOvernightSpans,
+        (startDate) => shiftsByDate.get(startDate) ?? []
+      );
+      return Math.max(
+        max,
+        countDashboardCellVisualRows(dayShifts, {
+          overnightAnchorShiftIds: overnightAnchors,
+          incomingOvernightTailRowsByIndex: incomingTailRows,
+        })
+      );
     }, 0);
     return computeAreaRowLayouts(
       [{ id: "__simple__" }],
@@ -1343,6 +1463,7 @@ export function DashboardCalendar({
     dates,
     layoutActiveDayDates,
     shiftsByDate,
+    simplePlanningOvernightSpans,
     todayISO,
   ]);
 
@@ -1350,12 +1471,12 @@ export function DashboardCalendar({
     if (simplePlanning && locationId) {
       const layout = simplePlanningRowLayout;
       if (!layout) {
-        return `${CALENDAR_HEADER_ROW_HEIGHT} minmax(0, 1fr)`;
+        return `${CALENDAR_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
       }
-      return `${CALENDAR_HEADER_ROW_HEIGHT} ${buildAreaRowGridTrack(layout)}`;
+      return `${CALENDAR_HEADER_ROW_HEIGHT} ${buildAreaRowGridTrack(layout)} ${calendarFooterRowTemplate}`;
     }
     if (areas.length === 0) {
-      return `${CALENDAR_HEADER_ROW_HEIGHT} minmax(0, 1fr)`;
+      return `${CALENDAR_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
     }
     const bodyRows = areas
       .map((area) => {
@@ -1364,10 +1485,11 @@ export function DashboardCalendar({
         return buildAreaRowGridTrack(layout);
       })
       .join(" ");
-    return `${CALENDAR_HEADER_ROW_HEIGHT} ${bodyRows}`;
+    return `${CALENDAR_HEADER_ROW_HEIGHT} ${bodyRows} ${calendarFooterRowTemplate}`;
   }, [
     areas,
     areaRowLayouts,
+    calendarFooterRowTemplate,
     layoutActiveAreaIds,
     simplePlanning,
     locationId,
@@ -1409,7 +1531,10 @@ export function DashboardCalendar({
       >
         <div
           ref={calendarGridRef}
-          className={cn("grid h-full min-h-0", CALENDAR_GRID_LAYOUT_TRANSITION_CLASS)}
+          className={cn(
+            "grid h-full min-h-0",
+            layoutTransitionEnabled && CALENDAR_GRID_LAYOUT_TRANSITION_CLASS
+          )}
           style={{
             gridTemplateColumns: columnTemplate,
             gridTemplateRows: rowTemplate,
@@ -1508,6 +1633,20 @@ export function DashboardCalendar({
                   dayShifts,
                   dates
                 );
+                const incomingOvernightTailRowsByIndex =
+                  collectDashboardIncomingOvernightTailRowsByIndex(
+                    SIMPLE_PLANNING_AREA_ID,
+                    date,
+                    simplePlanningOvernightSpans,
+                    (startDate) => shiftsByDate.get(startDate) ?? []
+                  );
+                const dayVisualRowCount = countDashboardCellVisualRows(
+                  dayShifts,
+                  {
+                    overnightAnchorShiftIds: overnightAnchors,
+                    incomingOvernightTailRowsByIndex,
+                  }
+                );
                 const dayReadOnly = isPastCalendarDate(date);
                 const isDayExpanded = layoutActiveDayDates.has(date);
                 return (
@@ -1556,6 +1695,9 @@ export function DashboardCalendar({
                       <DashboardShiftCardsList
                         shifts={dayShifts}
                         overnightAnchorShiftIds={overnightAnchors}
+                        incomingOvernightTailRowsByIndex={
+                          incomingOvernightTailRowsByIndex
+                        }
                         areaId=""
                         dateISO={date}
                         serviceTimeline={locationServiceTimelinesByDate.get(date)!}
@@ -1570,7 +1712,7 @@ export function DashboardCalendar({
                         needsVerticalScroll={
                           simplePlanningRowLayout
                             ? cellShiftListNeedsScroll(
-                                dayShifts.length,
+                                dayVisualRowCount,
                                 simplePlanningRowLayout
                               )
                             : false
@@ -1590,12 +1732,15 @@ export function DashboardCalendar({
                       <CollapsedShiftPreview
                         shifts={dayShifts}
                         overnightAnchorShiftIds={overnightAnchors}
+                        incomingOvernightTailRowsByIndex={
+                          incomingOvernightTailRowsByIndex
+                        }
                         assignmentPresets={dashboardAssignmentPresetsForArea(
                           areaShiftTemplates
                         )}
                         serviceTimeline={locationServiceTimelinesByDate.get(date)!}
                         isPastDay={dayReadOnly}
-                        pastDayReferenceShifts={dayReadOnly ? dayShifts : undefined}
+                        dayReferenceShifts={dayShifts}
                         areaCollapsed={false}
                       />
                     ) : null}
@@ -1642,7 +1787,7 @@ export function DashboardCalendar({
                   )}
                   style={{
                     gridColumn: dayIndex + 2,
-                    gridRow: "2 / -1",
+                    gridRow: `2 / ${footerStatsGridRow}`,
                     ...(!dayShowsHourGrid(dayIndex)
                       ? { backgroundColor: CLOSED_AREA_DAY_BG }
                       : undefined),
@@ -1702,6 +1847,21 @@ export function DashboardCalendar({
                       const overnightAnchors = dashboardOvernightAnchorShiftIds(
                         dayShifts,
                         dates
+                      );
+                      const incomingOvernightTailRowsByIndex =
+                        collectDashboardIncomingOvernightTailRowsByIndex(
+                          area.id,
+                          date,
+                          areaOvernightSpans,
+                          (startDate) =>
+                            byAreaDate.get(`${area.id}:${startDate}`) ?? []
+                        );
+                      const dayVisualRowCount = countDashboardCellVisualRows(
+                        dayShifts,
+                        {
+                          overnightAnchorShiftIds: overnightAnchors,
+                          incomingOvernightTailRowsByIndex,
+                        }
                       );
                       const isPastAreaWorkDay = isPastAreaWorkDayCell(
                         serviceHours,
@@ -1809,6 +1969,7 @@ export function DashboardCalendar({
                               <TagAreaHeaderStrip
                                 key={`${area.id}:${date}:${dayShifts.map((shift) => shift.id).join(",")}`}
                                 showDaytimesGradient={showDaytimesGradient}
+                                dayCollapsed={!isDayActive}
                                 entries={headerStaffing}
                                 noServiceHoursLabel={
                                   showNoServiceHoursInHeader
@@ -1854,6 +2015,7 @@ export function DashboardCalendar({
                                       label={footerLabels.line}
                                       hoursTooltipLine={footerLabels.hoursLine}
                                       costTooltipLine={footerLabels.costLine}
+                                      dayCollapsed={!isDayActive}
                                     />
                                   ) : null;
                                 })() : null}
@@ -1861,7 +2023,8 @@ export function DashboardCalendar({
                               <div
                                 className={cn(
                                   "flex h-0 min-h-0 flex-1 flex-col gap-1.5",
-                                  CALENDAR_CELL_CONTENT_TRANSITION_CLASS,
+                                  layoutTransitionEnabled &&
+                                    CALENDAR_CELL_CONTENT_TRANSITION_CLASS,
                                   showDayCellContent
                                     ? "opacity-100"
                                     : "pointer-events-none opacity-0"
@@ -1882,6 +2045,9 @@ export function DashboardCalendar({
                                     key={`${area.id}:${date}:${areaRowLayout?.heightPx ?? 0}`}
                                     shifts={dayShifts}
                                     overnightAnchorShiftIds={overnightAnchors}
+                                    incomingOvernightTailRowsByIndex={
+                                      incomingOvernightTailRowsByIndex
+                                    }
                                     areaId={area.id}
                                     dateISO={date}
                                     serviceTimeline={
@@ -1898,7 +2064,7 @@ export function DashboardCalendar({
                                     needsVerticalScroll={
                                       areaRowLayout
                                         ? cellShiftListNeedsScroll(
-                                            dayShifts.length,
+                                            dayVisualRowCount,
                                             areaRowLayout
                                           )
                                         : false
@@ -1928,6 +2094,9 @@ export function DashboardCalendar({
                                   <CollapsedShiftPreview
                                     shifts={dayShifts}
                                     overnightAnchorShiftIds={overnightAnchors}
+                                    incomingOvernightTailRowsByIndex={
+                                      incomingOvernightTailRowsByIndex
+                                    }
                                     assignmentPresets={dashboardAssignmentPresetsForArea(
                                       areaShiftTemplatesForArea(area.id, areaShiftTemplates)
                                     )}
@@ -1935,10 +2104,8 @@ export function DashboardCalendar({
                                       locationServiceTimelinesByDate.get(date)!
                                     }
                                     isPastDay={isPastCalendarDate(date)}
-                                    pastDayReferenceShifts={
-                                      isPastCalendarDate(date)
-                                        ? shiftsByDate.get(date) ?? []
-                                        : undefined
+                                    dayReferenceShifts={
+                                      shiftsByDate.get(date) ?? []
                                     }
                                     areaCollapsed={isCompactRow}
                                   />
@@ -2003,6 +2170,58 @@ export function DashboardCalendar({
               })}
             </>
           )}
+
+          <div
+            className={cn(
+              "sticky left-0 z-[41] border-t border-slate-400 bg-calendar-active-header",
+              CALENDAR_HEADER_AREA_COLUMN_BORDER_CLASS
+            )}
+            style={{
+              gridColumn: 1,
+              gridRow: footerStatsGridRow,
+              height: PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
+              bottom: PLANNING_DAY_FOOTER_ROW_HEIGHT,
+            }}
+            aria-hidden
+          />
+
+          {dates.map((date, dayIndex) => {
+            const mutedFooter = !dayHasServiceHours[dayIndex];
+            const footerLabels = dailyFooterLabelsByDate.get(date);
+
+            return (
+              <div
+                key={`footer-stats-${date}`}
+                className={cn(
+                  "sticky z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-400",
+                  mutedFooter ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
+                  dayHeaderColumnDivider(dayIndex)
+                )}
+                style={{
+                  gridColumn: dayIndex + 2,
+                  gridRow: footerStatsGridRow,
+                  height: PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
+                  bottom: PLANNING_DAY_FOOTER_ROW_HEIGHT,
+                }}
+              >
+                {footerLabels ? (
+                  <TagAreaFooterStrip
+                    label={footerLabels.line}
+                    hoursTooltipLine={footerLabels.hoursLine}
+                    costTooltipLine={footerLabels.costLine}
+                    dayCollapsed={!layoutActiveDayDates.has(date)}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+
+          <PlanningWeeklySummaryFooter
+            summary={weeklySummaryData}
+            locale={locale}
+            gridRow={footerGridRow}
+            t={t}
+          />
         </div>
       </div>
 
@@ -2145,6 +2364,27 @@ export function DashboardCalendar({
           areas={areas}
           areaShiftTemplates={areaShiftTemplates}
           serviceHours={serviceHours}
+          areaExistingAssignments={
+            addShiftDialog.areaId
+              ? shifts
+                  .filter(
+                    (shift) =>
+                      shift.locationAreaId === addShiftDialog.areaId &&
+                      shift.shift_date === addShiftDialog.date
+                  )
+                  .map((shift) => ({
+                    employeeId: shift.employeeId,
+                    startTime: shift.startTime,
+                    endTime: shift.endTime,
+                  }))
+              : shifts
+                  .filter((shift) => shift.shift_date === addShiftDialog.date)
+                  .map((shift) => ({
+                    employeeId: shift.employeeId,
+                    startTime: shift.startTime,
+                    endTime: shift.endTime,
+                  }))
+          }
           onClose={() => setAddShiftDialog(null)}
           onSaved={handleShiftSaved}
         />

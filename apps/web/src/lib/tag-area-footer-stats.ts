@@ -115,7 +115,10 @@ export function formatTagAreaFooterLabels(
   const hoursLine = formatTagAreaFooterHoursLabel(stats, translate);
   const costLine = formatTagAreaFooterCostLabel(stats, translate, locale);
   return {
-    line: `${hoursLine} | ${costLine}`,
+    line: translate("dashboard.tagAreaFooterShortLine", {
+      hours: formatDurationHours(stats.totalHours),
+      cost: formatTagAreaFooterMoney(stats.totalCost, locale),
+    }),
     hoursLine,
     costLine,
   };

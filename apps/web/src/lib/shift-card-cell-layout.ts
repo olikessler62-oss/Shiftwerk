@@ -1,5 +1,7 @@
 import type { ShiftCardDensity } from "@/lib/shift-card-display-content";
+import { SHIFT_CARD_COMPACT_MIN_FALLBACK_PX } from "@/lib/shift-card-display-content";
 import { SHIFT_CARD_EXTRA_WIDTH_PX } from "@/lib/shift-card-row-layout";
+import { shiftClockDurationMinutes } from "@/lib/shift-card-proportional-width";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
 import {
@@ -11,6 +13,10 @@ export const SHIFT_CARD_CELL_PADDING_PX = 4;
 export const SHIFT_CARD_MARKER_WIDTH_PX = SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX;
 export const SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX =
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX + 24;
+
+/** Untergrenze für compact-Dichte (Inhalt + Mitarbeiterstreifen). */
+export const SHIFT_CARD_COMPACT_READABLE_WIDTH_PX =
+  SHIFT_CARD_COMPACT_MIN_FALLBACK_PX + SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX;
 
 export type ShiftCardCellLayout = {
   widthPx: number;
@@ -25,9 +31,17 @@ export type CollapsedShiftLineLayout = {
 };
 
 export const COLLAPSED_SHIFT_LINE_MIN_WIDTH_PX = 2;
+/** Schmale Balken in zugeklappten Tages-Spalten (nicht volle Timeline-Breite). */
+export const COLLAPSED_DAY_COLUMN_LINE_MAX_WIDTH_PX = 6;
 export const COLLAPSED_SHIFT_PIXEL_SIZE_PX = 1;
 export const COLLAPSED_PAST_DAY_SHIFT_COLOR = "#94a3b8";
 export const COLLAPSED_PAST_AREA_PIXEL_COLOR = "#64748b";
+
+/** Ab 3 h skaliert die Kartenbreite proportional mit der Schichtdauer. */
+export const SHIFT_CARD_FULL_DURATION_TIER_MINUTES = 3 * 60;
+
+/** Unter-3-h-Schichten (1 h, 2 h, …): einheitliche Breite als Anteil der 3-h-Referenz. */
+export const SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS = 0.88;
 
 export type ShiftCardCellLayoutOptions = {
   /** Schichten in der Zelle — bei wenigen Zuweisungen breitere Karten. */
@@ -51,6 +65,103 @@ export function sparseCellFairShareWidthPx(
   return trackWidthPx * share;
 }
 
+/** Timeline-Breite einer 3-h-Referenzschicht (Positions-unabhängig). */
+export function timelineThreeHourReferenceWidthPx(
+  trackWidthPx: number,
+  timeline: ShiftCardServiceTimeline
+): number {
+  if (trackWidthPx <= 0 || timeline.durationMin <= 0) return 0;
+  return (
+    (SHIFT_CARD_FULL_DURATION_TIER_MINUTES / timeline.durationMin) * trackWidthPx
+  );
+}
+
+/** Effektive 3-h-Breite inkl. Lesbarkeits-Untergrenze — Basis für Unter-3-h-Anteil. */
+export function resolveThreeHourTierDisplayWidthPx(
+  trackWidthPx: number,
+  timeline: ShiftCardServiceTimeline
+): number {
+  return Math.max(
+    timelineThreeHourReferenceWidthPx(trackWidthPx, timeline),
+    SHIFT_CARD_COMPACT_READABLE_WIDTH_PX
+  );
+}
+
+/** Zielbreite für alle Unter-3-h-Schichten (1 h = 2 h), relativ zur sichtbaren 3-h-Karte. */
+export function resolveSubThreeHourUniformTargetWidthPx(
+  trackWidthPx: number,
+  timeline: ShiftCardServiceTimeline
+): number {
+  const threeHourDisplayPx = resolveThreeHourTierDisplayWidthPx(
+    trackWidthPx,
+    timeline
+  );
+  return Math.max(
+    SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX,
+    threeHourDisplayPx * SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS
+  );
+}
+
+/**
+ * Kartenbreite nach Dauer-Stufe:
+ * - unter 3 h: einheitlich (1 h = 2 h), etwas schmaler als 3 h
+ * - ab 3 h: proportional zur Schichtdauer auf der Timeline
+ */
+export function resolveShiftCardDurationWidthPx(
+  startTime: string,
+  endTime: string,
+  trackWidthPx: number,
+  timeline: ShiftCardServiceTimeline
+): number {
+  const durationMin = shiftClockDurationMinutes(startTime, endTime);
+
+  if (durationMin >= SHIFT_CARD_FULL_DURATION_TIER_MINUTES) {
+    return timelineDurationWidthPx(
+      startTime,
+      endTime,
+      trackWidthPx,
+      timeline
+    );
+  }
+
+  return resolveSubThreeHourUniformTargetWidthPx(trackWidthPx, timeline);
+}
+
+function isSubThreeHourShift(startTime: string, endTime: string): boolean {
+  return (
+    shiftClockDurationMinutes(startTime, endTime) <
+    SHIFT_CARD_FULL_DURATION_TIER_MINUTES
+  );
+}
+
+function clampShiftCardLayoutToCell(
+  cellWidthPx: number,
+  startTime: string,
+  trackWidthPx: number,
+  timeline: ShiftCardServiceTimeline,
+  padding: number,
+  layout: ShiftCardCellLayout,
+  widthHintPx: number
+): void {
+  layout.marginLeftPx = resolveShiftCardMarginLeftPx(
+    cellWidthPx,
+    startTime,
+    trackWidthPx,
+    timeline,
+    padding,
+    widthHintPx
+  );
+
+  const availableWidthPx = Math.max(
+    0,
+    cellWidthPx - padding - layout.marginLeftPx
+  );
+  layout.widthPx = Math.min(
+    layout.widthPx + SHIFT_CARD_EXTRA_WIDTH_PX,
+    availableWidthPx + SHIFT_CARD_EXTRA_WIDTH_PX
+  );
+}
+
 export function computeShiftCardCellLayout(
   cellWidthPx: number,
   startTime: string,
@@ -67,8 +178,9 @@ export function computeShiftCardCellLayout(
   const padding = SHIFT_CARD_CELL_PADDING_PX;
   const trackWidthPx = Math.max(0, cellWidthPx - padding * 2);
   const shiftCount = options.shiftCountInCell ?? 1;
+  const subThreeHourShift = isSubThreeHourShift(startTime, endTime);
 
-  const durationWidthPx = timelineDurationWidthPx(
+  const durationWidthPx = resolveShiftCardDurationWidthPx(
     startTime,
     endTime,
     trackWidthPx,
@@ -92,15 +204,20 @@ export function computeShiftCardCellLayout(
   }
 
   const readableMinWidthPx = contentMinWidthPx + SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX;
-  const widthHintPx = Math.min(
-    trackWidthPx,
-    Math.max(
-      durationWidthPx,
-      fairSharePx,
-      readableMinWidthPx,
-      SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX
-    )
-  );
+  const widthHintPx = options.uniformShiftDurationWidth
+    ? Math.min(
+        trackWidthPx,
+        Math.max(durationWidthPx, SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX)
+      )
+    : Math.min(
+        trackWidthPx,
+        Math.max(
+          durationWidthPx,
+          fairSharePx,
+          readableMinWidthPx,
+          SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX
+        )
+      );
 
   const marginLeftPx = resolveShiftCardMarginLeftPx(
     cellWidthPx,
@@ -120,7 +237,16 @@ export function computeShiftCardCellLayout(
     SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX
   );
 
-  if (widthPx < readableCapPx) {
+  if (options.uniformShiftDurationWidth) {
+    if (subThreeHourShift) {
+      widthPx = resolveSubThreeHourUniformTargetWidthPx(
+        trackWidthPx,
+        timeline
+      );
+    } else {
+      widthPx = Math.max(durationWidthPx, SHIFT_CARD_COMPACT_READABLE_WIDTH_PX);
+    }
+  } else if (widthPx < readableCapPx) {
     widthPx = readableCapPx;
   }
 
@@ -128,6 +254,107 @@ export function computeShiftCardCellLayout(
   widthPx = Math.min(widthPx + SHIFT_CARD_EXTRA_WIDTH_PX, availableWidthPx + SHIFT_CARD_EXTRA_WIDTH_PX);
 
   return { widthPx, marginLeftPx, density };
+}
+
+/**
+ * Alle Unter-3-h-Schichten einer Zelle auf dieselbe Zielbreite setzen.
+ * Berücksichtigt die engste verfügbare Zellbreite, damit 1 h und 2 h identisch bleiben.
+ */
+export function applySubThreeHourUniformShiftCardWidths(
+  cellWidthPx: number,
+  items: readonly ShiftCardLayoutWidthInput[],
+  timeline: ShiftCardServiceTimeline
+): void {
+  if (items.length === 0 || cellWidthPx <= 0) return;
+
+  const padding = SHIFT_CARD_CELL_PADDING_PX;
+  const trackWidthPx = Math.max(0, cellWidthPx - padding * 2);
+  const shortItems = items.filter((item) =>
+    isSubThreeHourShift(item.startTime, item.endTime)
+  );
+  if (shortItems.length === 0) return;
+
+  let uniformWidthPx = resolveSubThreeHourUniformTargetWidthPx(
+    trackWidthPx,
+    timeline
+  );
+
+  for (const item of shortItems) {
+    const marginLeftPx = resolveShiftCardMarginLeftPx(
+      cellWidthPx,
+      item.startTime,
+      trackWidthPx,
+      timeline,
+      padding,
+      uniformWidthPx
+    );
+    const availableWidthPx = Math.max(
+      0,
+      cellWidthPx - padding - marginLeftPx
+    );
+    uniformWidthPx = Math.min(
+      uniformWidthPx,
+      availableWidthPx + SHIFT_CARD_EXTRA_WIDTH_PX
+    );
+  }
+
+  for (const item of shortItems) {
+    item.layout.widthPx = uniformWidthPx;
+    clampShiftCardLayoutToCell(
+      cellWidthPx,
+      item.startTime,
+      trackWidthPx,
+      timeline,
+      padding,
+      item.layout,
+      uniformWidthPx
+    );
+  }
+}
+
+export type ShiftCardLayoutWidthInput = {
+  layout: ShiftCardCellLayout;
+  startTime: string;
+  endTime: string;
+};
+
+/**
+ * Längere Schichten mindestens so breit wie kürzere (nach Dauer sortiert).
+ * Passt bei Bedarf marginLeft an, damit breitere Karten noch in die Zelle passen.
+ */
+export function applyDurationMonotonicShiftCardWidths(
+  cellWidthPx: number,
+  items: readonly ShiftCardLayoutWidthInput[],
+  timeline: ShiftCardServiceTimeline
+): void {
+  if (items.length <= 1 || cellWidthPx <= 0) return;
+
+  const padding = SHIFT_CARD_CELL_PADDING_PX;
+  const trackWidthPx = Math.max(0, cellWidthPx - padding * 2);
+
+  const sorted = items
+    .map((item) => ({
+      item,
+      durationMin: shiftClockDurationMinutes(item.startTime, item.endTime),
+    }))
+    .sort((a, b) => a.durationMin - b.durationMin);
+
+  let widthFloorPx = 0;
+  for (const { item } of sorted) {
+    widthFloorPx = Math.max(widthFloorPx, item.layout.widthPx);
+    if (item.layout.widthPx >= widthFloorPx) continue;
+
+    item.layout.widthPx = widthFloorPx;
+    clampShiftCardLayoutToCell(
+      cellWidthPx,
+      item.startTime,
+      trackWidthPx,
+      timeline,
+      padding,
+      item.layout,
+      widthFloorPx
+    );
+  }
 }
 
 /** Schicht-Vorschau in zugeklappten Tagen: Position/Breite wie bei aufgeklappten Karten. */
@@ -190,6 +417,20 @@ export function computePastDayUniformLineWidthPx(
   return Number.isFinite(minWidthPx)
     ? minWidthPx
     : COLLAPSED_SHIFT_LINE_MIN_WIDTH_PX;
+}
+
+/** Einheitliche schmale Breite für zugeklappte Tages-Spalten (aktuell, Zukunft, Vergangenheit). */
+export function computeCollapsedDayColumnLineWidthPx(
+  cellWidthPx: number,
+  shifts: readonly CollapsedShiftTimeWindow[],
+  timeline: ShiftCardServiceTimeline
+): number {
+  const durationBased = computePastDayUniformLineWidthPx(
+    cellWidthPx,
+    shifts,
+    timeline
+  );
+  return Math.min(durationBased, COLLAPSED_DAY_COLUMN_LINE_MAX_WIDTH_PX);
 }
 
 export type CollapsedShiftTimeWindow = {

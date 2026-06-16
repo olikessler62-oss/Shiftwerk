@@ -18,6 +18,11 @@ export type ProposedShiftForSend = ShiftConfirmationSnapshotSource & {
   confirmation_status?: ShiftConfirmationStatus;
 };
 
+export type ConfirmationSendModalShiftRecord = ProposedShiftForSend & {
+  employee_full_name: string;
+  template_name: string | null;
+};
+
 export function isoWeekEndFromWeekStart(weekStartISO: string): string {
   const [y, m, d] = weekStartISO.split("-").map(Number);
   const end = new Date(y, m - 1, d);

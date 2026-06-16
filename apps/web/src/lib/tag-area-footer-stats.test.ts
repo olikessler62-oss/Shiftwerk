@@ -43,6 +43,9 @@ describe("tag-area-footer-stats", () => {
     const line = formatTagAreaFooterLine(
       { totalHours: 8, totalCost: 160, currency: "EUR" },
       (key, params) => {
+        if (key === "dashboard.tagAreaFooterShortLine") {
+          return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
+        }
         if (key === "dashboard.tagAreaFooterTotalHours") {
           return `Gesamte Stunden: ${params?.hours ?? ""}`;
         }
@@ -50,13 +53,16 @@ describe("tag-area-footer-stats", () => {
       },
       "de"
     );
-    expect(line).toBe("Gesamte Stunden: 8:00 | Gesamte Kosten: 160,00 EUR");
+    expect(line).toBe("Ges.: 8:00 Std | 160,00 €");
   });
 
   it("formats footer tooltip lines separately", () => {
     const labels = formatTagAreaFooterLabels(
       { totalHours: 8, totalCost: 160, currency: "EUR" },
       (key, params) => {
+        if (key === "dashboard.tagAreaFooterShortLine") {
+          return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
+        }
         if (key === "dashboard.tagAreaFooterTotalHours") {
           return `Gesamte Stunden: ${params?.hours ?? ""}`;
         }
@@ -66,8 +72,6 @@ describe("tag-area-footer-stats", () => {
     );
     expect(labels.hoursLine).toBe("Gesamte Stunden: 8:00");
     expect(labels.costLine).toBe("Gesamte Kosten: 160,00 EUR");
-    expect(labels.line).toBe(
-      "Gesamte Stunden: 8:00 | Gesamte Kosten: 160,00 EUR"
-    );
+    expect(labels.line).toBe("Ges.: 8:00 Std | 160,00 €");
   });
 });

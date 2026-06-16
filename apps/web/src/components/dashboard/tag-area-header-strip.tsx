@@ -14,6 +14,8 @@ type Props = {
   noServiceHoursTooltip?: string;
   overlayBackgroundColor?: string;
   staffingLabelsDimmed?: boolean;
+  /** Zugeklappter Tag — Bedarf als „!“ statt unleserlichem Text. */
+  dayCollapsed?: boolean;
   className?: string;
   style?: React.CSSProperties;
 };
@@ -26,6 +28,7 @@ export function TagAreaHeaderStrip({
   noServiceHoursTooltip,
   overlayBackgroundColor,
   staffingLabelsDimmed = false,
+  dayCollapsed = false,
   className,
   style,
 }: Props) {
@@ -88,6 +91,7 @@ export function TagAreaHeaderStrip({
               .join("|")}
             entries={entries}
             dimmed={staffingLabelsDimmed}
+            dayCollapsed={dayCollapsed}
           />
         )}
       </div>

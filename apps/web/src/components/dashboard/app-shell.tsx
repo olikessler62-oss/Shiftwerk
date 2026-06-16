@@ -4,25 +4,33 @@
 
 import { useState, useEffect, useRef, Suspense } from "react";
 import { usePathname } from "next/navigation";
-import { signOut } from "@/app/actions/sign-out";
-import { Button, IconButton } from "@/components/ui";
-import { LanguageSelect } from "@/components/i18n/language-select";
+import { IconButton } from "@/components/ui";
+import { PlanningAppSidebarSlotMount } from "@/components/planning/planning-app-sidebar-slot";
 import { useTranslations } from "@/i18n/locale-provider";
 import { SidebarNav } from "./sidebar-nav";
-import { SimpleCalendarDisplaySidebarToggle } from "@/components/dashboard/simple-calendar-display-sidebar-toggle";
 import { SettingsModalsAppShellFallback } from "@/components/settings/settings-modals-app-shell-fallback";
+import { SuperadminModalProvider } from "@/components/settings/superadmin-modal-context";
 
 interface AppShellProps {
   orgName?: string;
   userName?: string;
   role?: string;
+  superadminEnabled?: boolean;
   children: React.ReactNode;
 }
 
-export function AppShell({ orgName, userName, role, children }: AppShellProps) {
+export function AppShell({
+  orgName,
+  userName,
+  role,
+  superadminEnabled = false,
+  children,
+}: AppShellProps) {
   const t = useTranslations();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const showAppSidebarSlot =
+    pathname.startsWith("/planung") || pathname.startsWith("/dashboard");
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -40,12 +48,13 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
   }, [open]);
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col overflow-hidden md:flex-row">
+    <SuperadminModalProvider enabled={superadminEnabled}>
+      <div className="flex h-dvh min-h-0 flex-col overflow-hidden md:flex-row">
       <div
         ref={sidebarRef}
         className="relative z-50 flex w-full shrink-0 flex-col border-b border-border bg-surface md:h-full md:w-56 md:border-b-0 md:border-r"
       >
-        <div className="flex items-center gap-2 px-3 py-3 md:py-4">
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:h-20">
           <div className="grid h-9 w-9 shrink-0 grid-cols-2 gap-0.5 rounded-lg bg-primary p-1">
             <span className="rounded-sm bg-primary-foreground/90" />
             <span className="rounded-sm bg-primary-foreground/60" />
@@ -94,48 +103,32 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
           </IconButton>
         </div>
 
-        <div className="flex justify-center px-3 pb-3 md:-mt-[3px] md:justify-start">
-          <LanguageSelect />
-        </div>
+        {showAppSidebarSlot ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3 pt-2 md:pt-4">
+            <PlanningAppSidebarSlotMount />
+          </div>
+        ) : null}
 
         {open ? (
           <>
             <button
               type="button"
               aria-label={t("nav.closeMenu")}
-              className="fixed inset-0 z-40 bg-black/25 md:hidden"
+              className="fixed inset-0 z-40 bg-black/25 md:absolute md:inset-x-0 md:bottom-0 md:top-20 md:bg-black/10"
               onClick={() => setOpen(false)}
             />
-            <div className="absolute left-0 right-0 top-full z-50 flex max-h-[min(70vh,calc(100dvh-4rem))] flex-col overflow-y-auto border-t border-border bg-surface shadow-lg md:static md:max-h-none md:overflow-visible md:shadow-none">
+            <div className="fixed inset-x-0 top-14 z-50 flex max-h-[min(70vh,calc(100dvh-3.5rem))] flex-col overflow-y-auto border-t border-border bg-surface shadow-lg md:absolute md:inset-x-0 md:bottom-0 md:top-20 md:max-h-none md:border-t-0 md:shadow-xl">
               <Suspense
                 fallback={
                   <nav className="p-2 text-sm text-muted">{t("common.loading")}</nav>
                 }
               >
-                <SidebarNav onNavigate={() => setOpen(false)} viewerRole={role} />
+                <SidebarNav
+                  onNavigate={() => setOpen(false)}
+                  viewerRole={role}
+                  superadminEnabled={superadminEnabled}
+                />
               </Suspense>
-
-              <div className="mt-auto border-t border-border p-2">
-                <p className="px-3 py-1.5 text-xs text-muted">
-                  {userName} ·{" "}
-                  {role === "admin"
-                    ? t("common.admin")
-                    : role === "manager"
-                      ? t("common.manager")
-                      : t("common.basic")}
-                </p>
-                <form action={signOut}>
-                  <Button
-                    type="submit"
-                    variant="ghost"
-                    className="h-auto w-full justify-start px-3 py-2 text-sm font-normal"
-                  >
-                    {t("common.signOut")}
-                  </Button>
-                </form>
-              </div>
-
-              <SimpleCalendarDisplaySidebarToggle />
             </div>
           </>
         ) : null}
@@ -148,5 +141,6 @@ export function AppShell({ orgName, userName, role, children }: AppShellProps) {
         </main>
       </div>
     </div>
+    </SuperadminModalProvider>
   );
 }

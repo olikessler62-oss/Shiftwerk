@@ -3,11 +3,13 @@
 import {
   filterEmployeesAvailableOnWeekday,
   filterEmployeesNotAbsentOnDate,
+  filterProfilesForShiftAssignment,
   filterProfilesForShiftConfirmationAssign,
   profileAvailabilityWeekdayFromDashboardDate,
 } from "@/lib/available-employees-for-shift";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
+import { resolveSimulatedProposedAssignOptions } from "@/lib/shift-confirmation-assign-mode";
 import {
   DEFAULT_COUNTRY_CODE,
   resolveOrganizationTimeZone,
@@ -52,13 +54,17 @@ export type FetchDashboardBulkShiftContextResult =
   | { ok: false; error: string };
 
 export async function fetchDashboardBulkShiftContext(
-  date: string
+  date: string,
+  options?: { simulatedProposedOnAssign?: boolean }
 ): Promise<FetchDashboardBulkShiftContextResult> {
   try {
     const { organizationId, organization } = await requireManager();
     const db = await getDatabase();
 
-    const employeeResult = await fetchDashboardShiftAssignEmployees(date);
+    const employeeResult = await fetchDashboardShiftAssignEmployees(
+      date,
+      options
+    );
     if (!employeeResult.ok) {
       return employeeResult;
     }
@@ -109,27 +115,44 @@ export async function fetchDashboardBulkShiftContext(
 }
 
 export async function fetchDashboardShiftAssignEmployees(
-  date: string
+  date: string,
+  options?: { simulatedProposedOnAssign?: boolean }
 ): Promise<FetchDashboardShiftAssignEmployeesResult> {
   try {
-    const { organizationId, organization } = await requireManager();
+    const { organizationId, organization, profile } = await requireManager();
+    const assignMode = resolveSimulatedProposedAssignOptions({
+      organizationEnabled: organization.shift_confirmation_enabled,
+      simulatedProposedOnAssign: options?.simulatedProposedOnAssign,
+      managerEmail: profile.email,
+    });
     const db = await getDatabase();
     const weekday = profileAvailabilityWeekdayFromDashboardDate(date);
 
     const [profiles, availability, lastShiftDates, absences] = await Promise.all([
-      db.listOrganizationProfiles(organizationId),
+      db.listPlanningEmployees(organizationId),
       db.listOrganizationRecurringAvailability(organizationId),
       db.listEmployeeLastShiftDates(organizationId),
       db.listOrganizationAbsences(organizationId, "approved"),
     ]);
 
+    const schedulableProfiles = filterProfilesForShiftAssignment(
+      profiles,
+      organizationId
+    );
+
     const dayAvailable = filterProfilesForShiftConfirmationAssign(
       filterEmployeesNotAbsentOnDate(
-        filterEmployeesAvailableOnWeekday(profiles, availability, weekday),
+        filterEmployeesAvailableOnWeekday(
+          schedulableProfiles,
+          availability,
+          weekday,
+          organizationId
+        ),
         absences,
         date
       ),
-      organization.shift_confirmation_enabled
+      assignMode.shiftConfirmationEnabled,
+      assignMode.relaxAppRegistrationGate
     );
 
     const availabilityByProfile = new Map<string, typeof availability>();

@@ -63,6 +63,11 @@ type Props = {
   pending: boolean;
   selectedShiftId: string | null;
   onShiftClick: (shiftId: string) => void;
+  /** Linksklick auf freien Zellbereich neben Schichtkarten — neue Schicht. */
+  onEmptyAreaClick?: () => void;
+  emptyAreaDisabled?: boolean;
+  emptyAreaSelected?: boolean;
+  emptyAreaLabel?: string;
   /** Rechtsklick auf Schichtkarte (aufgeklappte aktuelle/zukünftige Tage). */
   onShiftContextMenu?: (shiftId: string, event: React.MouseEvent) => void;
   /** Breite rechts freilassen — nur aufgeklappte Tage (Tag-Grenze erkennbar). */
@@ -80,6 +85,10 @@ export function PlanningCellShiftRow({
   pending,
   selectedShiftId,
   onShiftClick,
+  onEmptyAreaClick,
+  emptyAreaDisabled = false,
+  emptyAreaSelected = false,
+  emptyAreaLabel,
   onShiftContextMenu,
   trailingLayoutInsetPx = PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX,
   uniformShiftWidthPxByKey,
@@ -169,9 +178,9 @@ export function PlanningCellShiftRow({
   return (
     <div
       ref={containerRef}
-      className="flex w-full min-w-0 items-stretch"
+      className="flex w-full min-w-0 flex-1 items-stretch"
       style={{
-        height: PLANNING_CELL_HEIGHT_PX,
+        minHeight: PLANNING_CELL_HEIGHT_PX,
         gap: PLANNING_EXPANDED_SHIFT_CELL_GAP_PX,
       }}
     >
@@ -239,7 +248,8 @@ export function PlanningCellShiftRow({
               )}
               style={{
                 boxShadow: DASHBOARD_SHIFT_CARD_BOX_SHADOW,
-                height: PLANNING_CELL_HEIGHT_PX,
+                height: "100%",
+                minHeight: PLANNING_CELL_HEIGHT_PX,
                 width: cardWidthPx > 0 ? cardWidthPx : undefined,
               }}
               aria-label={cardContent.tooltipBody}
@@ -280,6 +290,19 @@ export function PlanningCellShiftRow({
           </Tooltip>
         );
       })}
+      {onEmptyAreaClick ? (
+        <button
+          type="button"
+          disabled={emptyAreaDisabled}
+          onClick={onEmptyAreaClick}
+          className={cn(
+            "min-w-0 flex-1 self-stretch rounded-lg border-0 bg-transparent p-0 disabled:cursor-default enabled:cursor-pointer enabled:hover:bg-primary/5",
+            emptyAreaSelected && "bg-primary/5 ring-1 ring-inset ring-primary/30"
+          )}
+          style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
+          aria-label={emptyAreaLabel}
+        />
+      ) : null}
     </div>
   );
 }

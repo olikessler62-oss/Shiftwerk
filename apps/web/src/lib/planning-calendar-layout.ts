@@ -2,6 +2,11 @@ import { isPastCalendarDate } from "@/lib/dates";
 import { narrowDayColumnGridTrack } from "@/lib/day-column-width";
 import { isAnyAreaOpenInCalendar } from "@/lib/location-staffing-client";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
+import {
+  computeCollapsedDayColumnLineWidthPx,
+  type CollapsedShiftTimeWindow,
+} from "@/lib/shift-card-cell-layout";
+import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
 
 export const PLANNING_CELL_HEIGHT_PX = 44;
 export const PLANNING_CELL_PADDING_PX = 4;
@@ -13,14 +18,24 @@ export const PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX = 5;
 export const PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX = 10;
 export const PLANNING_EMPLOYEE_ROW_HEIGHT = `${PLANNING_CELL_HEIGHT_PX + PLANNING_CELL_PADDING_PX * 2}px`;
 export const PLANNING_DAY_HEADER_ROW_HEIGHT = "3.5rem";
-export const PLANNING_DAY_FOOTER_ROW_HEIGHT = PLANNING_DAY_HEADER_ROW_HEIGHT;
 export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT = "18px";
+/** Kompakte Wochenzusammenfassung unten im Kalender (ehem. 3.5rem). */
+export const PLANNING_DAY_FOOTER_ROW_HEIGHT = "32px";
+/** Kalender-Footer oben: Gesamtstunden/Gesamtkosten pro Tag (Platzhalter). */
+export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT =
+  PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT;
+export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX = 18;
+export const PLANNING_DAY_FOOTER_ROW_HEIGHT_PX = 32;
+/** Summe der sticky Footer-Zeilen — Grenze für Kalender-Inhalt darüber. */
+export const PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX =
+  PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX + PLANNING_DAY_FOOTER_ROW_HEIGHT_PX;
 export const PLANNING_STAFF_COLUMN_WIDTH_PX = 200;
 export const PLANNING_PAST_DAY_CELL_BG = "#f3f6f9";
 export const PLANNING_CLOSED_DAY_CELL_BG = "#e6edf2";
 export const PLANNING_OPEN_DAY_COLUMN_WIDTH = "minmax(110px, 1fr)";
 export const PLANNING_EQUAL_FILL_DAY_COLUMN_WIDTH = "minmax(0, 1fr)";
 export const PLANNING_CALENDAR_LAYOUT_ANIMATION_DELAY_MS = 120;
+export const PLANNING_CALENDAR_GRID_TRANSITION_DURATION_MS = 280;
 export const PLANNING_CALENDAR_GRID_TRANSITION_CLASS =
   "transition-[grid-template-columns,min-width] duration-[280ms] ease-in-out";
 export const PLANNING_CELL_CONTENT_TRANSITION_CLASS =
@@ -30,6 +45,34 @@ export const PLANNING_ROW_DIVIDER_CLASS = "border-b border-slate-300";
 export const PLANNING_CALENDAR_MEDIUM_BORDER = "border-slate-400";
 export const PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS = `border-r ${PLANNING_CALENDAR_MEDIUM_BORDER}`;
 export const PLANNING_HEADER_ROW_BORDER_CLASS = `border-b ${PLANNING_CALENDAR_MEDIUM_BORDER}`;
+/** Sticky Mitarbeiterspalte: untere Kante per inset-shadow (normale border-b wird sonst überdeckt). */
+export const PLANNING_STAFF_COLUMN_BOTTOM_EDGE_CLASS =
+  "shadow-[inset_0_-1px_0_0_theme(colors.slate.400)]";
+
+/** Einheitliche schmale Breite für zugeklappte Schicht-Marker im Schichtplan. */
+export function computePlanningCollapsedMarkerWidthPx(
+  cellInnerWidthPx: number,
+  dayReferenceShiftTimes: readonly CollapsedShiftTimeWindow[],
+  serviceTimeline: ShiftCardServiceTimeline
+): number {
+  if (cellInnerWidthPx <= 0) return 1;
+  const contentWidthPx = Math.max(
+    1,
+    cellInnerWidthPx + PLANNING_CELL_PADDING_PX * 2
+  );
+  const referenceTimes =
+    dayReferenceShiftTimes.length > 0
+      ? dayReferenceShiftTimes
+      : [{ startTime: "08:00", endTime: "16:00" }];
+  return Math.max(
+    1,
+    computeCollapsedDayColumnLineWidthPx(
+      contentWidthPx,
+      referenceTimes,
+      serviceTimeline
+    ) + PLANNING_COLLAPSED_SHIFT_WIDTH_DELTA_PX
+  );
+}
 
 const OPEN_DAY_COLUMN_WIDTH = PLANNING_OPEN_DAY_COLUMN_WIDTH;
 const EQUAL_FILL_DAY_COLUMN_WIDTH = PLANNING_EQUAL_FILL_DAY_COLUMN_WIDTH;

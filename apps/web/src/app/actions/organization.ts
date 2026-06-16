@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { validateOrganizationPlanningModeUpgrade } from "@schichtwerk/database";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
+import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
 import { organizationPlanningModeErrorKey } from "@/lib/translate-action-error";
 
 export type OrganizationActionResult =
@@ -72,7 +73,7 @@ export async function updateOrganizationShiftConfirmationDisclaimer(
 
 export async function upgradeOrganizationPlanningMode(): Promise<OrganizationActionResult> {
   try {
-    const { organizationId, organization } = await requireManager();
+    const { organizationId, organization } = await requireSuperadminDeveloper();
     const upgradeCheck = validateOrganizationPlanningModeUpgrade(
       organization.planning_mode,
       "advanced"

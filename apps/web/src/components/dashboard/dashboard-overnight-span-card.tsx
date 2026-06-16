@@ -47,14 +47,13 @@ function ExpandedSpanCardText({
   display: ShiftCardDisplayContent;
   compact: boolean;
 }) {
-  const name = display.lastName
-    ? `${display.firstName} ${display.lastName}`
-    : display.firstName;
-
   if (compact) {
     return (
       <div className="flex min-w-0 items-baseline gap-1 overflow-hidden text-[11px] leading-none">
-        <span className="min-w-0 truncate font-medium">{name}</span>
+        <span className="shrink-0 font-medium">{display.firstName}</span>
+        {display.lastName ? (
+          <span className="min-w-0 truncate font-medium">{display.lastName}</span>
+        ) : null}
         <span className="shrink-0 whitespace-nowrap tabular-nums">
           {display.line1Secondary ?? display.timeLabel}
         </span>
@@ -65,9 +64,9 @@ function ExpandedSpanCardText({
   return (
     <>
       <div className="flex min-w-0 items-baseline gap-1.5 text-[11px] leading-none">
-        <span className="min-w-0 truncate font-medium">{display.firstName}</span>
+        <span className="shrink-0 font-medium">{display.firstName}</span>
         {display.lastName ? (
-          <span className="min-w-0 truncate font-medium">{display.lastName}</span>
+          <span className="min-w-0 flex-1 truncate font-medium">{display.lastName}</span>
         ) : null}
       </div>
       <div className="flex min-w-0 items-baseline gap-1.5 text-[10px] leading-none text-black/85">

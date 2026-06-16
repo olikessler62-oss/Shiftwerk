@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { signOut } from "@/app/actions/sign-out";
+import { Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
   buildSettingsModalUrl as buildSettingsModalUrlFromLib,
-  isSettingsModalOpen,
 } from "@/lib/settings-modal-navigation";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
-import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
+import { useOrgFeatures } from "@/lib/org-features-provider";
+import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
+import { useSuperadminModal } from "@/components/settings/superadmin-modal-context";
 
 const NAV_LINKS_AFTER_PLANNING = [
   { href: "/berichte", labelKey: "nav.reports" },
@@ -43,19 +46,20 @@ const settingsSubLinkClass = subLinkClass;
 type Props = {
   onNavigate?: () => void;
   viewerRole?: string;
+  superadminEnabled?: boolean;
 };
 
-export function SidebarNav({ onNavigate, viewerRole }: Props) {
+export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const t = useTranslations();
   const features = useOrgFeatures();
-  const organization = useOrganization();
+  const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const planungActive = pathname === "/planung";
   const outboxPath = "/settings/notifications-outbox";
   const outboxActive = pathname === outboxPath;
   const showOutboxLink =
-    organization.shift_confirmation_enabled &&
+    shiftConfirmationEnabled &&
     (viewerRole === "admin" || process.env.NODE_ENV === "development");
   const standorteOpen = searchParams.get("standorte") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
@@ -63,10 +67,17 @@ export function SidebarNav({ onNavigate, viewerRole }: Props) {
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
   const sonderzuschlaegeOpen = searchParams.get("sonderzuschlaege") === "1";
   const abwesenheitenOpen = searchParams.get("abwesenheiten") === "1";
-  const planungsmodusOpen = searchParams.get("planungsmodus") === "1";
   const arbeitsentgeltOpen = searchParams.get("arbeitsentgelt") === "1";
+  const { open: superadminOpen, openSuperadminModal } = useSuperadminModal();
   const settingsModalOpen =
-    isSettingsModalOpen(searchParams) || outboxActive;
+    standorteOpen ||
+    profilesOpen ||
+    rollenOpen ||
+    qualifikationenOpen ||
+    sonderzuschlaegeOpen ||
+    abwesenheitenOpen ||
+    arbeitsentgeltOpen ||
+    outboxActive;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [PLANNING_SECTION_ID]: planungActive,
     [SETTINGS_SECTION_ID]: settingsModalOpen,
@@ -99,18 +110,12 @@ export function SidebarNav({ onNavigate, viewerRole }: Props) {
       | "qualifikationen"
       | "sonderzuschlaege"
       | "abwesenheiten"
-      | "planungsmodus"
       | "arbeitsentgelt"
   ) {
     return buildSettingsModalUrlFromLib(pathname, searchParams, flag);
   }
 
   const settingsLinks = [
-    {
-      flag: "planungsmodus" as const,
-      labelKey: "nav.planningMode",
-      open: planungsmodusOpen,
-    },
     {
       flag: "arbeitsentgelt" as const,
       labelKey: "nav.compensationSettings",
@@ -278,6 +283,32 @@ export function SidebarNav({ onNavigate, viewerRole }: Props) {
           </div>
         </div>
       </div>
+
+      {superadminEnabled ? (
+        <button
+          type="button"
+          onClick={() => {
+            openSuperadminModal();
+            onNavigate?.();
+          }}
+          className={navItemClass(superadminOpen)}
+        >
+          {t("nav.superadmin")}
+        </button>
+      ) : null}
+
+      <form action={signOut}>
+        <Button
+          type="submit"
+          variant="ghost"
+          className={cn(
+            navItemClass(false),
+            "h-auto w-full justify-start font-normal"
+          )}
+        >
+          {t("common.signOut")}
+        </Button>
+      </form>
     </nav>
   );
 }

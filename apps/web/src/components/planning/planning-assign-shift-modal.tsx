@@ -25,6 +25,7 @@ import {
   TimeInput,
 } from "@/components/ui";
 import { translateActionError } from "@/lib/translate-action-error";
+import { useSimulatedProposedOnAssignRequest } from "@/lib/shift-confirmation-simulation-context";
 import { cn } from "@/lib/cn";
 import {
   filterPlanningAssignShiftEmployees,
@@ -125,6 +126,7 @@ export function PlanningAssignShiftModal({
   onRemove,
   onClose,
 }: Props) {
+  const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
   const [employees, setEmployees] = useState<DashboardShiftAssignEmployee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -193,7 +195,9 @@ export function PlanningAssignShiftModal({
 
     async function loadEmployees() {
       setLoadingEmployees(true);
-      const result = await fetchDashboardShiftAssignEmployees(date);
+      const result = await fetchDashboardShiftAssignEmployees(date, {
+        simulatedProposedOnAssign,
+      });
       if (cancelled) return;
       if (!result.ok) {
         setMessagePrompt({
@@ -211,7 +215,7 @@ export function PlanningAssignShiftModal({
     return () => {
       cancelled = true;
     };
-  }, [date, t]);
+  }, [date, simulatedProposedOnAssign, t]);
 
   useEffect(() => {
     if (skipQualificationSyncRef.current) {

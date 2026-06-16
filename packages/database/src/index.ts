@@ -4,7 +4,6 @@ export type {
   ShiftTypeBreakInput,
   DashboardShiftRow,
   EmployeeShiftRecord,
-  AvailabilityRow,
 } from "./interface";
 export {
   validateAbsenceDateOrder,
@@ -293,6 +292,7 @@ export {
   resolveInitialConfirmationStatus,
   validateProfileForShiftConfirmationAssign,
   SHIFT_CONFIRMATION_ASSIGN_GATE_ERROR,
+  SHIFT_ASSIGN_NOT_SCHEDULABLE_ERROR,
   type ShiftConfirmationAssignPatch,
 } from "./shift-confirmation-assign";
 export {
@@ -306,6 +306,7 @@ export {
   resolveConfirmationNotificationTemplateKey,
   shiftToConfirmationSnapshot,
   type ProposedShiftForSend,
+  type ConfirmationSendModalShiftRecord,
 } from "./shift-confirmation-send";
 export {
   businessMinutesBetween,

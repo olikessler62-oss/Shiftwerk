@@ -4,9 +4,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import {
-  fetchDashboardShiftAssignEmployees,
+  fetchDashboardBulkShiftContext,
   type DashboardEmployeeAvailabilityEntry,
   type DashboardShiftAssignEmployee,
+  type ProfileShiftPreferenceEntry,
 } from "@/app/actions/dashboard-shift-assign";
 import { assignShiftWithTimes } from "@/app/actions/shifts";
 import { resolveShiftTemplateStoredColor } from "@schichtwerk/database";
@@ -32,11 +33,13 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import {
   areDashboardShiftTimesComplete,
-  filterDashboardShiftAssignEmployeesByWindow,
-  pickEmployeeLongestWithoutShift,
+  filterDashboardShiftAssignEmployeesByWindowWithoutOverlap,
   profileAvailabilitiesForWeekday,
   profileAvailabilityWeekdayFromDashboardDate,
 } from "@/lib/available-employees-for-shift";
+import { pickEmployeeForBulkPrefill } from "@/lib/bulk-shift-row-prefill";
+import type { DashboardAssignmentTimeWindow } from "@/lib/shift-overlap";
+import { DEFAULT_ORGANIZATION_TIME_ZONE } from "@/lib/dates";
 import {
   areaShiftTemplatesForArea,
   dashboardAssignmentPresetsForArea,
@@ -63,6 +66,7 @@ import { useComboboxCloseOnPointerDistance } from "@/lib/use-combobox-close";
 import { shiftColorStyle } from "@/lib/shift-color-style";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { useOrgFeatures } from "@/lib/org-features-provider";
+import { useSimulatedProposedOnAssignRequest } from "@/lib/shift-confirmation-simulation-context";
 import { translateActionError } from "@/lib/translate-action-error";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
@@ -906,6 +910,7 @@ type AddShiftModalProps = {
   areas: LocationArea[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   serviceHours: AreaServiceHourRef[];
+  areaExistingAssignments: DashboardAssignmentTimeWindow[];
   onClose: () => void;
   onSaved?: () => void;
 };
@@ -916,6 +921,7 @@ export function DashboardAddShiftModal({
   areas,
   areaShiftTemplates,
   serviceHours,
+  areaExistingAssignments,
   onClose,
   onSaved,
 }: AddShiftModalProps) {
@@ -923,6 +929,7 @@ export function DashboardAddShiftModal({
   const { locale } = useLocale();
   const t = useTranslations();
   const features = useOrgFeatures();
+  const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
   const simplePlanning = !features.areas;
   const intlLocale = toIntlLocale(locale);
   const weekday = profileAvailabilityWeekdayFromDashboardDate(dialog.date);
@@ -951,6 +958,10 @@ export function DashboardAddShiftModal({
   const [startTime, setStartTime] = useState("00:00");
   const [endTime, setEndTime] = useState("00:00");
   const [employees, setEmployees] = useState<DashboardShiftAssignEmployee[]>([]);
+  const [profileShiftPreferences, setProfileShiftPreferences] = useState<
+    Record<string, ProfileShiftPreferenceEntry[]>
+  >({});
+  const [timeZone, setTimeZone] = useState(DEFAULT_ORGANIZATION_TIME_ZONE);
   const [employeeId, setEmployeeId] = useState(EMPTY_EMPLOYEE_ID);
   const [employeeManuallySelected, setEmployeeManuallySelected] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
@@ -965,13 +976,24 @@ export function DashboardAddShiftModal({
 
   const matchingEmployees = useMemo(
     () =>
-      filterDashboardShiftAssignEmployeesByWindow(
+      filterDashboardShiftAssignEmployeesByWindowWithoutOverlap(
         employees,
         weekday,
         startTime,
-        endTime
+        endTime,
+        dialog.date,
+        areaExistingAssignments,
+        timeZone
       ),
-    [employees, weekday, startTime, endTime]
+    [
+      employees,
+      weekday,
+      startTime,
+      endTime,
+      dialog.date,
+      areaExistingAssignments,
+      timeZone,
+    ]
   );
 
   useEffect(() => {
@@ -980,13 +1002,18 @@ export function DashboardAddShiftModal({
     async function loadEmployees() {
       setLoadingEmployees(true);
       setError(null);
-      const result = await fetchDashboardShiftAssignEmployees(dialog.date);
+      const result = await fetchDashboardBulkShiftContext(dialog.date, {
+        simulatedProposedOnAssign,
+      });
       if (cancelled) return;
       if (!result.ok) {
         setError(translateActionError(result.error, t));
         setEmployees([]);
+        setProfileShiftPreferences({});
       } else {
         setEmployees(result.employees);
+        setProfileShiftPreferences(result.profileShiftPreferences);
+        setTimeZone(result.timeZone);
       }
       setLoadingEmployees(false);
     }
@@ -995,7 +1022,7 @@ export function DashboardAddShiftModal({
     return () => {
       cancelled = true;
     };
-  }, [dialog.date]);
+  }, [dialog.date, simulatedProposedOnAssign, t]);
 
   useEffect(() => {
     setEmployeeManuallySelected(false);
@@ -1025,13 +1052,23 @@ export function DashboardAddShiftModal({
       return;
     }
 
-    const preferred = pickEmployeeLongestWithoutShift(matchingEmployees);
+    const preferred = pickEmployeeForBulkPrefill(
+      matchingEmployees,
+      startTime,
+      endTime,
+      dialog.areaId ?? "",
+      profileShiftPreferences
+    );
     setEmployeeId(preferred?.id ?? EMPTY_EMPLOYEE_ID);
   }, [
     matchingEmployees,
     timesComplete,
     loadingEmployees,
     employeeManuallySelected,
+    startTime,
+    endTime,
+    dialog.areaId,
+    profileShiftPreferences,
   ]);
 
   const handleEmployeeChange = useCallback((nextId: string) => {
@@ -1088,6 +1125,7 @@ export function DashboardAddShiftModal({
         locationId,
         locationAreaId: simplePlanning ? null : dialog.areaId,
         withoutServiceHours: options?.withoutServiceHours,
+        simulatedProposedOnAssign,
       });
       setSaving(false);
 
@@ -1121,6 +1159,7 @@ export function DashboardAddShiftModal({
       onSaved,
       router,
       t,
+      simulatedProposedOnAssign,
     ]
   );
 
