@@ -1,16 +1,16 @@
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import type { SchichtwerkDatabase } from "@/lib/db";
 import { splitShiftWindowIntoCalendarDaySegments } from "@schichtwerk/database";
 import {
   DEFAULT_ORGANIZATION_CURRENCY,
   type DashboardShiftCompensationByKey,
+  type TagAreaShiftRef,
   shiftCompensationKey,
 } from "@/lib/tag-area-footer-stats";
 
 export async function loadDashboardShiftCompensation(
   db: SchichtwerkDatabase,
   organizationId: string,
-  shifts: readonly DashboardShiftCard[]
+  shifts: readonly TagAreaShiftRef[]
 ): Promise<DashboardShiftCompensationByKey> {
   const pairs = new Map<
     string,

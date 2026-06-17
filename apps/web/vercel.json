@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/shift-confirmation-pending",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}

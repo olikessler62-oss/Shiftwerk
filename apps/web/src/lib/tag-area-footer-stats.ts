@@ -35,6 +35,17 @@ export type TagAreaShiftRef = {
   endTime: string;
 };
 
+export function isTagAreaShiftRef(value: unknown): value is TagAreaShiftRef {
+  if (typeof value !== "object" || value === null) return false;
+  const ref = value as TagAreaShiftRef;
+  return (
+    typeof ref.employeeId === "string" &&
+    typeof ref.shift_date === "string" &&
+    typeof ref.startTime === "string" &&
+    typeof ref.endTime === "string"
+  );
+}
+
 export function shiftCompensationKey(
   employeeId: string,
   dateISO: string

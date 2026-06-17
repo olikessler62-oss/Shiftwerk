@@ -109,8 +109,8 @@ import {
 import {
   computeTagAreaDayFooterStatsForDate,
   formatTagAreaFooterLabels,
-  type DashboardShiftCompensationByKey,
 } from "@/lib/tag-area-footer-stats";
+import { useLazyShiftCompensation } from "@/lib/use-lazy-shift-compensation";
 import type {
   AbsenceRequest,
   AreaShiftTemplateWithBreaks,
@@ -156,7 +156,6 @@ type Props = {
   staffingRules: LocationAreaStaffing[];
   qualifications: Qualification[];
   profileQualificationIds: Record<string, string[]>;
-  shiftCompensation?: DashboardShiftCompensationByKey;
   readOnlyWeek?: boolean;
   managerNotifications?: ManagerNotification[];
   settingsModals?: {
@@ -271,7 +270,6 @@ export function ShiftPlanner({
   staffingRules,
   qualifications,
   profileQualificationIds: profileQualificationIdsRecord,
-  shiftCompensation = {},
   readOnlyWeek = false,
   managerNotifications = [],
   settingsModals,
@@ -773,6 +771,8 @@ export function ShiftPlanner({
       })),
     [calendarDisplayShifts]
   );
+
+  const shiftCompensation = useLazyShiftCompensation(planningTagAreaShiftRefs);
 
   const dailyFooterLabelsByDate = useMemo(() => {
     const map = new Map<

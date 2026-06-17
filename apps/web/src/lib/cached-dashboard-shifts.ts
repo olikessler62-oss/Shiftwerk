@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { createDatabase } from "@schichtwerk/database";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
@@ -22,7 +23,7 @@ export function weekStartsForShiftCacheInvalidation(shiftDate: string): string[]
 export async function getCachedDashboardShifts(
   orgId: string,
   locationId: string,
-  _weekStart: string,
+  weekStart: string,
   from: string,
   to: string
 ) {
@@ -34,6 +35,15 @@ export async function getCachedDashboardShifts(
     return [];
   }
 
-  const db = createDatabase(createClientWithAccessToken(session.access_token));
-  return db.listDashboardShifts(orgId, from, to, locationId);
+  const accessToken = session.access_token;
+  const cacheTag = dashboardShiftsCacheTag(orgId, locationId, weekStart);
+
+  return unstable_cache(
+    async () => {
+      const db = createDatabase(createClientWithAccessToken(accessToken));
+      return db.listDashboardShifts(orgId, from, to, locationId);
+    },
+    ["dashboard-shifts", orgId, locationId, weekStart, from, to],
+    { tags: [cacheTag] }
+  )();
 }

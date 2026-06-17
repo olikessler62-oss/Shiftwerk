@@ -17,11 +17,8 @@ import {
   ShiftPlanner,
   type PlanningShift,
 } from "@/components/planning/shift-planner";
-import { planningShiftToDashboardCard } from "@/lib/planning-shift-card";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
-import { loadDashboardShiftCompensation } from "@/lib/load-dashboard-shift-compensation";
-import { runShiftConfirmationPendingJobSafe } from "@/lib/run-shift-confirmation-pending-job";
 import { resolvePlanningEmployeesForShifts } from "@/lib/planning-page-employees";
 import { hasSettingsModalSearchParam } from "@/lib/settings-modal-navigation";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
@@ -120,8 +117,6 @@ export default async function PlanungPage({
 
   const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
 
-  await runShiftConfirmationPendingJobSafe(db);
-
   const [areas, areaShiftTemplates, serviceHours, shiftRows, staffingRules] =
     selectedLocationId
       ? await Promise.all([
@@ -202,17 +197,6 @@ export default async function PlanungPage({
     orgId
   );
 
-  const employeeById = new Map(planningEmployees.map((employee) => [employee.id, employee]));
-  const compensationCards = shifts.flatMap((shift) => {
-    const employee = employeeById.get(shift.employee_id);
-    if (!employee) return [];
-    return [planningShiftToDashboardCard(shift, employee)];
-  });
-  const shiftCompensation =
-    compensationCards.length > 0
-      ? await loadDashboardShiftCompensation(db, orgId, compensationCards)
-      : {};
-
   return (
     <ShiftPlanner
       weekStart={weekStart}
@@ -231,7 +215,6 @@ export default async function PlanungPage({
       staffingRules={staffingRules}
       qualifications={qualifications}
       profileQualificationIds={profileQualificationIds}
-      shiftCompensation={shiftCompensation}
       readOnlyWeek={readOnlyWeek}
       managerNotifications={managerNotifications}
       settingsModals={

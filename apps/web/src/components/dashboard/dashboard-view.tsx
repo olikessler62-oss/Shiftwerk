@@ -30,7 +30,7 @@ import {
 } from "./dashboard-calendar";
 import { DashboardSendConfirmationModal } from "./dashboard-send-confirmation-modal";
 import { OpenConfirmationsPanel } from "./open-confirmations-panel";
-import type { DashboardShiftCompensationByKey } from "@/lib/tag-area-footer-stats";
+import { useLazyShiftCompensation } from "@/lib/use-lazy-shift-compensation";
 import type { ManagerNotification } from "@schichtwerk/types";
 import { APP_SHELL_CONTENT_OFFSET_CLASS } from "@/lib/app-shell-layout";
 import { cn } from "@/lib/cn";
@@ -53,7 +53,6 @@ type Props = {
   roles: Role[];
   profiles: Profile[];
   profileQualificationIds: Record<string, string[]>;
-  shiftCompensation: DashboardShiftCompensationByKey;
   locations: Location[];
   absences?: AbsenceRequest[];
   managerNotifications?: ManagerNotification[];
@@ -75,7 +74,6 @@ export function DashboardView({
   roles,
   profiles,
   profileQualificationIds,
-  shiftCompensation,
   locations,
   absences = [],
   managerNotifications = [],
@@ -98,6 +96,17 @@ export function DashboardView({
         : 0,
     [shiftConfirmationEnabled, shifts]
   );
+  const compensationShiftRefs = useMemo(
+    () =>
+      shifts.map((shift) => ({
+        employeeId: shift.employeeId,
+        shift_date: shift.shift_date,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+      })),
+    [shifts]
+  );
+  const shiftCompensation = useLazyShiftCompensation(compensationShiftRefs);
   const openConfirmationsCount = useMemo(
     () =>
       shiftConfirmationEnabled
