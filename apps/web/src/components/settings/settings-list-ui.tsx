@@ -1,8 +1,10 @@
 "use client";
 
 import type { ComponentProps, ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import {
   Button,
+  Checkbox,
   ChevronDownIcon,
   ChevronUpIcon,
   IconButton,
@@ -195,6 +197,25 @@ export function settingsListRowDeleteHeaderClass(className?: string) {
   );
 }
 
+export function settingsListRowCheckboxHeaderClass(className?: string) {
+  return cn(
+    settingsStickyColumnHeaderClass("center"),
+    "w-9 px-0 py-1 pb-1",
+    className
+  );
+}
+
+export function settingsListRowCheckboxCellClass(
+  isSelected: boolean,
+  className?: string
+) {
+  return cn(
+    settingsDataCellClass(isSelected, { align: "center" }),
+    "w-9 px-0",
+    className
+  );
+}
+
 export function settingsListRowDeleteCellClass(
   isSelected: boolean,
   className?: string
@@ -243,6 +264,93 @@ export function SettingsListRowDeleteButton({
   if (!showTooltip) return button;
 
   return <Tooltip content={title ?? label}>{button}</Tooltip>;
+}
+
+export function SettingsListRowCheckbox({
+  checked,
+  disabled,
+  ariaLabel,
+  onChange,
+  className,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  ariaLabel: string;
+  onChange: () => void;
+  className?: string;
+}) {
+  return (
+    <Checkbox
+      checked={checked}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      className={cn("mx-auto", className)}
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => {
+        event.stopPropagation();
+        onChange();
+      }}
+    />
+  );
+}
+
+export function SettingsListSelectAllCheckbox({
+  checked,
+  indeterminate,
+  disabled,
+  ariaLabel,
+  onChange,
+  className,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  disabled?: boolean;
+  ariaLabel: string;
+  onChange: () => void;
+  className?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.indeterminate = indeterminate ?? false;
+    }
+  }, [indeterminate]);
+
+  return (
+    <Checkbox
+      ref={inputRef}
+      checked={checked}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      className={cn("mx-auto", className)}
+      onChange={onChange}
+    />
+  );
+}
+
+export function SettingsBulkDeleteActionButton({
+  label,
+  disabled,
+  onClick,
+  className,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <SettingsIconActionButton
+      label={label}
+      tooltip={label}
+      icon={<TrashIcon />}
+      variant="outline"
+      disabled={disabled}
+      className={className}
+      onClick={onClick}
+    />
+  );
 }
 
 export function settingsDataCellClass(

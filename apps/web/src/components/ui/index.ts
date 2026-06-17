@@ -1,11 +1,13 @@
 export { Alert } from "./alert";
 export { Button, type ButtonVariant, type ButtonSize } from "./button";
+export { Checkbox, AREA_CHECKBOX_SIZE_PX } from "./checkbox";
 export { ControlDisplay, Input, Select, Textarea, TimeInput } from "./input";
 export { Field } from "./field";
 export { IconButton } from "./icon-button";
 export {
   Tooltip,
   tooltipContentClassName,
+  shiftCardTooltipContentClassName,
   TOOLTIP_Z_INDEX,
 } from "./tooltip";
 export {

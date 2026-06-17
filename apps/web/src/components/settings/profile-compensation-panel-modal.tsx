@@ -27,6 +27,8 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
+  SettingsBulkDeleteActionButton,
   settingsListItemAttrs,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
@@ -38,6 +40,8 @@ import {
   settingsStickyIndicatorHeaderClass,
   settingsListRowDeleteCellClass,
   settingsListRowDeleteHeaderClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -51,6 +55,7 @@ import {
   PlusIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 
 const MAX_NAME_DISPLAY = 25;
 const EMPTY_STATE_CLASS = "min-h-full";
@@ -118,6 +123,7 @@ export function ProfileCompensationPanelModal({
   );
   const [formMode, setFormMode] = useState<HourlyRateFormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
 
   const syncLocalCompensation = useCallback(
@@ -155,6 +161,11 @@ export function ProfileCompensationPanelModal({
     () => sortProfileHourlyRatesByValidFrom(rates),
     [rates]
   );
+  const rateIds = useMemo(
+    () => sortedRates.map((rate) => rate.id),
+    [sortedRates]
+  );
+  const bulkSelection = useSettingsListBulkSelection(rateIds);
   const defaultCurrency = rates[0]?.currency ?? "EUR";
   const canCreate = !!serverToday;
   const canEdit = !!selectedRate;
@@ -212,13 +223,17 @@ export function ProfileCompensationPanelModal({
         setConfirmDelete(false);
         return;
       }
+      if (confirmBulkDelete) {
+        setConfirmBulkDelete(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDelete, formMode, onClose]);
+  }, [confirmBulkDelete, confirmDelete, formMode, onClose]);
 
-  const anyFormOpen = !!formMode || confirmDelete;
+  const anyFormOpen = !!formMode || confirmDelete || confirmBulkDelete;
 
   function handleSaved(
     entry: ProfileCompensationCacheEntry,
@@ -249,6 +264,52 @@ export function ProfileCompensationPanelModal({
         serverToday: result.serverToday ?? serverToday,
       });
       setConfirmDelete(false);
+    });
+  }
+
+  function handleBulkDelete() {
+    const ids = rateIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      let latestEntry: ProfileCompensationCacheEntry = {
+        currentRate,
+        rates,
+        currentSurcharges,
+        surchargeEntries,
+        serverToday,
+      };
+      for (const rateId of ids) {
+        const result = await deleteProfileHourlyRate({
+          profileId: profile.id,
+          rateId,
+        });
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          if (result.rates) {
+            applyCompensation({
+              currentRate: result.currentRate ?? null,
+              rates: result.rates ?? [],
+              currentSurcharges: result.currentSurcharges ?? currentSurcharges,
+              surchargeEntries: result.surchargeEntries ?? surchargeEntries,
+              serverToday: result.serverToday ?? serverToday,
+            });
+          }
+          bulkSelection.clear();
+          setConfirmBulkDelete(false);
+          return;
+        }
+        latestEntry = {
+          currentRate: result.currentRate ?? null,
+          rates: result.rates ?? [],
+          currentSurcharges: result.currentSurcharges ?? latestEntry.currentSurcharges,
+          surchargeEntries: result.surchargeEntries ?? latestEntry.surchargeEntries,
+          serverToday: result.serverToday ?? latestEntry.serverToday,
+        };
+      }
+      applyCompensation(latestEntry);
+      bulkSelection.clear();
+      setConfirmBulkDelete(false);
     });
   }
 
@@ -346,6 +407,10 @@ export function ProfileCompensationPanelModal({
                     {t("profiles.hourlyRateColumnCreatedBy")}
                   </th>
                   <th
+                    className={settingsListRowCheckboxHeaderClass()}
+                    aria-hidden
+                  />
+                  <th
                     className={settingsListRowDeleteHeaderClass()}
                     aria-hidden
                   />
@@ -362,6 +427,8 @@ export function ProfileCompensationPanelModal({
                       onClick={() => {
                         setSelectedRateId(rate.id);
                         setFormMode(null);
+                        setConfirmDelete(false);
+                        setConfirmBulkDelete(false);
                       }}
                       onDoubleClick={(e) => {
                         e.preventDefault();
@@ -401,6 +468,14 @@ export function ProfileCompensationPanelModal({
                             : "—"}
                         </span>
                       </td>
+                      <td className={settingsListRowCheckboxCellClass(isSelected)}>
+                        <SettingsListRowCheckbox
+                          checked={bulkSelection.isChecked(rate.id)}
+                          disabled={loading || pending}
+                          ariaLabel={t("common.selectRow")}
+                          onChange={() => bulkSelection.toggle(rate.id)}
+                        />
+                      </td>
                       <td className={settingsListRowDeleteCellClass(isSelected)}>
                         <SettingsListRowDeleteButton
                           label={t("profiles.delete")}
@@ -432,6 +507,8 @@ export function ProfileCompensationPanelModal({
                 disabled={loading || pending || !canCreate}
                 onClick={() => {
                   setFormMode({ type: "create" });
+                  setConfirmDelete(false);
+                  setConfirmBulkDelete(false);
                   setErrorMessage(null);
                 }}
               />
@@ -445,7 +522,19 @@ export function ProfileCompensationPanelModal({
                   if (!selectedRate || !canEdit) return;
                   setFormMode({ type: "edit", rate: selectedRate });
                   setConfirmDelete(false);
+                  setConfirmBulkDelete(false);
                   setErrorMessage(null);
+                }}
+              />
+            }
+            destructive={
+              <SettingsBulkDeleteActionButton
+                label={t("common.deleteSelectedEntries")}
+                disabled={loading || pending || !bulkSelection.canBulkDelete}
+                onClick={() => {
+                  setConfirmDelete(false);
+                  setFormMode(null);
+                  setConfirmBulkDelete(true);
                 }}
               />
             }
@@ -495,6 +584,15 @@ export function ProfileCompensationPanelModal({
           pending={pending}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={handleDelete}
+        />
+      )}
+      {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+        <DeleteConfirmModal
+          name={t("common.deleteSelectedEntries")}
+          count={bulkSelection.checkedCount}
+          pending={pending}
+          onCancel={() => setConfirmBulkDelete(false)}
+          onConfirm={handleBulkDelete}
         />
       )}
     </div>

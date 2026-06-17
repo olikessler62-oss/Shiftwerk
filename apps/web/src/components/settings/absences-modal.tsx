@@ -19,6 +19,8 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
+  SettingsBulkDeleteActionButton,
   settingsConfirmDialogClass,
   settingsDataCellClass,
   settingsDataRowClass,
@@ -35,6 +37,8 @@ import {
   settingsScrollableTableListClass,
   settingsListRowDeleteCellClass,
   settingsListRowDeleteHeaderClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
   useScrollToSettingsListItem,
@@ -61,6 +65,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 
 type Props = {
   profiles: Profile[];
@@ -108,6 +113,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [closeSickOpen, setCloseSickOpen] = useState(false);
   const [closeSickDate, setCloseSickDate] = useState(todayISO());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -134,6 +140,12 @@ export function AbsencesModal({ profiles, onClose }: Props) {
     }
     return list;
   }, [list, statusFilter]);
+
+  const filteredAbsenceIds = useMemo(
+    () => filteredList.map((entry) => entry.id),
+    [filteredList]
+  );
+  const bulkSelection = useSettingsListBulkSelection(filteredAbsenceIds);
 
   const existingRanges = useMemo((): AbsenceRange[] => {
     return absenceRangesFromRequests(
@@ -203,11 +215,15 @@ export function AbsencesModal({ profiles, onClose }: Props) {
         setConfirmDelete(false);
         return;
       }
+      if (confirmBulkDelete) {
+        setConfirmBulkDelete(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [closeSickOpen, confirmDelete, formMode, loading, onClose]);
+  }, [closeSickOpen, confirmBulkDelete, confirmDelete, formMode, loading, onClose]);
 
   function typeLabel(type: AbsenceType): string {
     switch (type) {
@@ -291,6 +307,37 @@ export function AbsencesModal({ profiles, onClose }: Props) {
     });
   }
 
+  function handleBulkDelete() {
+    const ids = filteredAbsenceIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      for (const id of ids) {
+        const result = await deleteAbsence(id);
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          bulkSelection.clear();
+          setConfirmBulkDelete(false);
+          void loadAbsences();
+          refreshList();
+          return;
+        }
+      }
+      setList((prev) => {
+        const remaining = prev.filter((entry) => !ids.includes(entry.id));
+        setSelectedId((current) =>
+          current && remaining.some((entry) => entry.id === current)
+            ? current
+            : (remaining[0]?.id ?? null)
+        );
+        return remaining;
+      });
+      bulkSelection.clear();
+      setConfirmBulkDelete(false);
+      refreshList();
+    });
+  }
+
   function handleReview(approve: boolean) {
     if (!selected || selected.status !== "pending") return;
     setErrorMessage(null);
@@ -347,6 +394,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
           e.target === e.currentTarget &&
           !formMode &&
           !confirmDelete &&
+          !confirmBulkDelete &&
           !closeSickOpen
         ) {
           onClose();
@@ -457,6 +505,10 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                               {t("settings.absences.notes")}
                             </th>
                             <th
+                              className={settingsListRowCheckboxHeaderClass()}
+                              aria-hidden
+                            />
+                            <th
                               className={settingsListRowDeleteHeaderClass()}
                               aria-hidden
                             />
@@ -473,6 +525,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                                 onClick={() => {
                                   setSelectedId(item.id);
                                   setConfirmDelete(false);
+                                  setConfirmBulkDelete(false);
                                   setCloseSickOpen(false);
                                   setErrorMessage(null);
                                 }}
@@ -538,12 +591,22 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                                     {truncateNotes(item.notes)}
                                   </Tooltip>
                                 </td>
+                                <td className={settingsListRowCheckboxCellClass(isSelected)}>
+                                  <SettingsListRowCheckbox
+                                    checked={bulkSelection.isChecked(item.id)}
+                                    disabled={pending}
+                                    ariaLabel={t("common.selectRow")}
+                                    onChange={() => bulkSelection.toggle(item.id)}
+                                  />
+                                </td>
                                 <td className={settingsListRowDeleteCellClass(isSelected)}>
                                   <SettingsListRowDeleteButton
                                     label={t("settings.absences.delete")}
                                     disabled={pending}
+                                    showTooltip={false}
                                     onClick={() => {
                                       setSelectedId(item.id);
+                                      setConfirmBulkDelete(false);
                                       setConfirmDelete(true);
                                       setErrorMessage(null);
                                     }}
@@ -607,6 +670,18 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                       />
                     </>
                   }
+                  destructive={
+                    <SettingsBulkDeleteActionButton
+                      label={t("common.deleteSelectedEntries")}
+                      disabled={pending || !bulkSelection.canBulkDelete}
+                      onClick={() => {
+                        setConfirmDelete(false);
+                        setFormMode(null);
+                        setCloseSickOpen(false);
+                        setConfirmBulkDelete(true);
+                      }}
+                    />
+                  }
                 />
               </div>
             </div>
@@ -645,6 +720,15 @@ export function AbsencesModal({ profiles, onClose }: Props) {
               name={`${profileById.get(selected.employee_id)?.full_name ?? "—"} (${dateFormatter.format(new Date(`${selected.start_date}T12:00:00`))} – ${formatEndDateLabel(selected, dateFormatter, t("settings.absences.openEnded"))})`}
               onCancel={() => setConfirmDelete(false)}
               onConfirm={handleDelete}
+              pending={pending}
+            />
+          )}
+          {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+            <DeleteConfirmModal
+              name={t("common.deleteSelectedEntries")}
+              count={bulkSelection.checkedCount}
+              onCancel={() => setConfirmBulkDelete(false)}
+              onConfirm={handleBulkDelete}
               pending={pending}
             />
           )}

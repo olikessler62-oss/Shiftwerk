@@ -29,6 +29,8 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
+  SettingsBulkDeleteActionButton,
   settingsListItemAttrs,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
@@ -40,6 +42,8 @@ import {
   settingsStickyIndicatorHeaderClass,
   settingsListRowDeleteCellClass,
   settingsListRowDeleteHeaderClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -53,6 +57,7 @@ import {
   PlusIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 
 const MAX_NAME_DISPLAY = 25;
@@ -118,6 +123,8 @@ export function ProfileSurchargesPanelModal({
   const [surchargeFormMode, setSurchargeFormMode] =
     useState<SurchargeFormMode>(null);
   const [confirmDeleteSurcharge, setConfirmDeleteSurcharge] = useState(false);
+  const [confirmBulkDeleteSurcharge, setConfirmBulkDeleteSurcharge] =
+    useState(false);
   const [scrollToSurchargeId, setScrollToSurchargeId] = useState<string | null>(
     null
   );
@@ -167,6 +174,24 @@ export function ProfileSurchargesPanelModal({
     COMPENSATION_SURCHARGES_UI_ENABLED && selectedSurchargeMutable;
   const canDeleteSurcharge =
     COMPENSATION_SURCHARGES_UI_ENABLED && selectedSurchargeMutable;
+
+  const surchargeEntryIds = useMemo(
+    () => surchargeEntries.map((entry) => entry.id),
+    [surchargeEntries]
+  );
+  const mutableSurchargeIds = useMemo(() => {
+    if (!COMPENSATION_SURCHARGES_UI_ENABLED || !serverToday) {
+      return new Set<string>();
+    }
+    return new Set(
+      surchargeEntries
+        .filter((entry) => isMutableHourlyRate(entry.valid_from, serverToday))
+        .map((entry) => entry.id)
+    );
+  }, [serverToday, surchargeEntries]);
+  const bulkSelection = useSettingsListBulkSelection(surchargeEntryIds, {
+    selectableIds: mutableSurchargeIds,
+  });
 
   const localeKey = locale === "en" ? "en" : "de";
   const currentCompensationEntry = useMemo(
@@ -244,13 +269,18 @@ export function ProfileSurchargesPanelModal({
         setConfirmDeleteSurcharge(false);
         return;
       }
+      if (confirmBulkDeleteSurcharge) {
+        setConfirmBulkDeleteSurcharge(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDeleteSurcharge, onClose, surchargeFormMode]);
+  }, [confirmBulkDeleteSurcharge, confirmDeleteSurcharge, onClose, surchargeFormMode]);
 
-  const anyFormOpen = !!surchargeFormMode || confirmDeleteSurcharge;
+  const anyFormOpen =
+    !!surchargeFormMode || confirmDeleteSurcharge || confirmBulkDeleteSurcharge;
 
   function handleSurchargeSaved(
     entry: ProfileCompensationCacheEntry,
@@ -282,6 +312,52 @@ export function ProfileSurchargesPanelModal({
         serverToday: result.serverToday ?? serverToday,
       });
       setConfirmDeleteSurcharge(false);
+    });
+  }
+
+  function handleBulkDeleteSurcharge() {
+    const ids = surchargeEntryIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      let latestEntry: ProfileCompensationCacheEntry = {
+        currentRate,
+        rates,
+        currentSurcharges,
+        surchargeEntries,
+        serverToday,
+      };
+      for (const entryId of ids) {
+        const result = await deleteProfileCompensationSurcharge({
+          profileId: profile.id,
+          entryId,
+        });
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          if (result.surchargeEntries) {
+            applyCompensation({
+              currentRate,
+              rates,
+              currentSurcharges: result.currentSurcharges ?? currentSurcharges,
+              surchargeEntries: result.surchargeEntries ?? [],
+              serverToday: result.serverToday ?? serverToday,
+            });
+          }
+          bulkSelection.clear();
+          setConfirmBulkDeleteSurcharge(false);
+          return;
+        }
+        latestEntry = {
+          currentRate,
+          rates,
+          currentSurcharges: result.currentSurcharges ?? [],
+          surchargeEntries: result.surchargeEntries ?? [],
+          serverToday: result.serverToday ?? serverToday,
+        };
+      }
+      applyCompensation(latestEntry);
+      bulkSelection.clear();
+      setConfirmBulkDeleteSurcharge(false);
     });
   }
 
@@ -385,6 +461,10 @@ export function ProfileSurchargesPanelModal({
                     {t("profiles.hourlyRateColumnValidTo")}
                   </th>
                   <th
+                    className={settingsListRowCheckboxHeaderClass()}
+                    aria-hidden
+                  />
+                  <th
                     className={settingsListRowDeleteHeaderClass()}
                     aria-hidden
                   />
@@ -405,6 +485,8 @@ export function ProfileSurchargesPanelModal({
                       onClick={() => {
                         setSelectedSurchargeId(entry.id);
                         setSurchargeFormMode(null);
+                        setConfirmDeleteSurcharge(false);
+                        setConfirmBulkDeleteSurcharge(false);
                       }}
                       onDoubleClick={(e) => {
                         e.preventDefault();
@@ -459,6 +541,14 @@ export function ProfileSurchargesPanelModal({
                           ? formatDateLabel(entry.valid_to, locale)
                           : t("profiles.hourlyRateOpen")}
                       </td>
+                      <td className={settingsListRowCheckboxCellClass(isSelected)}>
+                        <SettingsListRowCheckbox
+                          checked={bulkSelection.isChecked(entry.id)}
+                          disabled={loading || pending || !entryMutable}
+                          ariaLabel={t("common.selectRow")}
+                          onChange={() => bulkSelection.toggle(entry.id)}
+                        />
+                      </td>
                       <td className={settingsListRowDeleteCellClass(isSelected)}>
                         <SettingsListRowDeleteButton
                           label={t("profiles.delete")}
@@ -489,6 +579,8 @@ export function ProfileSurchargesPanelModal({
                 onClick={() => {
                   if (!COMPENSATION_SURCHARGES_UI_ENABLED) return;
                   setSurchargeFormMode({ type: "create" });
+                  setConfirmDeleteSurcharge(false);
+                  setConfirmBulkDeleteSurcharge(false);
                   setErrorMessage(null);
                 }}
               />
@@ -508,7 +600,19 @@ export function ProfileSurchargesPanelModal({
                     entry: selectedSurcharge,
                   });
                   setConfirmDeleteSurcharge(false);
+                  setConfirmBulkDeleteSurcharge(false);
                   setErrorMessage(null);
+                }}
+              />
+            }
+            destructive={
+              <SettingsBulkDeleteActionButton
+                label={t("common.deleteSelectedEntries")}
+                disabled={loading || pending || !bulkSelection.canBulkDelete}
+                onClick={() => {
+                  setConfirmDeleteSurcharge(false);
+                  setSurchargeFormMode(null);
+                  setConfirmBulkDeleteSurcharge(true);
                 }}
               />
             }
@@ -564,6 +668,17 @@ export function ProfileSurchargesPanelModal({
             pending={pending}
             onCancel={() => setConfirmDeleteSurcharge(false)}
             onConfirm={handleDeleteSurcharge}
+          />
+        )}
+      {COMPENSATION_SURCHARGES_UI_ENABLED &&
+        confirmBulkDeleteSurcharge &&
+        bulkSelection.checkedCount > 0 && (
+          <DeleteConfirmModal
+            name={t("common.deleteSelectedEntries")}
+            count={bulkSelection.checkedCount}
+            pending={pending}
+            onCancel={() => setConfirmBulkDeleteSurcharge(false)}
+            onConfirm={handleBulkDeleteSurcharge}
           />
         )}
     </div>

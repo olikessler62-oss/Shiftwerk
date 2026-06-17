@@ -7,7 +7,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Profile, ProfileRecurringAvailability } from "@schichtwerk/types";
+import type {
+  Profile,
+  ProfileRecurringAvailability,
+  ProfileShiftPreference,
+} from "@schichtwerk/types";
 import type { ProfileCompensationCacheEntry } from "./profile-compensation-panel-modal";
 import { formatHourlyRateLabel } from "@/lib/profile-hourly-rate-display";
 import { formatEffectiveSurchargeSummary } from "@/lib/profile-surcharge-display";
@@ -23,6 +27,7 @@ const COMMA_LIST_SUFFIX = ", ...";
 type DetailPanel =
   | "qualifications"
   | "availability"
+  | "shiftPreferences"
   | "absences"
   | "compensation"
   | "surcharges"
@@ -34,6 +39,8 @@ type Props = {
   profileQualifications?: { name: string }[];
   /** Geladen: [] = keine Verfügbarkeiten; undefined = noch nicht geladen */
   profileAvailability?: ProfileRecurringAvailability[];
+  /** Geladen: [] = keine Wunschzeiten; undefined = noch nicht geladen */
+  profileShiftPreferences?: ProfileShiftPreference[];
   /** Geladen: currentRate null = kein aktueller Stundensatz; undefined = noch nicht geladen */
   profileCompensation?: ProfileCompensationCacheEntry;
   disabled?: boolean;
@@ -192,6 +199,25 @@ function AvailabilityIcon({ className }: { className?: string }) {
   );
 }
 
+function ShiftPreferenceIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6L12 2z" />
+    </svg>
+  );
+}
+
 function AbsencesIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -319,6 +345,7 @@ export function ProfileDetailActions({
   selectedProfile,
   profileQualifications,
   profileAvailability,
+  profileShiftPreferences,
   profileCompensation,
   disabled = false,
   onOpen,
@@ -346,6 +373,14 @@ export function ProfileDetailActions({
       </span>
     ) : (
       t("profiles.actionAvailabilityHint")
+    );
+  const shiftPreferencesHint =
+    (profileShiftPreferences?.length ?? 0) > 0 ? (
+      <span className="block truncate text-xs text-primary">
+        {t("profiles.actionShiftPreferencesConfigured")}
+      </span>
+    ) : (
+      t("profiles.actionShiftPreferencesHint")
     );
   const currentHourlyRate = profileCompensation?.currentRate ?? null;
   const currentSurcharges = profileCompensation?.currentSurcharges ?? [];
@@ -390,13 +425,22 @@ export function ProfileDetailActions({
             <div className="mx-2 border-t border-border/60" />
           </>
         ) : null}
-        <SettingsActionRow
-          icon={<AvailabilityIcon />}
-          label={t("profiles.panelAvailability")}
-          hint={availabilityHint}
-          disabled={profileActionsDisabled}
-          onClick={() => onOpen("availability")}
-        />
+        <div className="grid grid-cols-2 divide-x divide-border/60">
+          <SettingsActionRow
+            icon={<AvailabilityIcon />}
+            label={t("profiles.panelAvailability")}
+            hint={availabilityHint}
+            disabled={profileActionsDisabled}
+            onClick={() => onOpen("availability")}
+          />
+          <SettingsActionRow
+            icon={<ShiftPreferenceIcon />}
+            label={t("profiles.panelShiftPreferences")}
+            hint={shiftPreferencesHint}
+            disabled={profileActionsDisabled}
+            onClick={() => onOpen("shiftPreferences")}
+          />
+        </div>
         <div className="mx-2 border-t border-border/60" />
         <SettingsActionRow
           icon={<AbsencesIcon />}

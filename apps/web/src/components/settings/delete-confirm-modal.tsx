@@ -10,6 +10,7 @@ import {
 
 type Props = {
   name: string;
+  count?: number;
   onCancel: () => void;
   onConfirm: () => void;
   pending?: boolean;
@@ -17,11 +18,16 @@ type Props = {
 
 export function DeleteConfirmModal({
   name,
+  count,
   onCancel,
   onConfirm,
   pending = false,
 }: Props) {
   const t = useTranslations();
+  const message =
+    count != null && count > 1
+      ? t("common.confirmDeleteSelected", { count: String(count) })
+      : t("common.confirmDelete", { name });
 
   return (
     <div
@@ -39,7 +45,7 @@ export function DeleteConfirmModal({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <p id="delete-confirm-desc" className="text-sm text-foreground">
-          {t("common.confirmDelete", { name })}
+          {message}
         </p>
         <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
           <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>

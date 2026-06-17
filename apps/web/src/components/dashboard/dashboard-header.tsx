@@ -8,7 +8,7 @@ import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
 import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { getDashboardWeekHeaderParts } from "@/lib/planning-utils";
 import type { Location, ManagerNotification } from "@schichtwerk/types";
-import { Button, IconButton, ListIcon } from "@/components/ui";
+import { Button, IconButton } from "@/components/ui";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
@@ -16,6 +16,7 @@ import { cn } from "@/lib/cn";
 import { useOrgFeatures } from "@/lib/org-features-provider";
 import { LocationSelect } from "./location-select";
 import { DashboardNotificationCenter } from "./dashboard-notification-center";
+import type { CommunicationOpenOptions } from "@/lib/communication-hub";
 
 import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
 import { useIsAppShellLocked } from "@/lib/app-shell-modal-lock";
@@ -35,12 +36,10 @@ type Props = {
   weekStart: string;
   locations: Location[];
   selectedLocationId: string | null;
-  proposedSendCount?: number;
-  openConfirmationsCount?: number;
+  communicationItemCount?: number;
   shiftConfirmationEnabled?: boolean;
   managerNotifications?: ManagerNotification[];
-  onOpenSendConfirmation?: () => void;
-  onOpenConfirmationsPanel?: (tab?: "pending" | "rejected" | "proposed") => void;
+  onOpenCommunication?: (options?: CommunicationOpenOptions) => void;
   onNavigateToWeek?: (weekStart: string) => void;
 };
 
@@ -48,12 +47,10 @@ export function DashboardHeader({
   weekStart,
   locations,
   selectedLocationId,
-  proposedSendCount = 0,
-  openConfirmationsCount = 0,
+  communicationItemCount = 0,
   shiftConfirmationEnabled = false,
   managerNotifications = [],
-  onOpenSendConfirmation,
-  onOpenConfirmationsPanel,
+  onOpenCommunication,
   onNavigateToWeek,
 }: Props) {
   const router = useRouter();
@@ -200,42 +197,28 @@ export function DashboardHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2 self-end md:self-auto">
-        {shiftConfirmationEnabled && proposedSendCount > 0 && onOpenSendConfirmation ? (
+        {onOpenCommunication ? (
           <Button
             type="button"
             size="header"
-            onClick={onOpenSendConfirmation}
+            variant={communicationItemCount > 0 ? "primary" : "outline"}
+            onClick={() => onOpenCommunication()}
             disabled={controlsDisabled}
-            className={cn(HEADER_CONTROL_H, "font-semibold")}
+            className={cn(HEADER_CONTROL_H, "relative font-semibold")}
           >
-            {t("shiftConfirmation.actions.requestConfirmation")}
-            <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
-              {proposedSendCount}
-            </span>
-          </Button>
-        ) : null}
-        {shiftConfirmationEnabled && onOpenConfirmationsPanel ? (
-          <IconButton
-            type="button"
-            size="md"
-            aria-label={t("shiftConfirmation.panel.title")}
-            title={t("shiftConfirmation.panel.title")}
-            className="relative"
-            onClick={() => onOpenConfirmationsPanel()}
-          >
-            <ListIcon />
-            {openConfirmationsCount > 0 ? (
-              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
-                {openConfirmationsCount > 9 ? "9+" : openConfirmationsCount}
+            {t("shiftConfirmation.communication.headerButton")}
+            {shiftConfirmationEnabled && communicationItemCount > 0 ? (
+              <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
+                {communicationItemCount > 99 ? "99+" : communicationItemCount}
               </span>
             ) : null}
-          </IconButton>
+          </Button>
         ) : null}
-        {shiftConfirmationEnabled && onOpenConfirmationsPanel ? (
+        {shiftConfirmationEnabled && onOpenCommunication ? (
           <DashboardNotificationCenter
             enabled={shiftConfirmationEnabled}
             initialNotifications={managerNotifications}
-            onOpenConfirmationsPanel={onOpenConfirmationsPanel}
+            onOpenCommunication={onOpenCommunication}
             onNavigateToWeek={onNavigateToWeek}
           />
         ) : null}

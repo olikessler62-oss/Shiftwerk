@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteCompensationSurchargeType,
@@ -25,11 +25,15 @@ import {
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
+  SettingsBulkDeleteActionButton,
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
   settingsListRowDeleteCellClass,
   settingsListRowDeleteHeaderClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -46,6 +50,7 @@ import {
   PlusIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
@@ -73,6 +78,7 @@ export function CompensationSurchargeTypesModal({
   );
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
 
@@ -97,11 +103,15 @@ export function CompensationSurchargeTypesModal({
         setConfirmDelete(false);
         return;
       }
+      if (confirmBulkDelete) {
+        setConfirmBulkDelete(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDelete, formMode, onClose]);
+  }, [confirmBulkDelete, confirmDelete, formMode, onClose]);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -122,6 +132,11 @@ export function CompensationSurchargeTypesModal({
       onSuccess: () => router.refresh(),
     });
   const selected = sortedList.find((entry) => entry.id === selectedId);
+  const surchargeTypeIds = useMemo(
+    () => sortedList.map((item) => item.id),
+    [sortedList]
+  );
+  const bulkSelection = useSettingsListBulkSelection(surchargeTypeIds);
   const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
   useScrollToSettingsListItem(sortedList, scrollToItemId, clearScrollTarget);
 
@@ -160,12 +175,42 @@ export function CompensationSurchargeTypesModal({
     });
   }
 
+  function handleBulkDelete() {
+    const ids = surchargeTypeIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      for (const id of ids) {
+        const result = await deleteCompensationSurchargeType(id);
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          bulkSelection.clear();
+          setConfirmBulkDelete(false);
+          refreshList();
+          return;
+        }
+      }
+      setList((prev) => {
+        const remaining = prev.filter((item) => !ids.includes(item.id));
+        setSelectedId((current) =>
+          current && remaining.some((item) => item.id === current)
+            ? current
+            : (remaining[0]?.id ?? null)
+        );
+        return remaining;
+      });
+      bulkSelection.clear();
+      setConfirmBulkDelete(false);
+      refreshList();
+    });
+  }
+
   return (
     <div
       className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !formMode && !confirmDelete) onClose();
+        if (e.target === e.currentTarget && !formMode && !confirmDelete && !confirmBulkDelete) onClose();
       }}
     >
       <div
@@ -242,6 +287,10 @@ export function CompensationSurchargeTypesModal({
                           {t("surcharges.unit")}
                         </th>
                         <th
+                          className={settingsListRowCheckboxHeaderClass()}
+                          aria-hidden
+                        />
+                        <th
                           className={settingsListRowDeleteHeaderClass()}
                           aria-hidden
                         />
@@ -257,6 +306,7 @@ export function CompensationSurchargeTypesModal({
                             onClick={() => {
                               setSelectedId(item.id);
                               setConfirmDelete(false);
+                              setConfirmBulkDelete(false);
                               setErrorMessage(null);
                             }}
                             onDoubleClick={(e) => {
@@ -295,12 +345,22 @@ export function CompensationSurchargeTypesModal({
                             <td className={settingsDataCellClass(isSelected)}>
                               {formatSurchargeUnitLabel(item.unit, t)}
                             </td>
+                            <td className={settingsListRowCheckboxCellClass(isSelected)}>
+                              <SettingsListRowCheckbox
+                                checked={bulkSelection.isChecked(item.id)}
+                                disabled={pending}
+                                ariaLabel={t("common.selectRow")}
+                                onChange={() => bulkSelection.toggle(item.id)}
+                              />
+                            </td>
                             <td className={settingsListRowDeleteCellClass(isSelected)}>
                               <SettingsListRowDeleteButton
                                 label={t("surcharges.delete")}
                                 disabled={pending}
+                                showTooltip={false}
                                 onClick={() => {
                                   setSelectedId(item.id);
+                                  setConfirmBulkDelete(false);
                                   setConfirmDelete(true);
                                   setErrorMessage(null);
                                 }}
@@ -323,6 +383,7 @@ export function CompensationSurchargeTypesModal({
                     onClick={() => {
                       setFormMode({ type: "create" });
                       setConfirmDelete(false);
+                      setConfirmBulkDelete(false);
                     }}
                   />
                 }
@@ -353,6 +414,17 @@ export function CompensationSurchargeTypesModal({
                       }}
                     />
                   </>
+                }
+                destructive={
+                  <SettingsBulkDeleteActionButton
+                    label={t("common.deleteSelectedEntries")}
+                    disabled={pending || !bulkSelection.canBulkDelete}
+                    onClick={() => {
+                      setConfirmDelete(false);
+                      setFormMode(null);
+                      setConfirmBulkDelete(true);
+                    }}
+                  />
                 }
               />
             </div>
@@ -395,6 +467,15 @@ export function CompensationSurchargeTypesModal({
             pending={pending}
             onCancel={() => setConfirmDelete(false)}
             onConfirm={handleDelete}
+          />
+        )}
+        {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+          <DeleteConfirmModal
+            name={t("common.deleteSelectedEntries")}
+            count={bulkSelection.checkedCount}
+            pending={pending}
+            onCancel={() => setConfirmBulkDelete(false)}
+            onConfirm={handleBulkDelete}
           />
         )}
       </div>

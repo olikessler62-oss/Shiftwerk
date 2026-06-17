@@ -1,0 +1,488 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  createProfileShiftPreferences,
+  updateProfileShiftPreference,
+} from "@/app/actions/profile-shift-preferences";
+import { parseAvailabilityTimeRange } from "@schichtwerk/database";
+import type {
+  ProfileRecurringAvailability,
+  ProfileShiftPreference,
+} from "@schichtwerk/types";
+import {
+  formatAvailabilityTimeRange,
+  formatOvernightAvailabilitySpan,
+} from "@/lib/profile-availability-label";
+import {
+  filterWeekdaysWithProfileAvailability,
+  groupProfileAvailabilityByWeekday,
+  weekdaysWithProfileAvailability,
+} from "@/lib/profile-shift-preference-weekday-availability";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { SERVICE_HOUR_WEEKDAY_COUNT } from "@/lib/location-service-hour-entries";
+import { WeekdayChipPicker } from "./weekday-chip-picker";
+import { cn } from "@/lib/cn";
+import {
+  SETTINGS_MODAL_TITLE_CLASS,
+  settingsConfirmDialogClass,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsModalHeaderPaddingClass,
+  settingsNestedModalDialogClass,
+  settingsNestedModalOverlayClass,
+} from "./settings-list-ui";
+import {
+  Alert,
+  Button,
+  CheckIcon,
+  CloseIcon,
+  IconButton,
+  LabelMuted,
+  TimeInput,
+} from "@/components/ui";
+
+function defaultCreateWeekdays(
+  availability: readonly ProfileRecurringAvailability[]
+): Set<number> {
+  const allowed = weekdaysWithProfileAvailability(
+    availability,
+    SERVICE_HOUR_WEEKDAY_COUNT
+  );
+  const preferred = [0, 1, 2, 3, 4].filter((weekday) => allowed.has(weekday));
+  return new Set(preferred.length > 0 ? preferred : [...allowed]);
+}
+
+type FormMode = "create" | "edit";
+
+type Props = {
+  mode: FormMode;
+  profileId: string;
+  profileAvailability: ProfileRecurringAvailability[];
+  currentPreference?: ProfileShiftPreference;
+  onClose: () => void;
+  onSaved: (
+    preferences: ProfileShiftPreference[],
+    selectedId: string,
+    scrollToSelection?: boolean
+  ) => void;
+};
+
+type ParsedAvailabilityTimeRange = Extract<
+  ReturnType<typeof parseAvailabilityTimeRange>,
+  { ok: true }
+>;
+
+export function ProfileShiftPreferencesFormModal({
+  mode,
+  profileId,
+  profileAvailability,
+  currentPreference,
+  onClose,
+  onSaved,
+}: Props) {
+  const { locale } = useLocale();
+  const localeKey = locale === "en" ? "en" : "de";
+  const t = useTranslations();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [overnightConfirmOpen, setOvernightConfirmOpen] = useState(false);
+  const savingRef = useRef(false);
+
+  const availabilityByWeekday = useMemo(
+    () => groupProfileAvailabilityByWeekday(profileAvailability),
+    [profileAvailability]
+  );
+  const weekdaysWithAvailability = useMemo(
+    () =>
+      weekdaysWithProfileAvailability(
+        profileAvailability,
+        SERVICE_HOUR_WEEKDAY_COUNT
+      ),
+    [profileAvailability]
+  );
+  const disabledWeekdays = useMemo(() => {
+    const disabled = new Set<number>();
+    for (let weekday = 0; weekday < SERVICE_HOUR_WEEKDAY_COUNT; weekday += 1) {
+      if (!weekdaysWithAvailability.has(weekday)) {
+        disabled.add(weekday);
+      }
+    }
+    if (mode === "edit" && currentPreference) {
+      disabled.delete(currentPreference.weekday);
+    }
+    return disabled;
+  }, [currentPreference, mode, weekdaysWithAvailability]);
+
+  const [weekday, setWeekday] = useState(
+    () => currentPreference?.weekday ?? 0
+  );
+  const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(() =>
+    mode === "create"
+      ? defaultCreateWeekdays(profileAvailability)
+      : new Set([currentPreference?.weekday ?? 0])
+  );
+  const [startTime, setStartTime] = useState(
+    () => currentPreference?.start_time.slice(0, 5) ?? "08:00"
+  );
+  const [endTime, setEndTime] = useState(
+    () => currentPreference?.end_time.slice(0, 5) ?? "12:00"
+  );
+
+  const usesMultiDayPicker = mode === "create";
+
+  function renderWeekdayAvailabilityTooltip(day: number) {
+    const slots = availabilityByWeekday.get(day) ?? [];
+    if (slots.length === 0) {
+      return t("profiles.shiftPreferenceTooltipNoAvailability");
+    }
+    return (
+      <div className="flex flex-col gap-0.5">
+        {slots.map((slot) => (
+          <span key={slot.id} className="tabular-nums">
+            {formatAvailabilityTimeRange(
+              slot.start_time,
+              slot.end_time,
+              localeKey
+            )}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  function applyAvailableWeekdayPreset(days: readonly number[]) {
+    const next = filterWeekdaysWithProfileAvailability(
+      days,
+      profileAvailability,
+      SERVICE_HOUR_WEEKDAY_COUNT
+    );
+    if (mode === "create") {
+      setSelectedWeekdays(new Set(next));
+    } else if (next[0] !== undefined) {
+      setWeekday(next[0]);
+      setSelectedWeekdays(new Set([next[0]]));
+    } else {
+      setSelectedWeekdays(new Set());
+    }
+    setError(null);
+  }
+
+  function handleWeekdayToggle(nextWeekday: number) {
+    if (mode === "edit") {
+      setWeekday(nextWeekday);
+      setSelectedWeekdays(new Set([nextWeekday]));
+      setError(null);
+      return;
+    }
+    setSelectedWeekdays((prev) => {
+      const next = new Set(prev);
+      if (next.has(nextWeekday)) next.delete(nextWeekday);
+      else next.add(nextWeekday);
+      return next;
+    });
+    setError(null);
+  }
+
+  useEffect(() => {
+    if (!saving) return;
+    const previous = document.body.style.cursor;
+    document.body.style.cursor = "wait";
+    return () => {
+      document.body.style.cursor = previous;
+    };
+  }, [saving]);
+
+  function parseCurrentTimeRange():
+    | ParsedAvailabilityTimeRange
+    | { ok: false; error: string } {
+    return parseAvailabilityTimeRange({
+      start_time: startTime,
+      end_time: endTime,
+    });
+  }
+
+  async function performSave(timeCheck: ParsedAvailabilityTimeRange) {
+    if (savingRef.current) return;
+
+    const savedStart = timeCheck.start_time.slice(0, 5);
+    const savedEnd = timeCheck.end_time.slice(0, 5);
+
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      if (mode === "edit" && currentPreference) {
+        const result = await updateProfileShiftPreference({
+          profileId,
+          preferenceId: currentPreference.id,
+          weekday,
+          start_time: savedStart,
+          end_time: savedEnd,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        const list = result.preferences ?? [];
+        onSaved(list, currentPreference.id);
+        onClose();
+        return;
+      }
+
+      const weekdaysToSave = [...selectedWeekdays].sort((a, b) => a - b);
+      if (weekdaysToSave.length === 0) {
+        setError(t("profiles.shiftPreferenceSelectWeekdays"));
+        return;
+      }
+
+      const result = await createProfileShiftPreferences({
+        profileId,
+        weekdays: weekdaysToSave,
+        start_time: savedStart,
+        end_time: savedEnd,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+
+      const latestList = result.preferences ?? [];
+      const lastSelectedId =
+        latestList.find(
+          (item) =>
+            weekdaysToSave.includes(item.weekday) &&
+            item.start_time.slice(0, 5) === savedStart &&
+            item.end_time.slice(0, 5) === savedEnd
+        )?.id ??
+        latestList[0]?.id ??
+        "";
+
+      onSaved(latestList, lastSelectedId, true);
+      onClose();
+    } catch {
+      setError(t("profiles.shiftPreferenceSaveFailed"));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  async function handleSubmit() {
+    setError(null);
+    setOvernightConfirmOpen(false);
+
+    const timeCheck = parseCurrentTimeRange();
+    if (!timeCheck.ok) {
+      setError(timeCheck.error);
+      return;
+    }
+
+    if (timeCheck.overnight) {
+      setOvernightConfirmOpen(true);
+      return;
+    }
+
+    await performSave(timeCheck);
+  }
+
+  async function confirmOvernightSave() {
+    setOvernightConfirmOpen(false);
+    const timeCheck = parseCurrentTimeRange();
+    if (!timeCheck.ok) {
+      setError(timeCheck.error);
+      return;
+    }
+    await performSave(timeCheck);
+  }
+
+  const overnightConfirmRange =
+    overnightConfirmOpen &&
+    (() => {
+      const timeCheck = parseCurrentTimeRange();
+      if (!timeCheck.ok || !timeCheck.overnight) return null;
+      const confirmWeekday = usesMultiDayPicker
+        ? [...selectedWeekdays].sort((a, b) => a - b)[0] ?? 0
+        : weekday;
+      return formatOvernightAvailabilitySpan(
+        confirmWeekday,
+        timeCheck.start_time,
+        timeCheck.end_time,
+        localeKey
+      );
+    })();
+
+  const title =
+    mode === "create"
+      ? t("profiles.shiftPreferenceCreateTitle")
+      : t("profiles.shiftPreferenceEditTitle");
+
+  return (
+    <>
+      <div
+        className={cn(settingsNestedModalOverlayClass(), saving && "cursor-wait")}
+        role="presentation"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !saving && !overnightConfirmOpen) {
+            onClose();
+          }
+        }}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="profile-shift-preference-form-title"
+          aria-busy={saving}
+          className={cn(
+            settingsNestedModalDialogClass("md"),
+            saving && "[&_*]:cursor-wait"
+          )}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div
+            className={cn(
+              "flex items-center justify-between border-b border-border",
+              settingsModalHeaderPaddingClass()
+            )}
+          >
+            <h3
+              id="profile-shift-preference-form-title"
+              className={SETTINGS_MODAL_TITLE_CLASS}
+            >
+              {title}
+            </h3>
+            <IconButton
+              size="sm"
+              onClick={onClose}
+              disabled={saving}
+              aria-label={t("common.close")}
+              className="border-transparent bg-transparent hover:bg-subtle"
+            >
+              <CloseIcon className="h-[18px] w-[18px]" />
+            </IconButton>
+          </div>
+
+          <div className={cn("space-y-4", settingsModalBodyPaddingClass())}>
+            {error && <Alert variant="error">{error}</Alert>}
+
+            <p className="text-xs leading-relaxed text-muted">
+              {t("profiles.shiftPreferenceFormIntro")}
+            </p>
+
+            <div>
+              <LabelMuted className="mb-1 block text-center sm:text-left">
+                {t("profiles.columnWeekday")}
+              </LabelMuted>
+              <WeekdayChipPicker
+                weekdayCount={SERVICE_HOUR_WEEKDAY_COUNT}
+                selected={
+                  usesMultiDayPicker ? selectedWeekdays : new Set([weekday])
+                }
+                disabled={saving}
+                disabledWeekdays={disabledWeekdays}
+                getWeekdayTooltip={renderWeekdayAvailabilityTooltip}
+                showPresets={usesMultiDayPicker}
+                onToggle={handleWeekdayToggle}
+                onApplyPreset={applyAvailableWeekdayPreset}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <LabelMuted>{t("profiles.availabilityFrom")}</LabelMuted>
+                <TimeInput
+                  className="mt-1"
+                  value={startTime}
+                  disabled={saving}
+                  onChange={(e) => {
+                    setStartTime(e.target.value);
+                    setError(null);
+                  }}
+                />
+              </div>
+              <div>
+                <LabelMuted>{t("profiles.availabilityTo")}</LabelMuted>
+                <TimeInput
+                  className="mt-1"
+                  value={endTime}
+                  disabled={saving}
+                  onChange={(e) => {
+                    setEndTime(e.target.value);
+                    setError(null);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className={settingsModalFooterClass()}>
+            {saving ? (
+              <p className="text-xs text-muted sm:mr-auto">{t("common.saving")}</p>
+            ) : null}
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              <CloseIcon />
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => void handleSubmit()}
+              disabled={saving}
+            >
+              <CheckIcon />
+              {t("common.ok")}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {overnightConfirmOpen && overnightConfirmRange ? (
+        <div
+          className={settingsNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !saving) {
+              setOvernightConfirmOpen(false);
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="profile-shift-preference-overnight-desc"
+            className={settingsConfirmDialogClass()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p
+              id="profile-shift-preference-overnight-desc"
+              className="text-sm text-foreground"
+            >
+              {t("profiles.availabilityOvernightConfirm", {
+                range: overnightConfirmRange,
+              })}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setOvernightConfirmOpen(false)}
+                disabled={saving}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => void confirmOvernightSave()}
+                disabled={saving}
+              >
+                {t("common.ok")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}

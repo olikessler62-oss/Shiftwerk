@@ -449,3 +449,133 @@ export async function listConfirmationSendShifts(input: {
     };
   }
 }
+
+export async function resendConfirmationRequestForSelectedShifts(input: {
+  shiftIds: string[];
+  weekStart: string;
+  locationId?: string;
+}): Promise<
+  | { ok: true; sentCount: number; failed: Array<{ shiftId: string; error: string }> }
+  | { ok: false; error: string }
+> {
+  try {
+    const uniqueShiftIds = [...new Set(input.shiftIds.filter(Boolean))];
+    if (!uniqueShiftIds.length) {
+      return { ok: false, error: "Keine Schichten ausgewählt." };
+    }
+
+    const { organizationId, userId } = await requireManager();
+    const db = await getDatabase();
+    const result = await db.resendConfirmationRequestsForShifts({
+      organizationId,
+      sentBy: userId,
+      shiftIds: uniqueShiftIds,
+    });
+
+    revalidateConfirmationPaths({
+      organizationId,
+      locationId: input.locationId,
+      weekStart: input.weekStart,
+    });
+
+    return { ok: true, ...result };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Erneut anfordern fehlgeschlagen.",
+    };
+  }
+}
+
+export async function submitCommunicationConfirmationRequests(input: {
+  shiftIds: string[];
+  weekStart: string;
+  locationId?: string;
+  simulatedProposedOnAssign?: boolean;
+}): Promise<
+  | {
+      ok: true;
+      sentCount: number;
+      failedCount: number;
+      errors: string[];
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const uniqueShiftIds = [...new Set(input.shiftIds.filter(Boolean))];
+    if (!uniqueShiftIds.length) {
+      return { ok: false, error: "Keine Schichten ausgewählt." };
+    }
+
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    const proposedIds: string[] = [];
+    const resendIds: string[] = [];
+
+    for (const shiftId of uniqueShiftIds) {
+      const shift = await db.getShiftRecordById(shiftId, organizationId);
+      if (!shift?.confirmation_status) continue;
+      if (shift.confirmation_status === "proposed") {
+        proposedIds.push(shiftId);
+      } else if (
+        shift.confirmation_status === "requested" ||
+        shift.confirmation_status === "pending" ||
+        shift.confirmation_status === "rejected"
+      ) {
+        resendIds.push(shiftId);
+      }
+    }
+
+    let sentCount = 0;
+    const errors: string[] = [];
+
+    if (proposedIds.length > 0) {
+      const sendResult = await sendConfirmationRequestForSelectedShifts({
+        shiftIds: proposedIds,
+        weekStart: input.weekStart,
+        locationId: input.locationId,
+        simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      });
+      if (!sendResult.ok) {
+        errors.push(sendResult.error);
+      } else {
+        sentCount += sendResult.results.filter((row) => row.ok).length;
+        for (const row of sendResult.results) {
+          if (!row.ok) errors.push(row.error);
+        }
+      }
+    }
+
+    if (resendIds.length > 0) {
+      const resendResult = await resendConfirmationRequestForSelectedShifts({
+        shiftIds: resendIds,
+        weekStart: input.weekStart,
+        locationId: input.locationId,
+      });
+      if (!resendResult.ok) {
+        errors.push(resendResult.error);
+      } else {
+        sentCount += resendResult.sentCount;
+        for (const row of resendResult.failed) {
+          errors.push(row.error);
+        }
+      }
+    }
+
+    if (sentCount === 0 && errors.length > 0) {
+      return { ok: false, error: errors[0] ?? "Senden fehlgeschlagen." };
+    }
+
+    return {
+      ok: true,
+      sentCount,
+      failedCount: errors.length,
+      errors,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Senden fehlgeschlagen.",
+    };
+  }
+}

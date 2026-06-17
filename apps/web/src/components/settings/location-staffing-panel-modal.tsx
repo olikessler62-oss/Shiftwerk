@@ -35,6 +35,7 @@ import {
   SettingsActionBar,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
+  SettingsBulkDeleteActionButton,
   applyCreatedListSelection,
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
@@ -54,6 +55,7 @@ import {
   Select,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 
 type Props = {
@@ -93,6 +95,7 @@ export function LocationStaffingPanelModal({
   );
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
   const [sourceAreas, setSourceAreas] = useState<StaffingSourceArea[]>([]);
   const [selectedSourceAreaId, setSelectedSourceAreaId] = useState("");
@@ -184,17 +187,26 @@ export function LocationStaffingPanelModal({
         setConfirmDeleteId(null);
         return;
       }
+      if (confirmBulkDelete) {
+        setConfirmBulkDelete(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDeleteId, deleting, formMode, onClose, pending]);
+  }, [confirmBulkDelete, confirmDeleteId, deleting, formMode, onClose, pending]);
 
   const configuredServiceHours = (editorData?.serviceHours ?? []).filter((hour) =>
     (editorData?.staffing ?? []).some(
       (rule) => rule.service_hour_id === hour.id && rule.required_count > 0
     )
   );
+  const configuredServiceHourIds = useMemo(
+    () => configuredServiceHours.map((hour) => hour.id),
+    [configuredServiceHours]
+  );
+  const bulkSelection = useSettingsListBulkSelection(configuredServiceHourIds);
 
   const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
   useScrollToSettingsListItem(
@@ -242,7 +254,8 @@ export function LocationStaffingPanelModal({
         )
       : "";
 
-  const anyOverlayOpen = formMode !== null || confirmDeleteId !== null;
+  const anyOverlayOpen =
+    formMode !== null || confirmDeleteId !== null || confirmBulkDelete;
   const hasQualifications = (editorData?.qualifications.length ?? 0) > 0;
   const busy = deleting || pending;
 
@@ -271,6 +284,7 @@ export function LocationStaffingPanelModal({
     if (!selectedSourceArea) return;
     setErrorMessage(null);
     setConfirmDeleteId(null);
+    setConfirmBulkDelete(false);
     setFormMode(null);
     startTransition(async () => {
       const result = await copyLocationStaffingFromArea({
@@ -322,6 +336,47 @@ export function LocationStaffingPanelModal({
         setSelectedServiceHourId(null);
       }
       setConfirmDeleteId(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleBulkDelete() {
+    const ids = configuredServiceHourIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setDeleting(true);
+    setErrorMessage(null);
+    try {
+      let latestStaffing = editorData?.staffing;
+      for (const serviceHourId of ids) {
+        const result = await deleteServiceHourStaffing({
+          locationId: location.id,
+          serviceHourId,
+        });
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          matrixRef.current?.reload();
+          bulkSelection.clear();
+          setConfirmBulkDelete(false);
+          return;
+        }
+        latestStaffing = result.staffing ?? latestStaffing;
+      }
+
+      if (latestStaffing && editorData) {
+        applyEditorData({
+          ...editorData,
+          staffing: latestStaffing,
+        });
+      } else {
+        matrixRef.current?.reload();
+      }
+
+      if (selectedServiceHourId && ids.includes(selectedServiceHourId)) {
+        setSelectedServiceHourId(null);
+      }
+      bulkSelection.clear();
+      setConfirmBulkDelete(false);
     } finally {
       setDeleting(false);
     }
@@ -409,8 +464,14 @@ export function LocationStaffingPanelModal({
                     }}
                     onDeleteServiceHour={(serviceHourId) => {
                       setSelectedServiceHourId(serviceHourId);
+                      setConfirmBulkDelete(false);
                       setConfirmDeleteId(serviceHourId);
                       setErrorMessage(null);
+                    }}
+                    bulkSelection={{
+                      isChecked: bulkSelection.isChecked,
+                      onToggle: bulkSelection.toggle,
+                      disabled: busy,
                     }}
                     embedded
                     listScrollClassName={SETTINGS_STAFFING_PANEL_LIST_SCROLL_CLASS}
@@ -433,6 +494,7 @@ export function LocationStaffingPanelModal({
                         onClick={() => {
                           setFormMode("create");
                           setConfirmDeleteId(null);
+                          setConfirmBulkDelete(false);
                           setErrorMessage(null);
                         }}
                       />
@@ -449,6 +511,7 @@ export function LocationStaffingPanelModal({
                             if (!selectedServiceHourId) return;
                             setFormMode("edit");
                             setConfirmDeleteId(null);
+                            setConfirmBulkDelete(false);
                             setErrorMessage(null);
                           }}
                         />
@@ -462,47 +525,57 @@ export function LocationStaffingPanelModal({
                             if (!selectedServiceHourId) return;
                             setFormMode("bulk-edit");
                             setConfirmDeleteId(null);
+                            setConfirmBulkDelete(false);
                             setErrorMessage(null);
                           }}
                         />
+                        {sourceAreas.length > 0 ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={
+                                busy ||
+                                !selectedSourceArea ||
+                                copyFromSourceIsNoOp ||
+                                !hasQualifications
+                              }
+                              onClick={handleCopyFromSourceArea}
+                              className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
+                            >
+                              {t("locations.staffingCopyApply")}
+                            </Button>
+                            <Select
+                              className="h-8 shrink-0 px-2 text-xs"
+                              style={copySourceSelectStyle}
+                              value={selectedSourceAreaId}
+                              disabled={busy}
+                              aria-label={t("locations.staffingCopySelectArea")}
+                              onChange={(event) =>
+                                setSelectedSourceAreaId(event.target.value)
+                              }
+                            >
+                              {sourceAreas.map((source) => (
+                                <option key={source.id} value={source.id}>
+                                  {source.name}
+                                </option>
+                              ))}
+                            </Select>
+                          </>
+                        ) : null}
                       </>
                     }
-                    trailing={
-                      sourceAreas.length > 0 ? (
-                        <div className="flex min-w-0 items-center justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={
-                              busy ||
-                              !selectedSourceArea ||
-                              copyFromSourceIsNoOp ||
-                              !hasQualifications
-                            }
-                            onClick={handleCopyFromSourceArea}
-                            className="h-8 shrink-0 whitespace-nowrap px-2.5 text-xs"
-                          >
-                            {t("locations.staffingCopyApply")}
-                          </Button>
-                          <Select
-                            className="h-8 shrink-0 px-2 text-xs"
-                            style={copySourceSelectStyle}
-                            value={selectedSourceAreaId}
-                            disabled={busy}
-                            aria-label={t("locations.staffingCopySelectArea")}
-                            onChange={(event) =>
-                              setSelectedSourceAreaId(event.target.value)
-                            }
-                          >
-                            {sourceAreas.map((source) => (
-                              <option key={source.id} value={source.id}>
-                                {source.name}
-                              </option>
-                            ))}
-                          </Select>
-                        </div>
-                      ) : undefined
+                    destructive={
+                      <SettingsBulkDeleteActionButton
+                        label={t("common.deleteSelectedEntries")}
+                        disabled={busy || !bulkSelection.canBulkDelete}
+                        onClick={() => {
+                          setConfirmDeleteId(null);
+                          setFormMode(null);
+                          setConfirmBulkDelete(true);
+                        }}
+                      />
                     }
                   />
                 </div>
@@ -549,6 +622,15 @@ export function LocationStaffingPanelModal({
           pending={deleting}
           onCancel={() => setConfirmDeleteId(null)}
           onConfirm={() => void handleConfirmDelete()}
+        />
+      )}
+      {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+        <DeleteConfirmModal
+          name={t("common.deleteSelectedEntries")}
+          count={bulkSelection.checkedCount}
+          pending={deleting}
+          onCancel={() => setConfirmBulkDelete(false)}
+          onConfirm={() => void handleBulkDelete()}
         />
       )}
     </>

@@ -744,6 +744,15 @@ export interface SchichtwerkDatabase {
     skipNotificationOutbox?: boolean;
   }): Promise<{ batchId: string; sentCount: number; isDelta: boolean }>;
 
+  resendConfirmationRequestsForShifts(input: {
+    organizationId: string;
+    sentBy: string;
+    shiftIds: string[];
+  }): Promise<{
+    sentCount: number;
+    failed: Array<{ shiftId: string; error: string }>;
+  }>;
+
   runShiftConfirmationPendingJob(
     now?: Date
   ): Promise<ShiftConfirmationPendingJobResult>;

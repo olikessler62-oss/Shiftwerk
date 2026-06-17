@@ -11,13 +11,19 @@ import {
   deleteProfileRecurringAvailability,
   fetchProfileRecurringAvailability,
 } from "@/app/actions/profile-availability";
+import { fetchProfileShiftPreferences } from "@/app/actions/profile-shift-preferences";
 import { sortProfileRecurringAvailabilityBySchedule } from "@schichtwerk/database";
 import {
   formatAvailabilityTimeRange,
   formatProfileAvailabilitySummaryLabel,
   weekdayLabel,
 } from "@/lib/profile-availability-label";
-import type { Profile, ProfileRecurringAvailability } from "@schichtwerk/types";
+import { findNonConformantProfileShiftPreferences } from "@/lib/profile-shift-preference-availability";
+import type {
+  Profile,
+  ProfileRecurringAvailability,
+  ProfileShiftPreference,
+} from "@schichtwerk/types";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ProfileAvailabilityFormModal } from "./profile-availability-form-modal";
@@ -29,6 +35,8 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
+  SettingsBulkDeleteActionButton,
   settingsListItemAttrs,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
@@ -40,6 +48,8 @@ import {
   settingsStickyIndicatorHeaderClass,
   settingsListRowDeleteCellClass,
   settingsListRowDeleteHeaderClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -54,6 +64,7 @@ import {
   PlusIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 
 const MAX_NAME_DISPLAY = 25;
 const EMPTY_STATE_CLASS = "min-h-full";
@@ -72,6 +83,7 @@ type AvailabilityFormMode =
 type Props = {
   profile: Profile;
   cachedAvailability?: ProfileRecurringAvailability[];
+  cachedShiftPreferences?: ProfileShiftPreference[];
   onClose: () => void;
   onCacheUpdate: (
     profileId: string,
@@ -82,6 +94,7 @@ type Props = {
 export function ProfileAvailabilityPanelModal({
   profile,
   cachedAvailability,
+  cachedShiftPreferences,
   onClose,
   onCacheUpdate,
 }: Props) {
@@ -98,8 +111,12 @@ export function ProfileAvailabilityPanelModal({
     string | null
   >(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmBulkRemove, setConfirmBulkRemove] = useState(false);
   const [formMode, setFormMode] = useState<AvailabilityFormMode>(null);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
+  const [shiftPreferenceWarning, setShiftPreferenceWarning] = useState<
+    string | null
+  >(null);
 
   const applyList = useCallback(
     (list: ProfileRecurringAvailability[]) => {
@@ -118,6 +135,11 @@ export function ProfileAvailabilityPanelModal({
     () => sortProfileRecurringAvailabilityBySchedule(profileAvailabilities),
     [profileAvailabilities]
   );
+  const availabilityIds = useMemo(
+    () => sortedAvailabilities.map((item) => item.id),
+    [sortedAvailabilities]
+  );
+  const bulkSelection = useSettingsListBulkSelection(availabilityIds);
 
   const selectedAvailability =
     sortedAvailabilities.find((a) => a.id === selectedAvailabilityId) ?? null;
@@ -168,13 +190,42 @@ export function ProfileAvailabilityPanelModal({
         setConfirmRemove(false);
         return;
       }
+      if (confirmBulkRemove) {
+        setConfirmBulkRemove(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmRemove, formMode, onClose]);
+  }, [confirmBulkRemove, confirmRemove, formMode, onClose]);
 
   const anyFormOpen = !!formMode;
+
+  const syncShiftPreferenceWarning = useCallback(
+    async (availability: ProfileRecurringAvailability[]) => {
+      let preferences = cachedShiftPreferences;
+      if (preferences === undefined) {
+        const result = await fetchProfileShiftPreferences(profile.id);
+        if (!result.ok) {
+          setShiftPreferenceWarning(null);
+          return;
+        }
+        preferences = result.preferences ?? [];
+      }
+
+      const nonConformant = findNonConformantProfileShiftPreferences(
+        preferences,
+        availability
+      );
+      setShiftPreferenceWarning(
+        nonConformant.length > 0
+          ? t("profiles.shiftPreferencesNeedAdjustment")
+          : null
+      );
+    },
+    [cachedShiftPreferences, profile.id, t]
+  );
 
   function handleSaved(
     list: ProfileRecurringAvailability[],
@@ -184,6 +235,7 @@ export function ProfileAvailabilityPanelModal({
     applyList(list);
     setSelectedAvailabilityId(selectedId);
     if (scrollToSelection && selectedId) setScrollToItemId(selectedId);
+    void syncShiftPreferenceWarning(list);
   }
 
   function handleRemove() {
@@ -200,6 +252,34 @@ export function ProfileAvailabilityPanelModal({
       }
       applyList(result.availability ?? []);
       setConfirmRemove(false);
+      void syncShiftPreferenceWarning(result.availability ?? []);
+    });
+  }
+
+  function handleBulkRemove() {
+    const ids = availabilityIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      let latestList = profileAvailabilities;
+      for (const availabilityId of ids) {
+        const result = await deleteProfileRecurringAvailability({
+          profileId: profile.id,
+          availabilityId,
+        });
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          if (result.availability) applyList(result.availability);
+          bulkSelection.clear();
+          setConfirmBulkRemove(false);
+          return;
+        }
+        latestList = result.availability ?? latestList;
+      }
+      applyList(latestList);
+      bulkSelection.clear();
+      setConfirmBulkRemove(false);
+      void syncShiftPreferenceWarning(latestList);
     });
   }
 
@@ -208,7 +288,7 @@ export function ProfileAvailabilityPanelModal({
       className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !anyFormOpen && !confirmRemove) {
+        if (e.target === e.currentTarget && !anyFormOpen && !confirmRemove && !confirmBulkRemove) {
           onClose();
         }
       }}
@@ -258,6 +338,12 @@ export function ProfileAvailabilityPanelModal({
           </div>
         )}
 
+        {shiftPreferenceWarning && (
+          <div className="mx-4 mt-3 shrink-0">
+            <Alert variant="info">{shiftPreferenceWarning}</Alert>
+          </div>
+        )}
+
         <div className="min-h-0 bg-background px-4 py-3">
           <div
             className={cn(
@@ -291,6 +377,10 @@ export function ProfileAvailabilityPanelModal({
                       {t("profiles.columnTimeRange")}
                     </th>
                     <th
+                      className={settingsListRowCheckboxHeaderClass()}
+                      aria-hidden
+                    />
+                    <th
                       className={settingsListRowDeleteHeaderClass()}
                       aria-hidden
                     />
@@ -306,6 +396,7 @@ export function ProfileAvailabilityPanelModal({
                         onClick={() => {
                           setSelectedAvailabilityId(item.id);
                           setConfirmRemove(false);
+                          setConfirmBulkRemove(false);
                           setFormMode(null);
                         }}
                         onDoubleClick={(e) => {
@@ -338,6 +429,14 @@ export function ProfileAvailabilityPanelModal({
                             localeKey
                           )}
                         </td>
+                        <td className={settingsListRowCheckboxCellClass(isSelected)}>
+                          <SettingsListRowCheckbox
+                            checked={bulkSelection.isChecked(item.id)}
+                            disabled={pending || loading}
+                            ariaLabel={t("common.selectRow")}
+                            onChange={() => bulkSelection.toggle(item.id)}
+                          />
+                        </td>
                         <td className={settingsListRowDeleteCellClass(isSelected)}>
                           <SettingsListRowDeleteButton
                             label={t("profiles.delete")}
@@ -368,6 +467,7 @@ export function ProfileAvailabilityPanelModal({
                 onClick={() => {
                   setFormMode({ type: "create" });
                   setConfirmRemove(false);
+                  setConfirmBulkRemove(false);
                   setErrorMessage(null);
                 }}
               />
@@ -385,6 +485,7 @@ export function ProfileAvailabilityPanelModal({
                       availability: selectedAvailability,
                     });
                     setConfirmRemove(false);
+                    setConfirmBulkRemove(false);
                   }}
                 />
                 <SettingsIconActionButton
@@ -398,10 +499,22 @@ export function ProfileAvailabilityPanelModal({
                       availability: selectedAvailability,
                     });
                     setConfirmRemove(false);
+                    setConfirmBulkRemove(false);
                     setErrorMessage(null);
                   }}
                 />
               </>
+            }
+            destructive={
+              <SettingsBulkDeleteActionButton
+                label={t("common.deleteSelectedEntries")}
+                disabled={pending || loading || !bulkSelection.canBulkDelete}
+                onClick={() => {
+                  setConfirmRemove(false);
+                  setFormMode(null);
+                  setConfirmBulkRemove(true);
+                }}
+              />
             }
           />
         </div>
@@ -458,6 +571,15 @@ export function ProfileAvailabilityPanelModal({
           pending={pending}
           onCancel={() => setConfirmRemove(false)}
           onConfirm={handleRemove}
+        />
+      )}
+      {confirmBulkRemove && bulkSelection.checkedCount > 0 && (
+        <DeleteConfirmModal
+          name={t("common.deleteSelectedEntries")}
+          count={bulkSelection.checkedCount}
+          pending={pending}
+          onCancel={() => setConfirmBulkRemove(false)}
+          onConfirm={handleBulkRemove}
         />
       )}
     </div>

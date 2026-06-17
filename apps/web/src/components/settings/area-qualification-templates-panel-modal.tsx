@@ -24,10 +24,14 @@ import {
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
+  SettingsBulkDeleteActionButton,
   applyCreatedListSelection,
   settingsScrollableTableListClass,
   settingsListRowDeleteCellClass,
   settingsListRowDeleteHeaderClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
@@ -49,6 +53,7 @@ import {
 } from "@/components/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 
@@ -83,6 +88,7 @@ export function AreaQualificationTemplatesPanelModal({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
   const [allQualifications, setAllQualifications] = useState<Qualification[]>(
     []
@@ -140,11 +146,15 @@ export function AreaQualificationTemplatesPanelModal({
         setConfirmDelete(false);
         return;
       }
+      if (confirmBulkDelete) {
+        setConfirmBulkDelete(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDelete, formOpen, onClose]);
+  }, [confirmBulkDelete, confirmDelete, formOpen, onClose]);
 
   const assignedIds = useMemo(
     () => new Set(list.map((entry) => entry.qualification_id)),
@@ -185,8 +195,14 @@ export function AreaQualificationTemplatesPanelModal({
     onError: setErrorMessage,
   });
 
+  const templateIds = useMemo(
+    () => sortedList.map((entry) => entry.id),
+    [sortedList]
+  );
+  const bulkSelection = useSettingsListBulkSelection(templateIds);
+
   const selected = sortedList.find((entry) => entry.id === selectedId) ?? null;
-  const anyOverlayOpen = formOpen || confirmDelete;
+  const anyOverlayOpen = formOpen || confirmDelete || confirmBulkDelete;
   const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
   useScrollToSettingsListItem(sortedList, scrollToItemId, clearScrollTarget);
 
@@ -219,6 +235,33 @@ export function AreaQualificationTemplatesPanelModal({
       }
       applyTemplates(result.templates ?? []);
       setConfirmDelete(false);
+    });
+  }
+
+  function handleBulkDelete() {
+    const ids = templateIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      let latestTemplates = list;
+      for (const templateId of ids) {
+        const result = await removeAreaQualificationTemplate({
+          locationId: location.id,
+          locationAreaId: area.id,
+          templateId,
+        });
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          if (result.templates) applyTemplates(result.templates);
+          bulkSelection.clear();
+          setConfirmBulkDelete(false);
+          return;
+        }
+        latestTemplates = result.templates ?? latestTemplates;
+      }
+      applyTemplates(latestTemplates);
+      bulkSelection.clear();
+      setConfirmBulkDelete(false);
     });
   }
 
@@ -311,6 +354,10 @@ export function AreaQualificationTemplatesPanelModal({
                           {t("profiles.columnQualification")}
                         </th>
                         <th
+                          className={settingsListRowCheckboxHeaderClass()}
+                          aria-hidden
+                        />
+                        <th
                           className={settingsListRowDeleteHeaderClass()}
                           aria-hidden
                         />
@@ -327,6 +374,7 @@ export function AreaQualificationTemplatesPanelModal({
                             onClick={() => {
                               setSelectedId(entry.id);
                               setConfirmDelete(false);
+                              setConfirmBulkDelete(false);
                               setErrorMessage(null);
                             }}
                             className={settingsDataRowClass(isSelected)}
@@ -341,12 +389,22 @@ export function AreaQualificationTemplatesPanelModal({
                                 {truncateLabel(name)}
                               </Tooltip>
                             </td>
+                            <td className={settingsListRowCheckboxCellClass(isSelected)}>
+                              <SettingsListRowCheckbox
+                                checked={bulkSelection.isChecked(entry.id)}
+                                disabled={pending}
+                                ariaLabel={t("common.selectRow")}
+                                onChange={() => bulkSelection.toggle(entry.id)}
+                              />
+                            </td>
                             <td className={settingsListRowDeleteCellClass(isSelected)}>
                               <SettingsListRowDeleteButton
                                 label={t("locations.delete")}
                                 disabled={pending}
+                                showTooltip={false}
                                 onClick={() => {
                                   setSelectedId(entry.id);
+                                  setConfirmBulkDelete(false);
                                   setConfirmDelete(true);
                                   setErrorMessage(null);
                                 }}
@@ -376,6 +434,7 @@ export function AreaQualificationTemplatesPanelModal({
                     onClick={() => {
                       setFormOpen(true);
                       setConfirmDelete(false);
+                      setConfirmBulkDelete(false);
                       setErrorMessage(null);
                     }}
                   />
@@ -394,6 +453,17 @@ export function AreaQualificationTemplatesPanelModal({
                     onMoveDown={() => {
                       setErrorMessage(null);
                       handleMove(1);
+                    }}
+                  />
+                }
+                destructive={
+                  <SettingsBulkDeleteActionButton
+                    label={t("common.deleteSelectedEntries")}
+                    disabled={pending || !bulkSelection.canBulkDelete}
+                    onClick={() => {
+                      setConfirmDelete(false);
+                      setFormOpen(false);
+                      setConfirmBulkDelete(true);
                     }}
                   />
                 }
@@ -429,6 +499,15 @@ export function AreaQualificationTemplatesPanelModal({
           pending={pending}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={handleDelete}
+        />
+      )}
+      {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+        <DeleteConfirmModal
+          name={t("common.deleteSelectedEntries")}
+          count={bulkSelection.checkedCount}
+          pending={pending}
+          onCancel={() => setConfirmBulkDelete(false)}
+          onConfirm={handleBulkDelete}
         />
       )}
     </div>

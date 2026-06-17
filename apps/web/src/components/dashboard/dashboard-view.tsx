@@ -28,14 +28,15 @@ import {
   DashboardCalendar,
   type DashboardShiftCard,
 } from "./dashboard-calendar";
-import { DashboardSendConfirmationModal } from "./dashboard-send-confirmation-modal";
-import { OpenConfirmationsPanel } from "./open-confirmations-panel";
+import {
+  CommunicationHubModal,
+  communicationBadgeCount,
+} from "./communication-hub-modal";
 import { useLazyShiftCompensation } from "@/lib/use-lazy-shift-compensation";
 import type { ManagerNotification } from "@schichtwerk/types";
 import { APP_SHELL_CONTENT_OFFSET_CLASS } from "@/lib/app-shell-layout";
 import { cn } from "@/lib/cn";
-
-type PanelTab = "pending" | "rejected" | "proposed";
+import type { CommunicationOpenOptions } from "@/lib/communication-hub";
 
 type Props = {
   weekStart: string;
@@ -83,19 +84,14 @@ export function DashboardView({
   const t = useTranslations();
   const { locale } = useLocale();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
-  const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false);
-  const [sendConfirmationBusy, setSendConfirmationBusy] = useState(false);
-  const [confirmationsPanelOpen, setConfirmationsPanelOpen] = useState(false);
-  const [confirmationsPanelTab, setConfirmationsPanelTab] = useState<PanelTab>("pending");
+  const [communicationOpen, setCommunicationOpen] = useState(false);
+  const [communicationBusy, setCommunicationBusy] = useState(false);
+  const [communicationOptions, setCommunicationOptions] = useState<
+    CommunicationOpenOptions | undefined
+  >(undefined);
   const [reassignShiftRequest, setReassignShiftRequest] =
     useState<DashboardShiftCard | null>(null);
-  const proposedSendCount = useMemo(
-    () =>
-      shiftConfirmationEnabled
-        ? shifts.filter((shift) => shift.confirmationStatus === "proposed").length
-        : 0,
-    [shiftConfirmationEnabled, shifts]
-  );
+
   const compensationShiftRefs = useMemo(
     () =>
       shifts.map((shift) => ({
@@ -107,15 +103,8 @@ export function DashboardView({
     [shifts]
   );
   const shiftCompensation = useLazyShiftCompensation(compensationShiftRefs);
-  const openConfirmationsCount = useMemo(
-    () =>
-      shiftConfirmationEnabled
-        ? shifts.filter((shift) =>
-            shift.confirmationStatus === "pending" ||
-            shift.confirmationStatus === "rejected" ||
-            shift.confirmationStatus === "proposed"
-          ).length
-        : 0,
+  const communicationItemCount = useMemo(
+    () => (shiftConfirmationEnabled ? communicationBadgeCount(shifts) : 0),
     [shiftConfirmationEnabled, shifts]
   );
 
@@ -141,22 +130,19 @@ export function DashboardView({
 
   usePlanningAppSidebarContent(dashboardSidebarContent);
 
-  useAppShellModalLockActive(sendConfirmationOpen || confirmationsPanelOpen);
-  useAppShellWaitCursorActive(sendConfirmationBusy);
+  useAppShellModalLockActive(communicationOpen);
+  useAppShellWaitCursorActive(communicationBusy);
 
-  function openSendConfirmation() {
-    setSendConfirmationBusy(true);
-    setSendConfirmationOpen(true);
+  function openCommunication(options?: CommunicationOpenOptions) {
+    setCommunicationOptions(options);
+    setCommunicationBusy(false);
+    setCommunicationOpen(true);
   }
 
-  function closeSendConfirmation() {
-    setSendConfirmationOpen(false);
-    setSendConfirmationBusy(false);
-  }
-
-  function openConfirmationsPanel(tab: PanelTab = "pending") {
-    setConfirmationsPanelTab(tab);
-    setConfirmationsPanelOpen(true);
+  function closeCommunication() {
+    setCommunicationOpen(false);
+    setCommunicationBusy(false);
+    setCommunicationOptions(undefined);
   }
 
   function navigateToWeek(nextWeekStart: string) {
@@ -176,12 +162,10 @@ export function DashboardView({
         weekStart={weekStart}
         locations={locations}
         selectedLocationId={selectedLocationId}
-        proposedSendCount={proposedSendCount}
-        openConfirmationsCount={openConfirmationsCount}
+        communicationItemCount={communicationItemCount}
         shiftConfirmationEnabled={shiftConfirmationEnabled}
         managerNotifications={managerNotifications}
-        onOpenSendConfirmation={openSendConfirmation}
-        onOpenConfirmationsPanel={openConfirmationsPanel}
+        onOpenCommunication={openCommunication}
         onNavigateToWeek={navigateToWeek}
       />
       <section
@@ -223,28 +207,19 @@ export function DashboardView({
             profiles,
           }}
         />
-        {sendConfirmationOpen && shiftConfirmationEnabled ? (
-          <DashboardSendConfirmationModal
+        {communicationOpen ? (
+          <CommunicationHubModal
+            key={communicationOptions?.responseTab ?? "auto"}
             weekStart={weekStart}
             locationId={selectedLocationId}
-            onClose={closeSendConfirmation}
-            onBusyChange={setSendConfirmationBusy}
-          />
-        ) : null}
-        {confirmationsPanelOpen && shiftConfirmationEnabled ? (
-          <OpenConfirmationsPanel
-            key={confirmationsPanelTab}
+            locationName={selectedLocation?.name}
+            areas={areas}
             shifts={shifts}
-            initialTab={confirmationsPanelTab}
-            onClose={() => setConfirmationsPanelOpen(false)}
-            onReassign={(shift) => {
-              setConfirmationsPanelOpen(false);
-              setReassignShiftRequest(shift);
-            }}
-            onSendConfirmation={() => {
-              setConfirmationsPanelOpen(false);
-              openSendConfirmation();
-            }}
+            shiftConfirmationEnabled={shiftConfirmationEnabled}
+            initialOptions={communicationOptions}
+            onClose={closeCommunication}
+            onReassign={(shift) => setReassignShiftRequest(shift)}
+            onBusyChange={setCommunicationBusy}
           />
         ) : null}
       </section>

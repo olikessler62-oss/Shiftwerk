@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteQualification,
@@ -19,10 +19,17 @@ import {
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
+  SettingsBulkDeleteActionButton,
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
   settingsListRowDeleteCellClass,
+  settingsListRowDeleteHeaderClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
+  settingsStickyColumnHeaderClass,
+  settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -38,6 +45,7 @@ import {
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
@@ -60,6 +68,7 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
   );
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
 
@@ -82,11 +91,15 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
         setConfirmDelete(false);
         return;
       }
+      if (confirmBulkDelete) {
+        setConfirmBulkDelete(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDelete, formMode, onClose]);
+  }, [confirmBulkDelete, confirmDelete, formMode, onClose]);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -111,6 +124,11 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
     onSuccess: () => router.refresh(),
   });
   const selected = sortedList.find((q) => q.id === selectedId);
+  const qualificationIds = useMemo(
+    () => sortedList.map((item) => item.id),
+    [sortedList]
+  );
+  const bulkSelection = useSettingsListBulkSelection(qualificationIds);
   const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
   useScrollToSettingsListItem(sortedList, scrollToItemId, clearScrollTarget);
 
@@ -149,12 +167,42 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
     });
   }
 
+  function handleBulkDelete() {
+    const ids = qualificationIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      for (const id of ids) {
+        const result = await deleteQualification(id);
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          bulkSelection.clear();
+          setConfirmBulkDelete(false);
+          refreshList();
+          return;
+        }
+      }
+      setList((prev) => {
+        const remaining = prev.filter((item) => !ids.includes(item.id));
+        setSelectedId((current) =>
+          current && remaining.some((item) => item.id === current)
+            ? current
+            : (remaining[0]?.id ?? null)
+        );
+        return remaining;
+      });
+      bulkSelection.clear();
+      setConfirmBulkDelete(false);
+      refreshList();
+    });
+  }
+
   return (
     <div
       className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !formMode && !confirmDelete) onClose();
+        if (e.target === e.currentTarget && !formMode && !confirmDelete && !confirmBulkDelete) onClose();
       }}
     >
       <div
@@ -204,6 +252,25 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                   />
                 ) : (
                   <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th
+                          className={settingsStickyIndicatorHeaderClass()}
+                          aria-hidden
+                        />
+                        <th className={settingsStickyColumnHeaderClass()}>
+                          {t("qualifications.column")}
+                        </th>
+                        <th
+                          className={settingsListRowCheckboxHeaderClass()}
+                          aria-hidden
+                        />
+                        <th
+                          className={settingsListRowDeleteHeaderClass()}
+                          aria-hidden
+                        />
+                      </tr>
+                    </thead>
                     <tbody>
                       {sortedList.map((item) => {
                         const isSelected = item.id === selectedId;
@@ -214,6 +281,7 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                             onClick={() => {
                               setSelectedId(item.id);
                               setConfirmDelete(false);
+                              setConfirmBulkDelete(false);
                               setErrorMessage(null);
                             }}
                             onDoubleClick={(e) => {
@@ -227,12 +295,22 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                             <td className={settingsDataCellClass(isSelected, { className: "font-medium" })}>
                               {item.name}
                             </td>
+                            <td className={settingsListRowCheckboxCellClass(isSelected)}>
+                              <SettingsListRowCheckbox
+                                checked={bulkSelection.isChecked(item.id)}
+                                disabled={pending}
+                                ariaLabel={t("common.selectRow")}
+                                onChange={() => bulkSelection.toggle(item.id)}
+                              />
+                            </td>
                             <td className={settingsListRowDeleteCellClass(isSelected)}>
                               <SettingsListRowDeleteButton
                                 label={t("qualifications.delete")}
                                 disabled={pending}
+                                showTooltip={false}
                                 onClick={() => {
                                   setSelectedId(item.id);
+                                  setConfirmBulkDelete(false);
                                   setConfirmDelete(true);
                                   setErrorMessage(null);
                                 }}
@@ -255,6 +333,7 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                     onClick={() => {
                       setFormMode({ type: "create" });
                       setConfirmDelete(false);
+                      setConfirmBulkDelete(false);
                     }}
                   />
                 }
@@ -285,6 +364,17 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                       }}
                     />
                   </>
+                }
+                destructive={
+                  <SettingsBulkDeleteActionButton
+                    label={t("common.deleteSelectedEntries")}
+                    disabled={pending || !bulkSelection.canBulkDelete}
+                    onClick={() => {
+                      setConfirmDelete(false);
+                      setFormMode(null);
+                      setConfirmBulkDelete(true);
+                    }}
+                  />
                 }
               />
             </div>
@@ -327,6 +417,15 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
             pending={pending}
             onCancel={() => setConfirmDelete(false)}
             onConfirm={handleDelete}
+          />
+        )}
+        {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+          <DeleteConfirmModal
+            name={t("common.deleteSelectedEntries")}
+            count={bulkSelection.checkedCount}
+            pending={pending}
+            onCancel={() => setConfirmBulkDelete(false)}
+            onConfirm={handleBulkDelete}
           />
         )}
       </div>

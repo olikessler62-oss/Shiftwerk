@@ -136,6 +136,12 @@ export {
   sortProfileRecurringAvailabilityBySchedule,
 } from "./profile-availability-validation";
 export {
+  findProfileShiftPreferenceDuplicate,
+  PROFILE_SHIFT_PREFERENCE_DUPLICATE_ERROR,
+  shiftPreferenceTimeKey,
+  validateNoDuplicateProfileShiftPreference,
+} from "./profile-shift-preference-validation";
+export {
   requiredStaffForAreaOnDate,
   weekdayIndexFromDate,
   STAFFING_HOLIDAY_WEEKDAY,

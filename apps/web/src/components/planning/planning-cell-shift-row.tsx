@@ -3,7 +3,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { DASHBOARD_SHIFT_CARD_BOX_SHADOW } from "@/components/dashboard/dashboard-shift-card-view";
 import { PlanningShiftCardConfirmationOverlay } from "@/components/planning/planning-shift-card-confirmation-overlay";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
@@ -35,7 +35,7 @@ import {
   planningShiftSegmentTouchesDayBorder,
   type PlanningShiftDisplaySegment,
 } from "@/lib/planning-overnight-shift-display";
-import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
+import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
 
 /** Unterhalb: nur Farbbalken ohne Text. */
 const MIN_WIDTH_FOR_TIME_PX = 40;
@@ -134,7 +134,7 @@ export function PlanningCellShiftRow({
         const showTitle = cardWidthPx >= MIN_WIDTH_FOR_TITLE_PX;
         const stripWidthPx = resolveStripWidthPx(cardWidthPx);
         const confirmationStatusLine = shift.confirmationStatus
-          ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
+          ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
           : undefined;
         const showEmployeeStrip = planningShiftSegmentShowsEmployeeStrip(part);
         const jobsLabel = resolvePlanningShiftJobsLabel(shift, shiftJobContext);
@@ -170,6 +170,7 @@ export function PlanningCellShiftRow({
           <Tooltip
             key={segmentKey}
             content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
+            contentClassName={shiftCardTooltipContentClassName}
             className={cn(
               "inline-flex min-w-0 flex-1",
               part === "overnight-start" && "ml-auto",

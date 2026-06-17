@@ -6,7 +6,10 @@ import {
   weekdayAbbrevFromIndex,
   type WeekdayLabelLocale,
 } from "@schichtwerk/i18n";
-import type { ProfileRecurringAvailability } from "@schichtwerk/types";
+import type {
+  ProfileRecurringAvailability,
+  ProfileShiftPreference,
+} from "@schichtwerk/types";
 import { formatTime } from "@/lib/planning-utils";
 
 export const PROFILE_AVAILABILITY_HOLIDAY_WEEKDAY = 7;
@@ -123,5 +126,22 @@ export function formatProfileAvailabilitySummaryLabels(
 ): string[] {
   return sortProfileRecurringAvailabilityBySchedule(items).map((item) =>
     formatProfileAvailabilitySummaryLabel(item, locale)
+  );
+}
+
+export function formatProfileShiftPreferenceSummaryLabel(
+  item: ProfileShiftPreference,
+  locale: "de" | "en" = "de"
+): string {
+  const day = `${weekdayAbbrev(item.weekday, locale)}:`;
+  return `${day} ${formatAvailabilityTimeRange(item.start_time, item.end_time, locale)}`;
+}
+
+export function formatProfileShiftPreferenceSummaryLabels(
+  items: readonly ProfileShiftPreference[],
+  locale: "de" | "en" = "de"
+): string[] {
+  return sortProfileRecurringAvailabilityBySchedule(items).map((item) =>
+    formatProfileShiftPreferenceSummaryLabel(item, locale)
   );
 }

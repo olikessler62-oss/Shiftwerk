@@ -10,11 +10,12 @@ import { BellIcon, CloseIcon, IconButton } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
+import type { CommunicationOpenOptions } from "@/lib/communication-hub";
 
 type Props = {
   enabled: boolean;
   initialNotifications: ManagerNotification[];
-  onOpenConfirmationsPanel: (tab?: "pending" | "rejected" | "proposed") => void;
+  onOpenCommunication: (options?: CommunicationOpenOptions) => void;
   onNavigateToWeek?: (weekStart: string) => void;
 };
 
@@ -46,7 +47,7 @@ function weekStartFromShiftDate(shiftDate: string): string {
 export function DashboardNotificationCenter({
   enabled,
   initialNotifications,
-  onOpenConfirmationsPanel,
+  onOpenCommunication,
   onNavigateToWeek,
 }: Props) {
   const t = useTranslations();
@@ -110,7 +111,9 @@ export function DashboardNotificationCenter({
     }
 
     const tab = notificationPanelTabForType(notification.type);
-    onOpenConfirmationsPanel(tab);
+    onOpenCommunication(
+      tab ? { responseTab: tab } : undefined
+    );
     setOpen(false);
 
     startTransition(async () => {
@@ -156,11 +159,11 @@ export function DashboardNotificationCenter({
               type="button"
               className="text-xs text-primary hover:underline"
               onClick={() => {
-                onOpenConfirmationsPanel();
+                onOpenCommunication();
                 setOpen(false);
               }}
             >
-              {t("shiftConfirmation.panel.title")}
+              {t("shiftConfirmation.communication.title")}
             </button>
           </div>
 

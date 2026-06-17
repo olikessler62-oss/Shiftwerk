@@ -17,7 +17,7 @@ import {
   SHIFT_CARD_TWO_LINE_HEIGHT_PX,
   shiftCardListItemHeightPx,
 } from "@/lib/shift-card-row-layout";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
 import { buildDashboardCellShiftRows } from "@/lib/dashboard-overnight-shift-display";
@@ -415,6 +415,7 @@ export function CollapsedShiftPreview({
             <Tooltip
               key={shift.id}
               content={<ShiftCardTooltipContent data={display.tooltip} />}
+              contentClassName={shiftCardTooltipContentClassName}
               className="self-start max-w-full"
               placement={{
                 anchorLeftToTriggerCenter: true,
@@ -439,6 +440,7 @@ export function CollapsedShiftPreview({
           <Tooltip
             key={shift.id}
             content={<ShiftCardTooltipContent data={display.tooltip} />}
+            contentClassName={shiftCardTooltipContentClassName}
             className="self-start max-w-full"
             placement={{
               anchorLeftToTriggerCenter: true,

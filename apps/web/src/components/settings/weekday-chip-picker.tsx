@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   SERVICE_HOUR_WEEKDAY_COUNT,
   SERVICE_HOUR_WEEKDAY_PRESETS,
@@ -20,6 +21,11 @@ type Props = {
   weekdayCount?: number;
   /** Wenn gesetzt, sind nur diese Wochentage auswählbar. */
   selectableWeekdays?: Set<number>;
+  /** Wochentage ohne Verfügbarkeit o. ä. — nicht auswählbar. */
+  disabledWeekdays?: ReadonlySet<number>;
+  /** Eigener Tooltip pro Chip (ersetzt Standard-Wochentagslabel). */
+  getWeekdayTooltip?: (weekday: number) => ReactNode;
+  showPresets?: boolean;
   onToggle: (weekday: number) => void;
   onApplyPreset: (weekdays: number[]) => void;
 };
@@ -29,6 +35,9 @@ export function WeekdayChipPicker({
   disabled,
   weekdayCount = SERVICE_HOUR_WEEKDAY_COUNT,
   selectableWeekdays,
+  disabledWeekdays,
+  getWeekdayTooltip,
+  showPresets = true,
   onToggle,
   onApplyPreset,
 }: Props) {
@@ -71,50 +80,59 @@ export function WeekdayChipPicker({
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <div className="flex flex-wrap justify-center gap-0.5">
-        {presets.map((preset) => (
-          <Tooltip key={preset.key} content={preset.label}>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onApplyPreset([...preset.days])}
-              className={presetButtonClass}
-            >
-              {preset.label}
-            </button>
-          </Tooltip>
-        ))}
-      </div>
+      {showPresets ? (
+        <div className="flex flex-wrap justify-center gap-0.5">
+          {presets.map((preset) => (
+            <Tooltip key={preset.key} content={preset.label}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onApplyPreset([...preset.days])}
+                className={presetButtonClass}
+              >
+                {preset.label}
+              </button>
+            </Tooltip>
+          ))}
+        </div>
+      ) : null}
       <div className="flex flex-wrap justify-center gap-1">
         {Array.from({ length: weekdayCount }, (_, weekday) => {
           const active = selected.has(weekday);
           const chipDisabled =
             disabled ||
+            disabledWeekdays?.has(weekday) === true ||
             (selectableWeekdays !== undefined &&
               !selectableWeekdays.has(weekday));
-          const tooltip = weekdayChipTooltipLabel(weekday, t);
+          const tooltip =
+            getWeekdayTooltip?.(weekday) ??
+            weekdayChipTooltipLabel(weekday, t);
           return (
             <Tooltip key={weekday} content={tooltip}>
               <button
                 type="button"
-                disabled={chipDisabled}
                 aria-pressed={active}
-                aria-label={tooltip}
+                aria-label={
+                  typeof tooltip === "string"
+                    ? tooltip
+                    : weekdayChipTooltipLabel(weekday, t)
+                }
                 aria-disabled={chipDisabled}
+                tabIndex={chipDisabled ? -1 : 0}
                 onClick={() => {
                   if (chipDisabled) return;
                   onToggle(weekday);
                 }}
                 className={cn(
-                "min-w-[2rem] rounded-md border px-1.5 py-0.5 text-xs font-medium transition-colors",
-                active
-                  ? "border-primary bg-primary/10 text-foreground"
-                  : "border-border bg-surface text-muted hover:bg-subtle",
-                chipDisabled && "cursor-not-allowed opacity-50"
-              )}
-            >
-              {weekdayChipLabel(weekday, t, localeKey)}
-            </button>
+                  "min-w-[2rem] rounded-md border px-1.5 py-0.5 text-xs font-medium transition-colors",
+                  active
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-surface text-muted hover:bg-subtle",
+                  chipDisabled && "cursor-not-allowed opacity-50"
+                )}
+              >
+                {weekdayChipLabel(weekday, t, localeKey)}
+              </button>
             </Tooltip>
           );
         })}

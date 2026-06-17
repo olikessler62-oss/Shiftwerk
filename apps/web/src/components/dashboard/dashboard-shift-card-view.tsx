@@ -17,7 +17,7 @@ import {
   type ShiftCardDensity,
 } from "@/lib/shift-card-display-content";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
-import { Tooltip } from "@/components/ui";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui";
 import { PlanningShiftCardConfirmationOverlay } from "@/components/planning/planning-shift-card-confirmation-overlay";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { useTranslations } from "@/i18n/locale-provider";
@@ -182,6 +182,7 @@ export function DashboardShiftCardView({
     >
       <Tooltip
         content={<ShiftCardTooltipContent data={tooltipData} />}
+        contentClassName={shiftCardTooltipContentClassName}
         className="inline-flex w-fit max-w-full"
         placement={{
           anchorLeftToTriggerCenter: true,

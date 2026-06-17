@@ -26,6 +26,12 @@ export type TooltipPlacement = {
 export const tooltipContentClassName =
   "pointer-events-none w-max max-w-[min(20rem,calc(100vw-1rem))] rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-snug text-foreground shadow-lg";
 
+/** Schichtkarten: etwas breiter für längere Statuszeilen (z. B. „Bestätigung angefordert“). */
+export const shiftCardTooltipContentClassName = cn(
+  tooltipContentClassName,
+  "max-w-[min(28rem,calc(100vw-1rem))]"
+);
+
 type TooltipProps = {
   content: ReactNode;
   children: ReactNode;

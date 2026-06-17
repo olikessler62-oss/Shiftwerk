@@ -27,9 +27,12 @@ import type {
 import {
   SettingsEmptyState,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
   SETTINGS_LIST_SCROLL_COMPACT_CLASS,
   settingsScrollableTableListClass,
   settingsListRowDeleteCellClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
   settingsColumnHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
@@ -66,6 +69,11 @@ type Props = {
   onSelectServiceHour: (serviceHourId: string | null) => void;
   onEditServiceHour?: (serviceHourId: string) => void;
   onDeleteServiceHour?: (serviceHourId: string) => void;
+  bulkSelection?: {
+    isChecked: (serviceHourId: string) => boolean;
+    onToggle: (serviceHourId: string) => void;
+    disabled?: boolean;
+  };
   onDataLoaded?: (data: StaffingEditorData) => void;
   embedded?: boolean;
   listScrollClassName?: string;
@@ -184,6 +192,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
     onSelectServiceHour,
     onEditServiceHour,
     onDeleteServiceHour,
+    bulkSelection,
     onDataLoaded,
     embedded = false,
     listScrollClassName,
@@ -389,6 +398,7 @@ export const LocationAreaStaffingMatrix = forwardRef<
             <col className={STAFFING_MATRIX_DAY_COLUMN_CLASS} />
             <col className={STAFFING_MATRIX_TIME_COLUMN_CLASS} />
             <col />
+            {bulkSelection ? <col className="w-9" /> : null}
             <col className="w-10" />
           </colgroup>
           <thead className="relative z-20">
@@ -430,6 +440,16 @@ export const LocationAreaStaffingMatrix = forwardRef<
               >
                 {t("locations.staffingQualificationsSection")}
               </th>
+              {bulkSelection ? (
+                <th
+                  className={cn(
+                    settingsListRowCheckboxHeaderClass(),
+                    STAFFING_MATRIX_HEAD_STICKY_CLASS,
+                    embedded && STAFFING_MATRIX_HEADER_CLASS
+                  )}
+                  aria-hidden
+                />
+              ) : null}
               <th
                 className={cn(
                   settingsColumnHeaderClass("center"),
@@ -548,6 +568,21 @@ export const LocationAreaStaffingMatrix = forwardRef<
                       "—"
                     )}
                   </td>
+                  {bulkSelection ? (
+                    <td
+                      className={cn(
+                        settingsListRowCheckboxCellClass(isSelected),
+                        embedded && "py-0"
+                      )}
+                    >
+                      <SettingsListRowCheckbox
+                        checked={bulkSelection.isChecked(hour.id)}
+                        disabled={loading || bulkSelection.disabled}
+                        ariaLabel={t("common.selectRow")}
+                        onChange={() => bulkSelection.onToggle(hour.id)}
+                      />
+                    </td>
+                  ) : null}
                   <td
                     className={cn(
                       settingsListRowDeleteCellClass(isSelected),

@@ -62,6 +62,10 @@ import {
   validateNoOverlappingAvailability,
 } from "./profile-availability-validation";
 import {
+  findProfileShiftPreferenceDuplicate,
+  validateNoDuplicateProfileShiftPreference,
+} from "./profile-shift-preference-validation";
+import {
   normalizeAreaShiftTemplatesWithBreaks,
   normalizeTime,
   replaceAreaShiftTemplateBreaks,
@@ -1383,6 +1387,17 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const times = validateShiftPreferenceTimes(input.start_time, input.end_time);
     if (!times.ok) throw new Error(times.error);
 
+    const existing = await this.listProfileShiftPreferences(organizationId, profileId);
+    const duplicate = findProfileShiftPreferenceDuplicate(existing, {
+      weekday: weekdayResult.weekday,
+      start_time: times.start_time,
+      end_time: times.end_time,
+      location_area_id: input.location_area_id ?? null,
+    });
+    if (duplicate) {
+      return duplicate;
+    }
+
     const { data, error } = await this.client
       .from(T.profileShiftPreferences)
       .insert({
@@ -1424,6 +1439,19 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
     const times = validateShiftPreferenceTimes(input.start_time, input.end_time);
     if (!times.ok) throw new Error(times.error);
+
+    const existing = await this.listProfileShiftPreferences(organizationId, profileId);
+    const duplicateCheck = validateNoDuplicateProfileShiftPreference(
+      existing,
+      {
+        weekday: weekdayResult.weekday,
+        start_time: times.start_time,
+        end_time: times.end_time,
+        location_area_id: input.location_area_id ?? null,
+      },
+      preferenceId
+    );
+    if (!duplicateCheck.ok) throw new Error(duplicateCheck.error);
 
     const { data, error } = await this.client
       .from(T.profileShiftPreferences)
@@ -3857,6 +3885,107 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       sentCount: sendable.length,
       isDelta,
     };
+  }
+
+  async resendConfirmationRequestsForShifts(input: {
+    organizationId: string;
+    sentBy: string;
+    shiftIds: string[];
+  }): Promise<{
+    sentCount: number;
+    failed: Array<{ shiftId: string; error: string }>;
+  }> {
+    const nowIso = new Date().toISOString();
+    const resendableStatuses = new Set(["requested", "pending", "rejected"]);
+    let sentCount = 0;
+    const failed: Array<{ shiftId: string; error: string }> = [];
+
+    for (const shiftId of input.shiftIds) {
+      try {
+        const shift = await this.getShiftRecordById(shiftId, input.organizationId);
+        if (!shift) {
+          failed.push({ shiftId, error: "Schicht nicht gefunden." });
+          continue;
+        }
+
+        const fromStatus = shift.confirmation_status;
+        if (!fromStatus || !resendableStatuses.has(fromStatus)) {
+          failed.push({
+            shiftId,
+            error: "Schicht kann nicht erneut angefordert werden.",
+          });
+          continue;
+        }
+
+        const profile = await this.getProfileById(shift.employee_id);
+        if (!profile || profile.organization_id !== input.organizationId) {
+          failed.push({ shiftId, error: "Mitarbeiter nicht gefunden." });
+          continue;
+        }
+
+        const { error: updateError } = await this.client
+          .from(T.shifts)
+          .update({
+            confirmation_status: "requested",
+            confirmation_status_updated_at: nowIso,
+            requested_at: nowIso,
+            pending_since: null,
+            pending_reminder_sent_at: null,
+          })
+          .eq("id", shiftId)
+          .eq("organization_id", input.organizationId)
+          .in("confirmation_status", ["requested", "pending", "rejected"]);
+
+        if (updateError) {
+          failed.push({ shiftId, error: updateError.message });
+          continue;
+        }
+
+        const { error: eventError } = await this.client
+          .from(T.shiftConfirmationEvents)
+          .insert({
+            organization_id: input.organizationId,
+            shift_id: shiftId,
+            actor_id: input.sentBy,
+            from_status: fromStatus,
+            to_status: "requested",
+            payload: { resend: true },
+          });
+        if (eventError) {
+          failed.push({ shiftId, error: eventError.message });
+          continue;
+        }
+
+        const channel = resolveConfirmationNotificationChannel(profile);
+        const { error: outboxError } = await this.client
+          .from(T.notificationOutbox)
+          .insert({
+            organization_id: input.organizationId,
+            recipient_profile_id: shift.employee_id,
+            channel,
+            template_key: "confirmation_request_delta",
+            payload: {
+              shift_id: shiftId,
+              shift_date: shift.shift_date,
+              resend: true,
+            },
+            simulated: true,
+          });
+        if (outboxError) {
+          failed.push({ shiftId, error: outboxError.message });
+          continue;
+        }
+
+        sentCount += 1;
+      } catch (error) {
+        failed.push({
+          shiftId,
+          error: error instanceof Error ? error.message : "Erneut anfordern fehlgeschlagen.",
+        });
+      }
+    }
+
+    return { sentCount, failed };
   }
 
   async runShiftConfirmationPendingJob(

@@ -23,10 +23,11 @@ import {
 } from "@/components/planning/planning-assign-shift-modal";
 import { DashboardBulkShiftModal } from "@/components/dashboard/dashboard-bulk-shift-modal";
 import type { DashboardBulkShiftDialogState } from "@/components/dashboard/dashboard-add-shift-modal";
-import { DashboardSendConfirmationModal } from "@/components/dashboard/dashboard-send-confirmation-modal";
+import {
+  CommunicationHubModal,
+  communicationBadgeCount,
+} from "@/components/dashboard/communication-hub-modal";
 import { DashboardShiftDeleteConfirmModal } from "@/components/dashboard/dashboard-shift-delete-confirm-modal";
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
-import { OpenConfirmationsPanel } from "@/components/dashboard/open-confirmations-panel";
 import {
   planningShiftToDashboardCard,
   type PlanningShift,
@@ -111,6 +112,8 @@ import {
   formatTagAreaFooterLabels,
 } from "@/lib/tag-area-footer-stats";
 import { useLazyShiftCompensation } from "@/lib/use-lazy-shift-compensation";
+import type { CommunicationOpenOptions } from "@/lib/communication-hub";
+import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import type {
   AbsenceRequest,
   AreaShiftTemplateWithBreaks,
@@ -132,7 +135,6 @@ import {
   Button,
   ControlDisplay,
   IconButton,
-  ListIcon,
   Select,
 } from "@/components/ui";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -176,8 +178,6 @@ type CellContextMenuState = {
 };
 
 type DayAssignBlockReason = "absent" | "no_availability";
-
-type ConfirmationsPanelTab = "pending" | "rejected" | "proposed";
 
 const PLANNING_CELL_CONTEXT_MENU_WIDTH_PX = 240;
 const PLANNING_CELL_CONTEXT_MENU_ITEM_HEIGHT_PX = 36;
@@ -304,11 +304,11 @@ export function ShiftPlanner({
   );
   const [deleteShiftError, setDeleteShiftError] = useState<string | null>(null);
   const [deleteShiftPending, startDeleteShift] = useTransition();
-  const [sendConfirmationOpen, setSendConfirmationOpen] = useState(false);
-  const [sendConfirmationBusy, setSendConfirmationBusy] = useState(false);
-  const [confirmationsPanelOpen, setConfirmationsPanelOpen] = useState(false);
-  const [confirmationsPanelTab, setConfirmationsPanelTab] =
-    useState<ConfirmationsPanelTab>("pending");
+  const [communicationOpen, setCommunicationOpen] = useState(false);
+  const [communicationBusy, setCommunicationBusy] = useState(false);
+  const [communicationOptions, setCommunicationOptions] = useState<
+    CommunicationOpenOptions | undefined
+  >(undefined);
   const { simpleCalendarFirstShiftOnly } = useSimpleCalendarDisplay();
   const [confirmationSendError, setConfirmationSendError] = useState<string | null>(
     null
@@ -329,24 +329,20 @@ export function ShiftPlanner({
     Boolean(picker) ||
       Boolean(bulkShiftDialog) ||
       Boolean(shiftDeleteConfirmId) ||
-      sendConfirmationOpen ||
-      confirmationsPanelOpen
+      communicationOpen
   );
-  useAppShellWaitCursorActive(sendConfirmationBusy);
+  useAppShellWaitCursorActive(communicationBusy);
 
-  function openSendConfirmation() {
-    setSendConfirmationBusy(true);
-    setSendConfirmationOpen(true);
+  function openCommunication(options?: CommunicationOpenOptions) {
+    setCommunicationOptions(options);
+    setCommunicationBusy(false);
+    setCommunicationOpen(true);
   }
 
-  function closeSendConfirmation() {
-    setSendConfirmationOpen(false);
-    setSendConfirmationBusy(false);
-  }
-
-  function openConfirmationsPanel(tab: ConfirmationsPanelTab = "pending") {
-    setConfirmationsPanelTab(tab);
-    setConfirmationsPanelOpen(true);
+  function closeCommunication() {
+    setCommunicationOpen(false);
+    setCommunicationBusy(false);
+    setCommunicationOptions(undefined);
   }
 
   const templatesForArea = useMemo(
@@ -848,25 +844,10 @@ export function ShiftPlanner({
     [locationShifts, employeesById]
   );
 
-  const proposedSendCount = useMemo(
+  const communicationItemCount = useMemo(
     () =>
       shiftConfirmationEnabled
-        ? dashboardShiftsForConfirmation.filter(
-            (shift) => shift.confirmationStatus === "proposed"
-          ).length
-        : 0,
-    [shiftConfirmationEnabled, dashboardShiftsForConfirmation]
-  );
-
-  const openConfirmationsCount = useMemo(
-    () =>
-      shiftConfirmationEnabled
-        ? dashboardShiftsForConfirmation.filter(
-            (shift) =>
-              shift.confirmationStatus === "requested" ||
-              shift.confirmationStatus === "pending" ||
-              shift.confirmationStatus === "rejected"
-          ).length
+        ? communicationBadgeCount(dashboardShiftsForConfirmation)
         : 0,
     [shiftConfirmationEnabled, dashboardShiftsForConfirmation]
   );
@@ -1375,7 +1356,7 @@ export function ShiftPlanner({
 
   const handleReassignFromPanel = useCallback(
     (shift: DashboardShiftCard) => {
-      setConfirmationsPanelOpen(false);
+      setCommunicationOpen(false);
       if (!shift.locationAreaId) return;
       openBulkShiftDialogForAreaDay(shift.locationAreaId, shift.shift_date, {
         focusShiftId: shift.id,
@@ -1565,42 +1546,26 @@ export function ShiftPlanner({
         </div>
 
         <div className="flex shrink-0 items-center gap-2 self-end md:self-auto">
-          {shiftConfirmationEnabled && proposedSendCount > 0 ? (
-            <Button
-              type="button"
-              size="header"
-              onClick={openSendConfirmation}
-              disabled={controlsDisabled || sendConfirmationPending}
-              className={cn(HEADER_CONTROL_H, "font-semibold")}
-            >
-              {t("shiftConfirmation.actions.requestConfirmation")}
+          <Button
+            type="button"
+            size="header"
+            variant={communicationItemCount > 0 ? "primary" : "outline"}
+            onClick={() => openCommunication()}
+            disabled={controlsDisabled || sendConfirmationPending}
+            className={cn(HEADER_CONTROL_H, "relative font-semibold")}
+          >
+            {t("shiftConfirmation.communication.headerButton")}
+            {shiftConfirmationEnabled && communicationItemCount > 0 ? (
               <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
-                {proposedSendCount}
+                {communicationItemCount > 99 ? "99+" : communicationItemCount}
               </span>
-            </Button>
-          ) : null}
-          {shiftConfirmationEnabled ? (
-            <IconButton
-              type="button"
-              size="md"
-              aria-label={t("shiftConfirmation.panel.title")}
-              title={t("shiftConfirmation.panel.title")}
-              className="relative"
-              onClick={() => openConfirmationsPanel()}
-            >
-              <ListIcon />
-              {openConfirmationsCount > 0 ? (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
-                  {openConfirmationsCount > 9 ? "9+" : openConfirmationsCount}
-                </span>
-              ) : null}
-            </IconButton>
-          ) : null}
+            ) : null}
+          </Button>
           {shiftConfirmationEnabled ? (
             <DashboardNotificationCenter
               enabled={shiftConfirmationEnabled}
               initialNotifications={managerNotifications}
-              onOpenConfirmationsPanel={openConfirmationsPanel}
+              onOpenCommunication={openCommunication}
               onNavigateToWeek={navigateToWeekFromNotification}
             />
           ) : null}
@@ -1870,26 +1835,19 @@ export function ShiftPlanner({
         </div>
       ) : null}
 
-      {sendConfirmationOpen && shiftConfirmationEnabled ? (
-        <DashboardSendConfirmationModal
+      {communicationOpen ? (
+        <CommunicationHubModal
+          key={communicationOptions?.responseTab ?? "auto"}
           weekStart={weekStart}
           locationId={selectedLocationId}
-          onClose={closeSendConfirmation}
-          onBusyChange={setSendConfirmationBusy}
-        />
-      ) : null}
-
-      {confirmationsPanelOpen && shiftConfirmationEnabled ? (
-        <OpenConfirmationsPanel
-          key={confirmationsPanelTab}
+          locationName={selectedLocationName}
+          areas={areas}
           shifts={dashboardShiftsForConfirmation}
-          initialTab={confirmationsPanelTab}
-          onClose={() => setConfirmationsPanelOpen(false)}
+          shiftConfirmationEnabled={shiftConfirmationEnabled}
+          initialOptions={communicationOptions}
+          onClose={closeCommunication}
           onReassign={handleReassignFromPanel}
-          onSendConfirmation={() => {
-            setConfirmationsPanelOpen(false);
-            openSendConfirmation();
-          }}
+          onBusyChange={setCommunicationBusy}
         />
       ) : null}
 

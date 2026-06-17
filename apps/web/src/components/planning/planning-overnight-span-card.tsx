@@ -9,7 +9,7 @@ import {
 import { PlanningShiftCardConfirmationOverlay } from "@/components/planning/planning-shift-card-confirmation-overlay";
 import { PlanningShiftCardOverflowIndicator } from "@/components/planning/planning-shift-card-overflow-indicator";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
@@ -29,7 +29,7 @@ import {
 import type { PlanningOvernightSpanDisplayMode } from "@/lib/planning-overnight-span-layout";
 import { PLANNING_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/planning-overnight-span-layout";
 import type { PlanningShift } from "@/lib/planning-shift-card";
-import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
+import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
 import {
   buildShiftCardTimeGradientCss,
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
@@ -84,7 +84,7 @@ export function PlanningOvernightSpanCard({
   const [textOverflows, setTextOverflows] = useState(false);
 
   const confirmationStatusLine = shift.confirmationStatus
-    ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
+    ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
     : undefined;
   const jobsLabel = resolvePlanningShiftJobsLabel(shift, shiftJobContext);
   const jobsLine = jobsLabel.trim()
@@ -152,6 +152,7 @@ export function PlanningOvernightSpanCard({
     return (
       <Tooltip
         content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
+        contentClassName={shiftCardTooltipContentClassName}
         className="inline-flex h-full"
       >
         <button
@@ -186,6 +187,7 @@ export function PlanningOvernightSpanCard({
   return (
     <Tooltip
       content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
+      contentClassName={shiftCardTooltipContentClassName}
       className={cn(
         "inline-flex h-full w-full min-w-0",
         employeeHighlighted && displayMode === "expanded" && "relative z-10 overflow-visible"

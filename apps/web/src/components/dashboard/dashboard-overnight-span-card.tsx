@@ -7,7 +7,7 @@ import {
 } from "@/components/dashboard/dashboard-shift-card-view";
 import { PlanningShiftCardConfirmationOverlay } from "@/components/planning/planning-shift-card-confirmation-overlay";
 import { PlanningShiftCardOverflowIndicator } from "@/components/planning/planning-shift-card-overflow-indicator";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { useTranslations } from "@/i18n/locale-provider";
 import { formatShiftCardTooltipPlainText } from "@/lib/shift-card-display-content";
@@ -16,7 +16,7 @@ import {
   buildEmployeeShiftHighlightBoxShadow,
   employeeShiftHighlightOverlayStyle,
 } from "@/lib/calendar-interaction-ui";
-import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
+import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
 import type { PlanningOvernightSpanDisplayMode } from "@/lib/planning-overnight-span-layout";
 import { DASHBOARD_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/dashboard-overnight-span-layout";
 import { PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX } from "@/lib/planning-calendar-layout";
@@ -109,7 +109,7 @@ export function DashboardOvernightSpanCard({
   const [textOverflows, setTextOverflows] = useState(false);
 
   const confirmationStatusLabel = shift.confirmationStatus
-    ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
+    ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
     : undefined;
   const tooltipData = confirmationStatusLabel
     ? {
@@ -165,6 +165,7 @@ export function DashboardOvernightSpanCard({
     return (
       <Tooltip
         content={<ShiftCardTooltipContent data={tooltipData} />}
+        contentClassName={shiftCardTooltipContentClassName}
         className="inline-flex h-full"
       >
         <button
@@ -199,6 +200,7 @@ export function DashboardOvernightSpanCard({
   return (
     <Tooltip
       content={<ShiftCardTooltipContent data={tooltipData} />}
+      contentClassName={shiftCardTooltipContentClassName}
       className="inline-flex h-full w-full min-w-0"
       placement={{
         anchorLeftToTriggerCenter: true,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { deleteRole, reorderRoles } from "@/app/actions/roles";
 import type { Role, RolePermissionLevel } from "@schichtwerk/types";
@@ -16,11 +16,15 @@ import {
   SettingsPrimaryActionButton,
   SettingsReorderButtons,
   SettingsListRowDeleteButton,
+  SettingsListRowCheckbox,
+  SettingsBulkDeleteActionButton,
   applyCreatedListSelection,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
   settingsListRowDeleteCellClass,
   settingsListRowDeleteHeaderClass,
+  settingsListRowCheckboxCellClass,
+  settingsListRowCheckboxHeaderClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
   settingsDataCellClass,
@@ -38,6 +42,7 @@ import {
 } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 import { useSettingsListReorder } from "@/lib/settings-list-reorder";
 
 type Props = {
@@ -64,6 +69,7 @@ export function RolesModal({ roles, onClose }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(roles[0]?.id ?? null);
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
 
@@ -86,11 +92,15 @@ export function RolesModal({ roles, onClose }: Props) {
         setConfirmDelete(false);
         return;
       }
+      if (confirmBulkDelete) {
+        setConfirmBulkDelete(false);
+        return;
+      }
       onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDelete, formMode, onClose]);
+  }, [confirmBulkDelete, confirmDelete, formMode, onClose]);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -115,6 +125,14 @@ export function RolesModal({ roles, onClose }: Props) {
     onSuccess: () => router.refresh(),
   });
   const selected = sortedList.find((r) => r.id === selectedId);
+  const roleIds = useMemo(() => sortedList.map((item) => item.id), [sortedList]);
+  const deletableRoleIds = useMemo(
+    () => new Set(sortedList.filter((item) => !item.is_system).map((item) => item.id)),
+    [sortedList]
+  );
+  const bulkSelection = useSettingsListBulkSelection(roleIds, {
+    selectableIds: deletableRoleIds,
+  });
   const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
   useScrollToSettingsListItem(sortedList, scrollToItemId, clearScrollTarget);
 
@@ -153,12 +171,42 @@ export function RolesModal({ roles, onClose }: Props) {
     });
   }
 
+  function handleBulkDelete() {
+    const ids = roleIds.filter((id) => bulkSelection.isChecked(id));
+    if (ids.length === 0) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      for (const id of ids) {
+        const result = await deleteRole(id);
+        if (!result.ok) {
+          setErrorMessage(result.error);
+          bulkSelection.clear();
+          setConfirmBulkDelete(false);
+          refreshList();
+          return;
+        }
+      }
+      setList((prev) => {
+        const remaining = prev.filter((item) => !ids.includes(item.id));
+        setSelectedId((current) =>
+          current && remaining.some((item) => item.id === current)
+            ? current
+            : (remaining[0]?.id ?? null)
+        );
+        return remaining;
+      });
+      bulkSelection.clear();
+      setConfirmBulkDelete(false);
+      refreshList();
+    });
+  }
+
   return (
     <div
       className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !formMode && !confirmDelete) onClose();
+        if (e.target === e.currentTarget && !formMode && !confirmDelete && !confirmBulkDelete) onClose();
       }}
     >
       <div className="relative w-full max-w-xl" onMouseDown={(e) => e.stopPropagation()}>
@@ -218,6 +266,10 @@ export function RolesModal({ roles, onClose }: Props) {
                           {t("roles.permission")}
                         </th>
                         <th
+                          className={settingsListRowCheckboxHeaderClass()}
+                          aria-hidden
+                        />
+                        <th
                           className={settingsListRowDeleteHeaderClass()}
                           aria-hidden
                         />
@@ -233,6 +285,7 @@ export function RolesModal({ roles, onClose }: Props) {
                             onClick={() => {
                               setSelectedId(item.id);
                               setConfirmDelete(false);
+                              setConfirmBulkDelete(false);
                               setErrorMessage(null);
                             }}
                             onDoubleClick={(e) => {
@@ -249,13 +302,23 @@ export function RolesModal({ roles, onClose }: Props) {
                             <td className={settingsDataCellClass(isSelected, { align: "center", className: "text-muted" })}>
                               {permissionLabel(t, item.permission_level)}
                             </td>
+                            <td className={settingsListRowCheckboxCellClass(isSelected)}>
+                              <SettingsListRowCheckbox
+                                checked={bulkSelection.isChecked(item.id)}
+                                disabled={pending || item.is_system}
+                                ariaLabel={t("common.selectRow")}
+                                onChange={() => bulkSelection.toggle(item.id)}
+                              />
+                            </td>
                             <td className={settingsListRowDeleteCellClass(isSelected)}>
                               <SettingsListRowDeleteButton
                                 label={t("roles.delete")}
                                 disabled={pending || item.is_system}
                                 title={item.is_system ? t("roles.systemRoleHint") : undefined}
+                                showTooltip={false}
                                 onClick={() => {
                                   setSelectedId(item.id);
+                                  setConfirmBulkDelete(false);
                                   setConfirmDelete(true);
                                   setErrorMessage(null);
                                 }}
@@ -278,6 +341,7 @@ export function RolesModal({ roles, onClose }: Props) {
                     onClick={() => {
                       setFormMode({ type: "create" });
                       setConfirmDelete(false);
+                      setConfirmBulkDelete(false);
                     }}
                   />
                 }
@@ -308,6 +372,17 @@ export function RolesModal({ roles, onClose }: Props) {
                       }}
                     />
                   </>
+                }
+                destructive={
+                  <SettingsBulkDeleteActionButton
+                    label={t("common.deleteSelectedEntries")}
+                    disabled={pending || !bulkSelection.canBulkDelete}
+                    onClick={() => {
+                      setConfirmDelete(false);
+                      setFormMode(null);
+                      setConfirmBulkDelete(true);
+                    }}
+                  />
                 }
               />
             </div>
@@ -350,6 +425,15 @@ export function RolesModal({ roles, onClose }: Props) {
             pending={pending}
             onCancel={() => setConfirmDelete(false)}
             onConfirm={handleDelete}
+          />
+        )}
+        {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+          <DeleteConfirmModal
+            name={t("common.deleteSelectedEntries")}
+            count={bulkSelection.checkedCount}
+            pending={pending}
+            onCancel={() => setConfirmBulkDelete(false)}
+            onConfirm={handleBulkDelete}
           />
         )}
       </div>

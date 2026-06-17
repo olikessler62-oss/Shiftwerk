@@ -52,10 +52,26 @@ export function shiftConfirmationBadgeSymbolClass(
 }
 
 /** Tooltip-Textfarbe für Status „Ausstehend“ (wie Badge-Symbol auf der Karte). */
-export const SHIFT_CONFIRMATION_PENDING_TOOLTIP_TEXT_CLASS = "text-[#a21caf]";
+export const SHIFT_CONFIRMATION_PENDING_TOOLTIP_TEXT_CLASS = "text-[#701a75]";
 
 /** Tooltip-Textfarbe für Status „Bestätigt“. */
 export const SHIFT_CONFIRMATION_CONFIRMED_TOOLTIP_TEXT_CLASS = "text-green-600";
+
+export const SHIFT_CONFIRMATION_REJECTED_TOOLTIP_TEXT_CLASS = "text-red-800";
+
+export const SHIFT_CONFIRMATION_PROPOSED_TOOLTIP_TEXT_CLASS = "text-neutral-950";
+
+/** Dunkles Ocker — Tab „Bestätigung angefordert“ und Status in der Tabelle. */
+export const SHIFT_CONFIRMATION_REQUESTED_TOOLTIP_TEXT_CLASS = "text-[#7A5A10]";
+
+/** Dunklere Tab-Überschriften im Schicht-Stati-Modal. */
+export const SHIFT_CONFIRMATION_PENDING_TAB_LABEL_CLASS = "text-[#701a75]";
+
+export const SHIFT_CONFIRMATION_REJECTED_TAB_LABEL_CLASS = "text-red-800";
+
+export const SHIFT_CONFIRMATION_PROPOSED_TAB_LABEL_CLASS = "text-neutral-950";
+
+export const SHIFT_CONFIRMATION_REQUESTED_TAB_LABEL_CLASS = "text-[#7A5A10]";
 
 export function shiftConfirmationTooltipStatusTextClass(
   status: ShiftConfirmationStatus | undefined
@@ -65,6 +81,12 @@ export function shiftConfirmationTooltipStatusTextClass(
       return SHIFT_CONFIRMATION_PENDING_TOOLTIP_TEXT_CLASS;
     case "confirmed":
       return SHIFT_CONFIRMATION_CONFIRMED_TOOLTIP_TEXT_CLASS;
+    case "rejected":
+      return SHIFT_CONFIRMATION_REJECTED_TOOLTIP_TEXT_CLASS;
+    case "proposed":
+      return SHIFT_CONFIRMATION_PROPOSED_TOOLTIP_TEXT_CLASS;
+    case "requested":
+      return SHIFT_CONFIRMATION_REQUESTED_TOOLTIP_TEXT_CLASS;
     default:
       return "";
   }
@@ -74,4 +96,10 @@ export function shiftConfirmationStatusLabelKey(
   status: ShiftConfirmationStatus
 ): `shiftConfirmation.status.${ShiftConfirmationStatus}` {
   return `shiftConfirmation.status.${status}`;
+}
+
+export function shiftConfirmationTooltipStatusLabelKey(
+  status: ShiftConfirmationStatus
+): `shiftConfirmation.tooltipStatus.${ShiftConfirmationStatus}` {
+  return `shiftConfirmation.tooltipStatus.${status}`;
 }

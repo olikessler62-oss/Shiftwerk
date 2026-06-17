@@ -1,15 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import {
-  fetchOrganizationQualifications,
-  fetchProfileQualifications,
-  removeProfileQualification,
-} from "@/app/actions/profile-qualifications";
-import type { Profile, Qualification } from "@schichtwerk/types";
-import { useTranslations } from "@/i18n/locale-provider";
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
+import {
+  deleteProfileShiftPreference,
+  fetchProfileShiftPreferences,
+} from "@/app/actions/profile-shift-preferences";
+import { sortProfileRecurringAvailabilityBySchedule } from "@schichtwerk/database";
+import {
+  formatAvailabilityTimeRange,
+  formatProfileShiftPreferenceSummaryLabel,
+  weekdayLabel,
+} from "@/lib/profile-availability-label";
+import type { Profile, ProfileRecurringAvailability, ProfileShiftPreference } from "@schichtwerk/types";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
-import { ProfileQualificationFormModal } from "./profile-qualification-form-modal";
+import { ProfileShiftPreferencesFormModal } from "./profile-shift-preferences-form-modal";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
@@ -48,99 +59,88 @@ import {
 import { cn } from "@/lib/cn";
 import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 
-const MAX_NAME_DISPLAY = 25;
 const EMPTY_STATE_CLASS = "min-h-full";
 
-function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
-  if (name.length <= max) return name;
-  return `${name.slice(0, max - 1)}…`;
-}
-
-type QualificationFormMode =
+type PreferenceFormMode =
   | null
   | { type: "create" }
-  | { type: "edit"; qualification: Qualification };
+  | { type: "edit"; preference: ProfileShiftPreference };
 
 type Props = {
   profile: Profile;
-  cachedQualifications?: Qualification[];
+  cachedPreferences?: ProfileShiftPreference[];
+  cachedAvailability?: ProfileRecurringAvailability[];
   onClose: () => void;
-  onCacheUpdate: (profileId: string, qualifications: Qualification[]) => void;
+  onCacheUpdate: (
+    profileId: string,
+    preferences: ProfileShiftPreference[]
+  ) => void;
 };
 
-export function ProfileQualificationsPanelModal({
+export function ProfileShiftPreferencesPanelModal({
   profile,
-  cachedQualifications,
+  cachedPreferences,
+  cachedAvailability = [],
   onClose,
   onCacheUpdate,
 }: Props) {
+  const { locale } = useLocale();
+  const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
   const [pending, startTransition] = useTransition();
-  const [loading, setLoading] = useState(cachedQualifications === undefined);
+  const [loading, setLoading] = useState(cachedPreferences === undefined);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [profileQualifications, setProfileQualifications] = useState<
-    Qualification[]
-  >(cachedQualifications ?? []);
-  const [selectedQualificationId, setSelectedQualificationId] = useState<
+  const [profilePreferences, setProfilePreferences] = useState<
+    ProfileShiftPreference[]
+  >(cachedPreferences ?? []);
+  const [selectedPreferenceId, setSelectedPreferenceId] = useState<
     string | null
   >(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [confirmBulkRemove, setConfirmBulkRemove] = useState(false);
-  const [formMode, setFormMode] = useState<QualificationFormMode>(null);
+  const [formMode, setFormMode] = useState<PreferenceFormMode>(null);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
-  const [allQualifications, setAllQualifications] = useState<Qualification[]>(
-    []
-  );
-
-  const selectedQualification =
-    profileQualifications.find((q) => q.id === selectedQualificationId) ?? null;
-
-  const assignedIds = useMemo(
-    () => new Set(profileQualifications.map((q) => q.id)),
-    [profileQualifications]
-  );
-  const unassignedQualifications = useMemo(
-    () => allQualifications.filter((q) => !assignedIds.has(q.id)),
-    [allQualifications, assignedIds]
-  );
-  const editAvailableQualifications = useMemo(() => {
-    if (!selectedQualification) return [];
-    const others = unassignedQualifications.filter(
-      (q) => q.id !== selectedQualification.id
-    );
-    return [selectedQualification, ...others];
-  }, [selectedQualification, unassignedQualifications]);
-
-  const qualificationIds = useMemo(
-    () => profileQualifications.map((item) => item.id),
-    [profileQualifications]
-  );
-  const bulkSelection = useSettingsListBulkSelection(qualificationIds);
 
   const applyList = useCallback(
-    (list: Qualification[]) => {
-      setProfileQualifications(list);
-      onCacheUpdate(profile.id, list);
-      setSelectedQualificationId((current) => {
-        if (current && list.some((q) => q.id === current)) return current;
-        return list[0]?.id ?? null;
+    (list: ProfileShiftPreference[]) => {
+      const sorted = sortProfileRecurringAvailabilityBySchedule(list);
+      setProfilePreferences(sorted);
+      onCacheUpdate(profile.id, sorted);
+      setSelectedPreferenceId((current) => {
+        if (current && sorted.some((item) => item.id === current)) return current;
+        return sorted[0]?.id ?? null;
       });
     },
     [onCacheUpdate, profile.id]
   );
 
-  useEffect(() => {
-    void fetchOrganizationQualifications().then((result) => {
-      if (result.ok && result.qualifications) {
-        setAllQualifications(result.qualifications);
-      }
-    });
-  }, []);
+  const sortedPreferences = useMemo(
+    () => sortProfileRecurringAvailabilityBySchedule(profilePreferences),
+    [profilePreferences]
+  );
+  const preferenceIds = useMemo(
+    () => sortedPreferences.map((item) => item.id),
+    [sortedPreferences]
+  );
+  const bulkSelection = useSettingsListBulkSelection(preferenceIds);
+
+  const selectedPreference =
+    sortedPreferences.find((item) => item.id === selectedPreferenceId) ?? null;
+
+  const profileAvailability = cachedAvailability ?? [];
+
+  useScrollToSettingsListItem(sortedPreferences, scrollToItemId, () =>
+    setScrollToItemId(null)
+  );
 
   useEffect(() => {
-    if (cachedQualifications !== undefined) {
-      setProfileQualifications(cachedQualifications);
-      setSelectedQualificationId(cachedQualifications[0]?.id ?? null);
+    if (cachedPreferences !== undefined) {
+      const sorted = sortProfileRecurringAvailabilityBySchedule(cachedPreferences);
+      setProfilePreferences(sorted);
+      setSelectedPreferenceId((current) => {
+        if (current && sorted.some((item) => item.id === current)) return current;
+        return sorted[0]?.id ?? null;
+      });
       setLoading(false);
       return;
     }
@@ -148,7 +148,7 @@ export function ProfileQualificationsPanelModal({
     let cancelled = false;
     setLoading(true);
     setErrorMessage(null);
-    void fetchProfileQualifications(profile.id).then((result) => {
+    void fetchProfileShiftPreferences(profile.id).then((result) => {
       if (cancelled) return;
       setLoading(false);
       if (!result.ok) {
@@ -156,13 +156,13 @@ export function ProfileQualificationsPanelModal({
         applyList([]);
         return;
       }
-      applyList(result.qualifications ?? []);
+      applyList(result.preferences ?? []);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [applyList, cachedQualifications, profile.id]);
+  }, [applyList, cachedPreferences, profile.id]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -187,55 +187,52 @@ export function ProfileQualificationsPanelModal({
 
   const anyFormOpen = !!formMode;
 
-  useScrollToSettingsListItem(
-    profileQualifications,
-    scrollToItemId,
-    () => setScrollToItemId(null)
-  );
-
-  function handleSaved(list: Qualification[], assignedQualificationId: string) {
-    const wasCreate = formMode?.type === "create";
+  function handleSaved(
+    list: ProfileShiftPreference[],
+    selectedId: string,
+    scrollToSelection = false
+  ) {
     applyList(list);
-    setSelectedQualificationId(assignedQualificationId);
-    if (wasCreate) setScrollToItemId(assignedQualificationId);
+    setSelectedPreferenceId(selectedId);
+    if (scrollToSelection && selectedId) setScrollToItemId(selectedId);
   }
 
   function handleRemove() {
-    if (!selectedQualification) return;
+    if (!selectedPreference) return;
     setErrorMessage(null);
     startTransition(async () => {
-      const result = await removeProfileQualification({
+      const result = await deleteProfileShiftPreference({
         profileId: profile.id,
-        qualificationId: selectedQualification.id,
+        preferenceId: selectedPreference.id,
       });
       if (!result.ok) {
         setErrorMessage(result.error);
         return;
       }
-      applyList(result.qualifications ?? []);
+      applyList(result.preferences ?? []);
       setConfirmRemove(false);
     });
   }
 
   function handleBulkRemove() {
-    const ids = qualificationIds.filter((id) => bulkSelection.isChecked(id));
+    const ids = preferenceIds.filter((id) => bulkSelection.isChecked(id));
     if (ids.length === 0) return;
     setErrorMessage(null);
     startTransition(async () => {
-      let latestList = profileQualifications;
-      for (const qualificationId of ids) {
-        const result = await removeProfileQualification({
+      let latestList = profilePreferences;
+      for (const preferenceId of ids) {
+        const result = await deleteProfileShiftPreference({
           profileId: profile.id,
-          qualificationId,
+          preferenceId,
         });
         if (!result.ok) {
           setErrorMessage(result.error);
-          if (result.qualifications) applyList(result.qualifications);
+          if (result.preferences) applyList(result.preferences);
           bulkSelection.clear();
           setConfirmBulkRemove(false);
           return;
         }
-        latestList = result.qualifications ?? latestList;
+        latestList = result.preferences ?? latestList;
       }
       applyList(latestList);
       bulkSelection.clear();
@@ -248,12 +245,7 @@ export function ProfileQualificationsPanelModal({
       className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
-        if (
-          e.target === e.currentTarget &&
-          !anyFormOpen &&
-          !confirmRemove &&
-          !confirmBulkRemove
-        ) {
+        if (e.target === e.currentTarget && !anyFormOpen && !confirmRemove && !confirmBulkRemove) {
           onClose();
         }
       }}
@@ -261,11 +253,11 @@ export function ProfileQualificationsPanelModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="profile-qualifications-panel-title"
+        aria-labelledby="profile-shift-preferences-panel-title"
         aria-busy={loading || pending}
         aria-hidden={anyFormOpen}
         className={cn(
-          settingsSubModalDialogClass("lg"),
+          settingsSubModalDialogClass("xl"),
           (loading || pending) && "[&_*]:cursor-wait",
           anyFormOpen ? "pointer-events-none" : ""
         )}
@@ -278,11 +270,11 @@ export function ProfileQualificationsPanelModal({
           )}
         >
           <h3
-            id="profile-qualifications-panel-title"
+            id="profile-shift-preferences-panel-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
           >
             <span className="text-foreground">
-              {t("profiles.panelQualificationsOfPrefix")}{" "}
+              {t("profiles.panelShiftPreferencesOfPrefix")}{" "}
             </span>
             <span className="text-cyan-600">{profile.full_name}</span>
           </h3>
@@ -304,6 +296,9 @@ export function ProfileQualificationsPanelModal({
         )}
 
         <div className="min-h-0 bg-background px-4 py-3">
+          <p className="mb-3 text-xs leading-relaxed text-muted">
+            {t("profiles.shiftPreferencePanelIntro")}
+          </p>
           <div
             className={cn(
               settingsScrollableTableListClass(),
@@ -315,14 +310,14 @@ export function ProfileQualificationsPanelModal({
                 message={t("common.loading")}
                 className={EMPTY_STATE_CLASS}
               />
-            ) : profileQualifications.length === 0 ? (
+            ) : profilePreferences.length === 0 ? (
               <SettingsEmptyState
-                message={t("profiles.emptyQualifications")}
+                message={t("profiles.emptyShiftPreferences")}
                 hint={t("common.emptyHintCreate")}
                 className={EMPTY_STATE_CLASS}
               />
             ) : (
-              <table className="w-full border-collapse">
+              <table className="w-full min-w-[24rem] border-collapse">
                 <thead>
                   <tr className="border-b border-border">
                     <th
@@ -330,7 +325,10 @@ export function ProfileQualificationsPanelModal({
                       aria-hidden
                     />
                     <th className={settingsStickyColumnHeaderClass()}>
-                      {t("profiles.columnQualification")}
+                      {t("profiles.columnWeekday")}
+                    </th>
+                    <th className={settingsStickyColumnHeaderClass()}>
+                      {t("profiles.columnTimeRange")}
                     </th>
                     <th
                       className={settingsListRowCheckboxHeaderClass()}
@@ -343,14 +341,14 @@ export function ProfileQualificationsPanelModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {profileQualifications.map((item) => {
-                    const isSelected = item.id === selectedQualificationId;
+                  {sortedPreferences.map((item) => {
+                    const isSelected = item.id === selectedPreferenceId;
                     return (
                       <tr
                         key={item.id}
                         {...settingsListItemAttrs(item.id)}
                         onClick={() => {
-                          setSelectedQualificationId(item.id);
+                          setSelectedPreferenceId(item.id);
                           setConfirmRemove(false);
                           setConfirmBulkRemove(false);
                           setFormMode(null);
@@ -358,7 +356,7 @@ export function ProfileQualificationsPanelModal({
                         onDoubleClick={(e) => {
                           e.preventDefault();
                           window.getSelection()?.removeAllRanges();
-                          setFormMode({ type: "edit", qualification: item });
+                          setFormMode({ type: "edit", preference: item });
                           setConfirmRemove(false);
                         }}
                         className={settingsDataRowClass(isSelected)}
@@ -369,12 +367,21 @@ export function ProfileQualificationsPanelModal({
                         />
                         <td
                           className={settingsDataCellClass(isSelected, {
-                            className: "max-w-[20rem] truncate font-medium",
+                            className: "whitespace-nowrap font-medium",
                           })}
                         >
-                          <span className="block max-w-full truncate">
-                            {truncateLabel(item.name)}
-                          </span>
+                          {weekdayLabel(item.weekday, localeKey, "long")}
+                        </td>
+                        <td
+                          className={settingsDataCellClass(isSelected, {
+                            className: "whitespace-nowrap tabular-nums",
+                          })}
+                        >
+                          {formatAvailabilityTimeRange(
+                            item.start_time,
+                            item.end_time,
+                            localeKey
+                          )}
                         </td>
                         <td className={settingsListRowCheckboxCellClass(isSelected)}>
                           <SettingsListRowCheckbox
@@ -388,9 +395,8 @@ export function ProfileQualificationsPanelModal({
                           <SettingsListRowDeleteButton
                             label={t("profiles.delete")}
                             disabled={pending || loading}
-                            showTooltip={false}
                             onClick={() => {
-                              setSelectedQualificationId(item.id);
+                              setSelectedPreferenceId(item.id);
                               setFormMode(null);
                               setConfirmRemove(true);
                             }}
@@ -411,9 +417,7 @@ export function ProfileQualificationsPanelModal({
               <SettingsPrimaryActionButton
                 label={t("profiles.new")}
                 icon={<PlusIcon />}
-                disabled={
-                  pending || loading || unassignedQualifications.length === 0
-                }
+                disabled={pending || loading}
                 onClick={() => {
                   setFormMode({ type: "create" });
                   setConfirmRemove(false);
@@ -426,10 +430,13 @@ export function ProfileQualificationsPanelModal({
               <SettingsIconActionButton
                 label={t("profiles.edit")}
                 icon={<PencilIcon />}
-                disabled={pending || loading || !selectedQualification}
+                disabled={pending || loading || !selectedPreference}
                 onClick={() => {
-                  if (!selectedQualification) return;
-                  setFormMode({ type: "edit", qualification: selectedQualification });
+                  if (!selectedPreference) return;
+                  setFormMode({
+                    type: "edit",
+                    preference: selectedPreference,
+                  });
                   setConfirmRemove(false);
                   setConfirmBulkRemove(false);
                 }}
@@ -464,27 +471,30 @@ export function ProfileQualificationsPanelModal({
       </div>
 
       {formMode?.type === "create" && (
-        <ProfileQualificationFormModal
+        <ProfileShiftPreferencesFormModal
           mode="create"
           profileId={profile.id}
-          availableQualifications={unassignedQualifications}
+          profileAvailability={profileAvailability}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
         />
       )}
       {formMode?.type === "edit" && (
-        <ProfileQualificationFormModal
+        <ProfileShiftPreferencesFormModal
           mode="edit"
           profileId={profile.id}
-          currentQualification={formMode.qualification}
-          availableQualifications={editAvailableQualifications}
+          profileAvailability={profileAvailability}
+          currentPreference={formMode.preference}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
         />
       )}
-      {confirmRemove && selectedQualification && (
+      {confirmRemove && selectedPreference && (
         <DeleteConfirmModal
-          name={selectedQualification.name}
+          name={formatProfileShiftPreferenceSummaryLabel(
+            selectedPreference,
+            localeKey
+          )}
           pending={pending}
           onCancel={() => setConfirmRemove(false)}
           onConfirm={handleRemove}

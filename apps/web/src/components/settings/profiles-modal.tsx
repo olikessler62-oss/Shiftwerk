@@ -3,16 +3,19 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { fetchProfileRecurringAvailability } from "@/app/actions/profile-availability";
+import { fetchProfileShiftPreferences } from "@/app/actions/profile-shift-preferences";
 import { fetchProfileHourlyRates } from "@/app/actions/profile-hourly-rates";
 import { fetchProfileQualifications } from "@/app/actions/profile-qualifications";
 import { deleteProfile, reorderProfiles } from "@/app/actions/profiles";
 import type {
   Profile,
   ProfileRecurringAvailability,
+  ProfileShiftPreference,
   Qualification,
 } from "@schichtwerk/types";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ProfileAvailabilityPanelModal } from "./profile-availability-panel-modal";
+import { ProfileShiftPreferencesPanelModal } from "./profile-shift-preferences-panel-modal";
 import { ProfileAbsencesPanelModal } from "./profile-absences-panel-modal";
 import {
   ProfileCompensationPanelModal,
@@ -79,6 +82,7 @@ type DetailPanel =
   | null
   | "qualifications"
   | "availability"
+  | "shiftPreferences"
   | "absences"
   | "compensation"
   | "surcharges"
@@ -115,11 +119,13 @@ function isProfileDetailCached(
   profileId: string,
   qualificationsCache: Record<string, Qualification[]>,
   availabilityCache: Record<string, ProfileRecurringAvailability[]>,
+  shiftPreferencesCache: Record<string, ProfileShiftPreference[]>,
   compensationCache: Record<string, ProfileCompensationCacheEntry>
 ): boolean {
   return (
     profileId in qualificationsCache &&
     profileId in availabilityCache &&
+    profileId in shiftPreferencesCache &&
     profileId in compensationCache
   );
 }
@@ -130,6 +136,7 @@ function isProfilesModalReady(
   displayedProfileId: string | null,
   qualificationsCache: Record<string, Qualification[]>,
   availabilityCache: Record<string, ProfileRecurringAvailability[]>,
+  shiftPreferencesCache: Record<string, ProfileShiftPreference[]>,
   compensationCache: Record<string, ProfileCompensationCacheEntry>
 ): boolean {
   if (profiles.length === 0) return true;
@@ -139,6 +146,7 @@ function isProfilesModalReady(
       selectedProfileId,
       qualificationsCache,
       availabilityCache,
+      shiftPreferencesCache,
       compensationCache
     )
   ) {
@@ -208,6 +216,9 @@ export function ProfilesModal({
   const [availabilityCache, setAvailabilityCache] = useState<
     Record<string, ProfileRecurringAvailability[]>
   >({});
+  const [shiftPreferencesCache, setShiftPreferencesCache] = useState<
+    Record<string, ProfileShiftPreference[]>
+  >({});
   const [compensationCache, setCompensationCache] = useState<
     Record<string, ProfileCompensationCacheEntry>
   >({});
@@ -243,6 +254,7 @@ export function ProfilesModal({
       selectedProfileId,
       qualificationsCache,
       availabilityCache,
+      shiftPreferencesCache,
       compensationCache
     );
   const displayedPanelReady =
@@ -251,6 +263,7 @@ export function ProfilesModal({
       displayedProfileId,
       qualificationsCache,
       availabilityCache,
+      shiftPreferencesCache,
       compensationCache
     );
   const modalReady = isProfilesModalReady(
@@ -259,6 +272,7 @@ export function ProfilesModal({
     displayedProfileId,
     qualificationsCache,
     availabilityCache,
+    shiftPreferencesCache,
     compensationCache
   );
   const deferInitialRender = !hasInitiallyShown && !modalReady;
@@ -313,8 +327,9 @@ export function ProfilesModal({
 
     const qualReady = profileId in qualificationsCache;
     const availReady = profileId in availabilityCache;
+    const shiftPrefReady = profileId in shiftPreferencesCache;
     const compReady = profileId in compensationCache;
-    if (qualReady && availReady && compReady) return;
+    if (qualReady && availReady && shiftPrefReady && compReady) return;
 
     let cancelled = false;
 
@@ -325,10 +340,13 @@ export function ProfilesModal({
       availReady
         ? Promise.resolve(null)
         : fetchProfileRecurringAvailability(profileId),
+      shiftPrefReady
+        ? Promise.resolve(null)
+        : fetchProfileShiftPreferences(profileId),
       compReady
         ? Promise.resolve(null)
         : fetchProfileHourlyRates(profileId),
-    ]).then(([qualResult, availResult, compResult]) => {
+    ]).then(([qualResult, availResult, shiftPrefResult, compResult]) => {
       if (cancelled) return;
       setQualificationsCache((prev) => {
         if (profileId in prev) return prev;
@@ -340,6 +358,12 @@ export function ProfilesModal({
         if (profileId in prev) return prev;
         const list =
           availResult?.ok === true ? (availResult.availability ?? []) : [];
+        return { ...prev, [profileId]: list };
+      });
+      setShiftPreferencesCache((prev) => {
+        if (profileId in prev) return prev;
+        const list =
+          shiftPrefResult?.ok === true ? (shiftPrefResult.preferences ?? []) : [];
         return { ...prev, [profileId]: list };
       });
       setCompensationCache((prev) => {
@@ -373,7 +397,13 @@ export function ProfilesModal({
     return () => {
       cancelled = true;
     };
-  }, [selectedProfileId, qualificationsCache, availabilityCache, compensationCache]);
+  }, [
+    selectedProfileId,
+    qualificationsCache,
+    availabilityCache,
+    shiftPreferencesCache,
+    compensationCache,
+  ]);
 
   useEffect(() => {
     if (!pendingEditProfileId) return;
@@ -432,6 +462,7 @@ export function ProfilesModal({
         id,
         qualificationsCache,
         availabilityCache,
+        shiftPreferencesCache,
         compensationCache
       )
     ) {
@@ -456,6 +487,7 @@ export function ProfilesModal({
       profile.id,
       qualificationsCache,
       availabilityCache,
+      shiftPreferencesCache,
       compensationCache
     );
 
@@ -775,6 +807,9 @@ export function ProfilesModal({
                       qualificationsCache[displayedProfile.id]
                     }
                     profileAvailability={availabilityCache[displayedProfile.id]}
+                    profileShiftPreferences={
+                      shiftPreferencesCache[displayedProfile.id]
+                    }
                     profileCompensation={compensationCache[displayedProfile.id]}
                     disabled={pending || profileDetailSwitching}
                     onOpen={setDetailPanel}
@@ -851,9 +886,33 @@ export function ProfilesModal({
                 ? availabilityCache[selectedProfile.id]
                 : undefined
             }
+            cachedShiftPreferences={
+              selectedProfile.id in shiftPreferencesCache
+                ? shiftPreferencesCache[selectedProfile.id]
+                : undefined
+            }
             onClose={() => setDetailPanel(null)}
             onCacheUpdate={(profileId, list) => {
               setAvailabilityCache((prev) => ({ ...prev, [profileId]: list }));
+            }}
+          />
+        )}
+        {detailPanel === "shiftPreferences" && selectedProfile && (
+          <ProfileShiftPreferencesPanelModal
+            profile={selectedProfile}
+            cachedPreferences={
+              selectedProfile.id in shiftPreferencesCache
+                ? shiftPreferencesCache[selectedProfile.id]
+                : undefined
+            }
+            cachedAvailability={
+              selectedProfile.id in availabilityCache
+                ? availabilityCache[selectedProfile.id]
+                : undefined
+            }
+            onClose={() => setDetailPanel(null)}
+            onCacheUpdate={(profileId, list) => {
+              setShiftPreferencesCache((prev) => ({ ...prev, [profileId]: list }));
             }}
           />
         )}

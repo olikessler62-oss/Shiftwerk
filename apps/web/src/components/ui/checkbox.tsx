@@ -1,4 +1,4 @@
-import { type InputHTMLAttributes } from "react";
+import { forwardRef, type InputHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 import { CheckIcon } from "@/components/ui/icons";
 
@@ -11,11 +11,10 @@ type Props = InputHTMLAttributes<HTMLInputElement> & {
 const standardCheckboxClasses =
   "border-2 border-slate-300/90 bg-surface shadow-sm peer-hover:border-primary/70 peer-hover:shadow peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-primary/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface peer-checked:border-primary peer-checked:bg-primary peer-checked:shadow-md";
 
-export function Checkbox({
-  className = "",
-  variant = "default",
-  ...props
-}: Props) {
+export const Checkbox = forwardRef<HTMLInputElement, Props>(function Checkbox(
+  { className = "", variant = "default", ...props },
+  ref
+) {
   const isArea = variant === "area";
 
   return (
@@ -26,7 +25,7 @@ export function Checkbox({
         className
       )}
     >
-      <input type="checkbox" className="peer sr-only" {...props} />
+      <input ref={ref} type="checkbox" className="peer sr-only" {...props} />
       <span
         aria-hidden
         className={cn(
@@ -48,7 +47,7 @@ export function Checkbox({
       </span>
     </label>
   );
-}
+});
 
 /** Breite der Kalender-Bereichs-Checkbox (variant="area"). */
 export const AREA_CHECKBOX_SIZE_PX = 14;

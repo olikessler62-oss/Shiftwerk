@@ -25,7 +25,7 @@ import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { cn } from "@/lib/cn";
-import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
+import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
 import { useTranslations } from "@/i18n/locale-provider";
 import { buildDashboardCellShiftRows } from "@/lib/dashboard-overnight-shift-display";
 
@@ -425,7 +425,7 @@ export function DashboardShiftCardsList({
           }
           confirmationStatusLabel={
             shift.confirmationStatus
-              ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
+              ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
               : undefined
           }
           employeeHighlighted={
