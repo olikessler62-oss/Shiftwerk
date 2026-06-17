@@ -3,7 +3,9 @@ export type ShiftPreferenceComparable = {
   weekday: number;
   start_time: string;
   end_time: string;
+  location_id?: string | null;
   location_area_id?: string | null;
+  qualification_id?: string | null;
 };
 
 export const PROFILE_SHIFT_PREFERENCE_DUPLICATE_ERROR =
@@ -19,13 +21,17 @@ export function findProfileShiftPreferenceDuplicate(
     weekday: number;
     start_time: string;
     end_time: string;
+    location_id?: string | null;
     location_area_id?: string | null;
+    qualification_id?: string | null;
   },
   excludeId?: string
 ): ShiftPreferenceComparable | undefined {
   const start = shiftPreferenceTimeKey(input.start_time);
   const end = shiftPreferenceTimeKey(input.end_time);
+  const locationId = input.location_id ?? null;
   const areaId = input.location_area_id ?? null;
+  const qualificationId = input.qualification_id ?? null;
 
   return existing.find((item) => {
     if (excludeId && item.id === excludeId) return false;
@@ -33,7 +39,9 @@ export function findProfileShiftPreferenceDuplicate(
       item.weekday === input.weekday &&
       shiftPreferenceTimeKey(item.start_time) === start &&
       shiftPreferenceTimeKey(item.end_time) === end &&
-      (item.location_area_id ?? null) === areaId
+      (item.location_id ?? null) === locationId &&
+      (item.location_area_id ?? null) === areaId &&
+      (item.qualification_id ?? null) === qualificationId
     );
   });
 }
@@ -44,7 +52,9 @@ export function validateNoDuplicateProfileShiftPreference(
     weekday: number;
     start_time: string;
     end_time: string;
+    location_id?: string | null;
     location_area_id?: string | null;
+    qualification_id?: string | null;
   },
   excludeId?: string
 ): { ok: true } | { ok: false; error: string } {

@@ -3,12 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createProfileShiftPreferences,
+  fetchProfileShiftPreferenceFormOptions,
   updateProfileShiftPreference,
+  type ProfileShiftPreferenceFormOptionsResult,
 } from "@/app/actions/profile-shift-preferences";
 import { parseAvailabilityTimeRange } from "@schichtwerk/database";
 import type {
+  Location,
+  LocationArea,
   ProfileRecurringAvailability,
   ProfileShiftPreference,
+  Qualification,
 } from "@schichtwerk/types";
 import {
   formatAvailabilityTimeRange,
@@ -26,7 +31,6 @@ import { cn } from "@/lib/cn";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
   settingsConfirmDialogClass,
-  settingsModalBodyPaddingClass,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
   settingsNestedModalDialogClass,
@@ -39,8 +43,13 @@ import {
   CloseIcon,
   IconButton,
   LabelMuted,
+  Select,
   TimeInput,
 } from "@/components/ui";
+import {
+  buildShiftPreferencePlacementLookups,
+  resolveShiftPreferenceLocationId,
+} from "@/lib/profile-shift-preference-display";
 
 function defaultCreateWeekdays(
   availability: readonly ProfileRecurringAvailability[]
@@ -55,11 +64,17 @@ function defaultCreateWeekdays(
 
 type FormMode = "create" | "edit";
 
+type FormOptions = Extract<
+  ProfileShiftPreferenceFormOptionsResult,
+  { ok: true }
+>;
+
 type Props = {
   mode: FormMode;
   profileId: string;
   profileAvailability: ProfileRecurringAvailability[];
   currentPreference?: ProfileShiftPreference;
+  formOptions?: FormOptions;
   onClose: () => void;
   onSaved: (
     preferences: ProfileShiftPreference[],
@@ -78,6 +93,7 @@ export function ProfileShiftPreferencesFormModal({
   profileId,
   profileAvailability,
   currentPreference,
+  formOptions: formOptionsProp,
   onClose,
   onSaved,
 }: Props) {
@@ -128,8 +144,63 @@ export function ProfileShiftPreferencesFormModal({
   const [endTime, setEndTime] = useState(
     () => currentPreference?.end_time.slice(0, 5) ?? "12:00"
   );
+  const [formOptions, setFormOptions] = useState<FormOptions | null>(
+    formOptionsProp ?? null
+  );
+  const [optionsLoading, setOptionsLoading] = useState(!formOptionsProp);
+  const [locationId, setLocationId] = useState<string | null>(null);
+  const [areaId, setAreaId] = useState<string | null>(null);
+  const [qualificationId, setQualificationId] = useState<string | null>(null);
 
   const usesMultiDayPicker = mode === "create";
+
+  const placementLookups = useMemo(
+    () =>
+      formOptions
+        ? buildShiftPreferencePlacementLookups(formOptions)
+        : null,
+    [formOptions]
+  );
+
+  const areasForLocation = useMemo(() => {
+    if (!formOptions || !locationId) return [] as LocationArea[];
+    return formOptions.areas.filter((area) => area.location_id === locationId);
+  }, [formOptions, locationId]);
+
+  useEffect(() => {
+    if (formOptionsProp) {
+      setFormOptions(formOptionsProp);
+      setOptionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setOptionsLoading(true);
+    void fetchProfileShiftPreferenceFormOptions(profileId).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setFormOptions({
+          locations: result.locations,
+          areas: result.areas,
+          qualifications: result.qualifications,
+        });
+      }
+      setOptionsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formOptionsProp, profileId]);
+
+  useEffect(() => {
+    if (!currentPreference || !placementLookups) return;
+    setLocationId(
+      resolveShiftPreferenceLocationId(currentPreference, placementLookups)
+    );
+    setAreaId(currentPreference.location_area_id);
+    setQualificationId(currentPreference.qualification_id);
+  }, [currentPreference, placementLookups]);
 
   function renderWeekdayAvailabilityTooltip(day: number) {
     const slots = availabilityByWeekday.get(day) ?? [];
@@ -211,6 +282,12 @@ export function ProfileShiftPreferencesFormModal({
     savingRef.current = true;
     setSaving(true);
     try {
+      const placement = {
+        location_id: locationId,
+        location_area_id: areaId,
+        qualification_id: qualificationId,
+      };
+
       if (mode === "edit" && currentPreference) {
         const result = await updateProfileShiftPreference({
           profileId,
@@ -218,6 +295,7 @@ export function ProfileShiftPreferencesFormModal({
           weekday,
           start_time: savedStart,
           end_time: savedEnd,
+          ...placement,
         });
         if (!result.ok) {
           setError(result.error);
@@ -240,6 +318,7 @@ export function ProfileShiftPreferencesFormModal({
         weekdays: weekdaysToSave,
         start_time: savedStart,
         end_time: savedEnd,
+        ...placement,
       });
       if (!result.ok) {
         setError(result.error);
@@ -361,15 +440,11 @@ export function ProfileShiftPreferencesFormModal({
             </IconButton>
           </div>
 
-          <div className={cn("space-y-4", settingsModalBodyPaddingClass())}>
+          <div className="space-y-3 px-4 py-2 sm:px-5 sm:py-3">
             {error && <Alert variant="error">{error}</Alert>}
 
-            <p className="text-xs leading-relaxed text-muted">
-              {t("profiles.shiftPreferenceFormIntro")}
-            </p>
-
             <div>
-              <LabelMuted className="mb-1 block text-center sm:text-left">
+              <LabelMuted className="!mb-0.5 block text-center sm:text-left">
                 {t("profiles.columnWeekday")}
               </LabelMuted>
               <WeekdayChipPicker
@@ -386,13 +461,12 @@ export function ProfileShiftPreferencesFormModal({
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <LabelMuted>{t("profiles.availabilityFrom")}</LabelMuted>
+                <LabelMuted className="!mb-0.5">{t("profiles.availabilityFrom")}</LabelMuted>
                 <TimeInput
-                  className="mt-1"
                   value={startTime}
-                  disabled={saving}
+                  disabled={saving || optionsLoading}
                   onChange={(e) => {
                     setStartTime(e.target.value);
                     setError(null);
@@ -400,16 +474,88 @@ export function ProfileShiftPreferencesFormModal({
                 />
               </div>
               <div>
-                <LabelMuted>{t("profiles.availabilityTo")}</LabelMuted>
+                <LabelMuted className="!mb-0.5">{t("profiles.availabilityTo")}</LabelMuted>
                 <TimeInput
-                  className="mt-1"
                   value={endTime}
-                  disabled={saving}
+                  disabled={saving || optionsLoading}
                   onChange={(e) => {
                     setEndTime(e.target.value);
                     setError(null);
                   }}
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2">
+              <div>
+                <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceLocation")}</LabelMuted>
+                <Select
+                  value={locationId ?? ""}
+                  disabled={saving || optionsLoading}
+                  onChange={(event) => {
+                    const nextLocationId = event.target.value || null;
+                    setLocationId(nextLocationId);
+                    if (
+                      areaId &&
+                      !formOptions?.areas.some(
+                        (area) =>
+                          area.id === areaId && area.location_id === nextLocationId
+                      )
+                    ) {
+                      setAreaId(null);
+                    }
+                    setError(null);
+                  }}
+                >
+                  <option value="">{t("profiles.shiftPreferenceNone")}</option>
+                  {(formOptions?.locations ?? []).map((location: Location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceArea")}</LabelMuted>
+                <Select
+                  value={areaId ?? ""}
+                  disabled={saving || optionsLoading || !locationId}
+                  onChange={(event) => {
+                    setAreaId(event.target.value || null);
+                    setError(null);
+                  }}
+                >
+                  <option value="">
+                    {!locationId
+                      ? t("profiles.shiftPreferenceSelectLocationFirst")
+                      : t("profiles.shiftPreferenceNone")}
+                  </option>
+                  {areasForLocation.map((area) => (
+                    <option key={area.id} value={area.id}>
+                      {area.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceJob")}</LabelMuted>
+                <Select
+                  value={qualificationId ?? ""}
+                  disabled={saving || optionsLoading}
+                  onChange={(event) => {
+                    setQualificationId(event.target.value || null);
+                    setError(null);
+                  }}
+                >
+                  <option value="">{t("profiles.shiftPreferenceNone")}</option>
+                  {(formOptions?.qualifications ?? []).map(
+                    (qualification: Qualification) => (
+                      <option key={qualification.id} value={qualification.id}>
+                        {qualification.name}
+                      </option>
+                    )
+                  )}
+                </Select>
               </div>
             </div>
           </div>

@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { getDatabase } from "@/lib/db";
+import { confirmAlert } from "@/lib/app-alert";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 import type { Profile } from "@schichtwerk/types";
 
@@ -17,6 +18,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [email, setEmail] = useState("");
   const [savingEmail, setSavingEmail] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     void getDatabase()
@@ -28,15 +30,24 @@ export default function ProfileScreen() {
   }, []);
 
   async function handleSignOut() {
-    await getDatabase().authSignOut();
-    router.replace("/login");
+    setSigningOut(true);
+    try {
+      await getDatabase().authSignOut();
+      router.replace("/login");
+    } finally {
+      setSigningOut(false);
+    }
   }
 
-  function confirmSignOut() {
-    Alert.alert("Abmelden", "Möchtest du dich abmelden?", [
-      { text: "Abbrechen", style: "cancel" },
-      { text: "Abmelden", style: "destructive", onPress: handleSignOut },
-    ]);
+  async function confirmSignOut() {
+    const confirmed = await confirmAlert({
+      title: "Abmelden",
+      message: "Möchtest du dich abmelden?",
+      confirmLabel: "Abmelden",
+    });
+    if (confirmed) {
+      await handleSignOut();
+    }
   }
 
   async function handleSaveEmail() {
@@ -78,10 +89,12 @@ export default function ProfileScreen() {
         <Text style={[styles.label, { marginTop: spacing.md }]}>E-Mail</Text>
         <TextInput
           style={styles.input}
+          nativeID="profile-email"
           value={email}
           onChangeText={setEmail}
           autoCapitalize="none"
           autoCorrect={false}
+          autoComplete="email"
           keyboardType="email-address"
           textContentType="emailAddress"
           editable={!savingEmail}
@@ -108,8 +121,16 @@ export default function ProfileScreen() {
         Push-Benachrichtigungen werden mit Expo Notifications ergänzt.
       </Text>
 
-      <Pressable style={styles.button} onPress={confirmSignOut}>
-        <Text style={styles.buttonText}>Abmelden</Text>
+      <Pressable
+        style={[styles.button, signingOut && styles.buttonDisabled]}
+        onPress={() => void confirmSignOut()}
+        disabled={signingOut}
+      >
+        {signingOut ? (
+          <ActivityIndicator color={colors.destructive} />
+        ) : (
+          <Text style={styles.buttonText}>Abmelden</Text>
+        )}
       </Pressable>
     </View>
   );
@@ -173,6 +194,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.md,
     alignItems: "center",
+    minHeight: 48,
+    justifyContent: "center",
   },
-  buttonText: { color: "#DC2626", fontWeight: "600" },
+  buttonDisabled: { opacity: 0.7 },
+  buttonText: { color: colors.destructive, fontWeight: "600" },
 });

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { signOut } from "@/app/actions/auth";
+import { signOut } from "@/app/actions/sign-out";
 import { Button, IconButton } from "@/components/ui";
 import { SidebarNav } from "./sidebar-nav";
 

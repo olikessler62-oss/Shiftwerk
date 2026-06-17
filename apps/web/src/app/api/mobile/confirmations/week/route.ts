@@ -1,9 +1,16 @@
-import { NextResponse } from "next/server";
 import {
   isIsoDate,
   MobileApiError,
   requireMobileApiEmployee,
 } from "@/lib/mobile-api-auth";
+import {
+  mobileApiJsonResponse,
+  mobileApiOptionsResponse,
+} from "@/lib/mobile-api-cors";
+
+export async function OPTIONS(request: Request) {
+  return mobileApiOptionsResponse(request);
+}
 
 export async function GET(request: Request) {
   try {
@@ -12,13 +19,15 @@ export async function GET(request: Request) {
     const to = searchParams.get("to")?.trim() ?? "";
 
     if (!isIsoDate(from) || !isIsoDate(to)) {
-      return NextResponse.json(
+      return mobileApiJsonResponse(
+        request,
         { error: "Parameter from und to (YYYY-MM-DD) sind erforderlich." },
         { status: 400 }
       );
     }
     if (from > to) {
-      return NextResponse.json(
+      return mobileApiJsonResponse(
+        request,
         { error: "from darf nicht nach to liegen." },
         { status: 400 }
       );
@@ -33,13 +42,17 @@ export async function GET(request: Request) {
       organization.shift_confirmation_disclaimer
     );
 
-    return NextResponse.json(response);
+    return mobileApiJsonResponse(request, response);
   } catch (error) {
     if (error instanceof MobileApiError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return mobileApiJsonResponse(
+        request,
+        { error: error.message },
+        { status: error.status }
+      );
     }
     const message =
       error instanceof Error ? error.message : "Wochenliste konnte nicht geladen werden.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return mobileApiJsonResponse(request, { error: message }, { status: 500 });
   }
 }

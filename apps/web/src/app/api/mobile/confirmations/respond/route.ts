@@ -1,6 +1,10 @@
-import { NextResponse } from "next/server";
 import type { ConfirmationDecision, ConfirmationRespondBody } from "@schichtwerk/types";
+import { revalidateDashboardShiftsAfterChange } from "@/lib/cached-dashboard-shifts";
 import { MobileApiError, requireMobileApiEmployee } from "@/lib/mobile-api-auth";
+import {
+  mobileApiJsonResponse,
+  mobileApiOptionsResponse,
+} from "@/lib/mobile-api-cors";
 
 function parseRespondBody(value: unknown): ConfirmationRespondBody | null {
   if (!value || typeof value !== "object") return null;
@@ -23,11 +27,19 @@ function parseRespondBody(value: unknown): ConfirmationRespondBody | null {
   return { items };
 }
 
+export async function OPTIONS(request: Request) {
+  return mobileApiOptionsResponse(request);
+}
+
 export async function POST(request: Request) {
   try {
     const parsed = parseRespondBody(await request.json());
     if (!parsed) {
-      return NextResponse.json({ error: "Ungültiger Request-Body." }, { status: 400 });
+      return mobileApiJsonResponse(
+        request,
+        { error: "Ungültiger Request-Body." },
+        { status: 400 }
+      );
     }
 
     const { userId, profile, organization, adminDb } =
@@ -40,17 +52,28 @@ export async function POST(request: Request) {
       items: parsed.items,
     });
 
-    return NextResponse.json({
+    if (result.updatedShifts.length > 0) {
+      revalidateDashboardShiftsAfterChange({
+        organizationId: organization.id,
+        shifts: result.updatedShifts,
+      });
+    }
+
+    return mobileApiJsonResponse(request, {
       ok: true,
       updatedCount: result.updatedCount,
     });
   } catch (error) {
     if (error instanceof MobileApiError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return mobileApiJsonResponse(
+        request,
+        { error: error.message },
+        { status: error.status }
+      );
     }
     const message =
       error instanceof Error ? error.message : "Antwort konnte nicht gespeichert werden.";
     const status = message.includes("nicht") || message.includes("Ungültig") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return mobileApiJsonResponse(request, { error: message }, { status });
   }
 }

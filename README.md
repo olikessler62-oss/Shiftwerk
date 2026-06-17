@@ -47,7 +47,7 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...   # Pflicht für Mitarbeiter-Einladungen
 SUPERADMIN_EMAILS=deine@email.de   # Nur diese E-Mail(s) sehen den Menüpunkt Superadmin
 ```
 
-Für Mobile `apps/mobile/.env`:
+Für Mobile `apps/mobile/.env` (optional — liest sonst automatisch `apps/web/.env.local`):
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co

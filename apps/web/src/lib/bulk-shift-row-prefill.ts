@@ -36,7 +36,9 @@ export type ProfileShiftPreferenceEntry = {
   weekday: number;
   start_time: string;
   end_time: string;
+  location_id: string | null;
   location_area_id: string | null;
+  qualification_id: string | null;
   priority: number;
 };
 

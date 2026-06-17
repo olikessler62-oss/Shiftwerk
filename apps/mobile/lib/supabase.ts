@@ -25,7 +25,9 @@ let client: ReturnType<typeof createClient> | null = null;
 export function getSupabase() {
   if (!client) {
     if (!url || !anonKey) {
-      console.warn("EXPO_PUBLIC_SUPABASE_URL / ANON_KEY fehlen in .env");
+      throw new Error(
+        "Supabase-Konfiguration fehlt. Trage NEXT_PUBLIC_SUPABASE_URL und NEXT_PUBLIC_SUPABASE_ANON_KEY in apps/web/.env.local ein — oder lege apps/mobile/.env mit EXPO_PUBLIC_* an."
+      );
     }
     client = createClient(url, anonKey, {
       auth: {

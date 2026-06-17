@@ -318,6 +318,11 @@ export const de = {
     shiftPreferenceTooltipNoAvailability: "Keine Verfügbarkeiten",
     shiftPreferencesNeedAdjustment:
       "Es existieren Wunschzeiten, die nicht mehr mit den Verfügbarkeiten übereinstimmen. Bitte passen Sie die Wunschzeiten an.",
+    shiftPreferenceLocation: "Wunsch-Standort",
+    shiftPreferenceArea: "Wunsch-Bereich",
+    shiftPreferenceJob: "Wunsch-Job",
+    shiftPreferenceNone: "Keine Angabe",
+    shiftPreferenceSelectLocationFirst: "Bitte zuerst einen Standort wählen",
     availabilityCreateTitle: "Verfügbarkeit anlegen",
     availabilityEditTitle: "Verfügbarkeit ändern",
     availabilityBulkEdit: "Mehrfach ändern",

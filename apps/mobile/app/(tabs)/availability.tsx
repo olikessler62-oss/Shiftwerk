@@ -120,23 +120,29 @@ export default function AvailabilityScreen() {
         <Text style={styles.label}>Wochentag (0=Mo … 7=FT)</Text>
         <TextInput
           style={styles.input}
+          nativeID="preference-weekday"
           value={weekday}
           onChangeText={setWeekday}
           keyboardType="number-pad"
+          autoComplete="off"
           editable={!saving}
         />
         <Text style={styles.label}>Von (HH:MM)</Text>
         <TextInput
           style={styles.input}
+          nativeID="preference-start-time"
           value={startTime}
           onChangeText={setStartTime}
+          autoComplete="off"
           editable={!saving}
         />
         <Text style={styles.label}>Bis (HH:MM)</Text>
         <TextInput
           style={styles.input}
+          nativeID="preference-end-time"
           value={endTime}
           onChangeText={setEndTime}
+          autoComplete="off"
           editable={!saving}
         />
         <Pressable

@@ -320,6 +320,11 @@ export const en = {
     shiftPreferenceTooltipNoAvailability: "No availability",
     shiftPreferencesNeedAdjustment:
       "Some preferred times no longer match the availability. Please adjust the preferred times.",
+    shiftPreferenceLocation: "Preferred location",
+    shiftPreferenceArea: "Preferred area",
+    shiftPreferenceJob: "Preferred job",
+    shiftPreferenceNone: "Not specified",
+    shiftPreferenceSelectLocationFirst: "Select a location first",
     availabilityCreateTitle: "Add availability",
     availabilityEditTitle: "Edit availability",
     availabilityBulkEdit: "Bulk edit",

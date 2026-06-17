@@ -1,4 +1,4 @@
-import { unstable_cache } from "next/cache";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { createDatabase } from "@schichtwerk/database";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
 import { createClient } from "@/lib/supabase/server";
@@ -18,6 +18,28 @@ export function weekStartsForShiftCacheInvalidation(shiftDate: string): string[]
   const previous = parseISODate(weekStart);
   previous.setDate(previous.getDate() - 7);
   return [toISODate(previous), weekStart];
+}
+
+/** Nach Schichtänderungen (auch Mobile-API): Planungs-/Dashboard-Cache leeren. */
+export function revalidateDashboardShiftsAfterChange(input: {
+  organizationId: string;
+  shifts: { locationId: string | null; shiftDate: string }[];
+}) {
+  revalidatePath("/dashboard");
+  revalidatePath("/planung");
+
+  const seen = new Set<string>();
+  for (const shift of input.shifts) {
+    if (!shift.locationId) continue;
+    for (const weekStart of weekStartsForShiftCacheInvalidation(shift.shiftDate)) {
+      const key = `${shift.locationId}:${weekStart}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      revalidateTag(
+        dashboardShiftsCacheTag(input.organizationId, shift.locationId, weekStart)
+      );
+    }
+  }
 }
 
 export async function getCachedDashboardShifts(

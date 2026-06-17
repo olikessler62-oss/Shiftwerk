@@ -5,13 +5,33 @@ import {
   shiftWindowFitsAvailabilitySlot,
   toProfileAvailabilitySaveError,
 } from "@schichtwerk/database";
-import type { ProfileShiftPreference } from "@schichtwerk/types";
+import type {
+  Location,
+  LocationArea,
+  ProfileShiftPreference,
+  Qualification,
+} from "@schichtwerk/types";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 
 export type ProfileShiftPreferenceActionResult =
   | { ok: true; preferences?: ProfileShiftPreference[] }
   | { ok: false; error: string };
+
+export type ProfileShiftPreferenceFormOptionsResult =
+  | {
+      ok: true;
+      locations: Location[];
+      areas: LocationArea[];
+      qualifications: Qualification[];
+    }
+  | { ok: false; error: string };
+
+type ShiftPreferencePlacementInput = {
+  location_id?: string | null;
+  location_area_id?: string | null;
+  qualification_id?: string | null;
+};
 
 const PREFERENCE_OUTSIDE_AVAILABILITY_ERROR =
   "Wunschzeit liegt außerhalb der Verfügbarkeit.";
@@ -48,6 +68,93 @@ async function assertPreferenceWithinAvailability(
   }
 }
 
+async function resolveShiftPreferencePlacement(
+  organizationId: string,
+  profileId: string,
+  input: ShiftPreferencePlacementInput
+): Promise<{
+  location_id: string | null;
+  location_area_id: string | null;
+  qualification_id: string | null;
+}> {
+  const db = await getDatabase();
+  const locations = await db.listLocations(organizationId);
+  const locationIds = new Set(locations.map((location) => location.id));
+
+  let locationId = input.location_id ?? null;
+  let areaId = input.location_area_id ?? null;
+  const qualificationId = input.qualification_id ?? null;
+
+  if (areaId) {
+    let matchedArea: LocationArea | undefined;
+    for (const location of locations) {
+      const areas = await db.listLocationAreas(location.id);
+      matchedArea = areas.find((area) => area.id === areaId);
+      if (matchedArea) break;
+    }
+    if (!matchedArea) {
+      throw new Error("Bereich nicht gefunden");
+    }
+    if (locationId && matchedArea.location_id !== locationId) {
+      throw new Error("Bereich gehört nicht zum gewählten Standort");
+    }
+    locationId = matchedArea.location_id;
+  }
+
+  if (locationId && !locationIds.has(locationId)) {
+    throw new Error("Standort nicht gefunden");
+  }
+
+  if (qualificationId) {
+    const qualifications = await db.listProfileQualifications(
+      organizationId,
+      profileId
+    );
+    if (!qualifications.some((qualification) => qualification.id === qualificationId)) {
+      throw new Error("Job nicht beim Profil hinterlegt");
+    }
+  }
+
+  return {
+    location_id: locationId,
+    location_area_id: areaId,
+    qualification_id: qualificationId,
+  };
+}
+
+export async function fetchProfileShiftPreferenceFormOptions(
+  profileId: string
+): Promise<ProfileShiftPreferenceFormOptionsResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    const profile = await db.getProfileById(profileId);
+    if (!profile || profile.organization_id !== organizationId) {
+      return { ok: false, error: "Profil nicht gefunden" };
+    }
+
+    const [locations, qualifications] = await Promise.all([
+      db.listLocations(organizationId),
+      db.listProfileQualifications(organizationId, profileId),
+    ]);
+    const areaGroups = await Promise.all(
+      locations.map((location) => db.listLocationAreas(location.id))
+    );
+
+    return {
+      ok: true,
+      locations,
+      areas: areaGroups.flat(),
+      qualifications,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Laden fehlgeschlagen",
+    };
+  }
+}
+
 export async function fetchProfileShiftPreferences(
   profileId: string
 ): Promise<ProfileShiftPreferenceActionResult> {
@@ -76,12 +183,18 @@ export async function createProfileShiftPreference(input: {
   weekday: number;
   start_time: string;
   end_time: string;
+  location_id?: string | null;
+  location_area_id?: string | null;
+  qualification_id?: string | null;
 }): Promise<ProfileShiftPreferenceActionResult> {
   return createProfileShiftPreferences({
     profileId: input.profileId,
     weekdays: [input.weekday],
     start_time: input.start_time,
     end_time: input.end_time,
+    location_id: input.location_id,
+    location_area_id: input.location_area_id,
+    qualification_id: input.qualification_id,
   });
 }
 
@@ -90,6 +203,9 @@ export async function createProfileShiftPreferences(input: {
   weekdays: number[];
   start_time: string;
   end_time: string;
+  location_id?: string | null;
+  location_area_id?: string | null;
+  qualification_id?: string | null;
 }): Promise<ProfileShiftPreferenceActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -98,6 +214,12 @@ export async function createProfileShiftPreferences(input: {
     if (!profile || profile.organization_id !== organizationId) {
       return { ok: false, error: "Profil nicht gefunden" };
     }
+
+    const placement = await resolveShiftPreferencePlacement(
+      organizationId,
+      input.profileId,
+      input
+    );
 
     const weekdaysToSave = [...new Set(input.weekdays)].sort((a, b) => a - b);
     if (weekdaysToSave.length === 0) {
@@ -116,6 +238,7 @@ export async function createProfileShiftPreferences(input: {
         weekday,
         start_time: input.start_time,
         end_time: input.end_time,
+        ...placement,
       });
     }
 
@@ -137,9 +260,17 @@ export async function updateProfileShiftPreference(input: {
   weekday: number;
   start_time: string;
   end_time: string;
+  location_id?: string | null;
+  location_area_id?: string | null;
+  qualification_id?: string | null;
 }): Promise<ProfileShiftPreferenceActionResult> {
   try {
     const { organizationId } = await requireManager();
+    const placement = await resolveShiftPreferencePlacement(
+      organizationId,
+      input.profileId,
+      input
+    );
     await assertPreferenceWithinAvailability(
       organizationId,
       input.profileId,
@@ -156,6 +287,7 @@ export async function updateProfileShiftPreference(input: {
         weekday: input.weekday,
         start_time: input.start_time,
         end_time: input.end_time,
+        ...placement,
       }
     );
     const preferences = await db.listProfileShiftPreferences(

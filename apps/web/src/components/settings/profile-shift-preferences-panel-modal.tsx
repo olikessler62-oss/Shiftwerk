@@ -10,6 +10,7 @@ import {
 import {
   deleteProfileShiftPreference,
   fetchProfileShiftPreferences,
+  fetchProfileShiftPreferenceFormOptions,
 } from "@/app/actions/profile-shift-preferences";
 import { sortProfileRecurringAvailabilityBySchedule } from "@schichtwerk/database";
 import {
@@ -40,10 +41,6 @@ import {
   useScrollToSettingsListItem,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
-  settingsListRowDeleteCellClass,
-  settingsListRowDeleteHeaderClass,
-  settingsListRowCheckboxCellClass,
-  settingsListRowCheckboxHeaderClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -58,6 +55,12 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
+import {
+  buildShiftPreferencePlacementLookups,
+  formatShiftPreferenceAreaLabel,
+  formatShiftPreferenceJobLabel,
+  formatShiftPreferenceLocationLabel,
+} from "@/lib/profile-shift-preference-display";
 
 const EMPTY_STATE_CLASS = "min-h-full";
 
@@ -100,6 +103,9 @@ export function ProfileShiftPreferencesPanelModal({
   const [confirmBulkRemove, setConfirmBulkRemove] = useState(false);
   const [formMode, setFormMode] = useState<PreferenceFormMode>(null);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
+  const [formOptions, setFormOptions] = useState<
+    Extract<Awaited<ReturnType<typeof fetchProfileShiftPreferenceFormOptions>>, { ok: true }> | null
+  >(null);
 
   const applyList = useCallback(
     (list: ProfileShiftPreference[]) => {
@@ -124,6 +130,15 @@ export function ProfileShiftPreferencesPanelModal({
   );
   const bulkSelection = useSettingsListBulkSelection(preferenceIds);
 
+  const placementLookups = useMemo(
+    () =>
+      formOptions
+        ? buildShiftPreferencePlacementLookups(formOptions)
+        : null,
+    [formOptions]
+  );
+  const emptyPlacementLabel = t("profiles.shiftPreferenceNone");
+
   const selectedPreference =
     sortedPreferences.find((item) => item.id === selectedPreferenceId) ?? null;
 
@@ -132,6 +147,14 @@ export function ProfileShiftPreferencesPanelModal({
   useScrollToSettingsListItem(sortedPreferences, scrollToItemId, () =>
     setScrollToItemId(null)
   );
+
+  useEffect(() => {
+    void fetchProfileShiftPreferenceFormOptions(profile.id).then((result) => {
+      if (result.ok) {
+        setFormOptions(result);
+      }
+    });
+  }, [profile.id]);
 
   useEffect(() => {
     if (cachedPreferences !== undefined) {
@@ -257,7 +280,10 @@ export function ProfileShiftPreferencesPanelModal({
         aria-busy={loading || pending}
         aria-hidden={anyFormOpen}
         className={cn(
-          settingsSubModalDialogClass("xl"),
+          settingsSubModalDialogClass(
+            "5xl",
+            "!max-w-[calc(100%-0.5rem)]"
+          ),
           (loading || pending) && "[&_*]:cursor-wait",
           anyFormOpen ? "pointer-events-none" : ""
         )}
@@ -296,9 +322,6 @@ export function ProfileShiftPreferencesPanelModal({
         )}
 
         <div className="min-h-0 bg-background px-4 py-3">
-          <p className="mb-3 text-xs leading-relaxed text-muted">
-            {t("profiles.shiftPreferencePanelIntro")}
-          </p>
           <div
             className={cn(
               settingsScrollableTableListClass(),
@@ -317,7 +340,7 @@ export function ProfileShiftPreferencesPanelModal({
                 className={EMPTY_STATE_CLASS}
               />
             ) : (
-              <table className="w-full min-w-[24rem] border-collapse">
+              <table className="w-full min-w-0 border-collapse">
                 <thead>
                   <tr className="border-b border-border">
                     <th
@@ -331,11 +354,34 @@ export function ProfileShiftPreferencesPanelModal({
                       {t("profiles.columnTimeRange")}
                     </th>
                     <th
-                      className={settingsListRowCheckboxHeaderClass()}
-                      aria-hidden
-                    />
+                      className={settingsStickyColumnHeaderClass(
+                        "left",
+                        "min-w-[9rem]"
+                      )}
+                    >
+                      {t("profiles.shiftPreferenceLocation")}
+                    </th>
                     <th
-                      className={settingsListRowDeleteHeaderClass()}
+                      className={settingsStickyColumnHeaderClass(
+                        "left",
+                        "min-w-[9rem]"
+                      )}
+                    >
+                      {t("profiles.shiftPreferenceArea")}
+                    </th>
+                    <th
+                      className={settingsStickyColumnHeaderClass(
+                        "left",
+                        "min-w-[9rem]"
+                      )}
+                    >
+                      {t("profiles.shiftPreferenceJob")}
+                    </th>
+                    <th
+                      className={settingsStickyColumnHeaderClass(
+                        "right",
+                        "w-14 !px-1"
+                      )}
                       aria-hidden
                     />
                   </tr>
@@ -383,24 +429,69 @@ export function ProfileShiftPreferencesPanelModal({
                             localeKey
                           )}
                         </td>
-                        <td className={settingsListRowCheckboxCellClass(isSelected)}>
-                          <SettingsListRowCheckbox
-                            checked={bulkSelection.isChecked(item.id)}
-                            disabled={pending || loading}
-                            ariaLabel={t("common.selectRow")}
-                            onChange={() => bulkSelection.toggle(item.id)}
-                          />
+                        <td
+                          className={settingsDataCellClass(isSelected, {
+                            className: "min-w-[9rem] text-muted",
+                          })}
+                        >
+                          {placementLookups
+                            ? formatShiftPreferenceLocationLabel(
+                                item,
+                                placementLookups,
+                                emptyPlacementLabel
+                              )
+                            : "—"}
                         </td>
-                        <td className={settingsListRowDeleteCellClass(isSelected)}>
-                          <SettingsListRowDeleteButton
-                            label={t("profiles.delete")}
-                            disabled={pending || loading}
-                            onClick={() => {
-                              setSelectedPreferenceId(item.id);
-                              setFormMode(null);
-                              setConfirmRemove(true);
-                            }}
-                          />
+                        <td
+                          className={settingsDataCellClass(isSelected, {
+                            className: "min-w-[9rem] text-muted",
+                          })}
+                        >
+                          {placementLookups
+                            ? formatShiftPreferenceAreaLabel(
+                                item,
+                                placementLookups,
+                                emptyPlacementLabel
+                              )
+                            : "—"}
+                        </td>
+                        <td
+                          className={settingsDataCellClass(isSelected, {
+                            className: "min-w-[9rem] text-muted",
+                          })}
+                        >
+                          {placementLookups
+                            ? formatShiftPreferenceJobLabel(
+                                item,
+                                placementLookups,
+                                emptyPlacementLabel
+                              )
+                            : "—"}
+                        </td>
+                        <td
+                          className={settingsDataCellClass(isSelected, {
+                            align: "right",
+                            className: "whitespace-nowrap !px-1",
+                          })}
+                        >
+                          <div className="flex items-center justify-end gap-0.5">
+                            <SettingsListRowCheckbox
+                              checked={bulkSelection.isChecked(item.id)}
+                              disabled={pending || loading}
+                              ariaLabel={t("common.selectRow")}
+                              className="!mx-0"
+                              onChange={() => bulkSelection.toggle(item.id)}
+                            />
+                            <SettingsListRowDeleteButton
+                              label={t("profiles.delete")}
+                              disabled={pending || loading}
+                              onClick={() => {
+                                setSelectedPreferenceId(item.id);
+                                setFormMode(null);
+                                setConfirmRemove(true);
+                              }}
+                            />
+                          </div>
                         </td>
                       </tr>
                     );
@@ -475,6 +566,7 @@ export function ProfileShiftPreferencesPanelModal({
           mode="create"
           profileId={profile.id}
           profileAvailability={profileAvailability}
+          formOptions={formOptions ?? undefined}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
         />
@@ -485,6 +577,7 @@ export function ProfileShiftPreferencesPanelModal({
           profileId={profile.id}
           profileAvailability={profileAvailability}
           currentPreference={formMode.preference}
+          formOptions={formOptions ?? undefined}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
         />

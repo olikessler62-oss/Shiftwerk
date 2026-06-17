@@ -226,7 +226,9 @@ type ProfileShiftPreferenceRow = {
   weekday: number;
   start_time: string;
   end_time: string;
+  location_id: string | null;
   location_area_id: string | null;
+  qualification_id: string | null;
   priority: number;
   created_at: string;
   updated_at: string;
@@ -242,7 +244,9 @@ function mapProfileShiftPreference(
     weekday: row.weekday,
     start_time: row.start_time,
     end_time: row.end_time,
+    location_id: row.location_id,
     location_area_id: row.location_area_id,
+    qualification_id: row.qualification_id,
     priority: row.priority,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -1372,7 +1376,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       weekday: number;
       start_time: string;
       end_time: string;
+      location_id?: string | null;
       location_area_id?: string | null;
+      qualification_id?: string | null;
       priority?: number;
     }
   ) {
@@ -1392,7 +1398,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       weekday: weekdayResult.weekday,
       start_time: times.start_time,
       end_time: times.end_time,
+      location_id: input.location_id ?? null,
       location_area_id: input.location_area_id ?? null,
+      qualification_id: input.qualification_id ?? null,
     });
     if (duplicate) {
       return duplicate;
@@ -1406,7 +1414,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         weekday: weekdayResult.weekday,
         start_time: times.start_time,
         end_time: times.end_time,
+        location_id: input.location_id ?? null,
         location_area_id: input.location_area_id ?? null,
+        qualification_id: input.qualification_id ?? null,
         priority: input.priority ?? 0,
       })
       .select("*")
@@ -1425,7 +1435,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       weekday: number;
       start_time: string;
       end_time: string;
+      location_id?: string | null;
       location_area_id?: string | null;
+      qualification_id?: string | null;
       priority?: number;
     }
   ) {
@@ -1447,7 +1459,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         weekday: weekdayResult.weekday,
         start_time: times.start_time,
         end_time: times.end_time,
+        location_id: input.location_id ?? null,
         location_area_id: input.location_area_id ?? null,
+        qualification_id: input.qualification_id ?? null,
       },
       preferenceId
     );
@@ -1459,7 +1473,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         weekday: weekdayResult.weekday,
         start_time: times.start_time,
         end_time: times.end_time,
+        location_id: input.location_id ?? null,
         location_area_id: input.location_area_id ?? null,
+        qualification_id: input.qualification_id ?? null,
         priority: input.priority ?? 0,
         updated_at: new Date().toISOString(),
       })
@@ -4333,7 +4349,10 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     employeeId: string;
     employeeName: string;
     items: ConfirmationRespondItem[];
-  }): Promise<{ updatedCount: number }> {
+  }): Promise<{
+    updatedCount: number;
+    updatedShifts: { locationId: string | null; shiftDate: string }[];
+  }> {
     const validation = validateConfirmationRespondItems(input.items);
     if (!validation.ok) {
       throw new Error(validation.error);
@@ -4342,7 +4361,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const shiftIds = input.items.map((item) => item.shiftId);
     const { data: shiftRows, error: shiftError } = await this.client
       .from(T.shifts)
-      .select("id, employee_id, confirmation_status")
+      .select("id, employee_id, confirmation_status, location_id, shift_date")
       .eq("organization_id", input.organizationId)
       .in("id", shiftIds);
 
@@ -4355,6 +4374,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           id: row.id as string,
           employee_id: row.employee_id as string,
           confirmation_status: row.confirmation_status as import("@schichtwerk/types").ShiftConfirmationStatus,
+          location_id: (row.location_id as string | null) ?? null,
+          shift_date: row.shift_date as string,
         },
       ])
     );
@@ -4370,6 +4391,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
     const now = new Date().toISOString();
     const updatedShiftIds: string[] = [];
+    const updatedShifts: { locationId: string | null; shiftDate: string }[] = [];
 
     for (const item of input.items) {
       const current = openShiftsById.get(item.shiftId)!;
@@ -4396,6 +4418,10 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       }
 
       updatedShiftIds.push(item.shiftId);
+      updatedShifts.push({
+        locationId: current.location_id,
+        shiftDate: current.shift_date,
+      });
 
       const { error: eventError } = await this.client
         .from(T.shiftConfirmationEvents)
@@ -4443,7 +4469,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       if (managerError) throw new Error(managerError.message);
     }
 
-    return { updatedCount: updatedShiftIds.length };
+    return { updatedCount: updatedShiftIds.length, updatedShifts };
   }
 
   async getManagerProfile(userId: string) {

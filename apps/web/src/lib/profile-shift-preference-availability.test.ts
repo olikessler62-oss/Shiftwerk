@@ -33,8 +33,12 @@ const preference = (
   weekday,
   start_time,
   end_time,
+  location_id: null,
   location_area_id: null,
+  qualification_id: null,
   priority: 0,
+  created_at: "",
+  updated_at: "",
 });
 
 describe("profileShiftPreferenceFitsAvailability", () => {

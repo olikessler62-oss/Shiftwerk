@@ -203,7 +203,9 @@ create table public.profile_shift_preferences (
   weekday smallint not null check (weekday >= 0 and weekday <= 7),
   start_time time not null,
   end_time time not null,
+  location_id uuid references public.locations (id) on delete set null,
   location_area_id uuid references public.location_areas (id) on delete set null,
+  qualification_id uuid references public.qualifications (id) on delete set null,
   priority smallint not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -216,6 +218,14 @@ create index profile_shift_preferences_org_profile_weekday_idx
 create index profile_shift_preferences_area_idx
   on public.profile_shift_preferences (location_area_id)
   where location_area_id is not null;
+
+create index profile_shift_preferences_location_idx
+  on public.profile_shift_preferences (location_id)
+  where location_id is not null;
+
+create index profile_shift_preferences_qualification_idx
+  on public.profile_shift_preferences (qualification_id)
+  where qualification_id is not null;
 
 -- Standorte
 create table public.locations (

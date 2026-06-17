@@ -53,18 +53,24 @@ export default function LoginScreen() {
 
         <TextInput
           style={styles.input}
+          nativeID="login-email"
           placeholder="E-Mail"
           placeholderTextColor={colors.muted}
           autoCapitalize="none"
+          autoComplete="email"
           keyboardType="email-address"
+          textContentType="emailAddress"
           value={email}
           onChangeText={setEmail}
         />
         <TextInput
           style={styles.input}
+          nativeID="login-password"
           placeholder="Passwort"
           placeholderTextColor={colors.muted}
           secureTextEntry
+          autoComplete="current-password"
+          textContentType="password"
           value={password}
           onChangeText={setPassword}
         />
