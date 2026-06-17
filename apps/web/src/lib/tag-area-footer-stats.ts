@@ -1,5 +1,8 @@
-import { calculateEffectiveHourlyRate } from "@/lib/profile-compensation-calculation";
-import { shiftHoursFromWindow } from "@/lib/planning-utils";
+import {
+  calculateSurchargeAdditionPerHour,
+  surchargeTriggerMatchesDate,
+} from "@/lib/profile-compensation-calculation";
+import { splitShiftWindowIntoCalendarDaySegments } from "@schichtwerk/database";
 import { formatDurationHours } from "@/lib/shift-type-display";
 import type { EffectiveProfileCompensationSurcharge } from "@schichtwerk/types";
 
@@ -19,6 +22,9 @@ export type DashboardShiftCompensationByKey = Record<
 export type TagAreaDayFooterStats = {
   totalHours: number;
   totalCost: number;
+  baseCost: number;
+  surchargeCost: number;
+  hasCompensation: boolean;
   currency: string;
 };
 
@@ -36,37 +42,66 @@ export function shiftCompensationKey(
   return `${employeeId}:${dateISO}`;
 }
 
-export function computeTagAreaDayFooterStats(
+/** Stunden/Kosten für einen Kalendertag — Nachtschicht-Anteile nach 00:00 auf den Folgetag. */
+export function computeTagAreaDayFooterStatsForDate(
+  calendarDate: string,
   shifts: readonly TagAreaShiftRef[],
   compensationByKey: DashboardShiftCompensationByKey,
   defaultCurrency = DEFAULT_ORGANIZATION_CURRENCY
 ): TagAreaDayFooterStats {
   let totalHours = 0;
-  let totalCost = 0;
+  let baseCost = 0;
+  let surchargeCost = 0;
+  let hasCompensation = false;
   let currency = defaultCurrency;
 
   for (const shift of shifts) {
-    const hours = shiftHoursFromWindow(shift.startTime, shift.endTime);
-    totalHours += hours;
-
-    const compensation =
-      compensationByKey[
-        shiftCompensationKey(shift.employeeId, shift.shift_date)
-      ];
-    if (!compensation) continue;
-
-    currency = compensation.currency || defaultCurrency;
-    const effectiveRate = calculateEffectiveHourlyRate({
-      baseHourlyRate: compensation.baseHourlyRate,
+    const segments = splitShiftWindowIntoCalendarDaySegments({
       shiftDate: shift.shift_date,
-      surcharges: compensation.surcharges,
-    });
-    totalCost += effectiveRate * hours;
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+    }).filter((segment) => segment.dateISO === calendarDate);
+
+    for (const segment of segments) {
+      const hours = segment.minutes / 60;
+      totalHours += hours;
+
+      const compensation =
+        compensationByKey[
+          shiftCompensationKey(shift.employeeId, segment.dateISO)
+        ];
+      if (!compensation) continue;
+
+      hasCompensation = true;
+      currency = compensation.currency || defaultCurrency;
+
+      const applicableSurcharges = compensation.surcharges.filter((entry) =>
+        surchargeTriggerMatchesDate(entry.trigger, segment.dateISO)
+      );
+      const surchargePerHour = applicableSurcharges.reduce(
+        (sum, entry) =>
+          sum +
+          calculateSurchargeAdditionPerHour(
+            compensation.baseHourlyRate,
+            entry.amount,
+            entry.unit
+          ),
+        0
+      );
+      baseCost += compensation.baseHourlyRate * hours;
+      surchargeCost += surchargePerHour * hours;
+    }
   }
+
+  const roundedBaseCost = Math.round(baseCost * 100) / 100;
+  const roundedSurchargeCost = Math.round(surchargeCost * 100) / 100;
 
   return {
     totalHours: Math.round(totalHours * 10) / 10,
-    totalCost: Math.round(totalCost * 100) / 100,
+    totalCost: Math.round((roundedBaseCost + roundedSurchargeCost) * 100) / 100,
+    baseCost: roundedBaseCost,
+    surchargeCost: roundedSurchargeCost,
+    hasCompensation,
     currency,
   };
 }
@@ -90,15 +125,38 @@ function formatTagAreaFooterHoursLabel(
   });
 }
 
-function formatTagAreaFooterCostLabel(
+function formatTagAreaFooterCostTooltip(
   stats: TagAreaDayFooterStats,
   translate: (key: string, params?: Record<string, string>) => string,
   locale: "de" | "en"
 ): string {
-  return translate("dashboard.tagAreaFooterTotalCost", {
-    amount: formatTagAreaFooterMoney(stats.totalCost, locale),
-    currency: stats.currency,
-  });
+  if (!stats.hasCompensation) return "";
+
+  const lines: string[] = [];
+
+  if (stats.surchargeCost > 0) {
+    lines.push(
+      translate("dashboard.tagAreaFooterTotalAmount", {
+        amount: formatTagAreaFooterMoney(stats.totalCost, locale),
+      })
+    );
+  }
+
+  lines.push(
+    translate("dashboard.tagAreaFooterCompensation", {
+      amount: formatTagAreaFooterMoney(stats.baseCost, locale),
+    })
+  );
+
+  if (stats.surchargeCost > 0) {
+    lines.push(
+      translate("dashboard.tagAreaFooterSurcharges", {
+        amount: formatTagAreaFooterMoney(stats.surchargeCost, locale),
+      })
+    );
+  }
+
+  return lines.join("\n");
 }
 
 export type TagAreaFooterLabels = {
@@ -113,7 +171,7 @@ export function formatTagAreaFooterLabels(
   locale: "de" | "en"
 ): TagAreaFooterLabels {
   const hoursLine = formatTagAreaFooterHoursLabel(stats, translate);
-  const costLine = formatTagAreaFooterCostLabel(stats, translate, locale);
+  const costLine = formatTagAreaFooterCostTooltip(stats, translate, locale);
   return {
     line: translate("dashboard.tagAreaFooterShortLine", {
       hours: formatDurationHours(stats.totalHours),

@@ -15,6 +15,7 @@ describe("collectWeekLegendEmployeesFromDashboardShifts", () => {
           employeeId: "b",
           employeeName: "Zoe",
           employeeColor: "#111111",
+          shift_date: "2026-06-02",
           startTime: "08:00",
           endTime: "12:00",
         },
@@ -22,6 +23,7 @@ describe("collectWeekLegendEmployeesFromDashboardShifts", () => {
           employeeId: "a",
           employeeName: "Anna",
           employeeColor: null,
+          shift_date: "2026-06-02",
           startTime: "08:00",
           endTime: "12:00",
         },
@@ -29,6 +31,7 @@ describe("collectWeekLegendEmployeesFromDashboardShifts", () => {
           employeeId: "b",
           employeeName: "Zoe",
           employeeColor: "#111111",
+          shift_date: "2026-06-03",
           startTime: "13:00",
           endTime: "17:00",
         },
@@ -48,6 +51,60 @@ describe("collectWeekLegendEmployeesFromDashboardShifts", () => {
     expect(employees[0]?.color).toBe("#ff0000");
     expect(employees[0]?.weekly_hours).toBe(40);
   });
+
+  it("omits employees whose week shifts all fall on approved absence days", () => {
+    const employees = collectWeekLegendEmployeesFromDashboardShifts(
+      [
+        {
+          employeeId: "sick",
+          employeeName: "Alexa Bello",
+          employeeColor: "#336699",
+          shift_date: "2026-06-17",
+          startTime: "08:00",
+          endTime: "16:00",
+        },
+        {
+          employeeId: "well",
+          employeeName: "Bob",
+          employeeColor: null,
+          shift_date: "2026-06-17",
+          startTime: "08:00",
+          endTime: "12:00",
+        },
+      ],
+      [
+        {
+          id: "sick",
+          full_name: "Alexa Bello",
+          color: "#336699",
+          weekly_hours: 40,
+        },
+        {
+          id: "well",
+          full_name: "Bob",
+          color: null,
+          weekly_hours: 40,
+        },
+      ],
+      [
+        {
+          id: "abs-1",
+          employee_id: "sick",
+          organization_id: "org",
+          absence_type: "sick",
+          start_date: "2026-06-16",
+          end_date: null,
+          is_open_ended: true,
+          status: "approved",
+          note: null,
+          created_at: "",
+          updated_at: "",
+        },
+      ]
+    );
+
+    expect(employees.map((employee) => employee.id)).toEqual(["well"]);
+  });
 });
 
 describe("dashboardEmployeeWeekHours", () => {
@@ -58,6 +115,7 @@ describe("dashboardEmployeeWeekHours", () => {
           employeeId: "a",
           employeeName: "Anna",
           employeeColor: null,
+          shift_date: "2026-06-02",
           startTime: "08:00",
           endTime: "12:00",
         },
@@ -65,6 +123,7 @@ describe("dashboardEmployeeWeekHours", () => {
           employeeId: "b",
           employeeName: "Bob",
           employeeColor: null,
+          shift_date: "2026-06-02",
           startTime: "08:00",
           endTime: "16:00",
         },
@@ -72,6 +131,7 @@ describe("dashboardEmployeeWeekHours", () => {
           employeeId: "a",
           employeeName: "Anna",
           employeeColor: null,
+          shift_date: "2026-06-03",
           startTime: "13:00",
           endTime: "17:00",
         },

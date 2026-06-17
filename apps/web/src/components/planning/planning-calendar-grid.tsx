@@ -9,6 +9,7 @@ import { PlanningDayColumnWidthReporter } from "@/components/planning/planning-d
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { isPastCalendarDate } from "@/lib/dates";
 import { cn } from "@/lib/cn";
+import { CALENDAR_INTERACTION_SURFACE_CLASS } from "@/lib/calendar-interaction-ui";
 import {
   employeeWeekHours,
   formatDayHeader,
@@ -26,6 +27,7 @@ import {
   PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
+  PLANNING_DAY_HEADER_ROW_HEIGHT,
   PLANNING_EMPLOYEE_ROW_HEIGHT,
   PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
   PLANNING_HEADER_ROW_BORDER_CLASS,
@@ -59,7 +61,6 @@ import { planningCellDataAttribute } from "@/lib/planning-overnight-span-layout"
 import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 
-const DAY_HEADER_ROW_HEIGHT = "3.5rem";
 const MUTED_DAY_HEADER_CLASS = "bg-calendar-muted-header";
 const ACTIVE_DAY_HEADER_CLASS = "bg-calendar-active-header";
 const TODAY_DAY_HEADER_BADGE_CLASS =
@@ -134,6 +135,8 @@ type Props = {
   staffingRules: readonly LocationAreaStaffing[];
   qualifications: readonly Qualification[];
   profileQualificationIds: Record<string, string[]>;
+  highlightedEmployeeId?: string | null;
+  onEmployeeHover?: (employeeId: string | null) => void;
 };
 
 function dayHeaderColumnDivider(dayIndex: number, totalDays: number) {
@@ -192,6 +195,8 @@ export function PlanningCalendarGrid({
   staffingRules,
   qualifications,
   profileQualificationIds,
+  highlightedEmployeeId = null,
+  onEmployeeHover,
 }: Props) {
   const [dayColumnInnerWidthPxByDate, setDayColumnInnerWidthPxByDate] =
     useState<Map<string, number>>(() => new Map());
@@ -282,6 +287,7 @@ export function PlanningCalendarGrid({
     <div
       className={cn(
         "flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-400 bg-surface shadow-sm",
+        CALENDAR_INTERACTION_SURFACE_CLASS,
         !isCalendarVisible && "invisible"
       )}
     >
@@ -311,7 +317,7 @@ export function PlanningCalendarGrid({
             !showStaffingHeaderRow && PLANNING_HEADER_ROW_BORDER_CLASS,
             PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS
           )}
-          style={{ gridColumn: 1, gridRow: 1, height: DAY_HEADER_ROW_HEIGHT }}
+          style={{ gridColumn: 1, gridRow: 1, height: PLANNING_DAY_HEADER_ROW_HEIGHT }}
         >
           {t("planning.staffColumn")}
         </div>
@@ -319,13 +325,14 @@ export function PlanningCalendarGrid({
         {showStaffingHeaderRow ? (
           <div
             className={cn(
-              "sticky left-0 top-[3.5rem] z-[45] border-t border-slate-300 bg-calendar-active-header",
+              "sticky left-0 z-[45] border-t border-slate-300 bg-calendar-active-header",
               PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
               PLANNING_STAFF_COLUMN_BOTTOM_EDGE_CLASS
             )}
             style={{
               gridColumn: 1,
               gridRow: staffingHeaderRow!,
+              top: PLANNING_DAY_HEADER_ROW_HEIGHT,
               height: PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
             }}
             aria-hidden
@@ -351,7 +358,7 @@ export function PlanningCalendarGrid({
               style={{
                 gridColumn: dayIndex + 2,
                 gridRow: 1,
-                height: DAY_HEADER_ROW_HEIGHT,
+                height: PLANNING_DAY_HEADER_ROW_HEIGHT,
               }}
             >
               {dayHasOpenArea[dayIndex] ? (
@@ -408,7 +415,7 @@ export function PlanningCalendarGrid({
                 <div
                   key={`staffing-header-${date}`}
                   className={cn(
-                    "sticky top-[3.5rem] z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-300",
+                    "sticky z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-300",
                     PLANNING_HEADER_ROW_BORDER_CLASS,
                     mutedHeader ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
                     dayHeaderColumnDivider(dayIndex, dates.length)
@@ -416,6 +423,7 @@ export function PlanningCalendarGrid({
                   style={{
                     gridColumn: dayIndex + 2,
                     gridRow: staffingHeaderRow!,
+                    top: PLANNING_DAY_HEADER_ROW_HEIGHT,
                     height: PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
                   }}
                 >
@@ -447,16 +455,21 @@ export function PlanningCalendarGrid({
             emp.color?.trim() || EMPLOYEE_COLOR_FALLBACK;
           const rowSelectedShiftId =
             picker?.employeeId === emp.id ? (picker.shiftId ?? null) : null;
+          const isEmployeeHighlighted =
+            highlightedEmployeeId !== null && highlightedEmployeeId === emp.id;
 
           return (
             <div key={`staff-${emp.id}`} className="contents">
               <div
                 className={cn(
-                  "sticky left-0 z-20 flex min-h-0 items-center self-stretch bg-surface px-0",
+                  "sticky left-0 z-20 flex min-h-0 cursor-default items-center self-stretch bg-surface px-0 transition-colors",
                   PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
-                  !isLastEmployee && PLANNING_ROW_DIVIDER_CLASS
+                  !isLastEmployee && PLANNING_ROW_DIVIDER_CLASS,
+                  isEmployeeHighlighted && "bg-subtle"
                 )}
                 style={{ gridColumn: 1, gridRow }}
+                onMouseEnter={() => onEmployeeHover?.(emp.id)}
+                onMouseLeave={() => onEmployeeHover?.(null)}
               >
                 <div className="flex min-w-0 items-center gap-2 py-0 pl-3 pr-2">
                   <span
@@ -572,6 +585,7 @@ export function PlanningCalendarGrid({
                               )
                           : undefined
                       }
+                      employeeHighlighted={isEmployeeHighlighted && isDayExpanded}
                     />
                   ) : null;
 
@@ -581,6 +595,7 @@ export function PlanningCalendarGrid({
                     data-planning-cell={planningCellDataAttribute(emp.id, date)}
                     className={cn(
                       "relative flex min-h-0 flex-col self-stretch overflow-hidden",
+                      isEmployeeHighlighted && isDayExpanded && "overflow-visible",
                       dayColumnDivider(dayIndex, dates.length),
                       !isLastEmployee && PLANNING_ROW_DIVIDER_CLASS
                     )}
@@ -722,6 +737,7 @@ export function PlanningCalendarGrid({
                       event.clientY
                     );
                   }}
+                  highlightedEmployeeId={highlightedEmployeeId}
                 />
               ) : null}
             </div>
@@ -813,4 +829,4 @@ export function PlanningCalendarGrid({
   );
 }
 
-export { PLANNING_EMPLOYEE_ROW_HEIGHT, DAY_HEADER_ROW_HEIGHT };
+export { PLANNING_EMPLOYEE_ROW_HEIGHT, PLANNING_DAY_HEADER_ROW_HEIGHT };

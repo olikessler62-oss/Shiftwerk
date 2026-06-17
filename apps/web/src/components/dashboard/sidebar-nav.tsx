@@ -13,7 +13,6 @@ import {
 } from "@/lib/settings-modal-navigation";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useOrgFeatures } from "@/lib/org-features-provider";
-import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
 import { useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
 import { useSuperadminModal } from "@/components/settings/superadmin-modal-context";
 
@@ -56,13 +55,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const searchParams = useSearchParams();
   const t = useTranslations();
   const features = useOrgFeatures();
-  const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const planungActive = pathname === "/planung";
-  const outboxPath = "/settings/notifications-outbox";
-  const outboxActive = pathname === outboxPath;
-  const showOutboxLink =
-    shiftConfirmationEnabled &&
-    (viewerRole === "admin" || process.env.NODE_ENV === "development");
   const standorteOpen = searchParams.get("standorte") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
   const rollenOpen = searchParams.get("rollen") === "1";
@@ -77,8 +70,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     rollenOpen ||
     qualifikationenOpen ||
     sonderzuschlaegeOpen ||
-    abwesenheitenOpen ||
-    outboxActive;
+    abwesenheitenOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [PLANNING_SECTION_ID]: planungActive,
     [SETTINGS_SECTION_ID]: settingsModalOpen,
@@ -122,7 +114,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           },
         ]
       : []),
-    ...(features.qualifications && COMPENSATION_SURCHARGES_UI_ENABLED
+    ...(COMPENSATION_SURCHARGES_UI_ENABLED
       ? [
           {
             flag: "sonderzuschlaege" as const,
@@ -272,15 +264,6 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
                 {t(item.labelKey)}
               </Link>
             ))}
-            {showOutboxLink ? (
-              <Link
-                href={outboxPath}
-                onClick={() => handlePageNav(outboxPath)}
-                className={settingsSubLinkClass(outboxActive)}
-              >
-                {t("nav.notificationOutbox")}
-              </Link>
-            ) : null}
           </div>
         </div>
       </div>

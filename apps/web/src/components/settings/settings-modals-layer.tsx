@@ -63,7 +63,6 @@ export function SettingsModalsLayer({ data }: Props) {
   const showQualifications =
     features.qualifications && searchParams.get("qualifikationen") === "1";
   const showSurcharges =
-    features.qualifications &&
     COMPENSATION_SURCHARGES_UI_ENABLED &&
     searchParams.get("sonderzuschlaege") === "1";
   const showAbsences = searchParams.get("abwesenheiten") === "1";

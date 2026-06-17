@@ -3,9 +3,8 @@ import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 /** Vollflächiger Overlay-Schleier auf dem Karteninhalt (linker Mitarbeiter-Farbstreifen bleibt frei). */
 export const SHIFT_CONFIRMATION_OVERLAY_COLOR_CLASS = "bg-black/40";
 
-/** Vertieft wirkendes Status-Badge (dunkelgrau–schwarz, inset-Rand). */
-export const SHIFT_CONFIRMATION_BADGE_PANEL_CLASS =
-  "rounded-sm border border-t-neutral-950 border-l-neutral-950 border-b-neutral-600 border-r-neutral-600 bg-[#2a2a2a] shadow-[inset_1px_1px_2px_rgba(0,0,0,0.55),inset_-1px_-1px_1px_rgba(255,255,255,0.07)]";
+/** Status-Badge-Hintergrund (einheitlich schwarz). */
+export const SHIFT_CONFIRMATION_BADGE_PANEL_CLASS = "rounded-sm bg-black";
 
 export function shiftConfirmationShowsOverlay(
   status: ShiftConfirmationStatus | undefined | null
@@ -44,11 +43,30 @@ export function shiftConfirmationBadgeSymbolClass(
     case "requested":
       return "text-yellow-400";
     case "pending":
-      return "text-orange-400";
+      return "text-[#c294d0] drop-shadow-[0_0_3px_rgba(194,148,208,0.95)]";
     case "rejected":
       return "text-fuchsia-500";
     default:
       return "text-white";
+  }
+}
+
+/** Tooltip-Textfarbe für Status „Ausstehend“ (wie Badge-Symbol auf der Karte). */
+export const SHIFT_CONFIRMATION_PENDING_TOOLTIP_TEXT_CLASS = "text-[#a21caf]";
+
+/** Tooltip-Textfarbe für Status „Bestätigt“. */
+export const SHIFT_CONFIRMATION_CONFIRMED_TOOLTIP_TEXT_CLASS = "text-green-600";
+
+export function shiftConfirmationTooltipStatusTextClass(
+  status: ShiftConfirmationStatus | undefined
+): string {
+  switch (status) {
+    case "pending":
+      return SHIFT_CONFIRMATION_PENDING_TOOLTIP_TEXT_CLASS;
+    case "confirmed":
+      return SHIFT_CONFIRMATION_CONFIRMED_TOOLTIP_TEXT_CLASS;
+    default:
+      return "";
   }
 }
 

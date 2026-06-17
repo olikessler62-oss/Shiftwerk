@@ -5,6 +5,7 @@ import {
   areaRowShiftStackHeightPx,
   AREA_ROW_MIN_HEIGHT_PX,
   AREA_ROW_LIST_FIT_SLACK_PX,
+  AREA_ROW_VERTICAL_CHROME_PX,
   AREA_ROW_VISIBLE_SPACE_BELOW_LAST_SHIFT_PX,
   buildAreaRowGridTrack,
   calendarAvailableBodyHeightPx,
@@ -175,7 +176,7 @@ describe("shift-card-row-layout", () => {
     expect(AREA_ROW_VISIBLE_SPACE_BELOW_LAST_SHIFT_PX).toBe(20);
     expect(areaRowRequiredHeightPx(1)).toBe(
       areaRowShiftStackHeightPx(1) +
-        54 +
+        AREA_ROW_VERTICAL_CHROME_PX +
         4 +
         20 +
         SHIFT_CARD_ROW_FIT_BUFFER_PX +

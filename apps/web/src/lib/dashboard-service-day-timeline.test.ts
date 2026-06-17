@@ -5,6 +5,7 @@ import {
   dashboardStartDayServiceSpanMinutesForOvernightWidth,
   DASHBOARD_CELL_DIVISION_DAY_END_MIN,
   resolveDashboardAreaServiceDayTimeline,
+  resolveDashboardOvernightEndDayTimeline,
 } from "./dashboard-service-day-timeline";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import { timelineLeftPx } from "@/lib/shift-card-service-timeline";
@@ -126,6 +127,17 @@ describe("overnight width service spans", () => {
   it("computes overnight shift duration across midnight", () => {
     expect(dashboardOvernightShiftDurationMinutes("22:00", "04:00")).toBe(6 * 60);
     expect(dashboardOvernightShiftDurationMinutes("22:00", "06:00")).toBe(8 * 60);
+  });
+
+  it("uses midnight to latest same-day service end on the follow-up day", () => {
+    const timeline = resolveDashboardOvernightEndDayTimeline(
+      WEDNESDAY_HOURS,
+      AREA_ID,
+      "2026-06-17"
+    );
+    expect(timeline.startMin).toBe(0);
+    expect(timeline.endMin).toBe(18 * 60);
+    expect(timeline.durationMin).toBe(18 * 60);
   });
 
   it("matches the documented 8h shift on 26h service example", () => {

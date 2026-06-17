@@ -22,6 +22,10 @@ import { PlanningShiftCardConfirmationOverlay } from "@/components/planning/plan
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import {
+  buildEmployeeShiftHighlightBoxShadow,
+  employeeShiftHighlightOverlayStyle,
+} from "@/lib/calendar-interaction-ui";
 import { shiftConfirmationShowsOverlay } from "@/lib/shift-confirmation-display";
 
 export type DashboardShiftCard = {
@@ -63,6 +67,7 @@ type Props = {
   onClick?: () => void;
   onContextMenu?: (event: React.MouseEvent) => void;
   confirmationStatusLabel?: string;
+  employeeHighlighted?: boolean;
 };
 
 function ShiftCardTextRows({
@@ -125,6 +130,7 @@ export function DashboardShiftCardView({
   onClick,
   onContextMenu,
   confirmationStatusLabel,
+  employeeHighlighted = false,
 }: Props) {
   const t = useTranslations();
   const employeeColor =
@@ -142,7 +148,11 @@ export function DashboardShiftCardView({
     shiftConfirmationShowsOverlay(confirmationStatus);
 
   const tooltipData = confirmationStatusLabel
-    ? { ...display.tooltip, confirmationStatusLine: confirmationStatusLabel }
+    ? {
+        ...display.tooltip,
+        confirmationStatusLine: confirmationStatusLabel,
+        confirmationStatus: shift.confirmationStatus,
+      }
     : display.tooltip;
   const tooltipPlainText = confirmationStatusLabel
     ? formatShiftCardTooltipPlainText(tooltipData, {
@@ -151,11 +161,22 @@ export function DashboardShiftCardView({
       })
     : display.tooltipBody;
 
+  const cardBoxShadow = employeeHighlighted
+    ? buildEmployeeShiftHighlightBoxShadow(
+        DASHBOARD_SHIFT_CARD_BOX_SHADOW,
+        employeeColor
+      )
+    : DASHBOARD_SHIFT_CARD_BOX_SHADOW;
+
   return (
     <div
-      className="max-w-full shrink-0 self-start"
+      className={cn(
+        "max-w-full shrink-0 self-start",
+        employeeHighlighted && "relative z-[25] overflow-visible"
+      )}
       style={{
         height: shiftCardListItemHeightPx(cardHeightPx),
+        ...(widthPx !== undefined ? { width: widthPx } : undefined),
         ...(marginLeftPx !== undefined ? { marginLeft: marginLeftPx } : undefined),
       }}
     >
@@ -169,45 +190,54 @@ export function DashboardShiftCardView({
         }}
       >
         <div
-          data-dashboard-shift-card
-          role={onClick ? "button" : undefined}
-          tabIndex={onClick ? 0 : undefined}
-          onClick={(event) => {
-            event.stopPropagation();
-            onClick?.();
-          }}
-          onContextMenu={
-            onContextMenu
-              ? (event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onContextMenu(event);
-                }
-              : undefined
-          }
-          onKeyDown={
-            onClick
-              ? (event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onClick();
-                  }
-                }
-              : undefined
-          }
-          className={cn(
-            DASHBOARD_SHIFT_CARD_CLASS,
-            widthPx === undefined && "w-full",
-            onClick && "cursor-pointer"
-          )}
+          className={cn("rounded", employeeHighlighted && "overflow-visible")}
           style={{
+            boxShadow: cardBoxShadow,
             ...(widthPx !== undefined ? { width: widthPx } : undefined),
             height: cardHeightPx,
             minHeight: cardHeightPx,
-            boxShadow: DASHBOARD_SHIFT_CARD_BOX_SHADOW,
           }}
         >
+          <div
+            data-dashboard-shift-card
+            role={onClick ? "button" : undefined}
+            tabIndex={onClick ? 0 : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClick?.();
+            }}
+            onContextMenu={
+              onContextMenu
+                ? (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onContextMenu(event);
+                  }
+                : undefined
+            }
+            onKeyDown={
+              onClick
+                ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onClick();
+                    }
+                  }
+                : undefined
+            }
+            className={cn(
+              DASHBOARD_SHIFT_CARD_CLASS,
+              "h-full",
+              widthPx === undefined && "w-full",
+              onClick && "cursor-pointer"
+            )}
+            style={{
+              ...(widthPx !== undefined ? { width: widthPx } : undefined),
+              height: cardHeightPx,
+              minHeight: cardHeightPx,
+            }}
+          >
         <div
           className="shrink-0 self-stretch"
           style={{
@@ -235,12 +265,20 @@ export function DashboardShiftCardView({
               ),
             }}
           >
+            {employeeHighlighted ? (
+              <div
+                className="pointer-events-none absolute inset-0"
+                style={employeeShiftHighlightOverlayStyle(employeeColor)}
+                aria-hidden
+              />
+            ) : null}
             <ShiftCardTextRows display={display} density={density} />
             {showConfirmationOverlay ? (
               <PlanningShiftCardConfirmationOverlay status={confirmationStatus} />
             ) : null}
           </div>
         )}
+          </div>
         </div>
       </Tooltip>
     </div>

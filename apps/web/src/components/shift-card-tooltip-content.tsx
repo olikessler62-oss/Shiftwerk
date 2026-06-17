@@ -1,6 +1,8 @@
 "use client";
 
 import { useTranslations } from "@/i18n/locale-provider";
+import { cn } from "@/lib/cn";
+import { shiftConfirmationTooltipStatusTextClass } from "@/lib/shift-confirmation-display";
 import type { ShiftCardTooltipData } from "@/lib/shift-card-display-content";
 
 type Props = {
@@ -41,7 +43,14 @@ export function ShiftCardTooltipContent({ data }: Props) {
       {confirmationStatusLine ? (
         <div>
           {t("common.shiftCardTooltipStatusLabel")}{" "}
-          <span className="font-bold">{confirmationStatusLine}</span>
+          <span
+            className={cn(
+              "font-bold",
+              shiftConfirmationTooltipStatusTextClass(data.confirmationStatus)
+            )}
+          >
+            {confirmationStatusLine}
+          </span>
         </div>
       ) : null}
     </div>

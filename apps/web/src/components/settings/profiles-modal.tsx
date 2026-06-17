@@ -13,6 +13,7 @@ import type {
 } from "@schichtwerk/types";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ProfileAvailabilityPanelModal } from "./profile-availability-panel-modal";
+import { ProfileAbsencesPanelModal } from "./profile-absences-panel-modal";
 import {
   ProfileCompensationPanelModal,
   type ProfileCompensationCacheEntry,
@@ -78,6 +79,7 @@ type DetailPanel =
   | null
   | "qualifications"
   | "availability"
+  | "absences"
   | "compensation"
   | "surcharges"
   | "invite";
@@ -853,6 +855,13 @@ export function ProfilesModal({
             onCacheUpdate={(profileId, list) => {
               setAvailabilityCache((prev) => ({ ...prev, [profileId]: list }));
             }}
+          />
+        )}
+        {detailPanel === "absences" && selectedProfile && (
+          <ProfileAbsencesPanelModal
+            profile={selectedProfile}
+            profiles={profileList}
+            onClose={() => setDetailPanel(null)}
           />
         )}
         {detailPanel === "compensation" && selectedProfile && (

@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { AbsenceRange } from "@schichtwerk/database";
-import type { AbsenceRequest, AbsenceType, Profile } from "@schichtwerk/types";
+import type { AbsenceRequest, AbsenceType, Profile, RequestStatus } from "@schichtwerk/types";
 import {
+  closeOpenAbsence,
   deleteAbsence,
   fetchOrganizationAbsences,
-  type AbsenceDraft,
+  reviewAbsenceRequest,
 } from "@/app/actions/absences";
 import {
   applyCreatedListSelection,
@@ -18,6 +19,7 @@ import {
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
   SettingsListRowDeleteButton,
+  settingsConfirmDialogClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
@@ -28,6 +30,7 @@ import {
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
   settingsModalRootClass,
+  settingsNestedModalOverlayClass,
   settingsPanelHeaderClass,
   settingsScrollableTableListClass,
   settingsListRowDeleteCellClass,
@@ -36,13 +39,21 @@ import {
   settingsStickyIndicatorHeaderClass,
   useScrollToSettingsListItem,
 } from "./settings-list-ui";
-import { AbsenceFormModal } from "./absence-form-modal";
+import {
+  AbsenceFormModal,
+  absenceDraftFromRequest,
+  absenceRangesFromRequests,
+  emptyAbsenceDraft,
+} from "./absence-form-modal";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import {
   Alert,
   Button,
+  CheckIcon,
   CloseIcon,
   IconButton,
+  Input,
+  LabelMuted,
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
@@ -61,7 +72,10 @@ type FormMode =
   | { type: "create" }
   | { type: "edit"; absence: AbsenceRequest };
 
+type StatusFilter = "all" | "pending";
+
 const NOTES_MAX = 40;
+const OVERLAP_STATUSES: RequestStatus[] = ["approved", "pending"];
 
 function truncateNotes(value: string | null): string {
   if (!value) return "";
@@ -69,24 +83,18 @@ function truncateNotes(value: string | null): string {
   return `${value.slice(0, NOTES_MAX - 1)}…`;
 }
 
-function emptyDraft(): AbsenceDraft {
-  return {
-    employee_id: "",
-    type: "vacation",
-    start_date: "",
-    end_date: "",
-    notes: null,
-  };
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-function draftFromAbsence(absence: AbsenceRequest): AbsenceDraft {
-  return {
-    employee_id: absence.employee_id,
-    type: absence.type,
-    start_date: absence.start_date,
-    end_date: absence.end_date,
-    notes: absence.notes,
-  };
+function formatEndDateLabel(
+  item: AbsenceRequest,
+  dateFormatter: Intl.DateTimeFormat,
+  openLabel: string
+): string {
+  if (item.is_open_ended && !item.end_date) return openLabel;
+  if (!item.end_date) return "—";
+  return dateFormatter.format(new Date(`${item.end_date}T12:00:00`));
 }
 
 export function AbsencesModal({ profiles, onClose }: Props) {
@@ -96,9 +104,12 @@ export function AbsencesModal({ profiles, onClose }: Props) {
   const [pending, startTransition] = useTransition();
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<AbsenceRequest[]>([]);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<FormMode>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [closeSickOpen, setCloseSickOpen] = useState(false);
+  const [closeSickDate, setCloseSickDate] = useState(todayISO());
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
 
@@ -117,21 +128,23 @@ export function AbsencesModal({ profiles, onClose }: Props) {
     [profiles]
   );
 
-  const existingRanges = useMemo(
-    (): AbsenceRange[] =>
-      list.map((entry) => ({
-        id: entry.id,
-        employee_id: entry.employee_id,
-        start_date: entry.start_date,
-        end_date: entry.end_date,
-      })),
-    [list]
-  );
+  const filteredList = useMemo(() => {
+    if (statusFilter === "pending") {
+      return list.filter((entry) => entry.status === "pending");
+    }
+    return list;
+  }, [list, statusFilter]);
 
-  const selected = list.find((entry) => entry.id === selectedId);
+  const existingRanges = useMemo((): AbsenceRange[] => {
+    return absenceRangesFromRequests(
+      list.filter((entry) => OVERLAP_STATUSES.includes(entry.status))
+    );
+  }, [list]);
+
+  const selected = filteredList.find((entry) => entry.id === selectedId);
 
   const clearScrollTarget = useCallback(() => setScrollToItemId(null), []);
-  useScrollToSettingsListItem(list, scrollToItemId, clearScrollTarget);
+  useScrollToSettingsListItem(filteredList, scrollToItemId, clearScrollTarget);
 
   const loadAbsences = useCallback(async () => {
     setLoading(true);
@@ -182,6 +195,10 @@ export function AbsencesModal({ profiles, onClose }: Props) {
         setFormMode(null);
         return;
       }
+      if (closeSickOpen) {
+        setCloseSickOpen(false);
+        return;
+      }
       if (confirmDelete) {
         setConfirmDelete(false);
         return;
@@ -190,7 +207,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDelete, formMode, loading, onClose]);
+  }, [closeSickOpen, confirmDelete, formMode, loading, onClose]);
 
   function typeLabel(type: AbsenceType): string {
     switch (type) {
@@ -200,6 +217,32 @@ export function AbsencesModal({ profiles, onClose }: Props) {
         return t("settings.absences.typeSick");
       case "other":
         return t("settings.absences.typeOther");
+    }
+  }
+
+  function statusLabel(status: RequestStatus): string {
+    switch (status) {
+      case "pending":
+        return t("settings.absences.statusPending");
+      case "approved":
+        return t("settings.absences.statusApproved");
+      case "rejected":
+        return t("settings.absences.statusRejected");
+      case "cancelled":
+        return t("settings.absences.statusCancelled");
+    }
+  }
+
+  function statusBadgeClass(status: RequestStatus): string {
+    switch (status) {
+      case "pending":
+        return "text-amber-700";
+      case "approved":
+        return "text-emerald-700";
+      case "rejected":
+        return "text-red-700";
+      default:
+        return "text-muted";
     }
   }
 
@@ -216,12 +259,15 @@ export function AbsencesModal({ profiles, onClose }: Props) {
   function openCreate() {
     setFormMode({ type: "create" });
     setConfirmDelete(false);
+    setCloseSickOpen(false);
     setErrorMessage(null);
   }
 
   function openEdit(absence: AbsenceRequest) {
+    if (absence.status === "pending") return;
     setFormMode({ type: "edit", absence });
     setConfirmDelete(false);
+    setCloseSickOpen(false);
     setErrorMessage(null);
   }
 
@@ -245,245 +291,422 @@ export function AbsencesModal({ profiles, onClose }: Props) {
     });
   }
 
+  function handleReview(approve: boolean) {
+    if (!selected || selected.status !== "pending") return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      const result = await reviewAbsenceRequest(selected.id, approve);
+      if (!result.ok) {
+        setErrorMessage(
+          result.error === "OVERLAP"
+            ? t("settings.absences.validation.overlap")
+            : result.error
+        );
+        return;
+      }
+      void loadAbsences();
+      refreshList();
+    });
+  }
+
+  function handleCloseSick() {
+    if (!selected) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      const result = await closeOpenAbsence(selected.id, closeSickDate);
+      if (!result.ok) {
+        setErrorMessage(
+          result.error === "END_BEFORE_START"
+            ? t("settings.absences.validation.endBeforeStart")
+            : result.error
+        );
+        return;
+      }
+      setCloseSickOpen(false);
+      void loadAbsences();
+      refreshList();
+    });
+  }
+
+  const canEditSelected =
+    selected &&
+    selected.status !== "pending" &&
+    selected.status !== "rejected" &&
+    selected.status !== "cancelled";
+  const canReviewSelected = selected?.status === "pending";
+  const canCloseSickSelected =
+    selected?.status === "approved" && selected.is_open_ended;
+
   return (
     <div
       className={cn(settingsModalBackdropClass(), loading && "cursor-wait")}
       role="presentation"
       aria-busy={loading}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !formMode && !confirmDelete) {
+        if (
+          e.target === e.currentTarget &&
+          !formMode &&
+          !confirmDelete &&
+          !closeSickOpen
+        ) {
           onClose();
         }
       }}
     >
       {!loading ? (
-      <div
-        className={settingsModalRootClass("4xl")}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="absences-modal-title"
-          aria-hidden={!!formMode}
-          className={cn(
-            settingsModalDialogClass(),
-            formMode ? "pointer-events-none" : ""
-          )}
+          className={settingsModalRootClass("4xl")}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="absences-modal-title"
+            aria-hidden={!!formMode}
             className={cn(
-              "flex items-center justify-between border-b border-border",
-              settingsModalHeaderPaddingClass()
+              settingsModalDialogClass(),
+              formMode ? "pointer-events-none" : ""
             )}
           >
-            <h2 id="absences-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("settings.absences.title")}
-            </h2>
-            <IconButton
-              size="sm"
-              onClick={onClose}
-              aria-label={t("common.close")}
-              className="border-transparent bg-transparent hover:bg-subtle"
+            <div
+              className={cn(
+                "flex items-center justify-between border-b border-border",
+                settingsModalHeaderPaddingClass()
+              )}
             >
-              <CloseIcon className="h-[18px] w-[18px]" />
-            </IconButton>
-          </div>
-
-          {errorMessage && (
-            <div className="mx-6 mt-4 shrink-0">
-              <Alert variant="error">{errorMessage}</Alert>
+              <h2 id="absences-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
+                {t("settings.absences.title")}
+              </h2>
+              <IconButton
+                size="sm"
+                onClick={onClose}
+                aria-label={t("common.close")}
+                className="border-transparent bg-transparent hover:bg-subtle"
+              >
+                <CloseIcon className="h-[18px] w-[18px]" />
+              </IconButton>
             </div>
-          )}
 
-          <div className={cn(settingsModalBodyPaddingClass(), "bg-background")}>
-            <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
-              <h3 className={settingsPanelHeaderClass()}>
-                {t("settings.absences.column")}
-              </h3>
+            {errorMessage && (
+              <div className="mx-6 mt-4 shrink-0">
+                <Alert variant="error">{errorMessage}</Alert>
+              </div>
+            )}
 
-              <div className="space-y-1 bg-background px-2 py-2">
-                {list.length === 0 ? (
-                  <SettingsEmptyState
-                    message={t("settings.absences.emptyList")}
-                    hint={t("common.emptyHintCreate")}
-                  />
-                ) : (
-                  <div
-                    className={cn(
-                      settingsScrollableTableListClass(),
-                      SETTINGS_ABSENCES_LIST_SCROLL_CLASS
-                    )}
-                  >
-                    <table className="w-full min-w-[28rem] border-collapse">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th
-                            className={settingsStickyIndicatorHeaderClass("w-3")}
-                            aria-hidden
-                          />
-                          <th className={settingsStickyColumnHeaderClass()}>
-                            {t("settings.absences.employee")}
-                          </th>
-                          <th className={settingsStickyColumnHeaderClass()}>
-                            {t("settings.absences.type")}
-                          </th>
-                          <th className={settingsStickyColumnHeaderClass()}>
-                            {t("settings.absences.startDate")}
-                          </th>
-                          <th className={settingsStickyColumnHeaderClass()}>
-                            {t("settings.absences.endDate")}
-                          </th>
-                          <th className={settingsStickyColumnHeaderClass()}>
-                            {t("settings.absences.notes")}
-                          </th>
-                          <th
-                            className={settingsListRowDeleteHeaderClass()}
-                            aria-hidden
-                          />
-                        </tr>
-                      </thead>
-                    <tbody>
-                      {list.map((item) => {
-                        const profile = profileById.get(item.employee_id);
-                        const isSelected = item.id === selectedId;
-                        return (
-                          <tr
-                            key={item.id}
-                            {...settingsListItemAttrs(item.id)}
-                            onClick={() => {
-                              setSelectedId(item.id);
-                              setConfirmDelete(false);
-                              setErrorMessage(null);
-                            }}
-                            onDoubleClick={(e) => {
-                              e.preventDefault();
-                              window.getSelection()?.removeAllRanges();
-                              openEdit(item);
-                            }}
-                            className={settingsDataRowClass(isSelected)}
-                          >
-                            <td
-                              className={settingsIndicatorCellClass(isSelected)}
-                              aria-hidden
-                            />
-                            <td className={settingsDataCellClass(isSelected)}>
-                              <span className="flex min-w-0 items-center gap-2">
-                                {profile?.color ? (
-                                  <span
-                                    className="size-3 shrink-0 rounded-full border border-border/60"
-                                    style={{ backgroundColor: profile.color }}
-                                    aria-hidden
-                                  />
-                                ) : null}
-                                <span className="truncate font-medium">
-                                  {profile?.full_name ?? "—"}
-                                </span>
-                              </span>
-                            </td>
-                            <td className={settingsDataCellClass(isSelected)}>
-                              {typeLabel(item.type)}
-                            </td>
-                            <td className={settingsDataCellClass(isSelected)}>
-                              {dateFormatter.format(new Date(`${item.start_date}T12:00:00`))}
-                            </td>
-                            <td className={settingsDataCellClass(isSelected)}>
-                              {dateFormatter.format(new Date(`${item.end_date}T12:00:00`))}
-                            </td>
-                            <td
-                              className={settingsDataCellClass(isSelected, {
-                                className: "max-w-[10rem] truncate text-muted",
-                              })}
-                            >
-                              <Tooltip
-                                content={item.notes}
-                                className="block max-w-full truncate"
-                              >
-                                {truncateNotes(item.notes)}
-                              </Tooltip>
-                            </td>
-                            <td className={settingsListRowDeleteCellClass(isSelected)}>
-                              <SettingsListRowDeleteButton
-                                label={t("settings.absences.delete")}
-                                disabled={pending}
-                                onClick={() => {
-                                  setSelectedId(item.id);
-                                  setConfirmDelete(true);
-                                  setErrorMessage(null);
-                                }}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  </div>
-                )}
+            <div className={cn(settingsModalBodyPaddingClass(), "bg-background")}>
+              <div className="mb-3 flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={statusFilter === "all" ? "primary" : "outline"}
+                  onClick={() => setStatusFilter("all")}
+                >
+                  {t("settings.absences.filterAll")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={statusFilter === "pending" ? "primary" : "outline"}
+                  onClick={() => setStatusFilter("pending")}
+                >
+                  {t("settings.absences.filterPending")}
+                </Button>
               </div>
 
-              <SettingsActionBar
-                primary={
-                  <SettingsPrimaryActionButton
-                    label={t("settings.absences.new")}
-                    icon={<PlusIcon />}
-                    disabled={pending}
-                    onClick={openCreate}
-                  />
-                }
-                secondary={
-                  <SettingsIconActionButton
-                    label={t("settings.absences.edit")}
-                    icon={<PencilIcon />}
-                    disabled={pending || !selected}
-                    onClick={() => {
-                      if (!selected) return;
-                      openEdit(selected);
-                    }}
-                  />
-                }
-              />
+              <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
+                <h3 className={settingsPanelHeaderClass()}>
+                  {t("settings.absences.column")}
+                </h3>
+
+                <div className="space-y-1 bg-background px-2 py-2">
+                  {filteredList.length === 0 ? (
+                    <SettingsEmptyState
+                      message={t("settings.absences.emptyList")}
+                      hint={t("common.emptyHintCreate")}
+                    />
+                  ) : (
+                    <div
+                      className={cn(
+                        settingsScrollableTableListClass(),
+                        SETTINGS_ABSENCES_LIST_SCROLL_CLASS
+                      )}
+                    >
+                      <table className="w-full min-w-[36rem] border-collapse">
+                        <thead>
+                          <tr className="border-b border-border">
+                            <th
+                              className={settingsStickyIndicatorHeaderClass("w-3")}
+                              aria-hidden
+                            />
+                            <th className={settingsStickyColumnHeaderClass()}>
+                              {t("settings.absences.employee")}
+                            </th>
+                            <th className={settingsStickyColumnHeaderClass()}>
+                              {t("settings.absences.type")}
+                            </th>
+                            <th className={settingsStickyColumnHeaderClass()}>
+                              {t("settings.absences.status")}
+                            </th>
+                            <th className={settingsStickyColumnHeaderClass()}>
+                              {t("settings.absences.startDate")}
+                            </th>
+                            <th className={settingsStickyColumnHeaderClass()}>
+                              {t("settings.absences.endDate")}
+                            </th>
+                            <th className={settingsStickyColumnHeaderClass()}>
+                              {t("settings.absences.notes")}
+                            </th>
+                            <th
+                              className={settingsListRowDeleteHeaderClass()}
+                              aria-hidden
+                            />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredList.map((item) => {
+                            const profile = profileById.get(item.employee_id);
+                            const isSelected = item.id === selectedId;
+                            return (
+                              <tr
+                                key={item.id}
+                                {...settingsListItemAttrs(item.id)}
+                                onClick={() => {
+                                  setSelectedId(item.id);
+                                  setConfirmDelete(false);
+                                  setCloseSickOpen(false);
+                                  setErrorMessage(null);
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.preventDefault();
+                                  window.getSelection()?.removeAllRanges();
+                                  openEdit(item);
+                                }}
+                                className={settingsDataRowClass(isSelected)}
+                              >
+                                <td
+                                  className={settingsIndicatorCellClass(isSelected)}
+                                  aria-hidden
+                                />
+                                <td className={settingsDataCellClass(isSelected)}>
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    {profile?.color ? (
+                                      <span
+                                        className="size-3 shrink-0 rounded-full border border-border/60"
+                                        style={{ backgroundColor: profile.color }}
+                                        aria-hidden
+                                      />
+                                    ) : null}
+                                    <span className="truncate font-medium">
+                                      {profile?.full_name ?? "—"}
+                                    </span>
+                                  </span>
+                                </td>
+                                <td className={settingsDataCellClass(isSelected)}>
+                                  {typeLabel(item.type)}
+                                </td>
+                                <td
+                                  className={settingsDataCellClass(isSelected, {
+                                    className: cn(
+                                      "text-xs font-medium",
+                                      statusBadgeClass(item.status)
+                                    ),
+                                  })}
+                                >
+                                  {statusLabel(item.status)}
+                                </td>
+                                <td className={settingsDataCellClass(isSelected)}>
+                                  {dateFormatter.format(
+                                    new Date(`${item.start_date}T12:00:00`)
+                                  )}
+                                </td>
+                                <td className={settingsDataCellClass(isSelected)}>
+                                  {formatEndDateLabel(
+                                    item,
+                                    dateFormatter,
+                                    t("settings.absences.openEnded")
+                                  )}
+                                </td>
+                                <td
+                                  className={settingsDataCellClass(isSelected, {
+                                    className: "max-w-[10rem] truncate text-muted",
+                                  })}
+                                >
+                                  <Tooltip
+                                    content={item.notes}
+                                    className="block max-w-full truncate"
+                                  >
+                                    {truncateNotes(item.notes)}
+                                  </Tooltip>
+                                </td>
+                                <td className={settingsListRowDeleteCellClass(isSelected)}>
+                                  <SettingsListRowDeleteButton
+                                    label={t("settings.absences.delete")}
+                                    disabled={pending}
+                                    onClick={() => {
+                                      setSelectedId(item.id);
+                                      setConfirmDelete(true);
+                                      setErrorMessage(null);
+                                    }}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <SettingsActionBar
+                  primary={
+                    <SettingsPrimaryActionButton
+                      label={t("settings.absences.new")}
+                      icon={<PlusIcon />}
+                      disabled={pending}
+                      onClick={openCreate}
+                    />
+                  }
+                  secondary={
+                    <>
+                      {canReviewSelected ? (
+                        <>
+                          <SettingsIconActionButton
+                            label={t("settings.absences.approve")}
+                            icon={<CheckIcon />}
+                            disabled={pending}
+                            onClick={() => handleReview(true)}
+                          />
+                          <SettingsIconActionButton
+                            label={t("settings.absences.reject")}
+                            icon={<CloseIcon />}
+                            disabled={pending}
+                            onClick={() => handleReview(false)}
+                          />
+                        </>
+                      ) : null}
+                      {canCloseSickSelected ? (
+                        <SettingsIconActionButton
+                          label={t("settings.absences.healthyAgain")}
+                          icon={<CheckIcon />}
+                          disabled={pending}
+                          onClick={() => {
+                            setCloseSickDate(todayISO());
+                            setCloseSickOpen(true);
+                          }}
+                        />
+                      ) : null}
+                      <SettingsIconActionButton
+                        label={t("settings.absences.edit")}
+                        icon={<PencilIcon />}
+                        disabled={pending || !canEditSelected}
+                        onClick={() => {
+                          if (!selected || !canEditSelected) return;
+                          openEdit(selected);
+                        }}
+                      />
+                    </>
+                  }
+                />
+              </div>
+            </div>
+
+            <div className={settingsModalFooterClass()}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                disabled={pending}
+              >
+                <CloseIcon />
+                {t("common.close")}
+              </Button>
             </div>
           </div>
 
-          <div className={settingsModalFooterClass()}>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={pending}
+          {formMode && (
+            <AbsenceFormModal
+              mode={formMode.type}
+              absenceId={formMode.type === "edit" ? formMode.absence.id : undefined}
+              initialDraft={
+                formMode.type === "create"
+                  ? emptyAbsenceDraft()
+                  : absenceDraftFromRequest(formMode.absence)
+              }
+              profiles={profiles}
+              existingRanges={existingRanges}
+              onClose={() => setFormMode(null)}
+              onSaved={handleFormSaved}
+            />
+          )}
+
+          {confirmDelete && selected && (
+            <DeleteConfirmModal
+              name={`${profileById.get(selected.employee_id)?.full_name ?? "—"} (${dateFormatter.format(new Date(`${selected.start_date}T12:00:00`))} – ${formatEndDateLabel(selected, dateFormatter, t("settings.absences.openEnded"))})`}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={handleDelete}
+              pending={pending}
+            />
+          )}
+
+          {closeSickOpen && selected && (
+            <div
+              className={settingsNestedModalOverlayClass()}
+              role="presentation"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget && !pending) {
+                  setCloseSickOpen(false);
+                }
+              }}
             >
-              <CloseIcon />
-              {t("common.close")}
-            </Button>
-          </div>
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="close-sick-title"
+                className={settingsConfirmDialogClass()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <h4
+                  id="close-sick-title"
+                  className="text-base font-semibold text-foreground"
+                >
+                  {t("settings.absences.healthyAgainTitle")}
+                </h4>
+                <p className="mt-2 text-sm text-muted">
+                  {t("settings.absences.healthyAgainMessage")}
+                </p>
+                <div className="mt-4">
+                  <LabelMuted>{t("settings.absences.endDate")}</LabelMuted>
+                  <Input
+                    type="date"
+                    value={closeSickDate}
+                    min={selected.start_date}
+                    onChange={(e) => setCloseSickDate(e.target.value)}
+                    disabled={pending}
+                  />
+                </div>
+                <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCloseSickOpen(false)}
+                    disabled={pending}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleCloseSick}
+                    disabled={pending}
+                  >
+                    {t("settings.absences.healthyAgainConfirm")}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-
-        {formMode && (
-          <AbsenceFormModal
-            mode={formMode.type}
-            absenceId={formMode.type === "edit" ? formMode.absence.id : undefined}
-            initialDraft={
-              formMode.type === "create"
-                ? emptyDraft()
-                : draftFromAbsence(formMode.absence)
-            }
-            profiles={profiles}
-            existingRanges={existingRanges}
-            onClose={() => setFormMode(null)}
-            onSaved={handleFormSaved}
-          />
-        )}
-
-        {confirmDelete && selected && (
-          <DeleteConfirmModal
-            name={`${profileById.get(selected.employee_id)?.full_name ?? "—"} (${dateFormatter.format(new Date(`${selected.start_date}T12:00:00`))} – ${dateFormatter.format(new Date(`${selected.end_date}T12:00:00`))})`}
-            onCancel={() => setConfirmDelete(false)}
-            onConfirm={handleDelete}
-            pending={pending}
-          />
-        )}
-      </div>
       ) : null}
     </div>
   );

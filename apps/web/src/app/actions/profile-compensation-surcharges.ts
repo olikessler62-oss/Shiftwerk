@@ -5,9 +5,11 @@ import {
   parseValidFromDate,
   validateMutableHourlyRateValidFrom,
   validateNewProfileCompensationSurcharge,
+  isCompensationSurchargeUnit,
 } from "@schichtwerk/database";
 import type {
   CompensationSurchargeType,
+  CompensationSurchargeUnit,
   ProfileCompensationSurcharge,
 } from "@schichtwerk/types";
 import type { ProfileCompensationCacheEntry } from "@/components/settings/profile-compensation-panel-modal";
@@ -50,6 +52,7 @@ export async function saveProfileCompensationSurcharge(input: {
   profileId: string;
   surcharge_type_id: string;
   amount: number | null;
+  unit: CompensationSurchargeUnit | null;
   valid_from: string;
 }): Promise<ProfileCompensationSurchargeActionResult> {
   try {
@@ -90,12 +93,21 @@ export async function saveProfileCompensationSurcharge(input: {
     });
     if (!validated.ok) return validated;
 
+    if (input.amount !== null) {
+      if (!input.unit || !isCompensationSurchargeUnit(input.unit)) {
+        return { ok: false, error: "Bitte eine Einheit auswählen." };
+      }
+    } else if (input.unit !== null) {
+      return { ok: false, error: "Ungültige Einheit." };
+    }
+
     const entry = await db.setProfileCompensationSurcharge(
       organizationId,
       input.profileId,
       {
         surcharge_type_id: input.surcharge_type_id,
         amount: input.amount,
+        unit: input.unit,
         valid_from: parsedDate.valid_from,
         created_by: managerProfile.id,
       }
@@ -119,6 +131,7 @@ export async function updateProfileCompensationSurcharge(input: {
   profileId: string;
   entryId: string;
   amount: number | null;
+  unit: CompensationSurchargeUnit | null;
   valid_from: string;
 }): Promise<ProfileCompensationSurchargeActionResult> {
   try {
@@ -133,6 +146,14 @@ export async function updateProfileCompensationSurcharge(input: {
     const parsedDate = parseValidFromDate(input.valid_from);
     if (!parsedDate.ok) return parsedDate;
 
+    if (input.amount !== null) {
+      if (!input.unit || !isCompensationSurchargeUnit(input.unit)) {
+        return { ok: false, error: "Bitte eine Einheit auswählen." };
+      }
+    } else if (input.unit !== null) {
+      return { ok: false, error: "Ungültige Einheit." };
+    }
+
     const serverToday = await db.getServerDateIso();
     const entry = await db.updateProfileCompensationSurcharge(
       organizationId,
@@ -140,6 +161,7 @@ export async function updateProfileCompensationSurcharge(input: {
       input.entryId,
       {
         amount: input.amount,
+        unit: input.unit,
         valid_from: parsedDate.valid_from,
       },
       serverToday

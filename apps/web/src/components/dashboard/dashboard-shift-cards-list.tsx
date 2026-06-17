@@ -42,6 +42,8 @@ type Props = {
   qualificationSortOrder: ReadonlyMap<string, number>;
   /** Layout-basiert: Scroll nur wenn der Bereich wirklich scrollen soll. */
   needsVerticalScroll?: boolean;
+  /** Scroll-Prüfung aussetzen (z. B. während Bereichs-Aufklapp-Animation). */
+  deferVerticalScroll?: boolean;
   /** Nur dominanter Bereich: echtes Überlaufen nach Layout-Wechsel erkennen. */
   measureOverflowFallback?: boolean;
   className?: string;
@@ -50,6 +52,7 @@ type Props = {
   shiftConfirmationEnabled?: boolean;
   /** Vergangene Tage: kein Scroll, Inhalt abschneiden. */
   clipVerticalOverflow?: boolean;
+  highlightedEmployeeId?: string | null;
   /** Platzhalter für Nachtschichten, die als Durchgangs-Karte gerendert werden. */
   overnightAnchorShiftIds?: ReadonlySet<string>;
   /** Endtag: Zeilenindex → Schicht-ID für eingehende Nachtschicht-Fortsetzung. */
@@ -147,12 +150,14 @@ export function DashboardShiftCardsList({
   qualificationNameById,
   qualificationSortOrder,
   needsVerticalScroll = false,
+  deferVerticalScroll = false,
   measureOverflowFallback = false,
   className,
   onShiftClick,
   onShiftContextMenu,
   shiftConfirmationEnabled = false,
   clipVerticalOverflow = false,
+  highlightedEmployeeId = null,
   overnightAnchorShiftIds,
   incomingOvernightTailRowsByIndex,
 }: Props) {
@@ -303,7 +308,7 @@ export function DashboardShiftCardsList({
   ]);
 
   useLayoutEffect(() => {
-    if (!measureOverflowFallback) {
+    if (!measureOverflowFallback || deferVerticalScroll) {
       setContentOverflows(false);
       return;
     }
@@ -334,6 +339,7 @@ export function DashboardShiftCardsList({
     };
   }, [
     measureOverflowFallback,
+    deferVerticalScroll,
     shifts,
     shiftRows.length,
     needsVerticalScroll,
@@ -341,18 +347,28 @@ export function DashboardShiftCardsList({
   ]);
 
   const showVerticalScroll =
+    !deferVerticalScroll &&
     !clipVerticalOverflow &&
     shifts.length > 0 &&
     (needsVerticalScroll || (measureOverflowFallback && contentOverflows));
+
+  const hasHighlightedShiftInList =
+    highlightedEmployeeId !== null &&
+    shifts.some((shift) => shift.employeeId === highlightedEmployeeId);
 
   return (
     <div
       ref={containerRef}
       className={cn(
         shifts.length > 0 && "h-0 min-h-0 flex-1",
-        "flex flex-col items-start gap-1 overflow-x-hidden pb-1",
-        showVerticalScroll ? "overflow-y-auto" : "overflow-y-hidden",
-        showVerticalScroll && MODAL_SCROLLBAR_CLASS,
+        "flex flex-col items-start gap-1 pb-1",
+        hasHighlightedShiftInList
+          ? "relative z-20 overflow-visible"
+          : cn(
+              "overflow-x-hidden",
+              showVerticalScroll ? "overflow-y-auto" : "overflow-y-hidden",
+              showVerticalScroll && MODAL_SCROLLBAR_CLASS
+            ),
         className
       )}
     >
@@ -411,6 +427,10 @@ export function DashboardShiftCardsList({
             shift.confirmationStatus
               ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
               : undefined
+          }
+          employeeHighlighted={
+            highlightedEmployeeId !== null &&
+            shift.employeeId === highlightedEmployeeId
           }
         />
         );

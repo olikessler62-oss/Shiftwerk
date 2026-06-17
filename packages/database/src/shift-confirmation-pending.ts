@@ -1,8 +1,8 @@
+import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import type { OrganizationTimeZoneInput } from "./organization-timezone";
-import { resolveOrganizationTimeZone } from "./organization-timezone";
 import {
   isShiftConfirmationPendingDue,
-  PENDING_BUSINESS_MINUTES_REQUIRED,
+  PENDING_ELAPSED_MINUTES_REQUIRED,
 } from "./business-minutes";
 
 export type RequestedShiftForPendingJob = {
@@ -23,11 +23,10 @@ export type ShiftConfirmationPendingJobResult = {
 };
 
 export function isRequestedShiftDueForPendingTransition(
-  shift: Pick<RequestedShiftForPendingJob, "requested_at" | "organization">,
+  shift: Pick<RequestedShiftForPendingJob, "requested_at">,
   now: Date
 ): boolean {
-  const timeZone = resolveOrganizationTimeZone(shift.organization);
-  return isShiftConfirmationPendingDue(shift.requested_at, now, timeZone);
+  return isShiftConfirmationPendingDue(shift.requested_at, now);
 }
 
 export function filterRequestedShiftsDueForPendingTransition(
@@ -35,6 +34,23 @@ export function filterRequestedShiftsDueForPendingTransition(
   now: Date
 ): RequestedShiftForPendingJob[] {
   return shifts.filter((shift) => isRequestedShiftDueForPendingTransition(shift, now));
+}
+
+/** UI/Anzeige: requested mit abgelaufener Frist wie pending behandeln. */
+export function resolveEffectiveConfirmationStatus(
+  status: ShiftConfirmationStatus | null | undefined,
+  requestedAt: string | null | undefined,
+  now: Date = new Date()
+): ShiftConfirmationStatus | undefined {
+  if (!status) return undefined;
+  if (
+    status === "requested" &&
+    requestedAt &&
+    isShiftConfirmationPendingDue(requestedAt, now)
+  ) {
+    return "pending";
+  }
+  return status;
 }
 
 export function buildPendingReminderNotificationTitle(): string {
@@ -53,4 +69,4 @@ export function buildManagerPendingEscalationBody(employeeName: string): string 
   return `${employeeName} hat auf Schichten nicht rechtzeitig geantwortet.`;
 }
 
-export { PENDING_BUSINESS_MINUTES_REQUIRED };
+export { PENDING_ELAPSED_MINUTES_REQUIRED, PENDING_ELAPSED_MINUTES_REQUIRED as PENDING_BUSINESS_MINUTES_REQUIRED };

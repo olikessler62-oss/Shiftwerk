@@ -13,30 +13,41 @@ import {
 } from "@/lib/dashboard-week-employee-legend";
 import { PLANNING_ROW_DIVIDER_CLASS } from "@/lib/planning-calendar-layout";
 import { formatPlanningHoursRatio } from "@/lib/planning-utils";
-import type { Profile } from "@schichtwerk/types";
+import type { AbsenceRequest, Profile } from "@schichtwerk/types";
 
 const EMPLOYEE_COLOR_FALLBACK = "#94a3b8";
 
 type Props = {
   shifts: readonly DashboardShiftCard[];
   profiles: readonly Profile[];
+  absences?: readonly AbsenceRequest[];
   locale: string;
   employeeHoursLabel: string;
   emptyLabel: string;
+  highlightedEmployeeId?: string | null;
+  onEmployeeHover?: (employeeId: string | null) => void;
   className?: string;
 };
 
 export function DashboardEmployeeLegendSidebar({
   shifts,
   profiles,
+  absences = [],
   locale,
   employeeHoursLabel,
   emptyLabel,
+  highlightedEmployeeId = null,
+  onEmployeeHover,
   className,
 }: Props) {
   const employees = useMemo(
-    () => collectWeekLegendEmployeesFromDashboardShifts(shifts, profiles),
-    [shifts, profiles]
+    () =>
+      collectWeekLegendEmployeesFromDashboardShifts(
+        shifts,
+        profiles,
+        absences
+      ),
+    [shifts, profiles, absences]
   );
 
   return (
@@ -54,17 +65,25 @@ export function DashboardEmployeeLegendSidebar({
           }}
         >
           {employees.map((employee, index) => {
-            const weekHours = dashboardEmployeeWeekHours(employee.id, shifts);
+            const weekHours = dashboardEmployeeWeekHours(
+              employee.id,
+              shifts,
+              absences
+            );
             const targetHours = employee.weekly_hours ?? 40;
             const overHours = weekHours > targetHours;
+            const isHighlighted = highlightedEmployeeId === employee.id;
 
             return (
               <div
                 key={employee.id}
                 className={cn(
-                  "flex h-11 min-h-11 shrink-0 items-center gap-2 py-0 pl-3 pr-2",
-                  index < employees.length - 1 && PLANNING_ROW_DIVIDER_CLASS
+                  "flex h-11 min-h-11 shrink-0 cursor-default items-center gap-2 py-0 pl-3 pr-2 transition-colors",
+                  index < employees.length - 1 && PLANNING_ROW_DIVIDER_CLASS,
+                  isHighlighted && "bg-subtle"
                 )}
+                onMouseEnter={() => onEmployeeHover?.(employee.id)}
+                onMouseLeave={() => onEmployeeHover?.(null)}
               >
                 <span
                   className="shrink-0 rounded-l"

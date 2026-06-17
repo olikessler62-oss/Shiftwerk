@@ -57,6 +57,7 @@ type Props = {
     startDate: string,
     event: React.MouseEvent
   ) => void;
+  highlightedEmployeeId?: string | null;
 };
 
 const COLLAPSED_MARKER_HEIGHT_PX = Math.max(
@@ -82,6 +83,7 @@ export function PlanningEmployeeRowOvernightOverlay({
   selectedShiftId,
   onShiftClick,
   onShiftContextMenu,
+  highlightedEmployeeId = null,
 }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const trackingColumnTransitionRef = useRef(false);
@@ -381,6 +383,11 @@ export function PlanningEmployeeRowOvernightOverlay({
                   ? (event) =>
                       onShiftContextMenu(span.shift.id, span.startDate, event)
                   : undefined
+              }
+              employeeHighlighted={
+                layout.displayMode === "expanded" &&
+                highlightedEmployeeId !== null &&
+                highlightedEmployeeId === employeeId
               }
             />
           </div>

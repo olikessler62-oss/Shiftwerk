@@ -7,7 +7,7 @@ import { getDatabase } from "@/lib/db";
 import { getOrgFeatures } from "@/lib/org-features";
 import { loadManagerOrganization } from "@/lib/manager";
 import { isPastWeek } from "@/lib/planning-readonly";
-import { resolveOrganizationTimeZone } from "@schichtwerk/database";
+import { resolveOrganizationTimeZone, resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
 import {
   resolveSelectedAreaId,
   resolveSelectedLocationId,
@@ -21,6 +21,7 @@ import { planningShiftToDashboardCard } from "@/lib/planning-shift-card";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
 import { loadDashboardShiftCompensation } from "@/lib/load-dashboard-shift-compensation";
+import { runShiftConfirmationPendingJobSafe } from "@/lib/run-shift-confirmation-pending-job";
 import { resolvePlanningEmployeesForShifts } from "@/lib/planning-page-employees";
 import { hasSettingsModalSearchParam } from "@/lib/settings-modal-navigation";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
@@ -96,7 +97,7 @@ export default async function PlanungPage({
   ] = await Promise.all([
     db.listPlanningEmployees(orgId),
     db.listOrganizationRecurringAvailability(orgId),
-    db.listOrganizationAbsences(orgId, "approved"),
+    db.listOrganizationAbsences(orgId, { statuses: ["approved"] }),
     db.listLocations(orgId),
     db.listQualifications(orgId),
     db.listProfileQualificationIdsByOrganization(orgId),
@@ -118,6 +119,8 @@ export default async function PlanungPage({
   ]);
 
   const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
+
+  await runShiftConfirmationPendingJobSafe(db);
 
   const [areas, areaShiftTemplates, serviceHours, shiftRows, staffingRules] =
     selectedLocationId
@@ -173,7 +176,10 @@ export default async function PlanungPage({
       location_area_id: s.location_area_id,
       area_shift_template_id:
         s.area_shift_template_id ?? areaTemplate?.id ?? null,
-      confirmationStatus: s.confirmation_status,
+      confirmationStatus: resolveEffectiveConfirmationStatus(
+        s.confirmation_status,
+        s.requested_at
+      ),
     };
 
     locationShifts.push(planningShift);

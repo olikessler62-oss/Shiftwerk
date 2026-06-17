@@ -24,15 +24,15 @@ export const SHIFT_CARD_SHADOW_BLEED_PX = 3;
 /** @deprecated Einzel-Reserve am Stack-Ende — ersetzt durch {@link SHIFT_CARD_SHADOW_BLEED_PX} pro Karte. */
 export const SHIFT_CARD_SHADOW_OVERFLOW_PX = SHIFT_CARD_SHADOW_BLEED_PX;
 export const AREA_ROW_CELL_PADDING_Y_PX = 16;
-export const AREA_ROW_HEADER_STRIP_PX = 20;
-export const AREA_ROW_FOOTER_STRIP_PX = 18;
+export const AREA_ROW_HEADER_STRIP_PX = 24;
+export const AREA_ROW_FOOTER_STRIP_PX = 22;
 export const AREA_ROW_EMPTY_HEIGHT_PX = 50;
 /** Harte Untergrenze für jede Bereichszeile (Fenster verkleinern, Platz knapp). */
 export const AREA_ROW_MIN_HEIGHT_PX = AREA_ROW_EMPTY_HEIGHT_PX;
 /** Größter Bereich muss mindestens so viel höher sein als der zweitgrößte. */
 export const DOMINANT_AREA_MIN_LEAD_RATIO = 1.25;
 
-export const CALENDAR_HEADER_HEIGHT_PX = 56;
+export const CALENDAR_HEADER_HEIGHT_PX = 60;
 export { PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX as CALENDAR_FOOTER_HEIGHT_PX };
 
 export function calendarAvailableBodyHeightPx(

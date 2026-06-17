@@ -66,6 +66,28 @@ function StaffingTooltipContent({
   );
 }
 
+function StaffingCountLabel({ countText }: { countText: string }) {
+  const slashIndex = countText.indexOf("/");
+  if (slashIndex === -1) {
+    return (
+      <span className="text-[12px] font-bold tabular-nums leading-none">
+        {countText}
+      </span>
+    );
+  }
+
+  const assigned = countText.slice(0, slashIndex);
+  const required = countText.slice(slashIndex + 1);
+
+  return (
+    <span className="inline-flex items-baseline tabular-nums leading-none">
+      <span className="text-[12px] font-bold">{assigned}</span>
+      <span className="text-[11px] font-medium">/</span>
+      <span className="text-[12px] font-bold">{required}</span>
+    </span>
+  );
+}
+
 function StaffingOverlaySegment({
   segment,
   className,
@@ -75,13 +97,8 @@ function StaffingOverlaySegment({
 }) {
   if (!segment.timeText) {
     return (
-      <span
-        className={cn(
-          "shrink-0 whitespace-nowrap text-[11px] font-medium leading-none tabular-nums",
-          className
-        )}
-      >
-        {segment.countText}
+      <span className={cn("shrink-0 whitespace-nowrap leading-none", className)}>
+        <StaffingCountLabel countText={segment.countText} />
       </span>
     );
   }
@@ -94,7 +111,7 @@ function StaffingOverlaySegment({
       )}
     >
       <span className="text-[10px] font-medium">{segment.timeText}:</span>
-      <span className="text-[11px] font-medium tabular-nums">{segment.countText}</span>
+      <StaffingCountLabel countText={segment.countText} />
     </span>
   );
 }

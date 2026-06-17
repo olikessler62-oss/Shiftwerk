@@ -7,6 +7,7 @@ import type {
   ProfileCompensationSurcharge,
   EffectiveProfileCompensationSurcharge,
   CompensationSurchargeType,
+  CompensationSurchargeUnit,
   ProfileRecurringAvailability,
   ProfileShiftPreference,
   Shift,
@@ -354,6 +355,7 @@ export interface SchichtwerkDatabase {
     input: {
       surcharge_type_id: string;
       amount: number | null;
+      unit: CompensationSurchargeUnit | null;
       valid_from: string;
       created_by: string;
     }
@@ -364,6 +366,7 @@ export interface SchichtwerkDatabase {
     entryId: string,
     input: {
       amount: number | null;
+      unit: CompensationSurchargeUnit | null;
       valid_from: string;
     },
     referenceDate: string
@@ -791,7 +794,10 @@ export interface SchichtwerkDatabase {
   // —— Absence requests ——
   listOrganizationAbsences(
     organizationId: string,
-    status?: "approved" | "pending" | "rejected" | "cancelled"
+    options?: {
+      statuses?: import("@schichtwerk/types").RequestStatus[];
+      employeeId?: string;
+    }
   ): Promise<AbsenceRequest[]>;
 
   insertAbsenceRequest(row: {
@@ -799,10 +805,13 @@ export interface SchichtwerkDatabase {
     employee_id: string;
     type: AbsenceType;
     start_date: string;
-    end_date: string;
-    status: "approved";
+    end_date: string | null;
+    is_open_ended: boolean;
+    expected_end_date: string | null;
+    status: import("@schichtwerk/types").RequestStatus;
     notes: string | null;
-    reviewed_by: string;
+    reviewed_by: string | null;
+    reported_by: string | null;
   }): Promise<string>;
 
   updateAbsenceRequest(
@@ -812,10 +821,13 @@ export interface SchichtwerkDatabase {
       employee_id: string;
       type: AbsenceType;
       start_date: string;
-      end_date: string;
-      status: "approved";
+      end_date: string | null;
+      is_open_ended: boolean;
+      expected_end_date: string | null;
+      status: import("@schichtwerk/types").RequestStatus;
       notes: string | null;
-      reviewed_by: string;
+      reviewed_by: string | null;
+      reported_by?: string | null;
     }
   ): Promise<void>;
 

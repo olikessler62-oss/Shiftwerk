@@ -6,6 +6,7 @@ import type {
 
 export const COMPENSATION_SURCHARGE_TRIGGERS = [
   "public_holiday",
+  "sunday",
 ] as const satisfies readonly CompensationSurchargeTrigger[];
 
 export const COMPENSATION_SURCHARGE_UNITS = [

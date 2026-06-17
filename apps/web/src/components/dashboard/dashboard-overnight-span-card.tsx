@@ -12,6 +12,10 @@ import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content
 import { useTranslations } from "@/i18n/locale-provider";
 import { formatShiftCardTooltipPlainText } from "@/lib/shift-card-display-content";
 import { cn } from "@/lib/cn";
+import {
+  buildEmployeeShiftHighlightBoxShadow,
+  employeeShiftHighlightOverlayStyle,
+} from "@/lib/calendar-interaction-ui";
 import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
 import type { PlanningOvernightSpanDisplayMode } from "@/lib/planning-overnight-span-layout";
 import { DASHBOARD_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/dashboard-overnight-span-layout";
@@ -40,6 +44,7 @@ type Props = {
   isSelected?: boolean;
   onShiftClick: () => void;
   onShiftContextMenu?: (event: React.MouseEvent) => void;
+  employeeHighlighted?: boolean;
 };
 
 function ExpandedSpanCardText({
@@ -97,6 +102,7 @@ export function DashboardOvernightSpanCard({
   isSelected = false,
   onShiftClick,
   onShiftContextMenu,
+  employeeHighlighted = false,
 }: Props) {
   const t = useTranslations();
   const textContentRef = useRef<HTMLDivElement>(null);
@@ -106,7 +112,11 @@ export function DashboardOvernightSpanCard({
     ? t(shiftConfirmationStatusLabelKey(shift.confirmationStatus))
     : undefined;
   const tooltipData = confirmationStatusLabel
-    ? { ...display.tooltip, confirmationStatusLine: confirmationStatusLabel }
+    ? {
+        ...display.tooltip,
+        confirmationStatusLine: confirmationStatusLabel,
+        confirmationStatus: shift.confirmationStatus,
+      }
     : display.tooltip;
   const tooltipPlainText = confirmationStatusLabel
     ? formatShiftCardTooltipPlainText(tooltipData, {
@@ -178,6 +188,13 @@ export function DashboardOvernightSpanCard({
 
   const showOverflowIndicator = !showAnyText || textOverflows;
   const cardHeightPx = SHIFT_CARD_TWO_LINE_HEIGHT_PX;
+  const cardBoxShadow =
+    employeeHighlighted && displayMode === "expanded"
+      ? buildEmployeeShiftHighlightBoxShadow(
+          DASHBOARD_SHIFT_CARD_BOX_SHADOW,
+          employeeColor
+        )
+      : DASHBOARD_SHIFT_CARD_BOX_SHADOW;
 
   return (
     <Tooltip
@@ -189,52 +206,76 @@ export function DashboardOvernightSpanCard({
         side: "above",
       }}
     >
-      <button
-        type="button"
-        disabled={pending}
-        onClick={onShiftClick}
-        onContextMenu={(event) => {
-          if (!onShiftContextMenu) return;
-          event.preventDefault();
-          event.stopPropagation();
-          onShiftContextMenu(event);
-        }}
+      <div
         className={cn(
-          "relative flex w-full shrink-0 overflow-hidden rounded text-left text-black transition hover:opacity-90 disabled:opacity-50",
-          isSelected && "ring-2 ring-primary ring-offset-1"
+          "h-full w-full",
+          employeeHighlighted && displayMode === "expanded" && "relative z-[25] overflow-visible"
         )}
-        style={{
-          boxShadow: DASHBOARD_SHIFT_CARD_BOX_SHADOW,
-          height: cardHeightPx,
-          minHeight: cardHeightPx,
-        }}
-        aria-label={tooltipPlainText}
       >
         <div
-          className="shrink-0 self-stretch"
+          className="h-full w-full rounded overflow-visible"
           style={{
-            width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
-            backgroundColor: employeeColor,
-          }}
-          aria-hidden
-        />
-        <div
-          ref={textContentRef}
-          className="relative flex min-w-0 flex-1 flex-col justify-center overflow-hidden bg-white px-1.5 py-0.5"
-          style={{
-            backgroundImage: buildShiftCardTimeGradientCss(
-              shift.startTime,
-              shift.endTime
-            ),
+            boxShadow: cardBoxShadow,
+            height: cardHeightPx,
+            minHeight: cardHeightPx,
           }}
         >
-          {showAnyText ? (
-            <ExpandedSpanCardText display={display} compact={!showTitle} />
-          ) : null}
-          {showOverflowIndicator ? <PlanningShiftCardOverflowIndicator /> : null}
-          <PlanningShiftCardConfirmationOverlay status={shift.confirmationStatus} />
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onShiftClick}
+            onContextMenu={(event) => {
+              if (!onShiftContextMenu) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onShiftContextMenu(event);
+            }}
+            className={cn(
+              "relative flex h-full w-full shrink-0 overflow-hidden rounded text-left text-black transition hover:opacity-90 disabled:opacity-50",
+              isSelected && "ring-2 ring-primary ring-offset-1"
+            )}
+            style={{
+              height: cardHeightPx,
+              minHeight: cardHeightPx,
+            }}
+            aria-label={tooltipPlainText}
+          >
+            <div
+              className="shrink-0 self-stretch"
+              style={{
+                width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
+                backgroundColor: employeeColor,
+              }}
+              aria-hidden
+            />
+            <div
+              ref={textContentRef}
+              className="relative flex min-w-0 flex-1 flex-col justify-center overflow-hidden bg-white px-1.5 py-0.5"
+              style={{
+                backgroundImage: buildShiftCardTimeGradientCss(
+                  shift.startTime,
+                  shift.endTime
+                ),
+              }}
+            >
+              {employeeHighlighted ? (
+                <div
+                  className="pointer-events-none absolute inset-0"
+                  style={employeeShiftHighlightOverlayStyle(employeeColor)}
+                  aria-hidden
+                />
+              ) : null}
+              {showAnyText ? (
+                <ExpandedSpanCardText display={display} compact={!showTitle} />
+              ) : null}
+              {showOverflowIndicator ? (
+                <PlanningShiftCardOverflowIndicator />
+              ) : null}
+              <PlanningShiftCardConfirmationOverlay status={shift.confirmationStatus} />
+            </div>
+          </button>
         </div>
-      </button>
+      </div>
     </Tooltip>
   );
 }

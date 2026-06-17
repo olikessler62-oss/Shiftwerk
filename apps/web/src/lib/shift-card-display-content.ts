@@ -1,6 +1,6 @@
 import { formatTimeRange } from "@/lib/planning-utils";
 import { shortenShiftTypeDisplayName } from "@/lib/profile-availability-label";
-import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
+import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import { staffingQualificationIdsForAssignment } from "@/lib/bulk-shift-qualification";
 import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
 import { resolveShiftTemplateNameForAssignment } from "@/lib/dashboard-assignment-presets";
@@ -37,6 +37,7 @@ export type ShiftCardTooltipData = {
   timeLabel?: string;
   jobsLabel?: string;
   confirmationStatusLine?: string;
+  confirmationStatus?: ShiftConfirmationStatus;
 };
 
 export function formatShiftCardTooltipPlainText(

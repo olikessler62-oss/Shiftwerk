@@ -32,6 +32,7 @@ create table public.organizations (
   allow_retroactive_compensation_entries boolean not null default true,
   shift_confirmation_enabled boolean not null default false,
   shift_confirmation_disclaimer text,
+  auto_approve_sick_absence boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -136,7 +137,7 @@ create table public.compensation_surcharge_types (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations (id) on delete cascade,
   name text not null,
-  trigger text not null check (trigger in ('public_holiday')),
+  trigger text not null check (trigger in ('public_holiday', 'sunday')),
   amount numeric(10, 2) not null check (amount >= 0),
   unit text not null check (unit in ('eur_per_hour', 'percent_of_base')),
   sort_order int not null default 0,
@@ -153,6 +154,7 @@ create table public.profile_compensation_surcharges (
   profile_id uuid not null references public.profiles (id) on delete cascade,
   surcharge_type_id uuid not null references public.compensation_surcharge_types (id) on delete restrict,
   amount numeric(10, 2) check (amount is null or amount >= 0),
+  unit text check (unit is null or unit in ('eur_per_hour', 'percent_of_base')),
   valid_from date not null,
   valid_to date,
   created_at timestamptz not null default now(),
@@ -585,15 +587,29 @@ create table public.absence_requests (
   employee_id uuid not null references public.profiles (id) on delete cascade,
   type public.absence_type not null,
   start_date date not null,
-  end_date date not null,
+  end_date date,
+  is_open_ended boolean not null default false,
+  expected_end_date date,
   status public.request_status not null default 'pending',
   notes text,
   reviewed_by uuid references public.profiles (id) on delete set null,
+  reported_by uuid references public.profiles (id) on delete set null,
   created_at timestamptz not null default now(),
-  constraint absence_requests_date_range_check check (start_date <= end_date)
+  updated_at timestamptz not null default now(),
+  constraint absence_requests_date_range_check check (
+    (is_open_ended = true and end_date is null)
+    or (is_open_ended = false and end_date is not null and start_date <= end_date)
+  ),
+  constraint absence_requests_open_ended_sick_only check (
+    is_open_ended = false or type = 'sick'
+  )
 );
 
 create index absence_requests_org_idx on public.absence_requests (organization_id);
+
+create trigger absence_requests_updated_at
+  before update on public.absence_requests
+  for each row execute function public.set_updated_at();
 
 -- Swap requests
 create table public.swap_requests (
@@ -1515,6 +1531,17 @@ create policy "absence_delete_manager"
   using (
     organization_id in (select organization_id from private.current_profile())
     and private.is_manager_or_owner()
+  );
+
+create policy "absence_update_own"
+  on public.absence_requests for update
+  using (
+    employee_id = auth.uid()
+    and status in ('pending', 'approved')
+  )
+  with check (
+    employee_id = auth.uid()
+    and status in ('pending', 'approved', 'cancelled')
   );
 
 -- Swap requests

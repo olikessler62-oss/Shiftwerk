@@ -6,6 +6,10 @@ import { PlanningShiftCardConfirmationOverlay } from "@/components/planning/plan
 import { Tooltip } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import {
+  buildEmployeeShiftHighlightBoxShadow,
+  employeeShiftHighlightOverlayStyle,
+} from "@/lib/calendar-interaction-ui";
 import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
 import {
   PLANNING_CELL_HEIGHT_PX,
@@ -63,6 +67,7 @@ type Props = {
   /** Breite rechts freilassen — nur aufgeklappte Tage (Tag-Grenze erkennbar). */
   trailingLayoutInsetPx?: number;
   shiftJobContext: PlanningShiftJobContext;
+  employeeHighlighted?: boolean;
 };
 
 export function PlanningCellShiftRow({
@@ -76,6 +81,7 @@ export function PlanningCellShiftRow({
   onShiftContextMenu,
   trailingLayoutInsetPx = PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX,
   shiftJobContext,
+  employeeHighlighted = false,
 }: Props) {
   const t = useTranslations();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -142,6 +148,7 @@ export function PlanningCellShiftRow({
           {
             employeeName,
             confirmationStatusLine,
+            confirmationStatus: shift.confirmationStatus,
             jobsLabel,
             formatTemplateTooltipLine: (templateName) =>
               t("common.shiftCardTooltipShift", { name: templateName }),
@@ -152,13 +159,21 @@ export function PlanningCellShiftRow({
           }
         );
 
+        const cardBoxShadow = employeeHighlighted
+          ? buildEmployeeShiftHighlightBoxShadow(
+              DASHBOARD_SHIFT_CARD_BOX_SHADOW,
+              employeeColor
+            )
+          : DASHBOARD_SHIFT_CARD_BOX_SHADOW;
+
         return (
           <Tooltip
             key={segmentKey}
             content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
             className={cn(
               "inline-flex min-w-0 flex-1",
-              part === "overnight-start" && "ml-auto"
+              part === "overnight-start" && "ml-auto",
+              employeeHighlighted && "relative z-10 overflow-visible"
             )}
             placement={{
               anchorLeftToTriggerCenter: true,
@@ -166,28 +181,37 @@ export function PlanningCellShiftRow({
               side: "above",
             }}
           >
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => onShiftClick(shift.id)}
-              onContextMenu={(event) => {
-                if (!onShiftContextMenu) return;
-                event.preventDefault();
-                event.stopPropagation();
-                onShiftContextMenu(shift.id, event);
-              }}
+            <div
               className={cn(
-                "relative flex min-w-0 flex-1 overflow-hidden text-left text-black transition hover:opacity-90 disabled:opacity-50",
-                segmentBorderRadiusClass(part),
-                isSelected && "ring-2 ring-primary ring-offset-1"
+                "flex h-full min-h-0 w-full min-w-0 flex-1",
+                segmentBorderRadiusClass(part)
               )}
               style={{
-                boxShadow: DASHBOARD_SHIFT_CARD_BOX_SHADOW,
-                height: "100%",
+                boxShadow: cardBoxShadow,
                 minHeight: PLANNING_CELL_HEIGHT_PX,
               }}
-              aria-label={cardContent.tooltipBody}
             >
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => onShiftClick(shift.id)}
+                onContextMenu={(event) => {
+                  if (!onShiftContextMenu) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onShiftContextMenu(shift.id, event);
+                }}
+                className={cn(
+                  "relative flex min-h-0 min-w-0 flex-1 overflow-hidden text-left text-black transition hover:opacity-90 disabled:opacity-50",
+                  segmentBorderRadiusClass(part),
+                  isSelected && "ring-2 ring-primary ring-offset-1"
+                )}
+                style={{
+                  height: "100%",
+                  minHeight: PLANNING_CELL_HEIGHT_PX,
+                }}
+                aria-label={cardContent.tooltipBody}
+              >
               {showEmployeeStrip ? (
                 <div
                   className={cn(
@@ -208,6 +232,13 @@ export function PlanningCellShiftRow({
                   shift.endTime
                 )}
               >
+                {employeeHighlighted ? (
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={employeeShiftHighlightOverlayStyle(employeeColor)}
+                    aria-hidden
+                  />
+                ) : null}
                 {showAnyText ? (
                   <PlanningExpandedShiftCardText
                     templateName={cardContent.templateName}
@@ -220,7 +251,8 @@ export function PlanningCellShiftRow({
                   status={shift.confirmationStatus}
                 />
               </PlanningShiftCardTextArea>
-            </button>
+              </button>
+            </div>
           </Tooltip>
         );
       })}

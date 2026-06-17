@@ -11,7 +11,7 @@ import {
   resolveJobLabelsForShiftAssignment,
 } from "@/lib/shift-card-display-content";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
-import type { LocationAreaStaffing, Qualification } from "@schichtwerk/types";
+import type { LocationAreaStaffing, Qualification, ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export type PlanningShiftJobContext = {
   dateISO: string;
@@ -69,6 +69,7 @@ function buildPlanningTooltipData(
   options?: {
     employeeName?: string;
     confirmationStatusLine?: string;
+    confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;
   },
   templateName?: string | null,
@@ -80,6 +81,7 @@ function buildPlanningTooltipData(
     timeLabel,
     jobsLabel: options?.jobsLabel?.trim() || undefined,
     confirmationStatusLine: options?.confirmationStatusLine,
+    confirmationStatus: options?.confirmationStatus,
   };
 }
 
@@ -124,6 +126,7 @@ export function buildPlanningShiftSegmentCardContent(
   options?: {
     employeeName?: string;
     confirmationStatusLine?: string;
+    confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;
     formatTemplateTooltipLine?: (templateName: string) => string;
     formatJobTooltipLine?: (jobs: string) => string;
@@ -162,6 +165,7 @@ export function buildPlanningExpandedShiftCardContent(
   options?: {
     employeeName?: string;
     confirmationStatusLine?: string;
+    confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;
     formatTemplateTooltipLine?: (templateName: string) => string;
     formatJobTooltipLine?: (jobs: string) => string;

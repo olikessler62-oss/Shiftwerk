@@ -3,12 +3,12 @@ import type { PlanningOvernightSpanDisplayMode } from "@/lib/planning-overnight-
 import { PLANNING_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/planning-overnight-span-layout";
 
 import { SHIFT_CARD_CELL_PADDING_PX } from "@/lib/shift-card-cell-layout";
-
 import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
-
 import { timelineLeftPx } from "@/lib/shift-card-service-timeline";
-
-import { resolveOvernightSpanWidthPx } from "@/lib/shift-card-proportional-width";
+import {
+  SHIFT_CARD_OVERNIGHT_MIN_WIDTH_PX,
+  shiftClockDurationMinutes,
+} from "@/lib/shift-card-proportional-width";
 
 
 
@@ -37,17 +37,12 @@ export type DashboardOvernightSpanGeometry = {
 
 
 export type DashboardOvernightSpanTimeLayout = {
-
   startTime: string;
-
   endTime: string;
-
   startTimeline: ShiftCardServiceTimeline;
-
+  endTimeline: ShiftCardServiceTimeline;
   startDayServiceSpanMin: number;
-
   endDayServiceSpanMin: number;
-
 };
 
 
@@ -83,56 +78,46 @@ export function dashboardTimeOffsetInCellPx(
 
 
 /**
-
- * Aufgeklappt: Startposition wie reguläre Schichtkarte; Breite proportional zur
-
- * Schichtdauer relativ zur Servicezeit-Summe beider Tage × kombinierte Zellbreite.
-
+ * Aufgeklappt: Start wie reguläre Schichtkarte (Starttag-Timeline),
+ * Ende an der Endzeit auf der Folgetag-Timeline (00:00–Serviceende).
  */
-
 export function computeDashboardExpandedOvernightSpanGeometry(
-
   startCellRect: DOMRect,
-
   endCellRect: DOMRect,
-
   overlayRect: DOMRect,
-
   layout: DashboardOvernightSpanTimeLayout
-
 ): DashboardOvernightSpanGeometry {
-
   const startContentWidthPx = dashboardCellContentWidthPx(startCellRect);
+  const endContentWidthPx = dashboardCellContentWidthPx(endCellRect);
 
   const startOffsetPx = dashboardTimeOffsetInCellPx(
-
     layout.startTime,
-
     startContentWidthPx,
-
     layout.startTimeline
-
   );
-
-
-
   const startX =
-
     startCellRect.left + DASHBOARD_CELL_PADDING_PX + startOffsetPx;
 
+  const endOffsetPx = dashboardTimeOffsetInCellPx(
+    layout.endTime,
+    endContentWidthPx,
+    layout.endTimeline
+  );
+  const endX = endCellRect.left + DASHBOARD_CELL_PADDING_PX + endOffsetPx;
 
-
-  const combinedCellWidthPx = startCellRect.width + endCellRect.width;
-
-  const widthPx = resolveOvernightSpanWidthPx({
-    startTime: layout.startTime,
-    endTime: layout.endTime,
-    combinedCellWidthPx,
-  });
+  const measuredWidthPx = Math.max(1, endX - startX);
+  const durationMin = shiftClockDurationMinutes(
+    layout.startTime,
+    layout.endTime
+  );
+  const widthPx =
+    durationMin <= 2 * 60
+      ? Math.max(measuredWidthPx, SHIFT_CARD_OVERNIGHT_MIN_WIDTH_PX)
+      : measuredWidthPx;
 
   return {
     leftPx: startX - overlayRect.left,
-    widthPx: Math.max(1, widthPx),
+    widthPx,
   };
 }
 

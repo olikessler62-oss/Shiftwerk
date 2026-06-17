@@ -25,7 +25,9 @@ export function TagAreaFooterStrip({
   const contentRef = useRef<HTMLSpanElement>(null);
   const [contentOverflows, setContentOverflows] = useState(false);
 
-  const tooltipContent = `${hoursTooltipLine}\n${costTooltipLine}`;
+  const tooltipContent = costTooltipLine.trim()
+    ? `${hoursTooltipLine}\n${costTooltipLine}`
+    : hoursTooltipLine;
 
   useLayoutEffect(() => {
     const container = containerRef.current;

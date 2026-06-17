@@ -107,7 +107,7 @@ export interface ProfileHourlyRateSummary {
   currency: string;
 }
 
-export type CompensationSurchargeTrigger = "public_holiday";
+export type CompensationSurchargeTrigger = "public_holiday" | "sunday";
 
 export type CompensationSurchargeUnit = "eur_per_hour" | "percent_of_base";
 
@@ -132,6 +132,7 @@ export interface ProfileCompensationSurcharge {
   type_default_amount: number;
   type_default_unit: CompensationSurchargeUnit;
   amount: number | null;
+  unit: CompensationSurchargeUnit | null;
   valid_from: string;
   valid_to: string | null;
   created_at: string;
@@ -365,10 +366,14 @@ export interface AbsenceRequest {
   employee_id: string;
   type: AbsenceType;
   start_date: string;
-  end_date: string;
+  end_date: string | null;
+  is_open_ended: boolean;
+  expected_end_date: string | null;
   status: RequestStatus;
   reviewed_by: string | null;
+  reported_by: string | null;
   notes: string | null;
+  updated_at: string;
 }
 
 export interface SwapRequest {

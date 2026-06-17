@@ -38,8 +38,24 @@ export type StaffingHeaderDisplay =
 const STAFFING_HEADER_FONT =
   '500 10px Inter, ui-sans-serif, system-ui, sans-serif';
 
-const STAFFING_HEADER_COUNT_FONT =
-  '500 11px Inter, ui-sans-serif, system-ui, sans-serif';
+const STAFFING_HEADER_COUNT_NUMBER_FONT =
+  "700 12px Inter, ui-sans-serif, system-ui, sans-serif";
+
+const STAFFING_HEADER_COUNT_SLASH_FONT =
+  "500 11px Inter, ui-sans-serif, system-ui, sans-serif";
+
+function measureStaffingHeaderTextWithFont(
+  text: string,
+  font: string,
+  fallbackCharWidth: number
+): number {
+  if (typeof document === "undefined") return text.length * fallbackCharWidth;
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (!context) return text.length * fallbackCharWidth;
+  context.font = font;
+  return context.measureText(text).width;
+}
 
 export function formatStaffingCount(
   assigned: number,
@@ -150,12 +166,34 @@ function measureTextModeGroup(
 }
 
 export function measureStaffingHeaderCountText(text: string): number {
-  if (typeof document === "undefined") return text.length * 6.5;
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) return text.length * 6.5;
-  context.font = STAFFING_HEADER_COUNT_FONT;
-  return context.measureText(text).width;
+  const slashIndex = text.indexOf("/");
+  if (slashIndex === -1) {
+    return measureStaffingHeaderTextWithFont(
+      text,
+      STAFFING_HEADER_COUNT_NUMBER_FONT,
+      7
+    );
+  }
+
+  const assigned = text.slice(0, slashIndex);
+  const required = text.slice(slashIndex + 1);
+  return (
+    measureStaffingHeaderTextWithFont(
+      assigned,
+      STAFFING_HEADER_COUNT_NUMBER_FONT,
+      7
+    ) +
+    measureStaffingHeaderTextWithFont(
+      "/",
+      STAFFING_HEADER_COUNT_SLASH_FONT,
+      6.5
+    ) +
+    measureStaffingHeaderTextWithFont(
+      required,
+      STAFFING_HEADER_COUNT_NUMBER_FONT,
+      7
+    )
+  );
 }
 
 export function measureStaffingHeaderText(text: string): number {

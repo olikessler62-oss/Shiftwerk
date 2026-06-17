@@ -1,4 +1,5 @@
 import {
+  absenceRequestToRange,
   isDateWithinAbsenceRange,
   parseAvailabilityTimeRange,
   profileEligibleForShiftConfirmationAssignment,
@@ -176,11 +177,7 @@ export function filterEmployeesNotAbsentOnDate(
   const absentIds = new Set<string>();
   for (const absence of absences) {
     if (absence.status !== "approved") continue;
-    const range: AbsenceRange = {
-      employee_id: absence.employee_id,
-      start_date: absence.start_date,
-      end_date: absence.end_date,
-    };
+    const range = absenceRequestToRange(absence);
     if (isDateWithinAbsenceRange(range, dateISO)) {
       absentIds.add(absence.employee_id);
     }

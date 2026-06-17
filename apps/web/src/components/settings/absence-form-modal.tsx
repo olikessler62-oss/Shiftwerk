@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import {
+  absenceRequestToRange,
   findOverlappingAbsence,
   validateAbsenceDateOrder,
   type AbsenceRange,
@@ -46,6 +47,7 @@ type Props = {
   initialDraft: AbsenceDraft;
   profiles: Profile[];
   existingRanges: AbsenceRange[];
+  lockEmployeeId?: boolean;
   onClose: () => void;
   onSaved: (createdId?: string) => void;
 };
@@ -83,8 +85,9 @@ function ProfileEmployeeCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const closeCombobox = () => setOpen(false);
-  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef]);
+  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef, listRef]);
 
   const selected = useMemo(
     () => profiles.find((profile) => profile.id === value) ?? null,
@@ -114,6 +117,7 @@ function ProfileEmployeeCombobox({
       </button>
       {open ? (
         <ul
+          ref={listRef}
           role="listbox"
           className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg"
         >
@@ -161,6 +165,7 @@ export function AbsenceFormModal({
   initialDraft,
   profiles,
   existingRanges,
+  lockEmployeeId = false,
   onClose,
   onSaved,
 }: Props) {
@@ -175,13 +180,19 @@ export function AbsenceFormModal({
     mode === "create" && !initialDraft.employee_id ? "" : initialDraft.type || ""
   );
   const [startDate, setStartDate] = useState(initialDraft.start_date);
-  const [endDate, setEndDate] = useState(initialDraft.end_date);
+  const [endDate, setEndDate] = useState(initialDraft.end_date ?? "");
+  const [isOpenEnded, setIsOpenEnded] = useState(initialDraft.is_open_ended);
+  const [expectedEndDate, setExpectedEndDate] = useState(
+    initialDraft.expected_end_date ?? ""
+  );
   const [notes, setNotes] = useState(initialDraft.notes ?? "");
 
   const activeProfiles = useMemo(
     () => profiles.filter((profile) => profile.is_active),
     [profiles]
   );
+
+  const showOpenEndedOption = type === "sick";
 
   function typeLabel(value: AbsenceType): string {
     switch (value) {
@@ -206,8 +217,24 @@ export function AbsenceFormModal({
         return t("settings.absences.validation.endBeforeStart");
       case "OVERLAP":
         return t("settings.absences.validation.overlap");
+      case "OPEN_ENDED_NOT_SICK":
+        return t("settings.absences.validation.openEndedNotSick");
       default:
         return code;
+    }
+  }
+
+  function handleTypeChange(nextType: AbsenceType | "") {
+    setType(nextType);
+    if (nextType !== "sick") {
+      setIsOpenEnded(false);
+    }
+  }
+
+  function handleOpenEndedChange(checked: boolean) {
+    setIsOpenEnded(checked);
+    if (checked) {
+      setEndDate("");
     }
   }
 
@@ -220,25 +247,38 @@ export function AbsenceFormModal({
       setError(t("settings.absences.validation.missingType"));
       return null;
     }
-    if (!startDate || !endDate) {
+    if (!startDate) {
       setError(t("settings.absences.validation.missingDates"));
       return null;
     }
 
-    const dateOrder = validateAbsenceDateOrder(startDate, endDate);
+    const openEnded = showOpenEndedOption && isOpenEnded;
+    const resolvedEndDate = openEnded ? null : endDate || null;
+
+    const dateOrder = validateAbsenceDateOrder(
+      startDate,
+      resolvedEndDate,
+      openEnded
+    );
     if (!dateOrder.ok) {
-      setError(t("settings.absences.validation.endBeforeStart"));
+      setError(
+        dateOrder.code === "missingEnd"
+          ? t("settings.absences.validation.missingDates")
+          : t("settings.absences.validation.endBeforeStart")
+      );
       return null;
     }
 
+    const candidateRange = {
+      id: absenceId,
+      employee_id: employeeId,
+      start_date: startDate,
+      end_date: resolvedEndDate,
+      is_open_ended: openEnded,
+    };
     const overlap = findOverlappingAbsence(
       existingRanges,
-      {
-        id: absenceId,
-        employee_id: employeeId,
-        start_date: startDate,
-        end_date: endDate,
-      },
+      candidateRange,
       absenceId
     );
     if (overlap) {
@@ -250,7 +290,9 @@ export function AbsenceFormModal({
       employee_id: employeeId,
       type,
       start_date: startDate,
-      end_date: endDate,
+      end_date: resolvedEndDate,
+      is_open_ended: openEnded,
+      expected_end_date: expectedEndDate.trim() ? expectedEndDate.trim() : null,
       notes: notes.trim() ? notes.trim() : null,
     };
   }
@@ -336,22 +378,24 @@ export function AbsenceFormModal({
         <div className={cn("min-h-0 flex-1 space-y-4 overflow-y-auto", settingsModalBodyPaddingClass())}>
           {error && <Alert variant="error">{error}</Alert>}
 
-          <div>
-            <LabelMuted>{t("settings.absences.employee")}</LabelMuted>
-            <ProfileEmployeeCombobox
-              value={employeeId}
-              onChange={setEmployeeId}
-              profiles={activeProfiles}
-              placeholder={t("settings.absences.selectEmployee")}
-              disabled={pending}
-            />
-          </div>
+          {!lockEmployeeId ? (
+            <div>
+              <LabelMuted>{t("settings.absences.employee")}</LabelMuted>
+              <ProfileEmployeeCombobox
+                value={employeeId}
+                onChange={setEmployeeId}
+                profiles={activeProfiles}
+                placeholder={t("settings.absences.selectEmployee")}
+                disabled={pending}
+              />
+            </div>
+          ) : null}
 
           <div>
             <LabelMuted>{t("settings.absences.type")}</LabelMuted>
             <Select
               value={type}
-              onChange={(e) => setType(e.target.value as AbsenceType | "")}
+              onChange={(e) => handleTypeChange(e.target.value as AbsenceType | "")}
               disabled={pending}
             >
               <option value="">{t("settings.absences.type")}</option>
@@ -380,10 +424,39 @@ export function AbsenceFormModal({
                 value={endDate}
                 min={startDate || undefined}
                 onChange={(e) => setEndDate(e.target.value)}
-                disabled={pending}
+                disabled={pending || (showOpenEndedOption && isOpenEnded)}
               />
             </div>
           </div>
+
+          {showOpenEndedOption ? (
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={isOpenEnded}
+                onChange={(e) => handleOpenEndedChange(e.target.checked)}
+                disabled={pending}
+                className="size-4 rounded border-border"
+              />
+              {t("settings.absences.openEndedLabel")}
+            </label>
+          ) : null}
+
+          {showOpenEndedOption ? (
+            <div>
+              <LabelMuted>{t("settings.absences.expectedEnd")}</LabelMuted>
+              <Input
+                type="date"
+                value={expectedEndDate}
+                min={startDate || undefined}
+                onChange={(e) => setExpectedEndDate(e.target.value)}
+                disabled={pending}
+              />
+              <p className="mt-1 text-xs text-muted">
+                {t("settings.absences.expectedEndHint")}
+              </p>
+            </div>
+          ) : null}
 
           <div>
             <LabelMuted>{t("settings.absences.notes")}</LabelMuted>
@@ -465,4 +538,36 @@ export function AbsenceFormModal({
       </div>
     </div>
   );
+}
+
+export function absenceDraftFromRequest(
+  absence: import("@schichtwerk/types").AbsenceRequest
+): AbsenceDraft {
+  return {
+    employee_id: absence.employee_id,
+    type: absence.type,
+    start_date: absence.start_date,
+    end_date: absence.end_date,
+    is_open_ended: absence.is_open_ended,
+    expected_end_date: absence.expected_end_date,
+    notes: absence.notes,
+  };
+}
+
+export function emptyAbsenceDraft(employeeId = ""): AbsenceDraft {
+  return {
+    employee_id: employeeId,
+    type: "vacation",
+    start_date: "",
+    end_date: "",
+    is_open_ended: false,
+    expected_end_date: null,
+    notes: null,
+  };
+}
+
+export function absenceRangesFromRequests(
+  absences: import("@schichtwerk/types").AbsenceRequest[]
+): AbsenceRange[] {
+  return absences.map((entry) => absenceRequestToRange(entry));
 }

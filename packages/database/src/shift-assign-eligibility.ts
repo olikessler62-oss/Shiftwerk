@@ -1,5 +1,8 @@
 import type { AbsenceRequest, ProfileRecurringAvailability } from "@schichtwerk/types";
-import { isDateWithinAbsenceRange, type AbsenceRange } from "./absence-validation";
+import {
+  absenceRequestToRange,
+  isDateWithinAbsenceRange,
+} from "./absence-validation";
 import { parseAvailabilityTimeRange, timeToMinutes } from "./profile-availability-validation";
 import { weekdayIndexFromDate } from "./location-staffing";
 
@@ -87,11 +90,7 @@ export function isEmployeeAbsentOnDate(
   for (const absence of absences) {
     if (absence.status !== "approved") continue;
     if (absence.employee_id !== employeeId) continue;
-    const range: AbsenceRange = {
-      employee_id: absence.employee_id,
-      start_date: absence.start_date,
-      end_date: absence.end_date,
-    };
+    const range = absenceRequestToRange(absence);
     if (isDateWithinAbsenceRange(range, dateISO)) return true;
   }
   return false;

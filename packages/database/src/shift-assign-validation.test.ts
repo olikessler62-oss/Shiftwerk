@@ -21,9 +21,13 @@ function absence(
     type: "vacation",
     start_date: "2026-06-10",
     end_date: "2026-06-12",
+    is_open_ended: false,
+    expected_end_date: null,
     status: "approved",
     notes: null,
     reviewed_by: "mgr-1",
+    reported_by: "mgr-1",
+    updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }

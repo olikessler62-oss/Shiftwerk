@@ -16,7 +16,11 @@ type Props = {
 
 function ConfirmationBadgeSymbol({ status }: { status: ShiftConfirmationStatus }) {
   const symbolClass = shiftConfirmationBadgeSymbolClass(status);
-  const iconClass = cn("h-2.5 w-2.5 shrink-0", symbolClass);
+  const iconClass = cn(
+    "shrink-0",
+    status === "pending" ? "h-3 w-3" : "h-2.5 w-2.5",
+    symbolClass
+  );
 
   if (status === "proposed") {
     return (

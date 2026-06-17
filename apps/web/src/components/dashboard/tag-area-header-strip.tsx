@@ -61,7 +61,7 @@ export function TagAreaHeaderStrip({
       ) : null}
       <div
         className={cn(
-          "relative z-[1] flex h-full w-full min-w-0 items-center justify-center px-1",
+          "relative z-[1] flex h-full w-full min-w-0 items-end justify-center px-1 pb-px",
           showDaytimesGradient && "translate-y-px"
         )}
       >

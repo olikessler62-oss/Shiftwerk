@@ -107,7 +107,7 @@ import {
   APP_SHELL_CONTENT_OFFSET_CLASS,
 } from "@/lib/app-shell-layout";
 import {
-  computeTagAreaDayFooterStats,
+  computeTagAreaDayFooterStatsForDate,
   formatTagAreaFooterLabels,
   type DashboardShiftCompensationByKey,
 } from "@/lib/tag-area-footer-stats";
@@ -289,6 +289,9 @@ export function ShiftPlanner({
   const intlLocale = toIntlLocale(locale);
   const todayISO = useMemo(() => toISODate(new Date()), []);
   const [pending, startTransition] = useTransition();
+  const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<string | null>(
+    null
+  );
   const [picker, setPicker] = useState<Picker | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [qualificationId, setQualificationId] = useState("");
@@ -760,32 +763,37 @@ export function ShiftPlanner({
     formatCalendarStaffingTimeLabel,
   ]);
 
+  const planningTagAreaShiftRefs = useMemo(
+    () =>
+      calendarDisplayShifts.map((shift) => ({
+        employeeId: shift.employee_id,
+        shift_date: shift.shift_date,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+      })),
+    [calendarDisplayShifts]
+  );
+
   const dailyFooterLabelsByDate = useMemo(() => {
     const map = new Map<
       string,
       ReturnType<typeof formatTagAreaFooterLabels>
     >();
+    if (planningTagAreaShiftRefs.length === 0) return map;
     for (const date of dates) {
-      const dayShifts = calendarDisplayShifts.filter(
-        (shift) => shift.shift_date === date
-      );
-      if (dayShifts.length === 0) continue;
-      const stats = computeTagAreaDayFooterStats(
-        dayShifts.map((shift) => ({
-          employeeId: shift.employee_id,
-          shift_date: shift.shift_date,
-          startTime: shift.startTime,
-          endTime: shift.endTime,
-        })),
+      const stats = computeTagAreaDayFooterStatsForDate(
+        date,
+        planningTagAreaShiftRefs,
         shiftCompensation
       );
+      if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
       map.set(
         date,
         formatTagAreaFooterLabels(stats, t, locale === "en" ? "en" : "de")
       );
     }
     return map;
-  }, [dates, calendarDisplayShifts, shiftCompensation, t, locale]);
+  }, [dates, planningTagAreaShiftRefs, shiftCompensation, t, locale]);
 
   const shiftsByCellDisplay = useMemo(
     () => buildPlanningShiftsByCellDisplay(dates, calendarDisplayShifts),
@@ -1659,6 +1667,8 @@ export function ShiftPlanner({
             staffingRules={staffingRules}
             qualifications={qualifications}
             profileQualificationIds={profileQualificationIdsRecord}
+            highlightedEmployeeId={highlightedEmployeeId}
+            onEmployeeHover={setHighlightedEmployeeId}
           />
         </main>
 

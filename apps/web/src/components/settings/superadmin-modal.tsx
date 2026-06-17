@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { resetOrganizationDatabase } from "@/app/actions/db-reset";
 import { OrganizationPlanningModeModal } from "@/components/settings/organization-planning-mode-modal";
 import { OrganizationCompensationSettingsModal } from "@/components/settings/organization-compensation-settings-modal";
+import { NotificationOutboxModal } from "@/components/settings/notification-outbox-modal";
 import { Alert, Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -29,6 +30,7 @@ export function SuperadminModal({ onClose }: Props) {
   const t = useTranslations();
   const [planningModeOpen, setPlanningModeOpen] = useState(false);
   const [compensationSettingsOpen, setCompensationSettingsOpen] = useState(false);
+  const [notificationOutboxOpen, setNotificationOutboxOpen] = useState(false);
   const [dbResetConfirmOpen, setDbResetConfirmOpen] = useState(false);
   const [dbResetError, setDbResetError] = useState<string | null>(null);
   const [dbResetPending, startDbResetTransition] = useTransition();
@@ -42,7 +44,11 @@ export function SuperadminModal({ onClose }: Props) {
   } = useShiftConfirmationSimulation();
 
   const overlayOpen =
-    planningModeOpen || compensationSettingsOpen || dbResetConfirmOpen || dbResetPending;
+    planningModeOpen ||
+    compensationSettingsOpen ||
+    notificationOutboxOpen ||
+    dbResetConfirmOpen ||
+    dbResetPending;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -51,12 +57,12 @@ export function SuperadminModal({ onClose }: Props) {
         setDbResetConfirmOpen(false);
         return;
       }
-      if (planningModeOpen || compensationSettingsOpen) return;
+      if (planningModeOpen || compensationSettingsOpen || notificationOutboxOpen) return;
       onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [compensationSettingsOpen, dbResetConfirmOpen, dbResetPending, onClose, planningModeOpen]);
+  }, [compensationSettingsOpen, dbResetConfirmOpen, dbResetPending, notificationOutboxOpen, onClose, planningModeOpen]);
 
   function handleDbResetConfirm() {
     setDbResetError(null);
@@ -131,6 +137,14 @@ export function SuperadminModal({ onClose }: Props) {
                   onClick={() => setPlanningModeOpen(true)}
                 >
                   {t("nav.planningMode")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={dbResetPending}
+                  onClick={() => setNotificationOutboxOpen(true)}
+                >
+                  {t("nav.notificationOutbox")}
                 </Button>
                 <Button
                   type="button"
@@ -232,6 +246,10 @@ export function SuperadminModal({ onClose }: Props) {
             nested
             onClose={() => setCompensationSettingsOpen(false)}
           />
+        ) : null}
+
+        {notificationOutboxOpen ? (
+          <NotificationOutboxModal onClose={() => setNotificationOutboxOpen(false)} />
         ) : null}
 
         {dbResetConfirmOpen ? (

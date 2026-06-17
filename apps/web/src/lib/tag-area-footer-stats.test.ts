@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  computeTagAreaDayFooterStats,
+  computeTagAreaDayFooterStatsForDate,
   formatTagAreaFooterLabels,
   formatTagAreaFooterLine,
   shiftCompensationKey,
@@ -10,7 +10,8 @@ describe("tag-area-footer-stats", () => {
   it("sums hours and costs using effective hourly rates", () => {
     const employeeId = "emp-1";
     const date = "2026-06-09";
-    const stats = computeTagAreaDayFooterStats(
+    const stats = computeTagAreaDayFooterStatsForDate(
+      date,
       [
         {
           employeeId,
@@ -36,12 +37,95 @@ describe("tag-area-footer-stats", () => {
 
     expect(stats.totalHours).toBe(8);
     expect(stats.totalCost).toBe(160);
+    expect(stats.baseCost).toBe(160);
+    expect(stats.surchargeCost).toBe(0);
+    expect(stats.hasCompensation).toBe(true);
     expect(stats.currency).toBe("EUR");
+  });
+
+  it("splits base compensation and surcharges in euro", () => {
+    const employeeId = "emp-1";
+    const date = "2026-06-07";
+    const stats = computeTagAreaDayFooterStatsForDate(
+      date,
+      [
+        {
+          employeeId,
+          shift_date: date,
+          startTime: "08:00",
+          endTime: "16:00",
+        },
+      ],
+      {
+        [shiftCompensationKey(employeeId, date)]: {
+          baseHourlyRate: 20,
+          currency: "EUR",
+          surcharges: [
+            {
+              id: "s1",
+              surcharge_type_id: "t1",
+              name: "Sonntag",
+              trigger: "sunday",
+              amount: 5,
+              unit: "eur_per_hour",
+            },
+          ],
+        },
+      }
+    );
+
+    expect(stats.totalHours).toBe(8);
+    expect(stats.baseCost).toBe(160);
+    expect(stats.surchargeCost).toBe(40);
+    expect(stats.totalCost).toBe(200);
+  });
+
+  it("splits overnight hours across start and follow-up day", () => {
+    const employeeId = "emp-1";
+    const compensation = {
+      baseHourlyRate: 20,
+      currency: "EUR",
+      surcharges: [],
+    };
+    const overnight = {
+      employeeId,
+      shift_date: "2026-06-17",
+      startTime: "22:00",
+      endTime: "04:00",
+    };
+
+    const startDay = computeTagAreaDayFooterStatsForDate(
+      "2026-06-17",
+      [overnight],
+      {
+        [shiftCompensationKey(employeeId, "2026-06-17")]: compensation,
+        [shiftCompensationKey(employeeId, "2026-06-18")]: compensation,
+      }
+    );
+    const followUpDay = computeTagAreaDayFooterStatsForDate(
+      "2026-06-18",
+      [overnight],
+      {
+        [shiftCompensationKey(employeeId, "2026-06-17")]: compensation,
+        [shiftCompensationKey(employeeId, "2026-06-18")]: compensation,
+      }
+    );
+
+    expect(startDay.totalHours).toBe(2);
+    expect(followUpDay.totalHours).toBe(4);
+    expect(startDay.totalCost + followUpDay.totalCost).toBe(120);
   });
 
   it("formats footer line with separator", () => {
     const line = formatTagAreaFooterLine(
-      { totalHours: 8, totalCost: 160, currency: "EUR" },
+      {
+        totalHours: 8,
+        totalCost: 160,
+        baseCost: 160,
+        surchargeCost: 0,
+        hasCompensation: true,
+        currency: "EUR",
+      },
       (key, params) => {
         if (key === "dashboard.tagAreaFooterShortLine") {
           return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
@@ -58,7 +142,14 @@ describe("tag-area-footer-stats", () => {
 
   it("formats footer tooltip lines separately", () => {
     const labels = formatTagAreaFooterLabels(
-      { totalHours: 8, totalCost: 160, currency: "EUR" },
+      {
+        totalHours: 8,
+        totalCost: 160,
+        baseCost: 160,
+        surchargeCost: 0,
+        hasCompensation: true,
+        currency: "EUR",
+      },
       (key, params) => {
         if (key === "dashboard.tagAreaFooterShortLine") {
           return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
@@ -66,12 +157,80 @@ describe("tag-area-footer-stats", () => {
         if (key === "dashboard.tagAreaFooterTotalHours") {
           return `Gesamte Stunden: ${params?.hours ?? ""}`;
         }
-        return `Gesamte Kosten: ${params?.amount ?? ""} ${params?.currency ?? ""}`;
+        if (key === "dashboard.tagAreaFooterTotalAmount") {
+          return `Gesamtbetrag: ${params?.amount ?? ""} €`;
+        }
+        if (key === "dashboard.tagAreaFooterCompensation") {
+          return `Entgelt: ${params?.amount ?? ""} €`;
+        }
+        if (key === "dashboard.tagAreaFooterSurcharges") {
+          return `Zuschläge: ${params?.amount ?? ""} €`;
+        }
+        return key;
       },
       "de"
     );
     expect(labels.hoursLine).toBe("Gesamte Stunden: 8:00");
-    expect(labels.costLine).toBe("Gesamte Kosten: 160,00 EUR");
+    expect(labels.costLine).toBe("Entgelt: 160,00 €");
     expect(labels.line).toBe("Ges.: 8:00 Std | 160,00 €");
+  });
+
+  it("includes surcharges line in cost tooltip when present", () => {
+    const labels = formatTagAreaFooterLabels(
+      {
+        totalHours: 8,
+        totalCost: 200,
+        baseCost: 160,
+        surchargeCost: 40,
+        hasCompensation: true,
+        currency: "EUR",
+      },
+      (key, params) => {
+        if (key === "dashboard.tagAreaFooterShortLine") {
+          return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
+        }
+        if (key === "dashboard.tagAreaFooterTotalHours") {
+          return `Gesamte Stunden: ${params?.hours ?? ""}`;
+        }
+        if (key === "dashboard.tagAreaFooterTotalAmount") {
+          return `Gesamtbetrag: ${params?.amount ?? ""} €`;
+        }
+        if (key === "dashboard.tagAreaFooterCompensation") {
+          return `Entgelt: ${params?.amount ?? ""} €`;
+        }
+        if (key === "dashboard.tagAreaFooterSurcharges") {
+          return `Zuschläge: ${params?.amount ?? ""} €`;
+        }
+        return key;
+      },
+      "de"
+    );
+    expect(labels.costLine).toBe(
+      "Gesamtbetrag: 200,00 €\nEntgelt: 160,00 €\nZuschläge: 40,00 €"
+    );
+  });
+
+  it("omits cost tooltip when no compensation is recorded", () => {
+    const labels = formatTagAreaFooterLabels(
+      {
+        totalHours: 8,
+        totalCost: 0,
+        baseCost: 0,
+        surchargeCost: 0,
+        hasCompensation: false,
+        currency: "EUR",
+      },
+      (key, params) => {
+        if (key === "dashboard.tagAreaFooterShortLine") {
+          return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
+        }
+        if (key === "dashboard.tagAreaFooterTotalHours") {
+          return `Gesamte Stunden: ${params?.hours ?? ""}`;
+        }
+        return key;
+      },
+      "de"
+    );
+    expect(labels.costLine).toBe("");
   });
 });

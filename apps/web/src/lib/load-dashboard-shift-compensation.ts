@@ -1,5 +1,6 @@
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
 import type { SchichtwerkDatabase } from "@/lib/db";
+import { splitShiftWindowIntoCalendarDaySegments } from "@schichtwerk/database";
 import {
   DEFAULT_ORGANIZATION_CURRENCY,
   type DashboardShiftCompensationByKey,
@@ -15,12 +16,21 @@ export async function loadDashboardShiftCompensation(
     string,
     { employeeId: string; dateISO: string }
   >();
+
   for (const shift of shifts) {
-    pairs.set(shiftCompensationKey(shift.employeeId, shift.shift_date), {
-      employeeId: shift.employeeId,
-      dateISO: shift.shift_date,
+    const segments = splitShiftWindowIntoCalendarDaySegments({
+      shiftDate: shift.shift_date,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
     });
+    for (const segment of segments) {
+      pairs.set(shiftCompensationKey(shift.employeeId, segment.dateISO), {
+        employeeId: shift.employeeId,
+        dateISO: segment.dateISO,
+      });
+    }
   }
+
   if (pairs.size === 0) return {};
 
   const datesNeeded = [...new Set([...pairs.values()].map((pair) => pair.dateISO))];

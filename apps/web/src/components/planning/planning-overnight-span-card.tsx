@@ -12,6 +12,10 @@ import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content
 import { Tooltip } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import {
+  buildEmployeeShiftHighlightBoxShadow,
+  employeeShiftHighlightOverlayStyle,
+} from "@/lib/calendar-interaction-ui";
 import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
 import {
   PLANNING_CELL_HEIGHT_PX,
@@ -56,6 +60,7 @@ type Props = {
   isSelected: boolean;
   onShiftClick: () => void;
   onShiftContextMenu?: (event: React.MouseEvent) => void;
+  employeeHighlighted?: boolean;
 };
 
 export function PlanningOvernightSpanCard({
@@ -72,6 +77,7 @@ export function PlanningOvernightSpanCard({
   isSelected,
   onShiftClick,
   onShiftContextMenu,
+  employeeHighlighted = false,
 }: Props) {
   const t = useTranslations();
   const textContentRef = useRef<HTMLDivElement>(null);
@@ -90,6 +96,7 @@ export function PlanningOvernightSpanCard({
     {
       employeeName,
       confirmationStatusLine,
+      confirmationStatus: shift.confirmationStatus,
       jobsLabel,
       formatTemplateTooltipLine: (templateName) =>
         t("common.shiftCardTooltipShift", { name: templateName }),
@@ -168,38 +175,54 @@ export function PlanningOvernightSpanCard({
   }
 
   const showOverflowIndicator = !showAnyText || textOverflows;
+  const cardBoxShadow =
+    employeeHighlighted && displayMode === "expanded"
+      ? buildEmployeeShiftHighlightBoxShadow(
+          DASHBOARD_SHIFT_CARD_BOX_SHADOW,
+          employeeColor
+        )
+      : DASHBOARD_SHIFT_CARD_BOX_SHADOW;
 
   return (
     <Tooltip
       content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
-      className="inline-flex h-full w-full min-w-0"
+      className={cn(
+        "inline-flex h-full w-full min-w-0",
+        employeeHighlighted && displayMode === "expanded" && "relative z-10 overflow-visible"
+      )}
       placement={{
         anchorLeftToTriggerCenter: true,
         gapPx: 2,
         side: "above",
       }}
     >
-      <button
-        type="button"
-        disabled={pending}
-        onClick={onShiftClick}
-        onContextMenu={(event) => {
-          if (!onShiftContextMenu) return;
-          event.preventDefault();
-          event.stopPropagation();
-          onShiftContextMenu(event);
-        }}
-        className={cn(
-          "relative flex h-full w-full shrink-0 overflow-hidden rounded text-left text-black transition hover:opacity-90 disabled:opacity-50",
-          isSelected && "ring-2 ring-primary ring-offset-1"
-        )}
+      <div
+        className="h-full w-full rounded"
         style={{
-          boxShadow: DASHBOARD_SHIFT_CARD_BOX_SHADOW,
-          height: "100%",
+          boxShadow: cardBoxShadow,
           minHeight: PLANNING_CELL_HEIGHT_PX,
         }}
-        aria-label={cardContent.tooltipBody}
       >
+        <button
+          type="button"
+          disabled={pending}
+          onClick={onShiftClick}
+          onContextMenu={(event) => {
+            if (!onShiftContextMenu) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onShiftContextMenu(event);
+          }}
+          className={cn(
+            "relative flex h-full w-full shrink-0 overflow-hidden rounded text-left text-black transition hover:opacity-90 disabled:opacity-50",
+            isSelected && "ring-2 ring-primary ring-offset-1"
+          )}
+          style={{
+            height: "100%",
+            minHeight: PLANNING_CELL_HEIGHT_PX,
+          }}
+          aria-label={cardContent.tooltipBody}
+        >
         <div
           className="shrink-0 self-stretch rounded-l"
           style={{
@@ -215,6 +238,13 @@ export function PlanningOvernightSpanCard({
             shift.endTime
           )}
         >
+          {employeeHighlighted ? (
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={employeeShiftHighlightOverlayStyle(employeeColor)}
+              aria-hidden
+            />
+          ) : null}
           {showAnyText ? (
             <PlanningExpandedShiftCardText
               templateName={cardContent.templateName}
@@ -226,7 +256,8 @@ export function PlanningOvernightSpanCard({
           {showOverflowIndicator ? <PlanningShiftCardOverflowIndicator /> : null}
           <PlanningShiftCardConfirmationOverlay status={shift.confirmationStatus} />
         </PlanningShiftCardTextArea>
-      </button>
+        </button>
+      </div>
     </Tooltip>
   );
 }

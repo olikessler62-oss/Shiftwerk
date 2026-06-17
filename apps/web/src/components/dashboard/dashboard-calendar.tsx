@@ -17,6 +17,7 @@ import { formatDayHeader, weeklySummary } from "@/lib/planning-utils";
 import {
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
+  PLANNING_DAY_HEADER_ROW_HEIGHT,
 } from "@/lib/planning-calendar-layout";
 import { PlanningWeeklySummaryFooter } from "@/components/planning/planning-weekly-summary-footer";
 import { DashboardShiftCardsList } from "@/components/dashboard/dashboard-shift-cards-list";
@@ -94,15 +95,17 @@ import {
 } from "@/lib/dashboard-assignment-presets";
 import { computeBulkStaffingHeaderEntries } from "@/lib/bulk-staffing-header";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
+import { CALENDAR_INTERACTION_SURFACE_CLASS } from "@/lib/calendar-interaction-ui";
 import { cn } from "@/lib/cn";
 import {
   CalendarAreaCheckbox,
   CalendarCornerCheckbox,
 } from "@/components/dashboard/calendar-corner-checkbox";
 import {
-  computeTagAreaDayFooterStats,
+  computeTagAreaDayFooterStatsForDate,
   formatTagAreaFooterLabels,
   type DashboardShiftCompensationByKey,
+  type TagAreaShiftRef,
 } from "@/lib/tag-area-footer-stats";
 import { TagAreaHeaderStrip } from "@/components/dashboard/tag-area-header-strip";
 import { TagAreaFooterStrip } from "@/components/dashboard/tag-area-footer-strip";
@@ -143,6 +146,7 @@ type Props = {
   profiles: Profile[];
   reassignShiftRequest?: DashboardShiftCard | null;
   onReassignShiftHandled?: () => void;
+  highlightedEmployeeId?: string | null;
 };
 
 const OPEN_DAY_COLUMN_WIDTH = "minmax(120px, 1fr)";
@@ -188,10 +192,14 @@ const PAST_TAG_AREA_OVERLAY_BG = "#eff3f7";
 const PAST_TAG_AREA_HOUR_LINE_COLOR = "#eef2f6";
 
 /** Feste Header-Höhe (3 Zeilen inkl. Feiertag), damit Wochenwechsel nicht springt. */
-const CALENDAR_HEADER_ROW_HEIGHT = "3.5rem";
 
 /** Verzögerung vor Ein-/Ausklappen per Checkbox (ms). */
 const CALENDAR_LAYOUT_ANIMATION_DELAY_MS = 120;
+
+const CALENDAR_LAYOUT_ROW_TRANSITION_MS = 280;
+
+/** Wartezeit nach Bereichs-Aufklappen, bevor Scroll geprüft wird (CSS-Transition + Puffer). */
+const CALENDAR_LAYOUT_ROW_SETTLED_MS = CALENDAR_LAYOUT_ROW_TRANSITION_MS + 32;
 
 const CALENDAR_GRID_LAYOUT_TRANSITION_CLASS =
   "transition-[grid-template-columns,grid-template-rows,min-width] duration-[280ms] ease-in-out";
@@ -202,12 +210,12 @@ const CALENDAR_CELL_CONTENT_TRANSITION_CLASS =
 /** Bereichszeile bei inaktiver Bereichs-Checkbox — Höhe kommt aus areaRowLayouts. */
 
 /** Tag-Bereich-Header: Tageszeit-Verlauf + Bedarf-Overlay. */
-const TAG_AREA_HEADER_STRIP_HEIGHT = "20px";
+const TAG_AREA_HEADER_STRIP_HEIGHT = "24px";
 /** Einfache Planung ohne Bereiche — Overlay-Schlüssel für Kalenderzellen. */
 const SIMPLE_PLANNING_AREA_ID = "";
 
 /** Tag-Bereich-Footer-Streifen-Höhe. */
-const TAG_AREA_FOOTER_STRIP_HEIGHT = "18px";
+const TAG_AREA_FOOTER_STRIP_HEIGHT = "22px";
 
 /** Geschlossener Bereich × Tag (kein Arbeitstag laut Arbeitszeit / Feiertag). */
 const CLOSED_AREA_DAY_BG = "#e6edf2";
@@ -421,6 +429,7 @@ export function DashboardCalendar({
   profiles,
   reassignShiftRequest,
   onReassignShiftHandled,
+  highlightedEmployeeId = null,
 }: Props) {
   const router = useRouter();
   const { locale } = useLocale();
@@ -552,6 +561,10 @@ export function DashboardCalendar({
   const weekDayExpansionRef = useRef<Map<string, Set<string>>>(new Map());
   const [isCalendarVisible, setIsCalendarVisible] = useState(false);
   const [layoutTransitionEnabled, setLayoutTransitionEnabled] = useState(false);
+  const prevLayoutActiveAreaIdsRef = useRef<Set<string> | null>(null);
+  const [scrollDeferredAreaIds, setScrollDeferredAreaIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [contextMenu, setContextMenu] = useState<AreaDayContextMenuState | null>(
     null
   );
@@ -644,6 +657,32 @@ export function DashboardCalendar({
     [clearLayoutAreaTimer, clearLayoutDayTimer]
   );
 
+  useEffect(() => {
+    const prev = prevLayoutActiveAreaIdsRef.current ?? layoutActiveAreaIds;
+    const newlyExpandedLayoutAreas = [...layoutActiveAreaIds].filter(
+      (id) => !prev.has(id)
+    );
+    prevLayoutActiveAreaIdsRef.current = new Set(layoutActiveAreaIds);
+
+    if (newlyExpandedLayoutAreas.length === 0) return;
+
+    setScrollDeferredAreaIds((current) => {
+      const next = new Set(current);
+      for (const id of newlyExpandedLayoutAreas) next.add(id);
+      return next;
+    });
+
+    const timer = window.setTimeout(() => {
+      setScrollDeferredAreaIds((current) => {
+        const next = new Set(current);
+        for (const id of newlyExpandedLayoutAreas) next.delete(id);
+        return next;
+      });
+    }, CALENDAR_LAYOUT_ROW_SETTLED_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [layoutActiveAreaIds]);
+
   useLayoutEffect(() => {
     const scopeKey = calendarLayoutScopeKey(dates, locationId);
     if (calendarLayoutScopeRef.current === scopeKey) {
@@ -666,6 +705,8 @@ export function DashboardCalendar({
     );
     weekDayExpansionRef.current.set(weekStart, new Set(nextDays));
     setLayoutTransitionEnabled(false);
+    prevLayoutActiveAreaIdsRef.current = null;
+    setScrollDeferredAreaIds(new Set());
     setActiveAreaIds(nextAreas);
     setActiveDayDates(nextDays);
     syncLayoutAreasImmediate(nextAreas);
@@ -1194,16 +1235,42 @@ export function DashboardCalendar({
     [simplePlanning, dates, calendarShifts]
   );
 
+  const tagAreaShiftRefsByAreaId = useMemo(() => {
+    const map = new Map<string, TagAreaShiftRef[]>();
+    for (const shift of calendarShifts) {
+      if (!shift.locationAreaId) continue;
+      const list = map.get(shift.locationAreaId) ?? [];
+      list.push({
+        employeeId: shift.employeeId,
+        shift_date: shift.shift_date,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+      });
+      map.set(shift.locationAreaId, list);
+    }
+    return map;
+  }, [calendarShifts]);
+
+  const tagAreaShiftRefsAll = useMemo(
+    () => [...tagAreaShiftRefsByAreaId.values()].flat(),
+    [tagAreaShiftRefsByAreaId]
+  );
+
   const footerLabelsByAreaDate = useMemo(() => {
     const map = new Map<
       string,
       ReturnType<typeof formatTagAreaFooterLabels>
     >();
     for (const area of areas) {
+      const areaShifts = tagAreaShiftRefsByAreaId.get(area.id) ?? [];
+      if (areaShifts.length === 0) continue;
       for (const date of dates) {
-        const dayShifts = byAreaDate.get(`${area.id}:${date}`) ?? [];
-        if (dayShifts.length === 0) continue;
-        const stats = computeTagAreaDayFooterStats(dayShifts, shiftCompensation);
+        const stats = computeTagAreaDayFooterStatsForDate(
+          date,
+          areaShifts,
+          shiftCompensation
+        );
+        if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
         map.set(
           `${area.id}:${date}`,
           formatTagAreaFooterLabels(stats, t, localeKey)
@@ -1211,7 +1278,7 @@ export function DashboardCalendar({
       }
     }
     return map;
-  }, [areas, dates, byAreaDate, shiftCompensation, t, localeKey]);
+  }, [areas, dates, tagAreaShiftRefsByAreaId, shiftCompensation, t, localeKey]);
 
   const dailyFooterLabelsByDate = useMemo(() => {
     const map = new Map<
@@ -1220,22 +1287,25 @@ export function DashboardCalendar({
     >();
     for (const date of dates) {
       const dayShifts = simplePlanning
-        ? (shiftsByDate.get(date) ?? [])
-        : areas.flatMap(
-            (area) => byAreaDate.get(`${area.id}:${date}`) ?? []
-          );
+        ? tagAreaShiftRefsAll
+        : areas.flatMap((area) => tagAreaShiftRefsByAreaId.get(area.id) ?? []);
       if (dayShifts.length === 0) continue;
-      const stats = computeTagAreaDayFooterStats(dayShifts, shiftCompensation);
+      const stats = computeTagAreaDayFooterStatsForDate(
+        date,
+        dayShifts,
+        shiftCompensation
+      );
+      if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
       map.set(date, formatTagAreaFooterLabels(stats, t, localeKey));
     }
     return map;
   }, [
     areas,
-    byAreaDate,
     dates,
     shiftCompensation,
-    shiftsByDate,
     simplePlanning,
+    tagAreaShiftRefsAll,
+    tagAreaShiftRefsByAreaId,
     t,
     localeKey,
   ]);
@@ -1410,7 +1480,7 @@ export function DashboardCalendar({
 
     const timer = window.setTimeout(
       remeasure,
-      CALENDAR_LAYOUT_ANIMATION_DELAY_MS + 280
+      CALENDAR_LAYOUT_ANIMATION_DELAY_MS + CALENDAR_LAYOUT_ROW_TRANSITION_MS
     );
     return () => window.clearTimeout(timer);
   }, [layoutActiveAreaIds, layoutTransitionEnabled]);
@@ -1478,12 +1548,12 @@ export function DashboardCalendar({
     if (simplePlanning && locationId) {
       const layout = simplePlanningRowLayout;
       if (!layout) {
-        return `${CALENDAR_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
+        return `${PLANNING_DAY_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
       }
-      return `${CALENDAR_HEADER_ROW_HEIGHT} ${buildAreaRowGridTrack(layout)} ${calendarFooterRowTemplate}`;
+      return `${PLANNING_DAY_HEADER_ROW_HEIGHT} ${buildAreaRowGridTrack(layout)} ${calendarFooterRowTemplate}`;
     }
     if (areas.length === 0) {
-      return `${CALENDAR_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
+      return `${PLANNING_DAY_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
     }
     const bodyRows = areas
       .map((area) => {
@@ -1492,7 +1562,7 @@ export function DashboardCalendar({
         return buildAreaRowGridTrack(layout);
       })
       .join(" ");
-    return `${CALENDAR_HEADER_ROW_HEIGHT} ${bodyRows} ${calendarFooterRowTemplate}`;
+    return `${PLANNING_DAY_HEADER_ROW_HEIGHT} ${bodyRows} ${calendarFooterRowTemplate}`;
   }, [
     areas,
     areaRowLayouts,
@@ -1523,8 +1593,10 @@ export function DashboardCalendar({
     <div
       className={cn(
         "flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl bg-surface shadow-sm",
+        highlightedEmployeeId !== null && "overflow-visible",
         MODAL_SCROLLBAR_CLASS,
         CALENDAR_FRAME_CLASS,
+        CALENDAR_INTERACTION_SURFACE_CLASS,
         !isCalendarVisible && "invisible"
       )}
     >
@@ -1532,8 +1604,12 @@ export function DashboardCalendar({
         ref={calendarScrollRef}
         className={cn(
           "h-full min-h-0",
-          fillColumnsEqually ? "overflow-x-hidden" : "overflow-x-auto",
-          "overflow-y-auto"
+          highlightedEmployeeId !== null
+            ? "overflow-visible"
+            : cn(
+                fillColumnsEqually ? "overflow-x-hidden" : "overflow-x-auto",
+                "overflow-y-auto"
+              )
         )}
       >
         <div
@@ -1733,6 +1809,7 @@ export function DashboardCalendar({
                         measureOverflowFallback={isDayExpanded}
                         clipVerticalOverflow={false}
                         shiftConfirmationEnabled={shiftConfirmationEnabled}
+                        highlightedEmployeeId={highlightedEmployeeId}
                         onShiftContextMenu={bindShiftContextMenu({
                           areaId: "",
                           date,
@@ -1755,6 +1832,7 @@ export function DashboardCalendar({
                         isPastDay={dayReadOnly}
                         dayReferenceShifts={dayShifts}
                         areaCollapsed={false}
+                        dayCollapsed={!isDayExpanded}
                       />
                     ) : null}
                   </div>
@@ -1778,6 +1856,7 @@ export function DashboardCalendar({
                   profileQualificationIds={profileQualificationIdsRecord}
                   qualificationNameById={qualificationNameById}
                   qualificationSortOrder={qualificationSortOrder}
+                  highlightedEmployeeId={highlightedEmployeeId}
                 />
               ) : null}
             </>
@@ -1933,6 +2012,12 @@ export function DashboardCalendar({
                         weekdayLabel: staffingWeekdayLabel,
                         formatCalendarTimeLabel: formatCalendarStaffingTimeLabel,
                       });
+                      const cellHasHighlightedShift =
+                        showOpenDayCell &&
+                        highlightedEmployeeId !== null &&
+                        dayShifts.some(
+                          (shift) => shift.employeeId === highlightedEmployeeId
+                        );
 
                       return (
                         <div
@@ -1943,6 +2028,7 @@ export function DashboardCalendar({
                           )}
                           className={cn(
                             "relative z-10 flex min-h-0 flex-col overflow-hidden",
+                            cellHasHighlightedShift && "overflow-visible",
                             showDayCellContent ? "p-2" : undefined,
                             dayColumnDivider(dayIndex),
                             !isLastRow && ROW_DIVIDER_CLASS
@@ -1981,6 +2067,7 @@ export function DashboardCalendar({
                             <>
                               <TagAreaHeaderStrip
                                 key={`${area.id}:${date}:${dayShifts.map((shift) => shift.id).join(",")}`}
+                                className={cellHasHighlightedShift ? "z-10" : undefined}
                                 showDaytimesGradient={showDaytimesGradient}
                                 dayCollapsed={!isDayActive}
                                 entries={headerStaffing}
@@ -2008,6 +2095,7 @@ export function DashboardCalendar({
                                 style={{ height: TAG_AREA_HEADER_STRIP_HEIGHT }}
                               />
                               <div
+                                data-dashboard-area-cell-footer
                                 className={cn(
                                   "absolute inset-x-0 bottom-0 z-20 flex items-center justify-center overflow-hidden border-t border-border px-1",
                                   isPastWorkDayCell ? undefined : "bg-background"
@@ -2036,6 +2124,7 @@ export function DashboardCalendar({
                               <div
                                 className={cn(
                                   "flex h-0 min-h-0 flex-1 flex-col gap-1.5",
+                                  cellHasHighlightedShift && "relative z-20 overflow-visible",
                                   layoutTransitionEnabled &&
                                     CALENDAR_CELL_CONTENT_TRANSITION_CLASS,
                                   showDayCellContent
@@ -2082,6 +2171,9 @@ export function DashboardCalendar({
                                           )
                                         : false
                                     }
+                                    deferVerticalScroll={scrollDeferredAreaIds.has(
+                                      area.id
+                                    )}
                                     measureOverflowFallback
                                     clipVerticalOverflow={false}
                                     onShiftClick={(shift) =>
@@ -2095,6 +2187,7 @@ export function DashboardCalendar({
                                       )
                                     }
                                     shiftConfirmationEnabled={shiftConfirmationEnabled}
+                                    highlightedEmployeeId={highlightedEmployeeId}
                                     onShiftContextMenu={bindShiftContextMenu({
                                       areaId: area.id,
                                       date,
@@ -2121,6 +2214,7 @@ export function DashboardCalendar({
                                       shiftsByDate.get(date) ?? []
                                     }
                                     areaCollapsed={isCompactRow}
+                                    dayCollapsed={!isDayActive}
                                   />
                                 ) : null}
                               </div>
@@ -2151,6 +2245,7 @@ export function DashboardCalendar({
                         profileQualificationIds={profileQualificationIdsRecord}
                         qualificationNameById={qualificationNameById}
                         qualificationSortOrder={qualificationSortOrder}
+                        highlightedEmployeeId={highlightedEmployeeId}
                         onShiftClick={(shift) => {
                           const startDate = shift.shift_date;
                           const startDayShifts =

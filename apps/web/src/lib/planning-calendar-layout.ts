@@ -17,15 +17,16 @@ export const PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX = 5;
 /** Aufgeklappte Tagzellen: Schichtkarten nutzen diese Breite weniger — visueller Abstand zum nächsten Tag. */
 export const PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX = 10;
 export const PLANNING_EMPLOYEE_ROW_HEIGHT = `${PLANNING_CELL_HEIGHT_PX + PLANNING_CELL_PADDING_PX * 2}px`;
-export const PLANNING_DAY_HEADER_ROW_HEIGHT = "3.5rem";
-export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT = "18px";
+export const PLANNING_DAY_HEADER_ROW_HEIGHT = "3.75rem";
+export const PLANNING_DAY_HEADER_ROW_HEIGHT_PX = 60;
+export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT = "22px";
 /** Kompakte Wochenzusammenfassung unten im Kalender (ehem. 3.5rem). */
-export const PLANNING_DAY_FOOTER_ROW_HEIGHT = "32px";
+export const PLANNING_DAY_FOOTER_ROW_HEIGHT = "36px";
 /** Kalender-Footer oben: Gesamtstunden/Gesamtkosten pro Tag (Platzhalter). */
 export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT =
   PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT;
-export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX = 18;
-export const PLANNING_DAY_FOOTER_ROW_HEIGHT_PX = 32;
+export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX = 22;
+export const PLANNING_DAY_FOOTER_ROW_HEIGHT_PX = 36;
 /** Summe der sticky Footer-Zeilen — Grenze für Kalender-Inhalt darüber. */
 export const PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX =
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX + PLANNING_DAY_FOOTER_ROW_HEIGHT_PX;

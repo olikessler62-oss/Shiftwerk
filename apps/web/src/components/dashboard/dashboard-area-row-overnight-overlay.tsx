@@ -29,9 +29,11 @@ import {
   dashboardEndDayServiceSpanMinutesForOvernightWidthLocation,
   dashboardStartDayServiceSpanMinutesForOvernightWidth,
   dashboardStartDayServiceSpanMinutesForOvernightWidthLocation,
+  resolveDashboardAreaServiceDayTimeline,
   resolveDashboardLocationServiceDayTimeline,
+  resolveDashboardOvernightEndDayTimeline,
 } from "@/lib/dashboard-service-day-timeline";
-import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
+import { SHIFT_CARD_TWO_LINE_HEIGHT_PX, AREA_ROW_FOOTER_STRIP_PX } from "@/lib/shift-card-row-layout";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 
@@ -64,6 +66,7 @@ type Props = {
   ) => void;
   /** Einfache Planung ohne Bereichs-Spalte — Bereich gilt immer als aufgeklappt. */
   forceAreaExpanded?: boolean;
+  highlightedEmployeeId?: string | null;
 };
 
 function queryDashboardCell(areaId: string, date: string): HTMLElement | null {
@@ -78,11 +81,38 @@ function queryOvernightAnchor(shiftId: string): HTMLElement | null {
   );
 }
 
-function resolveDashboardServiceTimeline(
+function clampCollapsedOvernightTopPx(
+  topPx: number,
+  heightPx: number,
+  cell: HTMLElement,
+  overlayRect: DOMRect
+): number {
+  const cellRect = cell.getBoundingClientRect();
+  const footerInsetPx = cell.querySelector("[data-dashboard-area-cell-footer]")
+    ? AREA_ROW_FOOTER_STRIP_PX
+    : 0;
+  const contentBottomPx =
+    cellRect.bottom - overlayRect.top - footerInsetPx;
+  return Math.max(0, Math.min(topPx, contentBottomPx - heightPx));
+}
+
+function resolveDashboardStartDayTimeline(
   dateISO: string,
+  areaId: string,
   serviceHours: readonly AreaServiceHourRef[]
 ) {
+  if (areaId) {
+    return resolveDashboardAreaServiceDayTimeline(serviceHours, areaId, dateISO);
+  }
   return resolveDashboardLocationServiceDayTimeline(serviceHours, dateISO);
+}
+
+function resolveDashboardEndDayTimeline(
+  dateISO: string,
+  areaId: string,
+  serviceHours: readonly AreaServiceHourRef[]
+) {
+  return resolveDashboardOvernightEndDayTimeline(serviceHours, areaId, dateISO);
 }
 
 function resolveDashboardOvernightServiceSpans(
@@ -143,8 +173,11 @@ export function DashboardAreaRowOvernightOverlay({
   onShiftClick,
   onShiftContextMenu,
   forceAreaExpanded = false,
+  highlightedEmployeeId = null,
 }: Props) {
   const t = useTranslations();
+  const areaRowExpanded =
+    forceAreaExpanded || layoutActiveAreaIds.has(areaId);
   const overlayRef = useRef<HTMLDivElement>(null);
   const [layoutsByShiftId, setLayoutsByShiftId] = useState<
     Map<string, SpanLayout>
@@ -193,7 +226,7 @@ export function DashboardAreaRowOvernightOverlay({
 
   useLayoutEffect(() => {
     const overlay = overlayRef.current;
-    if (!overlay || spans.length === 0) {
+    if (!overlay || spans.length === 0 || !areaRowExpanded) {
       setLayoutsByShiftId(new Map());
       return;
     }
@@ -223,8 +256,14 @@ export function DashboardAreaRowOvernightOverlay({
             ? {
                 startTime: span.shift.startTime,
                 endTime: span.shift.endTime,
-                startTimeline: resolveDashboardServiceTimeline(
+                startTimeline: resolveDashboardStartDayTimeline(
                   span.startDate,
+                  areaId,
+                  serviceHours
+                ),
+                endTimeline: resolveDashboardEndDayTimeline(
+                  span.endDate,
+                  areaId,
                   serviceHours
                 ),
                 ...resolveDashboardOvernightServiceSpans(
@@ -264,6 +303,21 @@ export function DashboardAreaRowOvernightOverlay({
           heightPx = COLLAPSED_MARKER_HEIGHT_PX;
         }
 
+        if (displayMode === "collapsed") {
+          const clampCell =
+            (anchor?.closest("[data-dashboard-cell]") as HTMLElement | null) ??
+            startCell ??
+            endCell;
+          if (clampCell) {
+            topPx = clampCollapsedOvernightTopPx(
+              topPx,
+              heightPx,
+              clampCell,
+              overlayRect
+            );
+          }
+        }
+
         next.set(span.shift.id, {
           ...geometry,
           displayMode,
@@ -294,9 +348,17 @@ export function DashboardAreaRowOvernightOverlay({
       observer.disconnect();
       window.removeEventListener("scroll", measure, true);
     };
-  }, [areaId, spans, layoutActiveDayDates, layoutActiveAreaIds, forceAreaExpanded, serviceHours]);
+  }, [
+    areaId,
+    spans,
+    layoutActiveDayDates,
+    layoutActiveAreaIds,
+    forceAreaExpanded,
+    serviceHours,
+    areaRowExpanded,
+  ]);
 
-  if (spans.length === 0) return null;
+  if (spans.length === 0 || !areaRowExpanded) return null;
 
   return (
     <div
@@ -344,6 +406,11 @@ export function DashboardAreaRowOvernightOverlay({
               isPastDay={isPastDay}
               pending={pending}
               isSelected={isSelected}
+              employeeHighlighted={
+                layout.displayMode === "expanded" &&
+                highlightedEmployeeId !== null &&
+                span.shift.employeeId === highlightedEmployeeId
+              }
               onShiftClick={() => onShiftClick?.(span.shift)}
               onShiftContextMenu={
                 onShiftContextMenu

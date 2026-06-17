@@ -11,10 +11,11 @@ import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/dashboard-assignment-presets";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 import type { DashboardShiftCard } from "@/components/dashboard/dashboard-calendar";
-import { resolveOrganizationTimeZone } from "@schichtwerk/database";
+import { resolveOrganizationTimeZone, resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
 import { loadDashboardShiftCompensation } from "@/lib/load-dashboard-shift-compensation";
+import { runShiftConfirmationPendingJobSafe } from "@/lib/run-shift-confirmation-pending-job";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
@@ -67,15 +68,23 @@ export default async function DashboardPage({
   const from = dates[0];
   const to = dates[6];
 
-  let [qualifications, compensationSurchargeTypes, roles, profiles, locations, profileQualificationIdsMap] =
-    await Promise.all([
-      db.listQualifications(orgId),
-      db.listCompensationSurchargeTypes(orgId),
-      db.listRoles(orgId),
-      db.listOrganizationProfiles(orgId),
-      db.listLocationsForDashboard(orgId, from, to),
-      db.listProfileQualificationIdsByOrganization(orgId),
-    ]);
+  let [
+    qualifications,
+    compensationSurchargeTypes,
+    roles,
+    profiles,
+    locations,
+    profileQualificationIdsMap,
+    absences,
+  ] = await Promise.all([
+    db.listQualifications(orgId),
+    db.listCompensationSurchargeTypes(orgId),
+    db.listRoles(orgId),
+    db.listOrganizationProfiles(orgId),
+    db.listLocationsForDashboard(orgId, from, to),
+    db.listProfileQualificationIdsByOrganization(orgId),
+    db.listOrganizationAbsences(orgId, { statuses: ["approved"] }),
+  ]);
 
   if (!roles.length) {
     await db.seedDefaultRoles(orgId);
@@ -85,6 +94,8 @@ export default async function DashboardPage({
   const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
   const selectedLocation =
     locations.find((l) => l.id === selectedLocationId) ?? null;
+
+  await runShiftConfirmationPendingJobSafe(db);
 
   const [areas, staffingRules, serviceHours, shiftRows, areaShiftTemplates] =
     selectedLocationId
@@ -137,7 +148,10 @@ export default async function DashboardPage({
       endTime: endFromTs,
       employeeName: profile?.full_name ?? "Unbekannt",
       employeeColor: profile?.color ?? null,
-      confirmationStatus: s.confirmation_status,
+      confirmationStatus: resolveEffectiveConfirmationStatus(
+        s.confirmation_status,
+        s.requested_at
+      ),
     });
   }
 
@@ -168,6 +182,7 @@ export default async function DashboardPage({
         profileQualificationIds={profileQualificationIds}
         shiftCompensation={shiftCompensation}
         locations={locations}
+        absences={absences}
         managerNotifications={managerNotifications}
       />
     </Suspense>

@@ -132,7 +132,7 @@ export async function fetchDashboardShiftAssignEmployees(
       db.listPlanningEmployees(organizationId),
       db.listOrganizationRecurringAvailability(organizationId),
       db.listEmployeeLastShiftDates(organizationId),
-      db.listOrganizationAbsences(organizationId, "approved"),
+      db.listOrganizationAbsences(organizationId, { statuses: ["approved"] }),
     ]);
 
     const schedulableProfiles = filterProfilesForShiftAssignment(

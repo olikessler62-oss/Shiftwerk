@@ -14,6 +14,7 @@ import type {
   ProfileCompensationSurcharge,
   EffectiveProfileCompensationSurcharge,
   CompensationSurchargeType,
+  CompensationSurchargeUnit,
   ProfileRecurringAvailability,
   ProfileShiftPreference,
   Qualification,
@@ -86,7 +87,7 @@ import {
   type RequestedShiftForPendingJob,
   type ShiftConfirmationPendingJobResult,
 } from "./shift-confirmation-pending";
-import { businessMinutesBetween } from "./business-minutes";
+import { elapsedMinutesBetween } from "./business-minutes";
 import { resolveOrganizationTimeZone } from "./organization-timezone";
 import {
   assertRespondItemsAllowed,
@@ -281,6 +282,7 @@ type ProfileCompensationSurchargeRow = {
   profile_id: string;
   surcharge_type_id: string;
   amount: number | string | null;
+  unit: CompensationSurchargeType["unit"] | null;
   valid_from: string;
   valid_to: string | null;
   created_at: string;
@@ -327,6 +329,7 @@ function mapProfileCompensationSurcharge(
     type_default_amount: typeRel ? parseNumericField(typeRel.amount) : 0,
     type_default_unit: typeRel?.unit ?? "eur_per_hour",
     amount,
+    unit: row.unit ?? null,
     valid_from: row.valid_from.slice(0, 10),
     valid_to: row.valid_to ? row.valid_to.slice(0, 10) : null,
     created_at: row.created_at,
@@ -344,7 +347,7 @@ function mapEffectiveProfileCompensationSurcharge(
     name: row.surcharge_type_name,
     trigger: row.trigger,
     amount: row.amount ?? row.type_default_amount,
-    unit: row.type_default_unit,
+    unit: row.unit ?? row.type_default_unit,
   };
 }
 
@@ -2036,6 +2039,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     input: {
       surcharge_type_id: string;
       amount: number | null;
+      unit: CompensationSurchargeUnit | null;
       valid_from: string;
       created_by: string;
     }
@@ -2099,6 +2103,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         profile_id: profileId,
         surcharge_type_id: input.surcharge_type_id,
         amount: input.amount,
+        unit: input.unit,
         valid_from: input.valid_from,
         valid_to: null,
         created_by: input.created_by,
@@ -2121,6 +2126,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     entryId: string,
     input: {
       amount: number | null;
+      unit: CompensationSurchargeUnit | null;
       valid_from: string;
     },
     referenceDate: string
@@ -2176,6 +2182,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .from(T.profileCompensationSurcharges)
       .update({
         amount: input.amount,
+        unit: input.unit,
         valid_from: input.valid_from,
       })
       .eq("id", entryId)
@@ -3523,16 +3530,27 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
   async listOrganizationAbsences(
     organizationId: string,
-    status: "approved" | "pending" | "rejected" | "cancelled" = "approved"
+    options?: {
+      statuses?: import("@schichtwerk/types").RequestStatus[];
+      employeeId?: string;
+    }
   ) {
-    const { data, error } = await this.client
+    let query = this.client
       .from(T.absenceRequests)
       .select(
-        "id, organization_id, employee_id, type, start_date, end_date, status, notes, reviewed_by"
+        "id, organization_id, employee_id, type, start_date, end_date, is_open_ended, expected_end_date, status, notes, reviewed_by, reported_by, updated_at"
       )
       .eq("organization_id", organizationId)
-      .eq("status", status)
       .order("start_date", { ascending: false });
+
+    if (options?.statuses?.length) {
+      query = query.in("status", options.statuses);
+    }
+    if (options?.employeeId) {
+      query = query.eq("employee_id", options.employeeId);
+    }
+
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
     return (data ?? []) as AbsenceRequest[];
   }
@@ -3542,10 +3560,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     employee_id: string;
     type: AbsenceType;
     start_date: string;
-    end_date: string;
-    status: "approved";
+    end_date: string | null;
+    is_open_ended: boolean;
+    expected_end_date: string | null;
+    status: import("@schichtwerk/types").RequestStatus;
     notes: string | null;
-    reviewed_by: string;
+    reviewed_by: string | null;
+    reported_by: string | null;
   }) {
     const { data, error } = await this.client
       .from(T.absenceRequests)
@@ -3563,10 +3584,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       employee_id: string;
       type: AbsenceType;
       start_date: string;
-      end_date: string;
-      status: "approved";
+      end_date: string | null;
+      is_open_ended: boolean;
+      expected_end_date: string | null;
+      status: import("@schichtwerk/types").RequestStatus;
       notes: string | null;
-      reviewed_by: string;
+      reviewed_by: string | null;
+      reported_by?: string | null;
     }
   ) {
     const { error } = await this.client
@@ -3931,8 +3955,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         "id, organization_id, employee_id, shift_date, requested_at, organizations!inner(shift_confirmation_enabled, timezone, country_code), profiles!employee_id(full_name, email_fallback_mode)"
       )
       .eq("confirmation_status", "requested")
-      .not("requested_at", "is", null)
-      .eq("organizations.shift_confirmation_enabled", true);
+      .not("requested_at", "is", null);
 
     if (error) throw new Error(error.message);
 
@@ -3957,7 +3980,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       const profile = Array.isArray(profileRel) ? profileRel[0] : profileRel;
       const requestedAt = row.requested_at as string | null;
 
-      if (!organization?.shift_confirmation_enabled || !requestedAt || !profile) {
+      if (!requestedAt || !profile) {
         return [];
       }
 
@@ -3971,8 +3994,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           employee_full_name: profile.full_name,
           email_fallback_mode: profile.email_fallback_mode ?? false,
           organization: {
-            timezone: organization.timezone,
-            country_code: organization.country_code,
+            timezone: organization?.timezone ?? null,
+            country_code: organization?.country_code ?? null,
           },
         },
       ];
@@ -3983,12 +4006,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     shift: RequestedShiftForPendingJob,
     nowIso: string
   ): Promise<boolean> {
-    const timeZone = resolveOrganizationTimeZone(shift.organization);
-    const businessMinutes = businessMinutesBetween(
-      shift.requested_at,
-      nowIso,
-      timeZone
-    );
+    const elapsedMinutes = elapsedMinutesBetween(shift.requested_at, nowIso);
 
     const { data, error } = await this.client
       .from(T.shifts)
@@ -4018,7 +4036,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         payload: {
           reason: "pending_job",
           requested_at: shift.requested_at,
-          business_minutes_elapsed: businessMinutes,
+          elapsed_minutes: elapsedMinutes,
         },
       });
     if (eventError) throw new Error(eventError.message);

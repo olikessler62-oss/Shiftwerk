@@ -1,62 +1,51 @@
 import { describe, expect, it } from "vitest";
 import {
-  businessMinutesBetween,
+  elapsedMinutesBetween,
   isShiftConfirmationPendingDue,
-  PENDING_BUSINESS_MINUTES_REQUIRED,
+  PENDING_ELAPSED_HOURS_REQUIRED,
+  PENDING_ELAPSED_MINUTES_REQUIRED,
 } from "./business-minutes";
-import { zonedWallClockToUtc } from "./shift-timestamps";
 
-const BERLIN = "Europe/Berlin";
-
-describe("businessMinutesBetween", () => {
-  it("counts three hours within the same business day", () => {
-    const from = zonedWallClockToUtc("2025-06-09", "10:00", BERLIN);
-    const to = zonedWallClockToUtc("2025-06-09", "13:00", BERLIN);
-    expect(businessMinutesBetween(from, to, BERLIN)).toBe(180);
+describe("elapsedMinutesBetween", () => {
+  it("counts wall-clock minutes between two instants", () => {
+    const from = new Date("2025-06-09T10:00:00.000Z");
+    const to = new Date("2025-06-09T13:00:00.000Z");
+    expect(elapsedMinutesBetween(from, to)).toBe(180);
   });
 
-  it("skips overnight gaps outside business hours", () => {
-    const from = zonedWallClockToUtc("2025-06-09", "18:00", BERLIN);
-    const to = zonedWallClockToUtc("2025-06-10", "10:00", BERLIN);
-    expect(businessMinutesBetween(from, to, BERLIN)).toBe(240);
-  });
-
-  it("counts weekend minutes with the same business-hour window", () => {
-    const from = zonedWallClockToUtc("2025-06-14", "10:00", BERLIN);
-    const to = zonedWallClockToUtc("2025-06-14", "14:00", BERLIN);
-    expect(businessMinutesBetween(from, to, BERLIN)).toBe(240);
-  });
-
-  it("only counts minutes inside the configured window", () => {
-    const from = zonedWallClockToUtc("2025-06-09", "06:00", BERLIN);
-    const to = zonedWallClockToUtc("2025-06-09", "09:00", BERLIN);
-    expect(businessMinutesBetween(from, to, BERLIN)).toBe(60);
+  it("includes overnight gaps", () => {
+    const from = new Date("2025-06-09T22:00:00.000Z");
+    const to = new Date("2025-06-10T01:00:00.000Z");
+    expect(elapsedMinutesBetween(from, to)).toBe(180);
   });
 
   it("returns zero when to is not after from", () => {
-    const at = zonedWallClockToUtc("2025-06-09", "10:00", BERLIN);
-    expect(businessMinutesBetween(at, at, BERLIN)).toBe(0);
+    const at = new Date("2025-06-09T10:00:00.000Z");
+    expect(elapsedMinutesBetween(at, at)).toBe(0);
   });
 });
 
 describe("isShiftConfirmationPendingDue", () => {
-  it("is true once required business minutes elapsed", () => {
-    const requestedAt = zonedWallClockToUtc("2025-06-09", "10:00", BERLIN);
-    const now = zonedWallClockToUtc("2025-06-09", "13:00", BERLIN);
-    expect(isShiftConfirmationPendingDue(requestedAt.toISOString(), now, BERLIN)).toBe(
-      true
-    );
+  it("is true once three wall-clock hours elapsed since requested_at", () => {
+    const requestedAt = "2025-06-09T10:00:00.000Z";
+    const now = "2025-06-09T13:00:00.000Z";
+    expect(isShiftConfirmationPendingDue(requestedAt, now)).toBe(true);
   });
 
-  it("is false before required business minutes elapsed", () => {
-    const requestedAt = zonedWallClockToUtc("2025-06-09", "10:00", BERLIN);
-    const now = zonedWallClockToUtc("2025-06-09", "12:00", BERLIN);
-    expect(isShiftConfirmationPendingDue(requestedAt.toISOString(), now, BERLIN)).toBe(
-      false
-    );
+  it("is false before three wall-clock hours elapsed", () => {
+    const requestedAt = "2025-06-09T10:00:00.000Z";
+    const now = "2025-06-09T12:59:59.000Z";
+    expect(isShiftConfirmationPendingDue(requestedAt, now)).toBe(false);
+  });
+
+  it("is true after three hours across midnight", () => {
+    const requestedAt = "2025-06-09T22:00:00.000Z";
+    const now = "2025-06-10T01:00:00.000Z";
+    expect(isShiftConfirmationPendingDue(requestedAt, now)).toBe(true);
   });
 
   it("uses the configured threshold constant", () => {
-    expect(PENDING_BUSINESS_MINUTES_REQUIRED).toBe(180);
+    expect(PENDING_ELAPSED_HOURS_REQUIRED).toBe(3);
+    expect(PENDING_ELAPSED_MINUTES_REQUIRED).toBe(180);
   });
 });

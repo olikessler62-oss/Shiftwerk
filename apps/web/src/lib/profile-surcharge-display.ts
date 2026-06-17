@@ -12,6 +12,12 @@ export function resolveProfileSurchargeAmount(
   return entry.amount ?? entry.type_default_amount;
 }
 
+export function resolveProfileSurchargeUnit(
+  entry: Pick<ProfileCompensationSurcharge, "unit" | "type_default_unit">
+): CompensationSurchargeUnit {
+  return entry.unit ?? entry.type_default_unit;
+}
+
 export function toEffectiveProfileCompensationSurcharge(
   entry: ProfileCompensationSurcharge
 ): EffectiveProfileCompensationSurcharge {
@@ -21,7 +27,7 @@ export function toEffectiveProfileCompensationSurcharge(
     name: entry.surcharge_type_name,
     trigger: entry.trigger,
     amount: resolveProfileSurchargeAmount(entry),
-    unit: entry.type_default_unit,
+    unit: resolveProfileSurchargeUnit(entry),
   };
 }
 
@@ -31,12 +37,13 @@ export function formatProfileSurchargeLabel(
     | "surcharge_type_name"
     | "amount"
     | "type_default_amount"
+    | "unit"
     | "type_default_unit"
   >,
   locale: "de" | "en"
 ): string {
   const amount = resolveProfileSurchargeAmount(entry);
-  return `${entry.surcharge_type_name} +${formatSurchargeAmountLabel(amount, entry.type_default_unit, locale)}`;
+  return `${entry.surcharge_type_name} +${formatSurchargeAmountLabel(amount, resolveProfileSurchargeUnit(entry), locale)}`;
 }
 
 export function formatEffectiveSurchargeSummary(
@@ -57,6 +64,8 @@ export function formatSurchargeTriggerLabel(
   switch (trigger) {
     case "public_holiday":
       return t("surcharges.triggerPublicHoliday");
+    case "sunday":
+      return t("surcharges.triggerSunday");
     default:
       return trigger;
   }
@@ -73,5 +82,19 @@ export function formatSurchargeUnitLabel(
       return t("surcharges.unitPercentOfBase");
     default:
       return unit;
+  }
+}
+
+export function formatSurchargeAmountFieldLabel(
+  unit: CompensationSurchargeUnit,
+  t: (key: string) => string
+): string {
+  switch (unit) {
+    case "percent_of_base":
+      return t("surcharges.amountPercent");
+    case "eur_per_hour":
+      return t("surcharges.amountEurPerHour");
+    default:
+      return t("surcharges.amount");
   }
 }

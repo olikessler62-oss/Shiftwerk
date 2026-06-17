@@ -310,12 +310,13 @@ export function ProfileCompensationPanelModal({
           </div>
         )}
 
-        <div
-          className={cn(
-            settingsScrollableTableListClass(),
-            SETTINGS_PROFILES_LIST_SCROLL_CLASS
-          )}
-        >
+        <div className="min-h-0 bg-background px-4 py-3">
+          <div
+            className={cn(
+              settingsScrollableTableListClass(),
+              SETTINGS_PROFILES_LIST_SCROLL_CLASS
+            )}
+          >
           {loading ? (
             <SettingsEmptyState
               message={t("common.loading")}
@@ -419,9 +420,10 @@ export function ProfileCompensationPanelModal({
               </tbody>
             </table>
           )}
+          </div>
         </div>
 
-        <div className="shrink-0 border-t border-border px-4 py-2">
+        <div className="shrink-0 border-t border-border px-4 py-3">
           <SettingsActionBar
             primary={
               <SettingsPrimaryActionButton

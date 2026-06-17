@@ -10,6 +10,20 @@ type Props = {
   className?: string;
 };
 
+function LegendPlus({ label }: { label: string }) {
+  return (
+    <div className="mb-1.5 flex items-center gap-2 text-xs text-muted last:mb-0">
+      <span
+        className="flex h-2.5 w-2.5 shrink-0 items-center justify-center text-[20px] font-medium leading-none text-foreground"
+        aria-hidden
+      >
+        +
+      </span>
+      {label}
+    </div>
+  );
+}
+
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (
     <div className="mb-1.5 flex items-center gap-2 text-xs text-muted last:mb-0">
@@ -34,7 +48,7 @@ export function PlanningAvailabilityLegendSidebar({
       <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">
         {title}
       </h2>
-      <LegendDot color="#22c55e" label={availableLabel} />
+      <LegendPlus label={availableLabel} />
       <LegendDot color="#94a3b8" label={noAvailabilityLabel} />
       <LegendDot color="#f43f5e" label={absentLabel} />
     </section>

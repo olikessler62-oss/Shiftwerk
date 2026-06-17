@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { createDatabase } from "@schichtwerk/database";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { runShiftConfirmationPendingJobSafe } from "@/lib/run-shift-confirmation-pending-job";
 
 function isAuthorizedCronRequest(request: Request): boolean {
   const cronSecret = process.env.CRON_SECRET?.trim();
@@ -19,8 +18,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const db = createDatabase(createAdminClient());
-    const result = await db.runShiftConfirmationPendingJob();
+    const result = await runShiftConfirmationPendingJobSafe();
+    if (!result) {
+      return NextResponse.json(
+        { ok: false, error: "Pending job unavailable." },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({
       ok: true,
       ...result,

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type {
+  AbsenceRequest,
   Location,
   LocationArea,
   LocationAreaStaffing,
@@ -54,6 +55,7 @@ type Props = {
   profileQualificationIds: Record<string, string[]>;
   shiftCompensation: DashboardShiftCompensationByKey;
   locations: Location[];
+  absences?: AbsenceRequest[];
   managerNotifications?: ManagerNotification[];
 };
 
@@ -75,6 +77,7 @@ export function DashboardView({
   profileQualificationIds,
   shiftCompensation,
   locations,
+  absences = [],
   managerNotifications = [],
 }: Props) {
   const router = useRouter();
@@ -107,17 +110,24 @@ export function DashboardView({
     [shiftConfirmationEnabled, shifts]
   );
 
+  const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<string | null>(
+    null
+  );
+
   const dashboardSidebarContent = useMemo(
     () => (
       <DashboardEmployeeLegendSidebar
         shifts={shifts}
         profiles={profiles}
+        absences={absences}
         locale={locale}
         employeeHoursLabel={t("common.basic")}
         emptyLabel={t("dashboard.weekEmployeeLegendEmpty")}
+        highlightedEmployeeId={highlightedEmployeeId}
+        onEmployeeHover={setHighlightedEmployeeId}
       />
     ),
-    [shifts, profiles, locale, t]
+    [shifts, profiles, absences, locale, t, highlightedEmployeeId]
   );
 
   usePlanningAppSidebarContent(dashboardSidebarContent);
@@ -188,6 +198,7 @@ export function DashboardView({
           profiles={profiles}
           reassignShiftRequest={reassignShiftRequest}
           onReassignShiftHandled={() => setReassignShiftRequest(null)}
+          highlightedEmployeeId={highlightedEmployeeId}
         />
         <SettingsModalsLayer
           data={{

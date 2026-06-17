@@ -34,6 +34,8 @@ type Props = {
   dayReferenceShifts?: readonly DashboardShiftCard[];
   /** Zugeklappter Bereich — nur einzelne Pixel statt Balken. */
   areaCollapsed?: boolean;
+  /** Zugeklappter Tag — kein Scroll, Inhalt abschneiden. */
+  dayCollapsed?: boolean;
   /** Feste Zellbreite, wenn ResizeObserver 0 liefert (z. B. Planungs-Matrix). */
   cellWidthPxOverride?: number;
   /** Kurze Einzelzeile statt flex-1/h-0 (Planungs-Matrix pro Mitarbeiter). */
@@ -94,6 +96,7 @@ export function CollapsedShiftPreview({
   isPastDay,
   dayReferenceShifts,
   areaCollapsed = false,
+  dayCollapsed = false,
   cellWidthPxOverride,
   compactRow = false,
   fixedMarkerMarginLeftPx,
@@ -273,7 +276,7 @@ export function CollapsedShiftPreview({
           : compactRow
             ? "flex w-full flex-col items-start justify-center overflow-x-hidden pb-0"
             : "flex h-0 min-h-0 flex-1 flex-col items-start gap-1 overflow-x-hidden pb-1",
-        !areaCollapsed && isPastDay
+        !areaCollapsed && (isPastDay || dayCollapsed)
           ? "overflow-y-hidden"
           : !areaCollapsed && !compactRow
             ? "overflow-y-auto"

@@ -13,10 +13,7 @@ import {
 } from "@schichtwerk/database";
 import type { CompensationSurchargeType } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
-import {
-  formatSurchargeTriggerLabel,
-  formatSurchargeUnitLabel,
-} from "@/lib/profile-surcharge-display";
+import { formatSurchargeTriggerLabel, formatSurchargeUnitLabel, formatSurchargeAmountFieldLabel } from "@/lib/profile-surcharge-display";
 import { formatAmountForInput } from "@/lib/profile-hourly-rate-display";
 import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
 import { cn } from "@/lib/cn";
@@ -190,7 +187,7 @@ export function CompensationSurchargeTypeFormModal({
               </select>
             </div>
             <div>
-              <LabelMuted>{t("surcharges.amount")}</LabelMuted>
+              <LabelMuted>{formatSurchargeAmountFieldLabel(unit, t)}</LabelMuted>
               <Input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}

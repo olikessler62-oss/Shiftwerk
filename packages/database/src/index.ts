@@ -10,6 +10,10 @@ export {
   findOverlappingAbsence,
   absenceRangesOverlap,
   isDateWithinAbsenceRange,
+  absenceRangeForShiftConflict,
+  absenceRequestToRange,
+  validateOpenEndedSickOnly,
+  addDaysISO,
   type AbsenceRange,
 } from "./absence-validation";
 export {
@@ -309,10 +313,10 @@ export {
   type ConfirmationSendModalShiftRecord,
 } from "./shift-confirmation-send";
 export {
-  businessMinutesBetween,
+  elapsedMinutesBetween,
   isShiftConfirmationPendingDue,
-  PENDING_BUSINESS_HOUR_END,
-  PENDING_BUSINESS_HOUR_START,
+  PENDING_ELAPSED_HOURS_REQUIRED,
+  PENDING_ELAPSED_MINUTES_REQUIRED,
   PENDING_BUSINESS_MINUTES_REQUIRED,
 } from "./business-minutes";
 export {
@@ -322,9 +326,18 @@ export {
   buildPendingReminderNotificationTitle,
   filterRequestedShiftsDueForPendingTransition,
   isRequestedShiftDueForPendingTransition,
+  resolveEffectiveConfirmationStatus,
   type RequestedShiftForPendingJob,
   type ShiftConfirmationPendingJobResult,
 } from "./shift-confirmation-pending";
+export {
+  isOvernightShiftWindow,
+  overnightShiftEndDateISO,
+  shiftHoursOnCalendarDay,
+  shiftMinutesOnCalendarDay,
+  splitShiftWindowIntoCalendarDaySegments,
+  type ShiftCalendarDaySegment,
+} from "./shift-day-segments";
 export {
   assertRespondItemsAllowed,
   buildManagerResponseSummaryNotification,

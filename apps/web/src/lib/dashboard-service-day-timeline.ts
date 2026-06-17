@@ -202,6 +202,42 @@ export function dashboardEndDayServiceSpanMinutesForOvernightWidthLocation(
   return Math.max(1, latestEnd - earliestStart);
 }
 
+/**
+ * Folgetag für Overnight-Span-Breite: 00:00 bis spätestes same-day Serviceende.
+ * Der morgendliche Schichtanteil (00:00–Endzeit) wird auf diese Timeline skaliert.
+ */
+export function resolveDashboardOvernightEndDayTimeline(
+  serviceHours: readonly AreaServiceHourRef[],
+  areaId: string,
+  dateISO: string
+): ShiftCardServiceTimeline {
+  const hours = areaId
+    ? serviceHoursForAreaOnDate(serviceHours, areaId, dateISO)
+    : serviceHoursForLocationOnDate(serviceHours, dateISO);
+  const sameDayHours = hours.filter(
+    (hour) =>
+      !isOvernightServiceHourEntry(hour.start_time!, hour.end_time!)
+  );
+  const relevantHours = sameDayHours.length > 0 ? sameDayHours : hours;
+  const latestEnd = latestServiceEndMinForDashboardCellDivision(relevantHours);
+
+  if (latestEnd === null || latestEnd <= 0) {
+    return {
+      startMin: 0,
+      endMin: MINUTES_PER_DAY,
+      durationMin: MINUTES_PER_DAY,
+      usesFullDay: true,
+    };
+  }
+
+  return {
+    startMin: 0,
+    endMin: latestEnd,
+    durationMin: latestEnd,
+    usesFullDay: false,
+  };
+}
+
 export function dashboardOvernightShiftDurationMinutes(
   startTime: string,
   endTime: string

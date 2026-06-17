@@ -5,9 +5,10 @@ import {
   saveProfileCompensationSurcharge,
   updateProfileCompensationSurcharge,
 } from "@/app/actions/profile-compensation-surcharges";
-import { isMutableHourlyRate, parseSurchargeAmount } from "@schichtwerk/database";
+import { isMutableHourlyRate, parseSurchargeAmount, COMPENSATION_SURCHARGE_UNITS } from "@schichtwerk/database";
 import type {
   CompensationSurchargeType,
+  CompensationSurchargeUnit,
   ProfileCompensationSurcharge,
 } from "@schichtwerk/types";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
@@ -16,7 +17,7 @@ import {
   minValidFromForRateChange,
 } from "@/lib/profile-hourly-rate-display";
 import { formatSurchargeAmountLabel } from "@/lib/profile-compensation-calculation";
-import { resolveProfileSurchargeAmount } from "@/lib/profile-surcharge-display";
+import { resolveProfileSurchargeAmount, resolveProfileSurchargeUnit, formatSurchargeUnitLabel, formatSurchargeAmountFieldLabel } from "@/lib/profile-surcharge-display";
 import type { ProfileCompensationCacheEntry } from "./profile-compensation-panel-modal";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
@@ -77,6 +78,12 @@ export function ProfileCompensationSurchargeFormModal({
   const initialUsesDefault =
     mode === "edit" && editingEntry ? editingEntry.amount === null : true;
   const [useOrgDefault, setUseOrgDefault] = useState(initialUsesDefault);
+  const [unit, setUnit] = useState<CompensationSurchargeUnit>(() => {
+    if (mode === "edit" && editingEntry) {
+      return resolveProfileSurchargeUnit(editingEntry);
+    }
+    return availableTypes[0]?.unit ?? COMPENSATION_SURCHARGE_UNITS[0];
+  });
   const [amount, setAmount] = useState(() => {
     if (mode === "edit" && editingEntry) {
       const value = resolveProfileSurchargeAmount(editingEntry);
@@ -120,6 +127,7 @@ export function ProfileCompensationSurchargeFormModal({
     const nextType = availableTypes.find((entry) => entry.id === nextTypeId);
     if (nextType) {
       setAmount(formatAmountForInput(nextType.amount, localeKey));
+      setUnit(nextType.unit);
       setUseOrgDefault(true);
     }
     const openForType = currentEntry.surchargeEntries.find(
@@ -147,13 +155,15 @@ export function ProfileCompensationSurchargeFormModal({
     }
 
     let parsedAmount: number | null = null;
+    let parsedUnit: CompensationSurchargeUnit | null = null;
     if (!useOrgDefault) {
-      const parsed = parseSurchargeAmount(amount, selectedType.unit);
+      const parsed = parseSurchargeAmount(amount, unit);
       if (!parsed.ok) {
         setError(parsed.error);
         return;
       }
       parsedAmount = parsed.amount;
+      parsedUnit = unit;
     }
 
     startTransition(async () => {
@@ -162,6 +172,7 @@ export function ProfileCompensationSurchargeFormModal({
           profileId,
           entryId: editingEntry.id,
           amount: parsedAmount,
+          unit: parsedUnit,
           valid_from: validFrom,
         });
         if (!result.ok) {
@@ -189,6 +200,7 @@ export function ProfileCompensationSurchargeFormModal({
         profileId,
         surcharge_type_id: surchargeTypeId,
         amount: parsedAmount,
+        unit: parsedUnit,
         valid_from: validFrom,
       });
       if (!result.ok) {
@@ -323,14 +335,38 @@ export function ProfileCompensationSurchargeFormModal({
               })}
             </p>
           ) : (
-            <div>
-              <LabelMuted>{t("profiles.surchargeAmount")}</LabelMuted>
-              <Input
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                disabled={pending}
-                inputMode="decimal"
-              />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <LabelMuted>{t("surcharges.unit")}</LabelMuted>
+                <select
+                  value={unit}
+                  onChange={(e) =>
+                    setUnit(e.target.value as CompensationSurchargeUnit)
+                  }
+                  disabled={pending}
+                  className="mt-1 w-full rounded-[var(--radius-control)] border border-border bg-surface px-3 py-2.5 text-sm"
+                >
+                  {COMPENSATION_SURCHARGE_UNITS.map((value) => (
+                    <option key={value} value={value}>
+                      {formatSurchargeUnitLabel(value, t)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <LabelMuted>{formatSurchargeAmountFieldLabel(unit, t)}</LabelMuted>
+                <Input
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  disabled={pending}
+                  placeholder={
+                    unit === "percent_of_base"
+                      ? t("surcharges.amountPlaceholderPercent")
+                      : t("surcharges.amountPlaceholderEur")
+                  }
+                  inputMode="decimal"
+                />
+              </div>
             </div>
           )}
 

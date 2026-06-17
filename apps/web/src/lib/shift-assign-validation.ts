@@ -50,7 +50,7 @@ export async function loadShiftAssignValidationContext(
   ] = await Promise.all([
     db.getOrganizationCountryCode(organizationId),
     db.listOrganizationRecurringAvailability(organizationId),
-    db.listOrganizationAbsences(organizationId, "approved"),
+    db.listOrganizationAbsences(organizationId, { statuses: ["approved"] }),
     needsAdvancedData
       ? db.listLocationAreaStaffingForArea(locationAreaId!, locationId)
       : Promise.resolve([]),

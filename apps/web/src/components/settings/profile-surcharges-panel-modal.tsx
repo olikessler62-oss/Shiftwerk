@@ -19,6 +19,7 @@ import { formatSurchargeAmountLabel } from "@/lib/profile-compensation-calculati
 import {
   formatSurchargeTriggerLabel,
   resolveProfileSurchargeAmount,
+  resolveProfileSurchargeUnit,
 } from "@/lib/profile-surcharge-display";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
@@ -289,10 +290,6 @@ export function ProfileSurchargesPanelModal({
       ? `${selectedSurcharge.surcharge_type_name} (${formatDateLabel(selectedSurcharge.valid_from, locale)})`
       : "";
 
-  const title = t("profiles.panelSurchargesOf", {
-    name: truncateLabel(profile.full_name, 40),
-  });
-
   return (
     <div
       className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
@@ -324,7 +321,10 @@ export function ProfileSurchargesPanelModal({
             id="profile-surcharges-panel-title"
             className={SETTINGS_MODAL_TITLE_CLASS}
           >
-            {title}
+            <span className="text-foreground">
+              {t("profiles.panelSurchargesOfPrefix")}{" "}
+            </span>
+            <span className="text-cyan-600">{profile.full_name}</span>
           </h3>
           <IconButton
             size="sm"
@@ -343,12 +343,13 @@ export function ProfileSurchargesPanelModal({
           </div>
         )}
 
-        <div
-          className={cn(
-            settingsScrollableTableListClass(),
-            SETTINGS_PROFILES_LIST_SCROLL_CLASS
-          )}
-        >
+        <div className="min-h-0 bg-background px-4 py-3">
+          <div
+            className={cn(
+              settingsScrollableTableListClass(),
+              SETTINGS_PROFILES_LIST_SCROLL_CLASS
+            )}
+          >
           {loading ? (
             <SettingsEmptyState
               message={t("common.loading")}
@@ -441,7 +442,7 @@ export function ProfileSurchargesPanelModal({
                       >
                         {formatSurchargeAmountLabel(
                           resolvedAmount,
-                          entry.type_default_unit,
+                          resolveProfileSurchargeUnit(entry),
                           localeKey
                         )}
                         {entry.amount === null ? (
@@ -475,9 +476,10 @@ export function ProfileSurchargesPanelModal({
               </tbody>
             </table>
           )}
+          </div>
         </div>
 
-        <div className="shrink-0 border-t border-border px-4 py-2">
+        <div className="shrink-0 border-t border-border px-4 py-3">
           <SettingsActionBar
             primary={
               <SettingsPrimaryActionButton

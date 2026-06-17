@@ -5,6 +5,11 @@ import type {
   EffectiveProfileCompensationSurcharge,
 } from "@schichtwerk/types";
 
+function isSunday(isoDate: string): boolean {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay() === 0;
+}
+
 export function surchargeTriggerMatchesDate(
   trigger: CompensationSurchargeTrigger,
   isoDate: string
@@ -12,6 +17,8 @@ export function surchargeTriggerMatchesDate(
   switch (trigger) {
     case "public_holiday":
       return isGermanPublicHoliday(isoDate);
+    case "sunday":
+      return isSunday(isoDate);
     default:
       return false;
   }
@@ -68,5 +75,5 @@ export function formatSurchargeAmountLabel(
   if (unit === "percent_of_base") {
     return `${formatted} %`;
   }
-  return `${formatted} €/h`;
+  return `${formatted} €/Std`;
 }

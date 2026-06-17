@@ -6,6 +6,7 @@ import {
   weekStartsForShiftCacheInvalidation,
 } from "@/lib/cached-dashboard-shifts";
 import { getDatabase } from "@/lib/db";
+import { runShiftConfirmationPendingJobSafe } from "@/lib/run-shift-confirmation-pending-job";
 import { shiftTimeFromTimestamp } from "@/lib/dates";
 import { requireManager } from "@/lib/manager";
 import { resolveSimulatedProposedAssignOptions } from "@/lib/shift-confirmation-assign-mode";
@@ -143,6 +144,8 @@ async function sendConfirmationForEmployee(input: {
     locationId: input.locationId,
     weekStart: input.weekStart,
   });
+
+  await runShiftConfirmationPendingJobSafe(db);
 
   return {
     ok: true,
