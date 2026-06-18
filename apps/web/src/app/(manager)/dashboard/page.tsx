@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import {
-  toISODate,
   weekDates,
   shiftTimeFromTimestamp,
 } from "@/lib/dates";
@@ -30,6 +29,7 @@ export default async function DashboardPage({
     profiles?: string;
     rollen?: string;
     location?: string;
+    area?: string;
   }>;
 }) {
   const {
@@ -39,6 +39,7 @@ export default async function DashboardPage({
     standorte,
     profiles: profilesParam,
     rollen,
+    area: areaParam,
   } = await searchParams;
   const db = await getDatabase();
   const user = await db.authGetUser();
@@ -57,6 +58,7 @@ export default async function DashboardPage({
   const weekStart = redirectIfPlanningWeekClamped("/dashboard", week, {
     week,
     location: locationParam,
+    area: areaParam,
     qualifikationen,
     standorte,
     profiles: profilesParam,

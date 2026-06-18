@@ -347,7 +347,7 @@ function revalidateShiftPaths(scope?: {
   locationId: string;
   shiftDates: string[];
 }) {
-  revalidatePath("/planung");
+  revalidatePath("/planer");
   revalidatePath("/dashboard");
 
   if (!scope?.locationId) return;

@@ -1,53 +1,26 @@
 "use client";
 
-import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   formatStaffingEntriesTooltipContent,
   formatStaffingEntryTooltipContent,
 } from "@/lib/bulk-staffing-header";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import {
-  measureStaffingHeaderText,
   resolveStaffingHeaderDisplay,
   type StaffingHeaderDisplay,
-  type StaffingHeaderSegment,
 } from "@/lib/tag-area-header-staffing-display";
+import { StaffingFillGauge } from "@/components/dashboard/staffing-fill-gauge";
 import { useTranslations } from "@/i18n/locale-provider";
 import { Tooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/cn";
 
 type Props = {
   entries: TagAreaHeaderStaffingEntry[];
-  /** Vergangener Kalendertag — dunklere Grün-/Rot-Töne. */
-  dimmed?: boolean;
   /** Eingeklappter Kalendertag — Bedarf nur als „!“ (Tooltip mit Volltext). */
   dayCollapsed?: boolean;
 };
 
 const EMPTY_DISPLAY: StaffingHeaderDisplay = { mode: "empty" };
-
-const STAFFING_LABEL_INTERACTIVE_CLASS =
-  "cursor-default rounded px-1 py-px transition-colors duration-150";
-
-function staffingLabelClass(
-  variant: "default" | "understaffed" | "met",
-  dimmed: boolean
-): string {
-  if (variant === "understaffed") {
-    return cn(
-      STAFFING_LABEL_INTERACTIVE_CLASS,
-      dimmed
-        ? "text-red-900 hover:bg-red-900/10 hover:text-red-800"
-        : "text-red-600 hover:bg-red-600/12 hover:text-red-500"
-    );
-  }
-  return cn(
-    STAFFING_LABEL_INTERACTIVE_CLASS,
-    dimmed
-      ? "text-neutral-500 hover:bg-neutral-500/10 hover:text-neutral-600"
-      : "text-neutral-600 hover:bg-neutral-500/10 hover:text-neutral-700"
-  );
-}
 
 function StaffingTooltipContent({
   title,
@@ -66,98 +39,8 @@ function StaffingTooltipContent({
   );
 }
 
-function StaffingCountLabel({ countText }: { countText: string }) {
-  const slashIndex = countText.indexOf("/");
-  if (slashIndex === -1) {
-    return (
-      <span className="text-[12px] font-bold tabular-nums leading-none">
-        {countText}
-      </span>
-    );
-  }
-
-  const assigned = countText.slice(0, slashIndex);
-  const required = countText.slice(slashIndex + 1);
-
-  return (
-    <span className="inline-flex items-baseline tabular-nums leading-none">
-      <span className="text-[12px] font-bold">{assigned}</span>
-      <span className="text-[11px] font-medium">/</span>
-      <span className="text-[12px] font-bold">{required}</span>
-    </span>
-  );
-}
-
-function StaffingOverlaySegment({
-  segment,
-  className,
-}: {
-  segment: StaffingHeaderSegment;
-  className?: string;
-}) {
-  if (!segment.timeText) {
-    return (
-      <span className={cn("shrink-0 whitespace-nowrap leading-none", className)}>
-        <StaffingCountLabel countText={segment.countText} />
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 whitespace-nowrap leading-none",
-        className
-      )}
-    >
-      <span className="text-[10px] font-medium">{segment.timeText}:</span>
-      <StaffingCountLabel countText={segment.countText} />
-    </span>
-  );
-}
-
-function StaffingOverlaySegmentGroup({
-  segments,
-  joinWith,
-  className,
-}: {
-  segments: StaffingHeaderSegment[];
-  joinWith: "pipe" | "space";
-  className?: string;
-}) {
-  const divider = joinWith === "pipe" ? "|" : " ";
-
-  return (
-    <span
-      className={cn(
-        "inline-flex min-w-0 items-center",
-        joinWith === "pipe" ? "gap-0" : "gap-1",
-        className
-      )}
-    >
-      {segments.map((segment, index) => (
-        <Fragment key={segment.serviceHourId}>
-          {index > 0 ? (
-            <span
-              className={cn(
-                "shrink-0 leading-none text-muted",
-                joinWith === "pipe" ? "text-[10px]" : "text-[11px]"
-              )}
-              aria-hidden
-            >
-              {divider}
-            </span>
-          ) : null}
-          <StaffingOverlaySegment segment={segment} />
-        </Fragment>
-      ))}
-    </span>
-  );
-}
-
 export function TagAreaHeaderStaffingOverlay({
   entries,
-  dimmed = false,
   dayCollapsed = false,
 }: Props) {
   const t = useTranslations();
@@ -238,17 +121,8 @@ export function TagAreaHeaderStaffingOverlay({
     if (entries.length === 0) return EMPTY_DISPLAY;
     const effectiveWidth =
       containerWidth > 0 && Number.isFinite(containerWidth) ? containerWidth : 0;
-    return resolveStaffingHeaderDisplay(
-      entries,
-      effectiveWidth,
-      measureStaffingHeaderText
-    );
+    return resolveStaffingHeaderDisplay(entries, effectiveWidth);
   }, [entries, entryKey, containerWidth]);
-
-  const hasUnderstaffed = useMemo(
-    () => entries.some((entry) => entry.assigned < entry.required),
-    [entries]
-  );
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -283,8 +157,6 @@ export function TagAreaHeaderStaffingOverlay({
 
   const showIndicator =
     dayCollapsed || display.mode === "indicator" || contentOverflows;
-  const indicatorAllMet =
-    display.mode === "indicator" ? display.allMet : !hasUnderstaffed;
 
   if (entries.length === 0) return null;
 
@@ -295,63 +167,27 @@ export function TagAreaHeaderStaffingOverlay({
     >
       {showIndicator ? (
         <Tooltip content={allEntriesTooltip}>
-          <span
-            className={cn(
-              "shrink-0 text-[10px] font-bold leading-none",
-              staffingLabelClass(
-                indicatorAllMet ? "met" : "understaffed",
-                dimmed
-              )
-            )}
-          >
+          <span className="shrink-0 text-base font-bold leading-none text-neutral-600">
             !
           </span>
         </Tooltip>
-      ) : (
+      ) : display.mode === "gauges" ? (
         <div
           ref={contentRef}
-          className="flex min-w-0 max-w-full items-center justify-center overflow-hidden"
+          className="flex min-w-0 max-w-full items-end justify-center gap-1 overflow-hidden"
         >
-          {display.mode === "text" ? (
-            <Tooltip content={allEntriesTooltip}>
-              <StaffingOverlaySegmentGroup
-                segments={display.segments}
-                joinWith={display.joinWith}
-                className={staffingLabelClass(
-                  display.understaffed ? "understaffed" : "met",
-                  dimmed
-                )}
+          {display.segments.map((segment) => (
+            <Tooltip key={segment.serviceHourId} content={entryTooltip(segment.serviceHourId)}>
+              <StaffingFillGauge
+                assigned={segment.assigned}
+                required={segment.required}
+                label={segment.timeText}
+                understaffed={segment.understaffed}
               />
             </Tooltip>
-          ) : null}
-
-          {display.mode === "segments" ? (
-            <div className="flex min-w-0 items-center justify-center gap-0 overflow-hidden">
-              {display.segments.map((segment, segmentIndex) => (
-                <Fragment key={segment.serviceHourId}>
-                  {segmentIndex > 0 ? (
-                    <span
-                      className="shrink-0 text-[10px] leading-none text-muted"
-                      aria-hidden
-                    >
-                      |
-                    </span>
-                  ) : null}
-                  <Tooltip content={entryTooltip(segment.serviceHourId)}>
-                    <StaffingOverlaySegment
-                      segment={segment}
-                      className={staffingLabelClass(
-                        segment.understaffed ? "understaffed" : "met",
-                        dimmed
-                      )}
-                    />
-                  </Tooltip>
-                </Fragment>
-              ))}
-            </div>
-          ) : null}
+          ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

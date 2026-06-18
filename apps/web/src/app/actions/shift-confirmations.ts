@@ -46,8 +46,8 @@ function revalidateConfirmationPaths(input: {
   locationId?: string;
   weekStart: string;
 }) {
+  revalidatePath("/planer");
   revalidatePath("/dashboard");
-  revalidatePath("/planung");
 
   if (!input.locationId) return;
 

@@ -26,7 +26,7 @@ export function formatShiftCardTooltipShiftLine(name: string): string {
 }
 
 export function formatShiftCardTooltipJobLine(names: string): string {
-  return `Job: ${names}`;
+  return `Tätigkeit: ${names}`;
 }
 
 export type ShiftCardTooltipData = {

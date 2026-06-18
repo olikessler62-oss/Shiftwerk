@@ -69,7 +69,7 @@ export async function createCompensationSurchargeType(input: {
       sort_order: sortOrder,
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, id: created.id };
   } catch (e) {
     return {
@@ -114,7 +114,7 @@ export async function updateCompensationSurchargeType(input: {
       unit: input.unit,
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, id: input.id };
   } catch (e) {
     return {
@@ -131,7 +131,7 @@ export async function reorderCompensationSurchargeTypes(
     const { organizationId } = await requireManager();
     const db = await getDatabase();
     await db.reorderCompensationSurchargeTypes(organizationId, orderedIds);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true };
   } catch (e) {
     return {
@@ -151,7 +151,7 @@ export async function deleteCompensationSurchargeType(
     const { organizationId } = await requireManager();
     const db = await getDatabase();
     await db.archiveCompensationSurchargeType(id, organizationId);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true };
   } catch (e) {
     return {

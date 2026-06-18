@@ -184,8 +184,8 @@ export async function createProfile(input: {
     if (hourlyRateError && !hourlyRateError.ok) return hourlyRateError;
 
     const profile = await db.getProfileById(created.user.id);
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, profile: profile ?? undefined };
   } catch (e) {
     return {
@@ -301,8 +301,8 @@ export async function updateProfile(input: {
     }
 
     const profile = await db.getProfileById(input.id);
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, profile: profile ?? undefined };
   } catch (e) {
     return {
@@ -319,8 +319,8 @@ export async function reorderProfiles(
     const { organizationId } = await requireManager();
     const db = await getDatabase();
     await db.reorderProfiles(organizationId, orderedIds);
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true };
   } catch (e) {
     return {
@@ -345,8 +345,8 @@ export async function deleteProfile(id: string): Promise<ProfileActionResult> {
     await db.deactivateEmployee(organizationId, id);
 
     const profile = await db.getProfileById(id);
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, profile: profile ?? undefined };
   } catch (e) {
     return {

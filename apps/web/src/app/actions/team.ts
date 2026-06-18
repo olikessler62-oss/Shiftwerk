@@ -75,7 +75,7 @@ export async function inviteEmployee(
       };
     }
 
-    revalidatePath("/planung");
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
 
     return {

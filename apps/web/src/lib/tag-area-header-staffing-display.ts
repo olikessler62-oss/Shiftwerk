@@ -1,48 +1,39 @@
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import { resolveCalendarStaffingTimeLabel } from "@/lib/location-staffing-client";
 
+export const STAFFING_FILL_GAUGE_SIZE_PX = 24;
+
 export type StaffingHeaderDisplayLevel =
   | "full-schicht"
-  | "short"
   | "counts-only"
-  | "understaffed-only"
   | "indicator";
 
 export type StaffingHeaderSegment = {
   serviceHourId: string;
-  /** Zeit ohne Wochentag; null wenn nur Anzahl angezeigt wird. */
+  /** Schichtname oder Uhrzeit unter dem Füllstand; null = nur Kreis. */
   timeText: string | null;
   countText: string;
-  /** Kombiniert für Breitenmessung. */
+  /** Kombiniert für Breitenmessung (Legacy / Tooltip). */
   measureText: string;
   understaffed: boolean;
+  assigned: number;
+  required: number;
 };
 
 export type StaffingHeaderDisplay =
   | { mode: "empty" }
   | {
-      mode: "segments";
-      level: "full-schicht" | "short" | "counts-only";
+      mode: "gauges";
+      level: "full-schicht" | "counts-only";
       segments: StaffingHeaderSegment[];
-      separator: "pipe";
-    }
-  | {
-      mode: "text";
-      level: "counts-only" | "understaffed-only";
-      segments: StaffingHeaderSegment[];
-      joinWith: "pipe" | "space";
-      understaffed: boolean;
     }
   | { mode: "indicator"; allMet: boolean };
 
-const STAFFING_HEADER_FONT =
-  '500 10px Inter, ui-sans-serif, system-ui, sans-serif';
+const STAFFING_GAUGE_LABEL_FONT =
+  '500 9px Inter, ui-sans-serif, system-ui, sans-serif';
 
-const STAFFING_HEADER_COUNT_NUMBER_FONT =
-  "700 12px Inter, ui-sans-serif, system-ui, sans-serif";
-
-const STAFFING_HEADER_COUNT_SLASH_FONT =
-  "500 11px Inter, ui-sans-serif, system-ui, sans-serif";
+const STAFFING_GAUGE_COLUMN_GAP_PX = 4;
+const STAFFING_GAUGE_COLUMN_HORIZONTAL_PADDING_PX = 4;
 
 function measureStaffingHeaderTextWithFont(
   text: string,
@@ -77,6 +68,8 @@ function segmentWithTime(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegme
     countText,
     measureText: `${timeText}: ${countText}`,
     understaffed: entry.assigned < entry.required,
+    assigned: entry.assigned,
+    required: entry.required,
   };
 }
 
@@ -88,130 +81,58 @@ function segmentCountsOnly(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSeg
     countText,
     measureText: countText,
     understaffed: entry.assigned < entry.required,
+    assigned: entry.assigned,
+    required: entry.required,
   };
 }
 
-/** Flex-Layout misst Abstände zwischen Segmenten — Pipes ohne Zwischenraum. */
-const SEGMENT_FLEX_GAP_PX = 4;
-const STAFFING_PIPE_FLEX_GAP_PX = 0;
-/** px-1 links/rechts je interaktivem Segment im segments-Modus. */
-const STAFFING_SEGMENT_LABEL_PADDING_PX = 8;
-/** px-1 links/rechts an der Gruppe im text-Modus. */
-const STAFFING_GROUP_LABEL_PADDING_PX = 8;
-
-function measureSegmentContent(
-  segment: StaffingHeaderSegment,
-  measure: (text: string) => number
-): number {
-  if (!segment.timeText) {
-    return measureStaffingHeaderCountText(segment.countText);
-  }
-  return (
-    measure(`${segment.timeText}:`) +
-    SEGMENT_FLEX_GAP_PX +
-    measureStaffingHeaderCountText(segment.countText)
-  );
+function measureGaugeLabel(text: string): number {
+  return measureStaffingHeaderTextWithFont(text, STAFFING_GAUGE_LABEL_FONT, 5.5);
 }
 
-function measureRenderedSegments(
-  segments: StaffingHeaderSegment[],
-  measure: (text: string) => number
-): number {
-  if (segments.length === 0) return 0;
-
-  const textWidth = segments.reduce(
-    (sum, segment) => sum + measureSegmentContent(segment, measure),
-    0
-  );
-
-  const pipeCount = segments.length - 1;
-  const pipeWidth = pipeCount * measure("|");
-  const gapCount = Math.max(0, segments.length + pipeCount - 1);
-  const segmentPadding = segments.length * STAFFING_SEGMENT_LABEL_PADDING_PX;
-  return (
-    textWidth + pipeWidth + gapCount * STAFFING_PIPE_FLEX_GAP_PX + segmentPadding
-  );
-}
-
-/** Entspricht StaffingOverlaySegmentGroup (nur Anzahlen, ein Tooltip). */
-function measureTextModeGroup(
-  segments: StaffingHeaderSegment[],
-  joinWith: "pipe" | "space",
-  measure: (text: string) => number
-): number {
-  if (segments.length === 0) return 0;
-
-  const textWidth = segments.reduce(
-    (sum, segment) => sum + measureStaffingHeaderCountText(segment.countText),
-    0
-  );
-
-  const dividerCount = segments.length - 1;
-  let dividerWidth = 0;
-  if (dividerCount > 0) {
-    dividerWidth =
-      joinWith === "pipe"
-        ? dividerCount * measure("|")
-        : dividerCount * measureStaffingHeaderCountText(" ");
-  }
-
-  const gapCount = Math.max(0, segments.length + dividerCount - 1);
-  const flexGapPx = joinWith === "pipe" ? STAFFING_PIPE_FLEX_GAP_PX : SEGMENT_FLEX_GAP_PX;
-  return (
-    textWidth +
-    dividerWidth +
-    gapCount * flexGapPx +
-    STAFFING_GROUP_LABEL_PADDING_PX
-  );
-}
-
-export function measureStaffingHeaderCountText(text: string): number {
-  const slashIndex = text.indexOf("/");
-  if (slashIndex === -1) {
-    return measureStaffingHeaderTextWithFont(
-      text,
-      STAFFING_HEADER_COUNT_NUMBER_FONT,
-      7
+function measureGaugeColumn(label: string | null): number {
+  if (!label) {
+    return (
+      STAFFING_FILL_GAUGE_SIZE_PX +
+      STAFFING_GAUGE_COLUMN_HORIZONTAL_PADDING_PX * 2
     );
   }
 
-  const assigned = text.slice(0, slashIndex);
-  const required = text.slice(slashIndex + 1);
   return (
-    measureStaffingHeaderTextWithFont(
-      assigned,
-      STAFFING_HEADER_COUNT_NUMBER_FONT,
-      7
-    ) +
-    measureStaffingHeaderTextWithFont(
-      "/",
-      STAFFING_HEADER_COUNT_SLASH_FONT,
-      6.5
-    ) +
-    measureStaffingHeaderTextWithFont(
-      required,
-      STAFFING_HEADER_COUNT_NUMBER_FONT,
-      7
-    )
+    Math.max(STAFFING_FILL_GAUGE_SIZE_PX, measureGaugeLabel(label)) +
+    STAFFING_GAUGE_COLUMN_HORIZONTAL_PADDING_PX * 2
   );
 }
 
-export function measureStaffingHeaderText(text: string): number {
-  if (typeof document === "undefined") return text.length * 6;
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) return text.length * 6;
-  context.font = STAFFING_HEADER_FONT;
-  return context.measureText(text).width;
+function measureGaugeRow(
+  segments: StaffingHeaderSegment[],
+  showLabels: boolean
+): number {
+  if (segments.length === 0) return 0;
+
+  const columnWidths = segments.map((segment) =>
+    measureGaugeColumn(showLabels ? segment.timeText : null)
+  );
+  const gapWidth = Math.max(0, segments.length - 1) * STAFFING_GAUGE_COLUMN_GAP_PX;
+  return columnWidths.reduce((sum, width) => sum + width, 0) + gapWidth;
 }
 
 /** Sicherheitsabzug für Padding/Abweichungen Canvas vs. gerendert. */
 const STAFFING_HEADER_WIDTH_SAFETY_PX = 4;
 
+/** @deprecated Nur noch für Tests — Füllstandsanzeiger nutzen feste Spaltenbreite. */
+export function measureStaffingHeaderCountText(text: string): number {
+  return text.length * 7;
+}
+
+/** @deprecated Nur noch für Tests — Füllstandsanzeiger nutzen measureGaugeRow. */
+export function measureStaffingHeaderText(text: string): number {
+  return measureGaugeLabel(text);
+}
+
 export function resolveStaffingHeaderDisplay(
   entries: readonly TagAreaHeaderStaffingEntry[],
-  availableWidth: number,
-  measure: (text: string) => number = measureStaffingHeaderText
+  availableWidth: number
 ): StaffingHeaderDisplay {
   if (entries.length === 0) return { mode: "empty" };
 
@@ -221,62 +142,22 @@ export function resolveStaffingHeaderDisplay(
   );
 
   const fullSegments = entries.map((entry) => segmentWithTime(entry));
-  if (measureRenderedSegments(fullSegments, measure) <= width) {
+  if (measureGaugeRow(fullSegments, true) <= width) {
     return {
-      mode: "segments",
+      mode: "gauges",
       level: "full-schicht",
       segments: fullSegments,
-      separator: "pipe",
-    };
-  }
-
-  const shortSegments = entries.map((entry) => segmentWithTime(entry));
-  if (measureRenderedSegments(shortSegments, measure) <= width) {
-    return {
-      mode: "segments",
-      level: "short",
-      segments: shortSegments,
-      separator: "pipe",
     };
   }
 
   const countSegments = entries.map((entry) => segmentCountsOnly(entry));
-  if (measureRenderedSegments(countSegments, measure) <= width) {
+  if (measureGaugeRow(countSegments, false) <= width) {
     return {
-      mode: "segments",
+      mode: "gauges",
       level: "counts-only",
       segments: countSegments,
-      separator: "pipe",
     };
   }
 
-  if (measureTextModeGroup(countSegments, "pipe", measure) <= width) {
-    return {
-      mode: "text",
-      level: "counts-only",
-      segments: countSegments,
-      joinWith: "pipe",
-      understaffed: hasUnderstaffed,
-    };
-  }
-
-  const understaffedSegments = entries
-    .filter((entry) => entry.assigned < entry.required)
-    .map((entry) => segmentCountsOnly(entry));
-
-  if (understaffedSegments.length === 0) {
-    return { mode: "indicator", allMet: true };
-  }
-
-  if (measureTextModeGroup(understaffedSegments, "space", measure) <= width) {
-    return {
-      mode: "text",
-      level: "understaffed-only",
-      segments: understaffedSegments,
-      joinWith: "space",
-      understaffed: true,
-    };
-  }
-
-  return { mode: "indicator", allMet: false };
+  return { mode: "indicator", allMet: !hasUnderstaffed };
 }

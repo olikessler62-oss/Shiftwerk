@@ -44,7 +44,7 @@ export async function createRole(input: {
       sort_order: sortOrder,
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, id: created.id };
   } catch (e) {
     return {
@@ -87,7 +87,7 @@ export async function updateRole(input: {
       permission_level: permissionLevel,
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, id: input.id };
   } catch (e) {
     return {
@@ -105,7 +105,7 @@ export async function reorderRoles(
     const db = await getDatabase();
     await db.reorderRoles(organizationId, orderedIds);
     revalidatePath("/einstellungen");
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true };
   } catch (e) {
     return {
@@ -141,7 +141,7 @@ export async function deleteRole(id: string): Promise<RoleActionResult> {
     }
 
     await db.archiveRole(id, organizationId);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true };
   } catch (e) {
     return {

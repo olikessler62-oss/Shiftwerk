@@ -51,8 +51,8 @@ export async function createProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, availability };
   } catch (e) {
     return { ok: false, error: toProfileAvailabilitySaveError(e) };
@@ -83,8 +83,8 @@ export async function updateProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, availability };
   } catch (e) {
     return { ok: false, error: toProfileAvailabilitySaveError(e) };
@@ -112,8 +112,8 @@ export async function reorderProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, availability };
   } catch (e) {
     return {
@@ -142,8 +142,8 @@ export async function deleteProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, availability };
   } catch (e) {
     return {

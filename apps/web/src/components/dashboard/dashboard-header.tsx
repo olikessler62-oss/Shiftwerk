@@ -2,7 +2,7 @@
 
 // Responsive layout — see apps/web/RESPONSIVE_ROLLBACK.md to revert.
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useTransition } from "react";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
 import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
@@ -21,9 +21,15 @@ import type { CommunicationOpenOptions } from "@/lib/communication-hub";
 import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
 import { useIsAppShellLocked } from "@/lib/app-shell-modal-lock";
 import { APP_PAGE_TOOLBAR_HEADER_CLASS } from "@/lib/app-shell-layout";
-
-/** Gleiche Höhe wie IconButton size="md" (h-9). */
-const HEADER_CONTROL_H = "h-9 min-h-9";
+import {
+  headerToolbarPillButtonClass,
+  headerToolbarPillIconButtonClass,
+  headerToolbarPillPrimaryClass,
+  headerToolbarCountBadgeClass,
+  headerToolbarWeekNavGroupClass,
+  headerToolbarWeekNavIconButtonClass,
+  headerToolbarWeekNavTodayButtonClass,
+} from "@/lib/header-toolbar-styles";
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -54,6 +60,7 @@ export function DashboardHeader({
   onNavigateToWeek,
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   const { locale } = useLocale();
@@ -79,10 +86,10 @@ export function DashboardHeader({
       }
       const q = params.toString();
       startTransition(() => {
-        router.push(q ? `/dashboard?${q}` : "/dashboard");
+        router.push(q ? `${pathname}?${q}` : pathname);
       });
     },
-    [router, searchParams]
+    [pathname, router, searchParams]
   );
 
   const navigateWeek = useCallback(
@@ -133,7 +140,10 @@ export function DashboardHeader({
           role="group"
           aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
           tabIndex={0}
-          className="flex w-full min-w-0 items-center gap-1.5 rounded-[var(--radius-control)] outline-none focus-visible:ring-2 focus-visible:ring-primary/30 sm:w-auto sm:gap-2"
+          className={cn(
+            headerToolbarWeekNavGroupClass,
+            "outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))]"
+          )}
           onMouseDown={(event) => {
             if (event.target instanceof HTMLElement && event.target.closest("button")) {
               event.preventDefault();
@@ -141,58 +151,54 @@ export function DashboardHeader({
           }}
         >
           <IconButton
-            size="md"
+            size="sm"
             onClick={() => navigateWeek(-1)}
             disabled={controlsDisabled || atEarliestWeek}
             aria-label={t("common.prevWeek")}
-            className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
+            className={headerToolbarWeekNavIconButtonClass}
           >
             <ChevronIcon direction="left" />
           </IconButton>
 
           <Button
             type="button"
-            variant="outline"
-            size="header"
+            variant="ghost"
+            size="sm"
             onClick={goToToday}
             disabled={controlsDisabled}
-            className={cn(HEADER_CONTROL_H, "shrink-0 font-semibold")}
+            className={headerToolbarWeekNavTodayButtonClass}
           >
             {t("common.today")}
           </Button>
 
           <IconButton
-            size="md"
+            size="sm"
             onClick={() => navigateWeek(1)}
             disabled={controlsDisabled}
             aria-label={t("common.nextWeek")}
-            className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
+            className={headerToolbarWeekNavIconButtonClass}
           >
             <ChevronIcon direction="right" />
           </IconButton>
         </div>
 
         <p
-          className="min-w-0 select-none text-sm leading-none"
+          className="min-w-0 select-none text-sm leading-none text-white"
           title={weekLabelTitle}
         >
           <span className="font-semibold">{weekHeader.monthYearLabel}</span>
-          <span className="ml-1.5 text-xs font-normal text-muted">
+          <span className="ml-1.5 text-xs font-normal">
             KW {weekHeader.calendarWeek}
           </span>
         </p>
 
         {features.areas ? (
-          <div className="flex min-w-0 items-center gap-2 sm:gap-3 md:ml-5">
-            <span className="hidden shrink-0 text-sm text-foreground sm:inline">
-              {t("dashboard.location")}
-            </span>
-            <LocationSelect
-              locations={locations}
-              selectedLocationId={selectedLocationId}
-              className="!mt-0 min-w-0 flex-1 font-semibold sm:w-[11rem] sm:flex-none sm:shrink-0"
-            />
-          </div>
+          <LocationSelect
+            locations={locations}
+            selectedLocationId={selectedLocationId}
+            variant="header"
+            className="md:ml-1"
+          />
         ) : null}
       </div>
 
@@ -200,15 +206,25 @@ export function DashboardHeader({
         {onOpenCommunication ? (
           <Button
             type="button"
-            size="header"
-            variant={communicationItemCount > 0 ? "primary" : "outline"}
+            variant="ghost"
+            size="sm"
             onClick={() => onOpenCommunication()}
             disabled={controlsDisabled}
-            className={cn(HEADER_CONTROL_H, "relative font-semibold")}
+            className={cn(
+              communicationItemCount > 0
+                ? headerToolbarPillPrimaryClass
+                : headerToolbarPillButtonClass,
+              "relative font-semibold"
+            )}
           >
             {t("shiftConfirmation.communication.headerButton")}
             {shiftConfirmationEnabled && communicationItemCount > 0 ? (
-              <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
+              <span
+                className={cn(
+                  "ml-1.5 flex h-4 min-w-4 items-center justify-center leading-none",
+                  headerToolbarCountBadgeClass
+                )}
+              >
                 {communicationItemCount > 99 ? "99+" : communicationItemCount}
               </span>
             ) : null}
@@ -220,9 +236,10 @@ export function DashboardHeader({
             initialNotifications={managerNotifications}
             onOpenCommunication={onOpenCommunication}
             onNavigateToWeek={onNavigateToWeek}
+            triggerClassName={headerToolbarPillIconButtonClass}
           />
         ) : null}
-        <LanguageSelect className="shrink-0" />
+        <LanguageSelect variant="header" className="shrink-0" />
       </div>
     </header>
   );

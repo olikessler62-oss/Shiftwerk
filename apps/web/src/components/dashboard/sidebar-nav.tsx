@@ -55,7 +55,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const searchParams = useSearchParams();
   const t = useTranslations();
   const features = useOrgFeatures();
-  const planungActive = pathname === "/planung";
+  const dashboardActive = pathname === "/dashboard";
   const standorteOpen = searchParams.get("standorte") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
   const rollenOpen = searchParams.get("rollen") === "1";
@@ -72,15 +72,15 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     sonderzuschlaegeOpen ||
     abwesenheitenOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    [PLANNING_SECTION_ID]: planungActive,
+    [PLANNING_SECTION_ID]: dashboardActive,
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
 
   useEffect(() => {
-    if (planungActive) {
+    if (dashboardActive) {
       setExpanded((prev) => ({ ...prev, [PLANNING_SECTION_ID]: true }));
     }
-  }, [planungActive]);
+  }, [dashboardActive]);
 
   useEffect(() => {
     if (settingsModalOpen) {
@@ -154,9 +154,9 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   return (
     <nav className="flex flex-col gap-0.5 p-2">
       <Link
-        href="/dashboard"
-        onClick={() => handlePageNav("/dashboard")}
-        className={navItemClass(pathname === "/dashboard")}
+        href="/planer"
+        onClick={() => handlePageNav("/planer")}
+        className={navItemClass(pathname === "/planer")}
       >
         {t("nav.dashboard")}
       </Link>
@@ -164,13 +164,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
       <div>
         <div
           className={cn(
-            navItemClass(planungActive || planningExpanded),
+            navItemClass(dashboardActive || planningExpanded),
             "flex items-center justify-between gap-1 pr-1"
           )}
         >
           <Link
-            href="/planung"
-            onClick={() => handlePageNav("/planung")}
+            href="/dashboard"
+            onClick={() => handlePageNav("/dashboard")}
             className="min-w-0 flex-1"
           >
             {t("nav.planning")}

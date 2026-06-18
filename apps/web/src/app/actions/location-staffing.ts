@@ -308,7 +308,7 @@ export async function copyLocationStaffingFromArea(input: {
       return {
         ok: false,
         error:
-          "Personalbedarf konnte nicht übernommen werden (keine passenden Jobs im Zielbereich).",
+          "Personalbedarf konnte nicht übernommen werden (keine passenden Tätigkeiten im Zielbereich).",
       };
     }
 
@@ -329,7 +329,7 @@ export async function copyLocationStaffingFromArea(input: {
       ),
     ]);
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, staffing, serviceHours, qualifications };
   } catch (e) {
     return {
@@ -423,7 +423,7 @@ export async function saveServiceHourStaffing(input: {
       ),
     ]);
     try {
-      revalidatePath("/dashboard");
+      revalidatePath("/planer");
     } catch {
       /* Cache-Revalidierung darf Speichern nicht fehlschlagen lassen */
     }
@@ -454,7 +454,7 @@ export async function deleteServiceHourStaffing(input: {
       input.locationId
     );
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     const staffing = await hourCheck.db.listLocationAreaStaffingForArea(
       hourCheck.hour.location_area_id,
       input.locationId

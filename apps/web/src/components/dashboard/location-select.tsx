@@ -1,8 +1,10 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useMemo } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { useTransition } from "react";
 import type { Location } from "@schichtwerk/types";
+import { HeaderPillSelect } from "@/components/ui/header-placement-select";
 import { useTranslations } from "@/i18n/locale-provider";
 import { Select } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -12,30 +14,61 @@ type Props = {
   selectedLocationId: string | null;
   className?: string;
   basePath?: string;
+  variant?: "default" | "header";
 };
 
 export function LocationSelect({
   locations,
   selectedLocationId,
   className,
-  basePath = "/dashboard",
+  basePath,
+  variant = "default",
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const resolvedBasePath = basePath ?? pathname;
   const searchParams = useSearchParams();
   const t = useTranslations();
   const [pending, startTransition] = useTransition();
+
+  const locationOptions = useMemo(
+    () =>
+      locations.map((loc) => ({
+        value: loc.id,
+        label: loc.archived_at
+          ? `${loc.name} (${t("common.archived")})`
+          : loc.name,
+      })),
+    [locations, t]
+  );
 
   function onChange(locationId: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("location", locationId);
     startTransition(() => {
-      router.push(`${basePath}?${params.toString()}`);
+      router.push(`${resolvedBasePath}?${params.toString()}`);
     });
   }
 
   if (locations.length === 0) {
     return (
-      <p className="mt-1 text-sm text-muted">{t("dashboard.noLocations")}</p>
+      <p className={cn(variant === "header" ? "text-xs" : "mt-1 text-sm", "text-muted")}>
+        {t("dashboard.noLocations")}
+      </p>
+    );
+  }
+
+  if (variant === "header") {
+    return (
+      <HeaderPillSelect
+        value={selectedLocationId ?? locations[0].id}
+        options={locationOptions}
+        disabled={pending || locations.length === 0}
+        onChange={onChange}
+        aria-label={t("dashboard.selectLocation")}
+        triggerClassName={className}
+        wrapperClassName="max-w-[10rem] sm:max-w-[12rem]"
+      />
     );
   }
 

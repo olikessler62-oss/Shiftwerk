@@ -102,7 +102,7 @@ export function AppShellMainNavPendingBridge() {
     if (
       pendingTarget.kind === "settings-modal" &&
       searchParams.get(pendingTarget.flag) === "1" &&
-      (pathname === "/dashboard" || pathname === "/planung")
+      (pathname === "/dashboard" || pathname === "/planer")
     ) {
       const frameId = window.requestAnimationFrame(() => {
         clearMainNavPending();

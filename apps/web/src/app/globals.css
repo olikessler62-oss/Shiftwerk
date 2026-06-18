@@ -25,6 +25,126 @@
   --radius-control: 0.625rem;
 }
 
+/**
+ * TESTWEISE: Dark-Mode-Vorschau nur für Brand- + Wochen-Toolbar.
+ * Entfernen, wenn kein Vergleich mehr nötig (Klasse aus app-shell-layout.ts abkoppeln).
+ */
+.app-header-dark-preview {
+  --color-surface: #1e293b;
+  --color-background: #0f172a;
+  --color-foreground: #f1f5f9;
+  --color-muted: #94a3b8;
+  --color-border: #334155;
+  --color-subtle: #334155;
+  --color-nav-active: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  --app-header-gradient-from: #124d9a;
+  --app-header-gradient-to: #5a9aec;
+  /* Header-Akzent: gedämpftes Stahlblau (statt Türkis in der Toolbar) */
+  --header-toolbar-accent: #5c7a9e;
+  --header-toolbar-accent-strong: #4a608a;
+  --header-toolbar-combobox-border: #3e4b61;
+  --header-toolbar-combobox-ring: color-mix(in srgb, #5c7a9e 40%, transparent);
+  background-color: var(--app-header-gradient-from);
+  background-image: linear-gradient(
+    to bottom,
+    var(--app-header-gradient-from),
+    var(--app-header-gradient-to)
+  );
+  color: var(--color-foreground);
+  border-color: var(--color-border);
+}
+
+.app-header-dark-preview .border-border {
+  border-color: var(--color-border);
+}
+
+/** Linke App-Sidebar (unterhalb der Logo-Zeile). */
+.app-shell-sidebar {
+  --app-shell-sidebar-bg: #4c8bdc;
+  --color-foreground: #ffffff;
+  --color-muted: rgb(255 255 255 / 0.78);
+  --color-border: rgb(255 255 255 / 0.28);
+  --color-subtle: rgb(255 255 255 / 0.12);
+  --color-primary: #ffffff;
+  --color-nav-active: rgb(255 255 255 / 0.14);
+  background-color: var(--app-shell-sidebar-bg);
+  color: var(--color-foreground);
+  border-color: var(--color-border);
+  position: relative;
+  z-index: 50;
+  box-shadow:
+    0 6px 14px -4px rgba(15, 23, 42, 0.22),
+    0 2px 6px -2px rgba(15, 23, 42, 0.14);
+}
+
+@media (min-width: 768px) {
+  .app-shell-sidebar {
+    box-shadow:
+      6px 0 22px -4px rgba(15, 23, 42, 0.34),
+      14px 0 36px -10px rgba(15, 23, 42, 0.22);
+  }
+}
+
+.app-shell-sidebar .border-border {
+  border-color: var(--color-border);
+}
+
+/** Helle Inhaltsflächen in der blauen Sidebar — Text wieder dunkel lesbar. */
+.app-shell-sidebar-panel {
+  --color-foreground: #1e293b;
+  --color-muted: #64748b;
+  --color-subtle: #f1f5f9;
+  color: var(--color-foreground);
+}
+
+/** Schatten unter Wochen-Toolbar (Planung/Dashboard) — schmal, dunkel. */
+.app-page-toolbar-header {
+  position: relative;
+  z-index: 20;
+  box-shadow:
+    0 10px 18px -8px rgba(15, 23, 42, 0.88),
+    0 4px 8px -2px rgba(15, 23, 42, 0.68);
+}
+
+/* Header-Combobox + Badge (Stahlblau-Palette) */
+.header-toolbar-combobox-trigger {
+  border-color: var(--header-toolbar-combobox-border, #cbd5e1);
+}
+
+.header-toolbar-combobox-trigger[data-open="true"] {
+  border-color: var(--header-toolbar-accent, #5c7a9e);
+  box-shadow: 0 0 0 2px var(--header-toolbar-combobox-ring, rgb(92 122 158 / 0.35));
+}
+
+.header-toolbar-combobox-panel {
+  border-color: var(--header-toolbar-combobox-border, #cbd5e1);
+  background-color: var(--color-surface);
+}
+
+.header-toolbar-combobox-option-selected {
+  background-color: var(--header-toolbar-accent-strong, #4a608a);
+  color: #fff;
+}
+
+.header-toolbar-combobox-option:hover:not(.header-toolbar-combobox-option-selected) {
+  background-color: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+}
+
+.header-toolbar-count-badge {
+  background-color: #facc15;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.header-toolbar-accent-button {
+  background-color: var(--header-toolbar-accent, #5c7a9e);
+  color: #fff;
+}
+
+.header-toolbar-accent-button:hover {
+  background-color: color-mix(in srgb, var(--header-toolbar-accent, #5c7a9e) 88%, white);
+}
+
 body {
   background: var(--color-background);
   color: var(--color-foreground);

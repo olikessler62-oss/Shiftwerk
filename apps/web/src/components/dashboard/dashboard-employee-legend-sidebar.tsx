@@ -57,7 +57,7 @@ export function DashboardEmployeeLegendSidebar({
       ) : (
         <div
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-300 bg-surface",
+            "app-shell-sidebar-panel min-h-0 flex-1 overflow-y-auto rounded-lg border border-slate-300 bg-surface",
             MODAL_SCROLLBAR_CLASS
           )}
           style={{

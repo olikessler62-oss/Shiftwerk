@@ -36,8 +36,8 @@ export const en = {
     basic: "Employee",
   },
   nav: {
-    dashboard: "Dashboard",
-    planning: "Schedule",
+    dashboard: "Planner",
+    planning: "Dashboard",
     absences: "Absences",
     reports: "Reports",
     settings: "Settings",
@@ -669,6 +669,8 @@ export const en = {
     },
   },
   planning: {
+    headerSubtitle: "Shift plan",
+    headerCalendarWeek: "CW {week}",
     readOnlyWeek:
       "This week is in the past — the schedule is view-only.",
     readOnlyDay: "Past days can no longer be changed.",

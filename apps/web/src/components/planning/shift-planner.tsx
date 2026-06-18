@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -14,6 +14,7 @@ import { assignShiftWithTimes, removeShift } from "@/app/actions/shifts";
 import { sendConfirmationRequestForShift } from "@/app/actions/shift-confirmations";
 import { isPastCalendarDate, toISODate, startOfWeek, parseISODate } from "@/lib/dates";
 import { PlanningCalendarGrid } from "@/components/planning/planning-calendar-grid";
+import { PlanningHeaderPlacement } from "@/components/planning/planning-header-placement";
 import { usePlanningAppSidebarContent } from "@/components/planning/planning-app-sidebar-slot";
 import { PlanningShiftTemplateSidebarList } from "@/components/planning/planning-shift-template-sidebar-list";
 import { PlanningAvailabilityLegendSidebar } from "@/components/planning/planning-availability-legend-sidebar";
@@ -36,7 +37,6 @@ import { resolveNarrowDayColumnWidthsPx } from "@/lib/day-column-width";
 import {
   createPlanningActiveDayDates,
   PLANNING_CALENDAR_LAYOUT_ANIMATION_DELAY_MS,
-  PLANNING_DAY_HEADER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
   PLANNING_EMPLOYEE_ROW_HEIGHT,
@@ -44,6 +44,7 @@ import {
   planningGridTemplateColumns,
   resolvePlanningLayoutDayDates,
 } from "@/lib/planning-calendar-layout";
+import { CALENDAR_DAY_HEADER_ROW_HEIGHT } from "@/lib/calendar-day-header-styles";
 import { resolveLocationServiceDayTimeline } from "@/lib/shift-card-cell-layout";
 import {
   isAnyAreaOpenInCalendar,
@@ -75,11 +76,21 @@ import { translateActionError } from "@/lib/translate-action-error";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
 import {
+  headerToolbarPillButtonClass,
+  headerToolbarPillIconButtonClass,
+  headerToolbarPillPrimaryClass,
+  headerToolbarCountBadgeClass,
+  headerToolbarWeekNavGroupClass,
+  headerToolbarWeekNavIconButtonClass,
+  headerToolbarWeekNavTodayButtonClass,
+} from "@/lib/header-toolbar-styles";
+import {
   getDashboardWeekHeaderParts,
   weeklySummary,
 } from "@/lib/planning-utils";
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
+import { buildSettingsModalUrl } from "@/lib/settings-modal-navigation";
 import {
   areaShiftTemplatesForArea,
   dashboardAssignmentPresetsForArea,
@@ -127,15 +138,12 @@ import type {
   Role,
   ManagerNotification,
 } from "@schichtwerk/types";
-import { LocationSelect } from "@/components/dashboard/location-select";
 import { DashboardNotificationCenter } from "@/components/dashboard/dashboard-notification-center";
 import { LanguageSelect } from "@/components/i18n/language-select";
 import {
   Alert,
   Button,
-  ControlDisplay,
   IconButton,
-  Select,
 } from "@/components/ui";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -226,9 +234,6 @@ function distanceFromPointToMenu(
   return Math.hypot(clientX - closestX, clientY - closestY);
 }
 
-/** Gleiche Höhe wie IconButton size="md" (h-9). */
-const HEADER_CONTROL_H = "h-9 min-h-9";
-
 function getDayAssignBlockReason(
   employeeId: string,
   date: string,
@@ -275,6 +280,7 @@ export function ShiftPlanner({
   settingsModals,
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const t = useTranslations();
   const { locale } = useLocale();
@@ -685,8 +691,8 @@ export function ShiftPlanner({
 
   const planningHeaderRowTemplate = useMemo(() => {
     return showStaffingHeaderRow
-      ? `${PLANNING_DAY_HEADER_ROW_HEIGHT} ${PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT}`
-      : PLANNING_DAY_HEADER_ROW_HEIGHT;
+      ? `${CALENDAR_DAY_HEADER_ROW_HEIGHT} ${PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT}`
+      : CALENDAR_DAY_HEADER_ROW_HEIGHT;
   }, [showStaffingHeaderRow]);
 
   const planningBodyRowTemplate = useMemo(() => {
@@ -883,10 +889,10 @@ export function ShiftPlanner({
       }
       const q = params.toString();
       startTransition(() => {
-        router.push(q ? `/planung?${q}` : "/planung");
+        router.push(q ? `${pathname}?${q}` : pathname);
       });
     },
-    [router, searchParams]
+    [pathname, router, searchParams]
   );
 
   const weekHeader = useMemo(
@@ -1414,7 +1420,10 @@ export function ShiftPlanner({
       <div className="rounded-2xl border border-dashed border-border bg-surface p-12 text-center">
         <p className="text-muted">
           {t("planning.noEmployeesPrefix")}{" "}
-          <a href="/dashboard?profiles=1" className="font-medium text-primary">
+          <a
+            href={buildSettingsModalUrl(pathname, searchParams, "profiles")}
+            className="font-medium text-primary"
+          >
             {t("planning.noEmployeesProfilesLink")}
           </a>{" "}
           {t("planning.noEmployeesSuffix")}
@@ -1450,97 +1459,66 @@ export function ShiftPlanner({
         {...(shellLocked ? { inert: true } : {})}
       >
         <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4">
-          <h1 className="shrink-0 text-2xl font-semibold tracking-tight md:text-xl">
-            Schichtplan erstellen
-          </h1>
+          <div className="min-w-0 shrink-0" title={weekLabelTitle}>
+            <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-xl">
+              <span>{weekHeader.monthYearLabel}</span>
+              <span className="font-normal"> · </span>
+              <span className="tabular-nums text-base font-normal sm:text-lg md:text-base">
+                {t("planning.headerCalendarWeek", {
+                  week: weekHeader.calendarWeek,
+                })}
+              </span>
+            </h1>
+          </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-3 select-none md:gap-4 md:ml-2">
             <div
               role="group"
               aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
-              className="flex shrink-0 items-center gap-1.5 sm:gap-2"
+              className={headerToolbarWeekNavGroupClass}
             >
               <IconButton
-                size="md"
+                size="sm"
                 onClick={() => navigateWeek(-1)}
                 disabled={controlsDisabled || atEarliestWeek}
                 aria-label={t("common.prevWeek")}
-                className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
+                className={headerToolbarWeekNavIconButtonClass}
               >
                 <ChevronIcon direction="left" />
               </IconButton>
 
               <Button
                 type="button"
-                variant="outline"
-                size="header"
+                variant="ghost"
+                size="sm"
                 onClick={goToToday}
                 disabled={controlsDisabled}
-                className={cn(HEADER_CONTROL_H, "shrink-0 font-semibold")}
+                className={headerToolbarWeekNavTodayButtonClass}
               >
                 {t("common.today")}
               </Button>
 
               <IconButton
-                size="md"
+                size="sm"
                 onClick={() => navigateWeek(1)}
                 disabled={controlsDisabled}
                 aria-label={t("common.nextWeek")}
-                className={cn(HEADER_CONTROL_H, "shrink-0 text-muted")}
+                className={headerToolbarWeekNavIconButtonClass}
               >
                 <ChevronIcon direction="right" />
               </IconButton>
             </div>
 
-            <p
-              className="min-w-0 select-none text-sm leading-none"
-              title={weekLabelTitle}
-            >
-              <span className="font-semibold">{weekHeader.monthYearLabel}</span>
-              <span className="ml-1.5 text-xs font-normal text-muted">
-                KW {weekHeader.calendarWeek}
-              </span>
-            </p>
-
             {features.areas ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3 md:ml-2">
-                <span className="hidden shrink-0 text-sm text-foreground sm:inline">
-                  {t("dashboard.location")}
-                </span>
-                <LocationSelect
-                  locations={locations}
-                  selectedLocationId={selectedLocationId}
-                  basePath="/planung"
-                  className="!mt-0 min-w-0 flex-1 font-semibold sm:w-[11rem] sm:flex-none sm:shrink-0"
-                />
-                <span className="shrink-0 text-sm text-foreground">
-                  {t("planning.area")}
-                </span>
-                <div className="w-[11rem] shrink-0">
-                  {areas.length === 0 ? (
-                    <ControlDisplay className="w-full py-2 text-muted">
-                      {t("planning.noAreas")}
-                    </ControlDisplay>
-                  ) : (
-                    <Select
-                      value={selectedAreaId ?? areas[0].id}
-                      disabled={controlsDisabled || areas.length === 0}
-                      aria-label={t("planning.selectArea")}
-                      className="w-full font-semibold"
-                      onChange={(event) =>
-                        pushPlanungQuery({ area: event.target.value })
-                      }
-                    >
-                      {areas.map((area) => (
-                        <option key={area.id} value={area.id}>
-                          {area.name}
-                          {area.archived_at ? ` (${t("common.archived")})` : ""}
-                        </option>
-                      ))}
-                    </Select>
-                  )}
-                </div>
-              </div>
+              <PlanningHeaderPlacement
+                locations={locations}
+                selectedLocationId={selectedLocationId}
+                areas={areas}
+                selectedAreaId={selectedAreaId}
+                disabled={controlsDisabled}
+                className="md:ml-1 md:border-l md:border-foreground/10 md:pl-3"
+                onAreaChange={(areaId) => pushPlanungQuery({ area: areaId })}
+              />
             ) : null}
           </div>
         </div>
@@ -1548,15 +1526,25 @@ export function ShiftPlanner({
         <div className="flex shrink-0 items-center gap-2 self-end md:self-auto">
           <Button
             type="button"
-            size="header"
-            variant={communicationItemCount > 0 ? "primary" : "outline"}
+            variant="ghost"
+            size="sm"
             onClick={() => openCommunication()}
             disabled={controlsDisabled || sendConfirmationPending}
-            className={cn(HEADER_CONTROL_H, "relative font-semibold")}
+            className={cn(
+              communicationItemCount > 0
+                ? headerToolbarPillPrimaryClass
+                : headerToolbarPillButtonClass,
+              "relative font-semibold"
+            )}
           >
             {t("shiftConfirmation.communication.headerButton")}
             {shiftConfirmationEnabled && communicationItemCount > 0 ? (
-              <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
+              <span
+                className={cn(
+                  "ml-1.5 flex h-4 min-w-4 items-center justify-center leading-none",
+                  headerToolbarCountBadgeClass
+                )}
+              >
                 {communicationItemCount > 99 ? "99+" : communicationItemCount}
               </span>
             ) : null}
@@ -1567,9 +1555,10 @@ export function ShiftPlanner({
               initialNotifications={managerNotifications}
               onOpenCommunication={openCommunication}
               onNavigateToWeek={navigateToWeekFromNotification}
+              triggerClassName={headerToolbarPillIconButtonClass}
             />
           ) : null}
-          <LanguageSelect className="shrink-0" />
+          <LanguageSelect variant="header" className="shrink-0" />
         </div>
       </header>
 

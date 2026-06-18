@@ -111,7 +111,7 @@ async function resolveShiftPreferencePlacement(
       profileId
     );
     if (!qualifications.some((qualification) => qualification.id === qualificationId)) {
-      throw new Error("Job nicht beim Profil hinterlegt");
+      throw new Error("Tätigkeit nicht beim Profil hinterlegt");
     }
   }
 
@@ -246,8 +246,8 @@ export async function createProfileShiftPreferences(input: {
       organizationId,
       input.profileId
     );
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, preferences };
   } catch (e) {
     return { ok: false, error: toProfileAvailabilitySaveError(e) };
@@ -294,8 +294,8 @@ export async function updateProfileShiftPreference(input: {
       organizationId,
       input.profileId
     );
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, preferences };
   } catch (e) {
     return { ok: false, error: toProfileAvailabilitySaveError(e) };
@@ -318,8 +318,8 @@ export async function deleteProfileShiftPreference(input: {
       organizationId,
       input.profileId
     );
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, preferences };
   } catch (e) {
     return {

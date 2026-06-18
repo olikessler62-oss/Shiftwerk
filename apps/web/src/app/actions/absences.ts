@@ -325,8 +325,8 @@ export async function saveAbsenceBatch(
       lastCreatedId = createdId;
     }
 
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true, id: lastCreatedId };
   } catch (e) {
     return {
@@ -398,8 +398,8 @@ export async function reviewAbsenceRequest(
       reported_by: absence.reported_by,
     });
 
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true };
   } catch (e) {
     return {
@@ -443,8 +443,8 @@ export async function closeOpenAbsence(
       reported_by: absence.reported_by,
     });
 
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true };
   } catch (e) {
     return {

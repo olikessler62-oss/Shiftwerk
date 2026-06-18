@@ -32,7 +32,7 @@ export async function createQualification(input: {
       sort_order: sortOrder,
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, id: created.id };
   } catch (e) {
     return {
@@ -61,7 +61,7 @@ export async function updateQualification(input: {
       name: input.name.trim(),
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, id: input.id };
   } catch (e) {
     return {
@@ -79,8 +79,8 @@ export async function reorderQualifications(
     const db = await getDatabase();
     await db.reorderQualifications(organizationId, orderedIds);
     revalidatePath("/einstellungen");
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true };
   } catch (e) {
     return {
@@ -108,7 +108,7 @@ export async function deleteQualification(id: string): Promise<QualificationActi
     if (!archiveCheck.ok) return archiveCheck;
 
     await db.archiveQualification(id, organizationId);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true };
   } catch (e) {
     return {

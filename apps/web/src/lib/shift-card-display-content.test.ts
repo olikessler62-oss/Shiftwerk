@@ -26,7 +26,7 @@ describe("buildShiftCardDisplayContent tooltips", () => {
     );
 
     expect(display.tooltipBody).toContain("Schicht: Nacht");
-    expect(display.tooltipBody).toContain("Job: Kellner/in");
+    expect(display.tooltipBody).toContain("Tätigkeit: Kellner/in");
   });
 
   it("does not prefix shift name without matching template", () => {
@@ -56,6 +56,6 @@ describe("buildShiftCardDisplayContent tooltips", () => {
     );
 
     expect(display.jobsLabel).toBe("");
-    expect(display.tooltipBody).not.toContain("Job:");
+    expect(display.tooltipBody).not.toContain("Tätigkeit:");
   });
 });

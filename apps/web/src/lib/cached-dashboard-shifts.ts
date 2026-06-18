@@ -25,8 +25,8 @@ export function revalidateDashboardShiftsAfterChange(input: {
   organizationId: string;
   shifts: { locationId: string | null; shiftDate: string }[];
 }) {
+  revalidatePath("/planer");
   revalidatePath("/dashboard");
-  revalidatePath("/planung");
 
   const seen = new Set<string>();
   for (const shift of input.shifts) {

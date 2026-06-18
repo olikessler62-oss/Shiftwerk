@@ -9,7 +9,7 @@ import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
 import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
 import { useClearMainNavPendingOptional } from "@/lib/app-shell-main-nav-pending";
 
-const PAGE_HOSTED_SETTINGS_PATHS = ["/dashboard", "/planung"] as const;
+const PAGE_HOSTED_SETTINGS_PATHS = ["/dashboard", "/planer"] as const;
 
 function SettingsModalsAppShellFallbackInner() {
   const pathname = usePathname();

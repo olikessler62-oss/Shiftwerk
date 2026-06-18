@@ -101,7 +101,7 @@ export async function saveLocationAreaServiceHours(input: {
       validated.data
     );
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true };
   } catch (e) {
     return {

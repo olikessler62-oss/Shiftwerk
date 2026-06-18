@@ -35,7 +35,7 @@ export async function createLocation(input: {
       sort_order: sortOrder,
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, id: created.id };
   } catch (e) {
     return {
@@ -65,7 +65,7 @@ export async function updateLocation(input: {
 
     await db.updateLocation(input.id, organizationId, validated.data);
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, id: input.id };
   } catch (e) {
     return {
@@ -83,8 +83,8 @@ export async function reorderLocations(
     const db = await getDatabase();
     await db.reorderLocations(organizationId, orderedIds);
     revalidatePath("/einstellungen");
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     return { ok: true };
   } catch (e) {
     return {
@@ -103,7 +103,7 @@ export async function deleteLocation(id: string): Promise<LocationActionResult> 
     const { organizationId } = await requireManager();
     const db = await getDatabase();
     await db.archiveLocation(id, organizationId);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true };
   } catch (e) {
     return {

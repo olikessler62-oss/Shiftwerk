@@ -13,12 +13,12 @@ export function validateServiceHourStaffingRulesInput(
   for (const rule of rules) {
     const qualId = rule.qualification_id?.trim();
     if (!qualId || !validQualificationIds.has(qualId)) {
-      return { ok: false, error: "Bitte gültigen Job auswählen." };
+      return { ok: false, error: "Bitte gültige Tätigkeit auswählen." };
     }
     if (seen.has(qualId)) {
       return {
         ok: false,
-        error: "Jeder Job darf pro Servicezeit nur einmal vorkommen.",
+        error: "Jede Tätigkeit darf pro Servicezeit nur einmal vorkommen.",
       };
     }
     seen.add(qualId);

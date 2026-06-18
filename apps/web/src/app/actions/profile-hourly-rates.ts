@@ -126,7 +126,7 @@ export async function saveProfileHourlyRate(input: {
     });
 
     const entry = await loadCompensationEntry(organizationId, input.profileId);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return {
       ok: true,
       rate,
@@ -206,7 +206,7 @@ export async function updateProfileHourlyRate(input: {
     );
 
     const entry = await loadCompensationEntry(organizationId, input.profileId);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return {
       ok: true,
       rate,
@@ -244,7 +244,7 @@ export async function deleteProfileHourlyRate(input: {
     );
 
     const entry = await loadCompensationEntry(organizationId, input.profileId);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return {
       ok: true,
       rates: entry.rates,

@@ -1019,7 +1019,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       qual.organization_id !== organizationId ||
       qual.archived_at != null
     ) {
-      throw new Error("Job nicht gefunden");
+      throw new Error("Tätigkeit nicht gefunden");
     }
 
     const { error } = await this.client.from(T.profileQualifications).insert({
@@ -3108,7 +3108,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       qualification.organization_id !== organizationId ||
       qualification.archived_at != null
     ) {
-      throw new Error("Job nicht gefunden");
+      throw new Error("Tätigkeit nicht gefunden");
     }
 
     const sortOrder = await this.getNextAreaQualificationTemplateSortOrder(
@@ -3138,7 +3138,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("location_area_id", locationAreaId)
       .maybeSingle();
     if (linkError) throw new Error(linkError.message);
-    if (!link) throw new Error("Jobvorlage nicht gefunden");
+    if (!link) throw new Error("Tätigkeitsvorlage nicht gefunden");
 
     const staffing = await this.listLocationAreaStaffingForArea(
       locationAreaId,
@@ -3151,7 +3151,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           rule.required_count > 0
       )
     ) {
-      throw new Error("Job wird noch im Personalbedarf verwendet.");
+      throw new Error("Tätigkeit wird noch im Personalbedarf verwendet.");
     }
 
     const { error } = await this.client

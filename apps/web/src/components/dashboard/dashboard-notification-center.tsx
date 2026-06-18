@@ -9,6 +9,7 @@ import {
 import { BellIcon, CloseIcon, IconButton } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { headerToolbarCountBadgeClass } from "@/lib/header-toolbar-styles";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import type { CommunicationOpenOptions } from "@/lib/communication-hub";
 
@@ -17,6 +18,7 @@ type Props = {
   initialNotifications: ManagerNotification[];
   onOpenCommunication: (options?: CommunicationOpenOptions) => void;
   onNavigateToWeek?: (weekStart: string) => void;
+  triggerClassName?: string;
 };
 
 function notificationPanelTabForType(
@@ -49,6 +51,7 @@ export function DashboardNotificationCenter({
   initialNotifications,
   onOpenCommunication,
   onNavigateToWeek,
+  triggerClassName,
 }: Props) {
   const t = useTranslations();
   const [open, setOpen] = useState(false);
@@ -135,11 +138,16 @@ export function DashboardNotificationCenter({
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((value) => !value)}
-        className="relative"
+        className={cn("relative", triggerClassName)}
       >
         <BellIcon />
         {unreadCount > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
+          <span
+            className={cn(
+              "absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center leading-none",
+              headerToolbarCountBadgeClass
+            )}
+          >
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         ) : null}

@@ -91,7 +91,7 @@ export async function assignAreaQualificationTemplate(input: {
       input.qualificationId
     );
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     const templates =
       await areaCheck.db.listAreaQualificationTemplatesForArea(
         input.locationAreaId,
@@ -126,7 +126,7 @@ export async function removeAreaQualificationTemplate(input: {
       input.templateId
     );
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     const templates =
       await areaCheck.db.listAreaQualificationTemplatesForArea(
         input.locationAreaId,

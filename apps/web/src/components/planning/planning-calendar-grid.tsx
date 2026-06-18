@@ -9,6 +9,14 @@ import { PlanningDayColumnWidthReporter } from "@/components/planning/planning-d
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { isPastCalendarDate } from "@/lib/dates";
 import { cn } from "@/lib/cn";
+import {
+  CALENDAR_DAY_HEADER_ACTIVE_CLASS,
+  CALENDAR_DAY_HEADER_CELL_CLASS,
+  CALENDAR_DAY_HEADER_MUTED_CLASS,
+  CALENDAR_DAY_HEADER_ROW_HEIGHT,
+  CALENDAR_HOLIDAY_DAY_HEADER_LABEL_CLASS,
+  CALENDAR_TODAY_DAY_HEADER_BADGE_CLASS,
+} from "@/lib/calendar-day-header-styles";
 import { CALENDAR_INTERACTION_SURFACE_CLASS } from "@/lib/calendar-interaction-ui";
 import {
   employeeWeekHours,
@@ -27,7 +35,6 @@ import {
   PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
-  PLANNING_DAY_HEADER_ROW_HEIGHT,
   PLANNING_EMPLOYEE_ROW_HEIGHT,
   PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
   PLANNING_HEADER_ROW_BORDER_CLASS,
@@ -61,12 +68,6 @@ import { planningCellDataAttribute } from "@/lib/planning-overnight-span-layout"
 import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 
-const MUTED_DAY_HEADER_CLASS = "bg-calendar-muted-header";
-const ACTIVE_DAY_HEADER_CLASS = "bg-calendar-active-header";
-const TODAY_DAY_HEADER_BADGE_CLASS =
-  "rounded-sm bg-blue-600 px-1.5 py-0.5 text-white shadow-sm";
-const HOLIDAY_DAY_HEADER_LABEL_CLASS =
-  "w-full shrink-0 px-0.5 text-center text-[0.625rem] font-medium leading-snug text-blue-600";
 const EMPLOYEE_COLOR_FALLBACK = "#94a3b8";
 
 type DayAssignBlockReason = "absent" | "no_availability";
@@ -317,7 +318,7 @@ export function PlanningCalendarGrid({
             !showStaffingHeaderRow && PLANNING_HEADER_ROW_BORDER_CLASS,
             PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS
           )}
-          style={{ gridColumn: 1, gridRow: 1, height: PLANNING_DAY_HEADER_ROW_HEIGHT }}
+          style={{ gridColumn: 1, gridRow: 1, height: CALENDAR_DAY_HEADER_ROW_HEIGHT }}
         >
           {t("planning.staffColumn")}
         </div>
@@ -332,7 +333,7 @@ export function PlanningCalendarGrid({
             style={{
               gridColumn: 1,
               gridRow: staffingHeaderRow!,
-              top: PLANNING_DAY_HEADER_ROW_HEIGHT,
+              top: CALENDAR_DAY_HEADER_ROW_HEIGHT,
               height: PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
             }}
             aria-hidden
@@ -350,15 +351,16 @@ export function PlanningCalendarGrid({
             <div
               key={`header-${date}`}
               className={cn(
-                "relative sticky top-0 z-40 flex min-h-0 flex-col items-center justify-center gap-0.5 overflow-hidden py-1 text-center",
+                "sticky top-0 z-40",
+                CALENDAR_DAY_HEADER_CELL_CLASS,
                 !showStaffingHeaderRow && PLANNING_HEADER_ROW_BORDER_CLASS,
-                mutedHeader ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
+                mutedHeader ? CALENDAR_DAY_HEADER_MUTED_CLASS : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
                 dayHeaderColumnDivider(dayIndex, dates.length)
               )}
               style={{
                 gridColumn: dayIndex + 2,
                 gridRow: 1,
-                height: PLANNING_DAY_HEADER_ROW_HEIGHT,
+                height: CALENDAR_DAY_HEADER_ROW_HEIGHT,
               }}
             >
               {dayHasOpenArea[dayIndex] ? (
@@ -373,25 +375,25 @@ export function PlanningCalendarGrid({
               {isToday ? (
                 <div
                   className={cn(
-                    TODAY_DAY_HEADER_BADGE_CLASS,
+                    CALENDAR_TODAY_DAY_HEADER_BADGE_CLASS,
                     "flex shrink-0 flex-col items-center gap-px"
                   )}
                 >
-                  <div className="whitespace-nowrap text-xs font-semibold leading-none">
+                  <div className="whitespace-nowrap text-xs font-semibold leading-[14px]">
                     {weekday}
                   </div>
-                  <div className="whitespace-nowrap text-sm font-medium leading-none">
+                  <div className="whitespace-nowrap text-sm font-bold leading-tight -mt-px">
                     {label}
                   </div>
                 </div>
               ) : (
                 <>
-                  <div className="shrink-0 whitespace-nowrap text-xs font-semibold leading-none text-muted">
+                  <div className="shrink-0 whitespace-nowrap text-xs font-semibold leading-[14px] text-muted">
                     {weekday}
                   </div>
                   <div
                     className={cn(
-                      "shrink-0 whitespace-nowrap text-sm font-medium leading-none",
+                      "shrink-0 whitespace-nowrap text-sm font-medium leading-tight -mt-px",
                       isPastDay && "text-muted"
                     )}
                   >
@@ -400,7 +402,7 @@ export function PlanningCalendarGrid({
                 </>
               )}
               {holiday ? (
-                <div className={HOLIDAY_DAY_HEADER_LABEL_CLASS}>{holiday}</div>
+                <div className={CALENDAR_HOLIDAY_DAY_HEADER_LABEL_CLASS}>{holiday}</div>
               ) : null}
             </div>
           );
@@ -417,13 +419,13 @@ export function PlanningCalendarGrid({
                   className={cn(
                     "sticky z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-300",
                     PLANNING_HEADER_ROW_BORDER_CLASS,
-                    mutedHeader ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
+                    mutedHeader ? CALENDAR_DAY_HEADER_MUTED_CLASS : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
                     dayHeaderColumnDivider(dayIndex, dates.length)
                   )}
                   style={{
                     gridColumn: dayIndex + 2,
                     gridRow: staffingHeaderRow!,
-                    top: PLANNING_DAY_HEADER_ROW_HEIGHT,
+                    top: CALENDAR_DAY_HEADER_ROW_HEIGHT,
                     height: PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
                   }}
                 >
@@ -434,7 +436,6 @@ export function PlanningCalendarGrid({
                   ) : staffingEntries.length > 0 ? (
                     <TagAreaHeaderStaffingOverlay
                       entries={staffingEntries}
-                      dimmed={isPastCalendarDate(date, todayISO)}
                       dayCollapsed={!layoutActiveDayDates.has(date)}
                     />
                   ) : null}
@@ -768,7 +769,7 @@ export function PlanningCalendarGrid({
               data-planning-day-footer-stats={date}
               className={cn(
                 "sticky z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-400",
-                mutedFooter ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
+                mutedFooter ? CALENDAR_DAY_HEADER_MUTED_CLASS : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
                 dayHeaderColumnDivider(dayIndex, dates.length)
               )}
               style={{
@@ -829,4 +830,4 @@ export function PlanningCalendarGrid({
   );
 }
 
-export { PLANNING_EMPLOYEE_ROW_HEIGHT, PLANNING_DAY_HEADER_ROW_HEIGHT };
+export { PLANNING_EMPLOYEE_ROW_HEIGHT, CALENDAR_DAY_HEADER_ROW_HEIGHT };

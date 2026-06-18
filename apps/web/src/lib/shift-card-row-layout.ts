@@ -36,12 +36,13 @@ export const CALENDAR_HEADER_HEIGHT_PX = 60;
 export { PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX as CALENDAR_FOOTER_HEIGHT_PX };
 
 export function calendarAvailableBodyHeightPx(
-  scrollClientHeightPx: number
+  scrollClientHeightPx: number,
+  headerHeightPx: number = CALENDAR_HEADER_HEIGHT_PX
 ): number {
   return Math.max(
     0,
     scrollClientHeightPx -
-      CALENDAR_HEADER_HEIGHT_PX -
+      headerHeightPx -
       PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX
   );
 }

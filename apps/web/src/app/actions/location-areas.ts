@@ -70,7 +70,7 @@ export async function createLocationArea(input: {
       planning_mode: modeCheck.value,
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     const areas = await db.listLocationAreas(input.locationId);
     return { ok: true, id: created.id, areas };
   } catch (e) {
@@ -115,7 +115,7 @@ export async function updateLocationArea(input: {
       planning_mode: modeCheck.value,
     });
 
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     const areas = await db.listLocationAreas(input.locationId);
     return { ok: true, id: input.id, areas };
   } catch (e) {
@@ -140,8 +140,8 @@ export async function reorderLocationAreas(input: {
 
     await db.reorderLocationAreas(input.locationId, input.orderedIds);
     revalidatePath("/einstellungen");
+    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    revalidatePath("/planung");
     const areas = await db.listLocationAreas(input.locationId);
     return { ok: true, areas };
   } catch (e) {
@@ -169,7 +169,7 @@ export async function archiveLocationArea(input: {
     }
 
     await db.archiveLocationArea(input.id, input.locationId);
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     const areas = await db.listLocationAreas(input.locationId);
     return { ok: true, areas };
   } catch (e) {

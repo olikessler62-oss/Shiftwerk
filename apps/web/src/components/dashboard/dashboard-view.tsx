@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type {
   AbsenceRequest,
   Location,
@@ -80,6 +80,7 @@ export function DashboardView({
   managerNotifications = [],
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const t = useTranslations();
   const { locale } = useLocale();
@@ -150,7 +151,7 @@ export function DashboardView({
     const params = new URLSearchParams(searchParams.toString());
     params.set("week", nextWeekStart);
     const query = params.toString();
-    router.push(query ? `/dashboard?${query}` : "/dashboard");
+    router.push(query ? `${pathname}?${query}` : pathname);
   }
 
   return (

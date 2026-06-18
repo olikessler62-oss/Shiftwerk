@@ -19,13 +19,16 @@ export const PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX = 10;
 export const PLANNING_EMPLOYEE_ROW_HEIGHT = `${PLANNING_CELL_HEIGHT_PX + PLANNING_CELL_PADDING_PX * 2}px`;
 export const PLANNING_DAY_HEADER_ROW_HEIGHT = "3.75rem";
 export const PLANNING_DAY_HEADER_ROW_HEIGHT_PX = 60;
-export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT = "22px";
+export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT = "40px";
+export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT_PX = 40;
 /** Kompakte Wochenzusammenfassung unten im Kalender (ehem. 3.5rem). */
 export const PLANNING_DAY_FOOTER_ROW_HEIGHT = "36px";
 /** Kalender-Footer oben: Gesamtstunden/Gesamtkosten pro Tag (Platzhalter). */
-export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT =
-  PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT;
+export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT = "22px";
 export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX = 22;
+/** Dashboard Tag×Bereich: Bedarf-Strip (Personalbedarf-Overlay). */
+export const TAG_AREA_HEADER_STRIP_HEIGHT = "44px";
+export const TAG_AREA_HEADER_STRIP_HEIGHT_PX = 44;
 export const PLANNING_DAY_FOOTER_ROW_HEIGHT_PX = 36;
 /** Summe der sticky Footer-Zeilen — Grenze für Kalender-Inhalt darüber. */
 export const PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX =

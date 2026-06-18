@@ -12,12 +12,21 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { isPastCalendarDate, parseISODate, startOfWeek, toISODate } from "@/lib/dates";
-import { buildHolidayNamesByDate, isGermanPublicHoliday } from "@/lib/german-public-holidays";
+import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
+import {
+  CALENDAR_DAY_HEADER_ACTIVE_CLASS,
+  CALENDAR_DAY_HEADER_CELL_CLASS,
+  CALENDAR_DAY_HEADER_MUTED_CLASS,
+  CALENDAR_DAY_HEADER_ROW_HEIGHT,
+  CALENDAR_DAY_HEADER_ROW_HEIGHT_PX,
+  CALENDAR_HOLIDAY_DAY_HEADER_LABEL_CLASS,
+  CALENDAR_TODAY_DAY_HEADER_BADGE_CLASS,
+} from "@/lib/calendar-day-header-styles";
 import { formatDayHeader, weeklySummary } from "@/lib/planning-utils";
 import {
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
-  PLANNING_DAY_HEADER_ROW_HEIGHT,
+  TAG_AREA_HEADER_STRIP_HEIGHT,
 } from "@/lib/planning-calendar-layout";
 import { PlanningWeeklySummaryFooter } from "@/components/planning/planning-weekly-summary-footer";
 import { DashboardShiftCardsList } from "@/components/dashboard/dashboard-shift-cards-list";
@@ -209,8 +218,6 @@ const CALENDAR_CELL_CONTENT_TRANSITION_CLASS =
 
 /** Bereichszeile bei inaktiver Bereichs-Checkbox — Höhe kommt aus areaRowLayouts. */
 
-/** Tag-Bereich-Header: Tageszeit-Verlauf + Bedarf-Overlay. */
-const TAG_AREA_HEADER_STRIP_HEIGHT = "24px";
 /** Einfache Planung ohne Bereiche — Overlay-Schlüssel für Kalenderzellen. */
 const SIMPLE_PLANNING_AREA_ID = "";
 
@@ -219,19 +226,6 @@ const TAG_AREA_FOOTER_STRIP_HEIGHT = "22px";
 
 /** Geschlossener Bereich × Tag (kein Arbeitstag laut Arbeitszeit / Feiertag). */
 const CLOSED_AREA_DAY_BG = "#e6edf2";
-
-/** Header ohne Servicezeiten an diesem Tag. */
-const MUTED_DAY_HEADER_CLASS = "bg-calendar-muted-header";
-
-/** Header mit mindestens einem Servicezeit-Fenster. */
-const ACTIVE_DAY_HEADER_CLASS = "bg-calendar-active-header";
-
-/** Heute: Tag + Datum in blauer Badge (wie Kalender-Referenz). */
-const TODAY_DAY_HEADER_BADGE_CLASS =
-  "rounded-sm bg-blue-600 px-1.5 py-0.5 text-white shadow-sm";
-
-const HOLIDAY_DAY_HEADER_LABEL_CLASS =
-  "w-full shrink-0 px-0.5 text-center text-[0.625rem] font-medium leading-snug text-blue-600";
 
 /** Erste Spalte (Header-Ecke + Bereichsnamen). */
 const AREA_COLUMN_BG_CLASS = "bg-calendar-active-header";
@@ -1453,7 +1447,10 @@ export function DashboardCalendar({
     function updateHeight() {
       if (!scrollRoot) return;
       setCalendarBodyHeightPx(
-        calendarAvailableBodyHeightPx(scrollRoot.clientHeight)
+        calendarAvailableBodyHeightPx(
+          scrollRoot.clientHeight,
+          CALENDAR_DAY_HEADER_ROW_HEIGHT_PX
+        )
       );
     }
 
@@ -1469,7 +1466,10 @@ export function DashboardCalendar({
 
     const remeasure = () => {
       setCalendarBodyHeightPx(
-        calendarAvailableBodyHeightPx(scrollRoot.clientHeight)
+        calendarAvailableBodyHeightPx(
+          scrollRoot.clientHeight,
+          CALENDAR_DAY_HEADER_ROW_HEIGHT_PX
+        )
       );
     };
 
@@ -1548,12 +1548,12 @@ export function DashboardCalendar({
     if (simplePlanning && locationId) {
       const layout = simplePlanningRowLayout;
       if (!layout) {
-        return `${PLANNING_DAY_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
+        return `${CALENDAR_DAY_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
       }
-      return `${PLANNING_DAY_HEADER_ROW_HEIGHT} ${buildAreaRowGridTrack(layout)} ${calendarFooterRowTemplate}`;
+      return `${CALENDAR_DAY_HEADER_ROW_HEIGHT} ${buildAreaRowGridTrack(layout)} ${calendarFooterRowTemplate}`;
     }
     if (areas.length === 0) {
-      return `${PLANNING_DAY_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
+      return `${CALENDAR_DAY_HEADER_ROW_HEIGHT} minmax(0, 1fr) ${calendarFooterRowTemplate}`;
     }
     const bodyRows = areas
       .map((area) => {
@@ -1562,7 +1562,7 @@ export function DashboardCalendar({
         return buildAreaRowGridTrack(layout);
       })
       .join(" ");
-    return `${PLANNING_DAY_HEADER_ROW_HEIGHT} ${bodyRows} ${calendarFooterRowTemplate}`;
+    return `${CALENDAR_DAY_HEADER_ROW_HEIGHT} ${bodyRows} ${calendarFooterRowTemplate}`;
   }, [
     areas,
     areaRowLayouts,
@@ -1642,7 +1642,6 @@ export function DashboardCalendar({
           {dates.map((date, dayIndex) => {
             const { weekday, label } = formatDayHeader(date, intlLocale);
             const holiday = holidayNames[date];
-            const isHoliday = isGermanPublicHoliday(date);
             const isToday = date === todayISO;
             const isPastDay = isPastCalendarDate(date, todayISO);
             const mutedHeader = !dayHasServiceHours[dayIndex];
@@ -1650,9 +1649,9 @@ export function DashboardCalendar({
               <div
                 key={`header-${date}`}
                 className={cn(
-                  "relative flex min-h-0 flex-col items-center justify-center gap-0.5 overflow-hidden py-1 text-center",
+                  CALENDAR_DAY_HEADER_CELL_CLASS,
                   CALENDAR_HEADER_ROW_BORDER_CLASS,
-                  mutedHeader ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
+                  mutedHeader ? CALENDAR_DAY_HEADER_MUTED_CLASS : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
                   dayHeaderColumnDivider(dayIndex)
                 )}
                 style={{ gridColumn: dayIndex + 2, gridRow: 1 }}
@@ -1669,25 +1668,25 @@ export function DashboardCalendar({
                 {isToday ? (
                   <div
                     className={cn(
-                      TODAY_DAY_HEADER_BADGE_CLASS,
+                      CALENDAR_TODAY_DAY_HEADER_BADGE_CLASS,
                       "flex shrink-0 flex-col items-center gap-px"
                     )}
                   >
-                    <div className="whitespace-nowrap text-xs font-semibold leading-none">
+                    <div className="whitespace-nowrap text-xs font-semibold leading-[14px]">
                       {weekday}
                     </div>
-                    <div className="whitespace-nowrap text-sm font-medium leading-none">
+                    <div className="whitespace-nowrap text-sm font-bold leading-tight -mt-px">
                       {label}
                     </div>
                   </div>
                 ) : (
                   <>
-                    <div className="shrink-0 whitespace-nowrap text-xs font-semibold leading-none text-muted">
+                    <div className="shrink-0 whitespace-nowrap text-xs font-semibold leading-[14px] text-muted">
                       {weekday}
                     </div>
                     <div
                       className={cn(
-                        "shrink-0 whitespace-nowrap text-sm font-medium leading-none",
+                        "shrink-0 whitespace-nowrap text-sm font-medium leading-tight -mt-px",
                         isPastDay && "text-muted"
                       )}
                     >
@@ -1696,7 +1695,7 @@ export function DashboardCalendar({
                   </>
                 )}
                 {holiday ? (
-                  <div className={HOLIDAY_DAY_HEADER_LABEL_CLASS}>{holiday}</div>
+                  <div className={CALENDAR_HOLIDAY_DAY_HEADER_LABEL_CLASS}>{holiday}</div>
                 ) : null}
               </div>
             );
@@ -1987,12 +1986,6 @@ export function DashboardCalendar({
                         showDayCellContent;
                       const isPastWorkDayCell =
                         showDayCellContent && isPastAreaWorkDay;
-                      const showDaytimesGradient =
-                        isDayActive &&
-                        !isPastCalendarDate(date) &&
-                        showOpenDayCell &&
-                        isOpen &&
-                        dayHasOpenArea[dayIndex];
                       const headerStaffing = computeBulkStaffingHeaderEntries({
                         staffingRules: fullStaffingRules,
                         areaId: area.id,
@@ -2068,7 +2061,7 @@ export function DashboardCalendar({
                               <TagAreaHeaderStrip
                                 key={`${area.id}:${date}:${dayShifts.map((shift) => shift.id).join(",")}`}
                                 className={cellHasHighlightedShift ? "z-10" : undefined}
-                                showDaytimesGradient={showDaytimesGradient}
+                                showDaytimesGradient
                                 dayCollapsed={!isDayActive}
                                 entries={headerStaffing}
                                 noServiceHoursLabel={
@@ -2091,7 +2084,6 @@ export function DashboardCalendar({
                                     ? PAST_TAG_AREA_OVERLAY_BG
                                     : undefined
                                 }
-                                staffingLabelsDimmed={isPastCalendarDate(date)}
                                 style={{ height: TAG_AREA_HEADER_STRIP_HEIGHT }}
                               />
                               <div
@@ -2302,7 +2294,7 @@ export function DashboardCalendar({
                 key={`footer-stats-${date}`}
                 className={cn(
                   "sticky z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-400",
-                  mutedFooter ? MUTED_DAY_HEADER_CLASS : ACTIVE_DAY_HEADER_CLASS,
+                  mutedFooter ? CALENDAR_DAY_HEADER_MUTED_CLASS : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
                   dayHeaderColumnDivider(dayIndex)
                 )}
                 style={{

@@ -62,7 +62,7 @@ export async function assignProfileQualification(input: {
       organizationId,
       input.profileId
     );
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, qualifications };
   } catch (e) {
     return {
@@ -88,7 +88,7 @@ export async function removeProfileQualification(input: {
       organizationId,
       input.profileId
     );
-    revalidatePath("/dashboard");
+    revalidatePath("/planer");
     return { ok: true, qualifications };
   } catch (e) {
     return {
