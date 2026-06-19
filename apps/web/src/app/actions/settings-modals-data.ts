@@ -3,7 +3,7 @@
 import { weekDates } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
-import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
+import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import type {
   AreaShiftTemplateWithBreaks,
   CompensationSurchargeType,
@@ -53,7 +53,7 @@ export async function fetchSettingsModalsData(options?: {
         db.listRoles(organizationId),
         db.listOrganizationProfiles(organizationId),
         from && to
-          ? db.listLocationsForDashboard(organizationId, from, to)
+          ? db.listLocationsForAreaCalendar(organizationId, from, to)
           : db.listLocations(organizationId),
       ]);
 
@@ -71,7 +71,7 @@ export async function fetchSettingsModalsData(options?: {
       selectedLocationId
         ? await Promise.all([
             from && to
-              ? db.listLocationAreasForDashboard(selectedLocationId, from, to)
+              ? db.listLocationAreasForAreaCalendar(selectedLocationId, from, to)
               : db.listLocationAreas(selectedLocationId),
             db.listLocationAreaStaffing(selectedLocationId),
             db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),

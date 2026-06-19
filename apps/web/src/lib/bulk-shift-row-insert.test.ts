@@ -64,6 +64,23 @@ describe("insertBulkShiftRowInList", () => {
       insertBulkShiftRowInList(existing, next, false).map((r) => r.id)
     ).toEqual(["new", "1"]);
   });
+
+  it("keeps new rows above existing saved shifts", () => {
+    const existing = [
+      {
+        ...row("saved", { shiftTypeId: "x", startTime: "08:00", endTime: "10:00" }),
+        existingShiftId: "shift-1",
+      },
+    ];
+    const next = row("new", {
+      shiftTypeId: "x",
+      startTime: "08:00",
+      endTime: "10:00",
+    });
+    expect(
+      insertBulkShiftRowInList(existing, next, false).map((r) => r.id)
+    ).toEqual(["new", "saved"]);
+  });
 });
 
 describe("isBulkShiftEmployeeSortActive", () => {

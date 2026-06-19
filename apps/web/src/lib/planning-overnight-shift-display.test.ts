@@ -10,6 +10,8 @@ import {
   planningShiftSegmentMaxWidthPx,
   planningShiftSegmentAlignTimeRight,
   planningShiftSegmentShowsEmployeeStrip,
+  canOpenPlanningOvernightShiftContextMenu,
+  resolvePlanningOvernightShiftContextMenuDate,
   resolveOvernightSpanDisplayMode,
 } from "./planning-overnight-shift-display";
 
@@ -172,5 +174,55 @@ describe("resolveOvernightSpanDisplayMode", () => {
       resolveOvernightSpanDisplayMode(span, new Set(["2026-06-03"]))
     ).toBe("expanded");
     expect(resolveOvernightSpanDisplayMode(span, new Set())).toBe("collapsed");
+  });
+});
+
+describe("planning overnight shift context menu", () => {
+  const span = {
+    shift: {
+      id: "s1",
+      employee_id: "e1",
+      shift_date: "2026-06-16",
+      shiftName: "Früh",
+      color: "#000",
+      startTime: "22:00",
+      endTime: "06:00",
+      location_area_id: "a1",
+      area_shift_template_id: "t1",
+      confirmationStatus: "pending" as const,
+    },
+    startDate: "2026-06-16",
+    endDate: "2026-06-17",
+  };
+
+  it("allows context menu when only the end day is still interactable", () => {
+    expect(
+      canOpenPlanningOvernightShiftContextMenu(span, {
+        todayISO: "2026-06-17",
+        isDayReadOnly: () => false,
+      })
+    ).toBe(true);
+  });
+
+  it("prefers the clicked day when it is interactable", () => {
+    expect(
+      resolvePlanningOvernightShiftContextMenuDate(span, "2026-06-17", {
+        todayISO: "2026-06-17",
+        isDayReadOnly: () => false,
+      })
+    ).toBe("2026-06-17");
+  });
+
+  it("allows context menu for past unconfirmed overnight shifts", () => {
+    expect(
+      canOpenPlanningOvernightShiftContextMenu(span, {
+        todayISO: "2026-06-18",
+        isDayReadOnly: () => true,
+        pastUnconfirmedMenu: {
+          shiftDate: span.shift.shift_date,
+          isPastShiftDate: (date) => date < "2026-06-18",
+        },
+      })
+    ).toBe(true);
   });
 });

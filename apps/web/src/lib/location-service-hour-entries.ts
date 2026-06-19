@@ -4,7 +4,7 @@ import {
   weekdayAbbrevFromTranslatedName,
   type WeekdayLabelLocale,
 } from "@schichtwerk/i18n";
-import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
+import { resolvePresetIdFromTimes } from "@/lib/areacalendar-assignment-presets";
 
 export const SERVICE_HOUR_WEEKDAY_COUNT = 8;
 

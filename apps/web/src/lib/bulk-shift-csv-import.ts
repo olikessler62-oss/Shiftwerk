@@ -1,5 +1,5 @@
 import type { Profile } from "@schichtwerk/types";
-import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
+import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 
 export type CsvImportRow = {
   employeeId: string;
@@ -76,7 +76,7 @@ function resolveEmployee(
 
 function resolveShiftTemplate(
   token: string,
-  presets: readonly DashboardAssignmentPreset[]
+  presets: readonly AreaCalendarAssignmentPreset[]
 ): string | null {
   const needle = token.trim().toLowerCase();
   if (!needle) return null;
@@ -86,7 +86,7 @@ function resolveShiftTemplate(
 export function parseBulkShiftCsv(
   csvText: string,
   profiles: readonly Profile[],
-  presets: readonly DashboardAssignmentPreset[]
+  presets: readonly AreaCalendarAssignmentPreset[]
 ): CsvImportParseOutcome {
   const lines = csvText
     .split(/\r?\n/)

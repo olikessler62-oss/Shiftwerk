@@ -65,6 +65,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
+import { resolveShiftGuardActionError } from "@/lib/shift-guard-action-error";
 import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 
 type Props = {
@@ -293,7 +294,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
     startTransition(async () => {
       const result = await deleteAbsence(selected.id);
       if (!result.ok) {
-        setErrorMessage(result.error);
+        setErrorMessage(resolveShiftGuardActionError(result.error, t));
         setConfirmDelete(false);
         return;
       }
@@ -315,7 +316,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
       for (const id of ids) {
         const result = await deleteAbsence(id);
         if (!result.ok) {
-          setErrorMessage(result.error);
+          setErrorMessage(resolveShiftGuardActionError(result.error, t));
           bulkSelection.clear();
           setConfirmBulkDelete(false);
           void loadAbsences();

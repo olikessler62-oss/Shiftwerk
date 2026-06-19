@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
+import { useEffect, useMemo, useState } from "react";
+import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { Button, CloseIcon, IconButton } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
   countCommunicationActionItems,
-  resolveDefaultCommunicationResponseTab,
+  groupCommunicationHubData,
+  resolveCommunicationOpenCategory,
+  resolveDefaultCommunicationHubCategory,
   type CommunicationOpenOptions,
-  type CommunicationResponseTab,
+  type CommunicationSwapRequestRow,
 } from "@/lib/communication-hub";
 import { CommunicationResponsesTab } from "./communication-responses-tab";
 import {
@@ -20,19 +22,24 @@ import {
   settingsModalHeaderPaddingClass,
 } from "@/components/settings/settings-list-ui";
 
-import type { LocationArea } from "@schichtwerk/types";
+import type { AbsenceRequest, LocationArea } from "@schichtwerk/types";
 
 type Props = {
   weekStart: string;
   locationId: string | null;
   locationName?: string;
   areas: LocationArea[];
-  shifts: DashboardShiftCard[];
+  shifts: AreaCalendarShiftCard[];
+  absences?: AbsenceRequest[];
+  swapRequests?: CommunicationSwapRequestRow[];
+  cancelActors?: ReadonlyMap<string, "employee" | "manager">;
   shiftConfirmationEnabled: boolean;
   initialOptions?: CommunicationOpenOptions;
   onClose: () => void;
-  onReassign: (shift: DashboardShiftCard) => void;
+  onReassign: (shift: AreaCalendarShiftCard) => void;
   onBusyChange?: (busy: boolean) => void;
+  onLocalShiftRemoved?: (shiftIds: readonly string[]) => void;
+  onLocalShiftRestore?: (shiftIds: readonly string[]) => void;
 };
 
 export function CommunicationHubModal({
@@ -41,16 +48,31 @@ export function CommunicationHubModal({
   locationName,
   areas,
   shifts,
+  absences = [],
+  swapRequests = [],
+  cancelActors,
   shiftConfirmationEnabled,
   initialOptions,
   onClose,
   onReassign,
   onBusyChange,
+  onLocalShiftRemoved,
+  onLocalShiftRestore,
 }: Props) {
   const t = useTranslations();
-  const [responseTab] = useState<CommunicationResponseTab>(
-    initialOptions?.responseTab ?? resolveDefaultCommunicationResponseTab(shifts)
+  const hubOptions = useMemo(
+    () => ({
+      absences,
+      swapRequests,
+      cancelActors,
+    }),
+    [absences, swapRequests, cancelActors]
   );
+  const initialCategory = useMemo(() => {
+    const requested = resolveCommunicationOpenCategory(initialOptions);
+    if (requested) return requested;
+    return resolveDefaultCommunicationHubCategory(shifts, hubOptions);
+  }, [initialOptions, shifts, hubOptions]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -124,18 +146,23 @@ export function CommunicationHubModal({
             </div>
           ) : (
             <CommunicationResponsesTab
-              key={`responses-${responseTab}`}
+              key={`responses-${initialCategory}`}
               weekStart={weekStart}
               locationId={locationId}
               areas={areas}
               shifts={shifts}
-              initialTab={responseTab}
+              absences={absences}
+              swapRequests={swapRequests}
+              cancelActors={cancelActors}
+              initialCategory={initialCategory}
               onClose={onClose}
               onReassign={(shift) => {
                 onClose();
                 onReassign(shift);
               }}
               onBusyChange={setBusy}
+              onLocalShiftRemoved={onLocalShiftRemoved}
+              onLocalShiftRestore={onLocalShiftRestore}
             />
           )}
         </div>
@@ -144,6 +171,9 @@ export function CommunicationHubModal({
   );
 }
 
-export function communicationBadgeCount(shifts: readonly DashboardShiftCard[]): number {
-  return countCommunicationActionItems(shifts);
+export function communicationBadgeCount(
+  shifts: readonly AreaCalendarShiftCard[],
+  options?: Parameters<typeof countCommunicationActionItems>[1]
+): number {
+  return countCommunicationActionItems(shifts, options);
 }

@@ -15,6 +15,15 @@ export function buildEmployeeShiftHighlightBoxShadow(
   return `0 0 0 2px ${color}, 0 0 14px 4px color-mix(in srgb, ${color} 72%, transparent), ${baseShadow}`;
 }
 
+/** Leuchteffekt innerhalb der Schichtkarten-Grenzen — kein overflow-visible nötig. */
+export function buildEmployeeShiftHighlightBoxShadowInCard(
+  baseShadow: string,
+  employeeColor: string
+): string {
+  const color = employeeColor.trim() || "#94a3b8";
+  return `inset 0 0 0 2px ${color}, inset 0 0 10px 1px color-mix(in srgb, ${color} 55%, transparent), ${baseShadow}`;
+}
+
 export function employeeShiftHighlightOverlayStyle(
   employeeColor: string
 ): { backgroundColor: string; opacity: number } {

@@ -26,7 +26,7 @@ export const SHIFT_CARD_SHADOW_OVERFLOW_PX = SHIFT_CARD_SHADOW_BLEED_PX;
 export const AREA_ROW_CELL_PADDING_Y_PX = 16;
 export const AREA_ROW_HEADER_STRIP_PX = 24;
 export const AREA_ROW_FOOTER_STRIP_PX = 22;
-export const AREA_ROW_EMPTY_HEIGHT_PX = 50;
+export const AREA_ROW_EMPTY_HEIGHT_PX = 68;
 /** Harte Untergrenze für jede Bereichszeile (Fenster verkleinern, Platz knapp). */
 export const AREA_ROW_MIN_HEIGHT_PX = AREA_ROW_EMPTY_HEIGHT_PX;
 /** Größter Bereich muss mindestens so viel höher sein als der zweitgrößte. */
@@ -135,7 +135,7 @@ function isCollapsedAreaRow(
   return !layoutActiveAreaIds.has(areaId);
 }
 
-/** Checkbox eingeklappt oder service-dormant (keine Servicezeit/Schichten ab heute, keine Schichten in Vergangenheit der Woche) — Zeile fix 50 px. */
+/** Checkbox eingeklappt oder service-dormant (keine Servicezeit/Schichten ab heute, keine Schichten in Vergangenheit der Woche) — Zeile fix 68 px. */
 function isAreaRowFixedAtMinHeight(
   areaId: string,
   layoutActiveAreaIds: ReadonlySet<string>,

@@ -53,7 +53,7 @@ export function LocationSelect({
   if (locations.length === 0) {
     return (
       <p className={cn(variant === "header" ? "text-xs" : "mt-1 text-sm", "text-muted")}>
-        {t("dashboard.noLocations")}
+        {t("areaCalendar.noLocations")}
       </p>
     );
   }
@@ -65,7 +65,7 @@ export function LocationSelect({
         options={locationOptions}
         disabled={pending || locations.length === 0}
         onChange={onChange}
-        aria-label={t("dashboard.selectLocation")}
+        aria-label={t("areaCalendar.selectLocation")}
         triggerClassName={className}
         wrapperClassName="max-w-[10rem] sm:max-w-[12rem]"
       />
@@ -77,7 +77,7 @@ export function LocationSelect({
       value={selectedLocationId ?? locations[0].id}
       disabled={pending || locations.length === 0}
       onChange={(e) => onChange(e.target.value)}
-      aria-label={t("dashboard.selectLocation")}
+      aria-label={t("areaCalendar.selectLocation")}
       className={cn("mt-1 min-w-0 max-w-full w-full", className)}
     >
       {locations.map((loc) => (

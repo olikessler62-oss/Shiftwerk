@@ -105,8 +105,8 @@ export function formatWeekRange(weekStartISO: string): string {
   return `${fmt.format(start)} – ${fmt.format(end)}`;
 }
 
-/** Datumszeile im Dashboard-Header (Monat/Jahr + KW; rangeLabel für Tooltip). */
-export function getDashboardWeekHeaderParts(
+/** Datumszeile im Bereich-Kalender-Header (Monat/Jahr + KW; rangeLabel für Tooltip). */
+export function getAreaCalendarWeekHeaderParts(
   weekStartISO: string,
   intlLocale = "de-DE"
 ) {

@@ -41,7 +41,7 @@ export type ShiftTypeBreakInput = {
   break_end: string;
 };
 
-export type DashboardShiftRow = {
+export type AreaCalendarShiftRow = {
   id: string;
   employee_id: string;
   location_area_id: string | null;
@@ -50,6 +50,7 @@ export type DashboardShiftRow = {
   starts_at?: string;
   ends_at?: string;
   confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
+  confirmation_status_updated_at?: string;
   requested_at?: string | null;
   pending_since?: string | null;
   area_shift_templates: {
@@ -197,6 +198,17 @@ export interface SchichtwerkDatabase {
       mobile_phone: string | null;
       color: string | null;
       email_fallback_mode?: boolean;
+    }
+  ): Promise<void>;
+  /** Superadmin: Schicht-/Benachrichtigungs-Simulation pro Profil. */
+  updateProfileSuperadminSimulationSettings(
+    id: string,
+    organizationId: string,
+    row: {
+      is_active: boolean;
+      schedulable: boolean;
+      app_registered_at: string | null;
+      email_fallback_mode: boolean;
     }
   ): Promise<void>;
   listAssignedProfileColors(
@@ -497,7 +509,7 @@ export interface SchichtwerkDatabase {
   // —— Locations (Standorte) ——
   listLocations(organizationId: string): Promise<Location[]>;
   /** Aktive Standorte plus archivierte, die in der Woche noch Schichten haben. */
-  listLocationsForDashboard(
+  listLocationsForAreaCalendar(
     organizationId: string,
     from: string,
     to: string
@@ -533,7 +545,7 @@ export interface SchichtwerkDatabase {
   ): Promise<LocationAreaServiceHour>;
 
   listLocationAreas(locationId: string): Promise<LocationArea[]>;
-  listLocationAreasForDashboard(
+  listLocationAreasForAreaCalendar(
     locationId: string,
     from: string,
     to: string
@@ -657,12 +669,12 @@ export interface SchichtwerkDatabase {
   // —— Shifts ——
   /** Eigene Schichten (Mitarbeiter-App, gefiltert per RLS) */
   listMyShifts(fromDate: string, toDate: string): Promise<Shift[]>;
-  listDashboardShifts(
+  listAreaCalendarShifts(
     organizationId: string,
     from: string,
     to: string,
     locationId: string
-  ): Promise<DashboardShiftRow[]>;
+  ): Promise<AreaCalendarShiftRow[]>;
   getShiftById(
     id: string,
     organizationId: string
@@ -674,6 +686,10 @@ export interface SchichtwerkDatabase {
   listShiftsForEmployeeOnDates(
     employeeId: string,
     shiftDates: string[]
+  ): Promise<EmployeeShiftRecord[]>;
+  listShiftsForEmployeeFromDate(
+    employeeId: string,
+    fromDate: string
   ): Promise<EmployeeShiftRecord[]>;
   /** Schichten mit End-/Startfenster vor/nach der neuen Schicht (für Ruhezeitprüfung). */
   listShiftsForEmployeeRestCheck(
@@ -805,6 +821,41 @@ export interface SchichtwerkDatabase {
     updatedShifts: { locationId: string | null; shiftDate: string }[];
   }>;
 
+  cancelShift(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+    actorRole: "manager" | "employee";
+    employeeName?: string;
+  }): Promise<{
+    locationId: string | null;
+    shiftDate: string;
+    employeeId: string;
+  }>;
+
+  confirmPastShiftAsManager(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+  }): Promise<{
+    locationId: string | null;
+    shiftDate: string;
+  }>;
+
+  listOrganizationShiftsForSuperadmin(organizationId: string): Promise<
+    import("./superadmin-shifts").SuperadminShiftRecord[]
+  >;
+
+  updateShiftConfirmationStatusAsSuperadmin(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+    confirmationStatus: import("@schichtwerk/types").ShiftConfirmationStatus;
+  }): Promise<{
+    locationId: string | null;
+    shiftDate: string;
+  }>;
+
   resetOrganizationOperationalData(organizationId: string): Promise<void>;
 
   // —— Absence requests ——
@@ -853,6 +904,23 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     ranges: { employee_id: string; start_date: string; end_date: string }[]
   ): Promise<number>;
+
+  listOrganizationSwapRequests(
+    organizationId: string,
+    options?: {
+      statuses?: import("@schichtwerk/types").RequestStatus[];
+      locationId?: string;
+      from?: string;
+      to?: string;
+    }
+  ): Promise<
+    import("@schichtwerk/types").SwapRequestWithShiftContext[]
+  >;
+
+  listShiftCancelActors(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<Map<string, "employee" | "manager">>;
 
   // —— Manager layout ——
   getManagerProfile(userId: string): Promise<Profile | null>;

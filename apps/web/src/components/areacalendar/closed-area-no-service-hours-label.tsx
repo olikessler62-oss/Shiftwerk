@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { measureStaffingHeaderCountText } from "@/lib/tag-area-header-staffing-display";
 import { cn } from "@/lib/cn";
 
-/** Gleicher Zellen-Innenabstand wie im Planer (`PLANNING_CELL_PADDING_PX`). */
+/** Gleicher Zellen-Innenabstand wie im Dashboard (`PLANNING_CELL_PADDING_PX`). */
 const CELL_PANEL_INSET_PX = 4;
 const NO_SERVICE_LABEL_SAFETY_PX = 4;
 const NO_SERVICE_LABEL_FONT =

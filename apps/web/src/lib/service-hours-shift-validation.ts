@@ -16,7 +16,7 @@ export function serviceWeekdayForShiftDate(isoDate: string): number {
   return serviceWeekdayForShiftDateByCountry("DE", isoDate);
 }
 
-export function validateDashboardShiftServiceHours(
+export function validateAreaCalendarShiftServiceHours(
   serviceHours: AreaServiceHourRef[],
   areaId: string,
   shiftDate: string,

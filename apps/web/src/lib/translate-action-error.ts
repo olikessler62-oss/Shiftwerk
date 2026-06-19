@@ -1,5 +1,9 @@
 import { SHIFT_CONFIRMATION_ASSIGN_GATE_ERROR } from "@schichtwerk/database";
 import type { Translator } from "@schichtwerk/i18n/translate";
+import {
+  parseShiftDeleteBlockedStatus,
+  shiftDeleteBlockedMessage,
+} from "@/lib/shift-deletion-policy";
 
 const SHIFT_ASSIGN_EXACT_KEYS: Record<string, string> = {
   "Personal ist an diesem Tag abwesend.": "shiftAssign.employeeAbsent",
@@ -35,6 +39,11 @@ const MIN_REST_PERIOD_SUFFIX =
 export function translateActionError(message: string, t: Translator): string {
   if (message.startsWith("organization.errors.")) {
     return t(message);
+  }
+
+  const blockedStatus = parseShiftDeleteBlockedStatus(message);
+  if (blockedStatus) {
+    return shiftDeleteBlockedMessage(blockedStatus, t);
   }
 
   const exactKey = SHIFT_ASSIGN_EXACT_KEYS[message];

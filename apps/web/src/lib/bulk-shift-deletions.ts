@@ -1,4 +1,4 @@
-import type { DashboardAssignmentTimeWindow } from "@/lib/shift-overlap";
+import type { AreaCalendarAssignmentTimeWindow } from "@/lib/shift-overlap";
 import type { LocationDayAssignment } from "@/lib/bulk-shift-day-compliance";
 
 type ExistingAreaShiftRef = {
@@ -35,7 +35,7 @@ export function resolveBulkShiftDeletedIds(
 export function resolveRemainingAreaAssignments(
   existingAreaShifts: readonly ExistingAreaShiftRef[],
   rows: readonly BulkRowExistingRef[]
-): DashboardAssignmentTimeWindow[] {
+): AreaCalendarAssignmentTimeWindow[] {
   const remainingIds = new Set(
     rows.flatMap((row) => (row.existingShiftId ? [row.existingShiftId] : []))
   );

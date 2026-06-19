@@ -28,7 +28,7 @@ import { fetchAreaShiftTemplates } from "@/app/actions/area-shift-templates";
 import { fetchAreaQualificationTemplates } from "@/app/actions/area-qualification-templates";
 import { fetchLocationStaffingEditor } from "@/app/actions/location-staffing";
 import { fetchLocationAreaServiceHours } from "@/app/actions/location-service-hours";
-import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
+import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { LocationFormModal } from "./location-form-modal";
 import { LocationAreaFormModal } from "./location-area-form-modal";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
@@ -82,7 +82,7 @@ type Props = {
   initialSelectedLocationId?: string | null;
   initialAreas?: LocationArea[];
   initialSelectedAreaId?: string | null;
-  /** Bereits geladene Detaildaten (Dashboard) — kein erneuter Fetch beim Öffnen */
+  /** Bereits geladene Detaildaten (Bereich-Kalender) — kein erneuter Fetch beim Öffnen */
   initialServiceHours?: LocationAreaServiceHour[];
   initialStaffing?: LocationAreaStaffing[];
   initialShiftTemplates?: AreaShiftTemplateWithBreaks[];

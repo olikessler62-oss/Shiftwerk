@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 const nav = [
-  { href: "/planer", label: "Planer" },
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/bereich-kalender", label: "Bereich-Kalender" },
   { href: "/berichte", label: "Berichte" },
   { href: "/einstellungen", label: "Einstellungen" },
 ];

@@ -22,8 +22,8 @@ export async function updateOrganizationAllowRetroactiveCompensationEntries(
       allowed
     );
 
-    revalidatePath("/planer", "layout");
     revalidatePath("/dashboard", "layout");
+    revalidatePath("/bereich-kalender", "layout");
     revalidatePath("/team", "layout");
     revalidatePath("/berichte", "layout");
 
@@ -41,8 +41,8 @@ export async function updateOrganizationShiftConfirmationEnabled(
     const db = await getDatabase();
     await db.updateOrganizationShiftConfirmationEnabled(organizationId, enabled);
 
-    revalidatePath("/planer", "layout");
     revalidatePath("/dashboard", "layout");
+    revalidatePath("/bereich-kalender", "layout");
     revalidatePath("/team", "layout");
     revalidatePath("/berichte", "layout");
 
@@ -61,8 +61,8 @@ export async function updateOrganizationShiftConfirmationDisclaimer(
     const normalized = disclaimer?.trim() ? disclaimer.trim() : null;
     await db.updateOrganizationShiftConfirmationDisclaimer(organizationId, normalized);
 
-    revalidatePath("/planer", "layout");
     revalidatePath("/dashboard", "layout");
+    revalidatePath("/bereich-kalender", "layout");
     revalidatePath("/settings/notifications-outbox");
 
     return { ok: true };
@@ -88,8 +88,8 @@ export async function upgradeOrganizationPlanningMode(): Promise<OrganizationAct
     const db = await getDatabase();
     await db.updateOrganizationPlanningMode(organizationId, "advanced");
 
-    revalidatePath("/planer", "layout");
     revalidatePath("/dashboard", "layout");
+    revalidatePath("/bereich-kalender", "layout");
     revalidatePath("/team", "layout");
     revalidatePath("/berichte", "layout");
 

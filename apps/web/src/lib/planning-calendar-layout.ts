@@ -26,7 +26,7 @@ export const PLANNING_DAY_FOOTER_ROW_HEIGHT = "36px";
 /** Kalender-Footer oben: Gesamtstunden/Gesamtkosten pro Tag (Platzhalter). */
 export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT = "22px";
 export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX = 22;
-/** Dashboard Tag×Bereich: Bedarf-Strip (Personalbedarf-Overlay). */
+/** Bereich-Kalender Tag×Bereich: Bedarf-Strip (Personalbedarf-Overlay). */
 export const TAG_AREA_HEADER_STRIP_HEIGHT = "44px";
 export const TAG_AREA_HEADER_STRIP_HEIGHT_PX = 44;
 export const PLANNING_DAY_FOOTER_ROW_HEIGHT_PX = 36;

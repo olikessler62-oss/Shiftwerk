@@ -75,8 +75,8 @@ export async function inviteEmployee(
       };
     }
 
-    revalidatePath("/planer");
     revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
 
     return {
       ok: true,

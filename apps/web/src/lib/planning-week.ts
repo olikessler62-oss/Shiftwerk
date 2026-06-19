@@ -16,7 +16,7 @@ export function resolveManagerPlanningWeek(weekParam: string | undefined): strin
 
 /** Redirect wenn `week` in der URL älter als das Hot-Fenster ist. */
 export function redirectIfPlanningWeekClamped(
-  pathname: "/dashboard" | "/planer",
+  pathname: "/bereich-kalender" | "/dashboard",
   weekParam: string | undefined,
   queryParams: Record<string, string | undefined>
 ): string {

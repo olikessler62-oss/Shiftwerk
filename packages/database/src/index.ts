@@ -2,7 +2,7 @@ export { Schema, SCHEMA_SQL_PATH } from "./schema";
 export type {
   SchichtwerkDatabase,
   ShiftTypeBreakInput,
-  DashboardShiftRow,
+  AreaCalendarShiftRow,
   EmployeeShiftRecord,
 } from "./interface";
 export {
@@ -16,6 +16,11 @@ export {
   addDaysISO,
   type AbsenceRange,
 } from "./absence-validation";
+export {
+  absenceDeleteShiftConflictRange,
+  absenceDeleteShiftConflictRangeFromRequest,
+  wouldDeletingAbsenceConflictWithFutureShifts,
+} from "./absence-delete-shift-validation";
 export {
   createDatabase,
   SupabaseSchichtwerkDatabase,
@@ -135,6 +140,10 @@ export {
   compareProfileRecurringAvailabilityBySchedule,
   sortProfileRecurringAvailabilityBySchedule,
 } from "./profile-availability-validation";
+export {
+  PROFILE_AVAILABILITY_DELETE_SHIFT_CONFLICT_ERROR,
+  wouldDeletingAvailabilitySlotConflictWithFutureShifts,
+} from "./profile-availability-delete-validation";
 export {
   findProfileShiftPreferenceDuplicate,
   PROFILE_SHIFT_PREFERENCE_DUPLICATE_ERROR,
@@ -354,3 +363,31 @@ export {
   type EmployeeRespondableConfirmationStatus,
   type ShiftOpenForEmployeeResponse,
 } from "./shift-confirmation-respond";
+export {
+  buildManagerShiftCanceledNotification,
+  canCancelShiftByConfirmationStatus,
+  isShiftCancellableConfirmationStatus,
+  isShiftDateInPast,
+  parseShiftCancelBlockedStatus,
+  resolveEffectiveShiftConfirmationStatus,
+  shiftCancelBlockedActionError,
+  SHIFT_CANCEL_BLOCKED_ERROR_PREFIX,
+  SHIFT_CANCEL_NOT_OWNER_ERROR,
+  SHIFT_CANCEL_PAST_ERROR,
+  SHIFT_CANCELLABLE_CONFIRMATION_STATUSES,
+  type ShiftCancellableConfirmationStatus,
+} from "./shift-cancellation";
+export {
+  assertCanConfirmPastShiftAsManager,
+  canConfirmPastShiftAsManager,
+  SHIFT_PAST_CONFIRM_ALREADY_CONFIRMED_ERROR,
+  SHIFT_PAST_CONFIRM_NOT_PAST_ERROR,
+} from "./shift-past-cleanup";
+export {
+  buildSuperadminConfirmationStatusPatch,
+  SUPERADMIN_SHIFT_CONFIRMATION_STATUSES,
+} from "./superadmin-shift-confirmation";
+export type {
+  SuperadminShiftListRow,
+  SuperadminShiftRecord,
+} from "./superadmin-shifts";

@@ -1,11 +1,11 @@
 import {
-  areDashboardShiftTimesComplete,
+  areAreaCalendarShiftTimesComplete,
   availabilityRangeContainedInWindow,
 } from "@/lib/available-employees-for-shift";
 import {
   resolvePresetIdFromTimes,
-  type DashboardAssignmentPreset,
-} from "@/lib/dashboard-assignment-presets";
+  type AreaCalendarAssignmentPreset,
+} from "@/lib/areacalendar-assignment-presets";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
@@ -130,7 +130,7 @@ export function personalbedarfTimesForServiceHour(
   if (!hour?.start_time || !hour?.end_time) return null;
   const startTime = timeFieldValue(hour.start_time);
   const endTime = timeFieldValue(hour.end_time);
-  if (!areDashboardShiftTimesComplete(startTime, endTime)) return null;
+  if (!areAreaCalendarShiftTimesComplete(startTime, endTime)) return null;
   return { startTime, endTime };
 }
 
@@ -141,7 +141,7 @@ export function personalbedarfTimesForServiceHour(
 export function personalbedarfDemandTimesForEntry(
   serviceHourId: string | undefined,
   serviceHours: readonly AreaServiceHourRef[],
-  assignmentPresets: readonly DashboardAssignmentPreset[],
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[],
   staffingRules: readonly LocationAreaStaffing[],
   areaId: string
 ): { startTime: string; endTime: string; serviceHourId: string } | null {
@@ -151,7 +151,7 @@ export function personalbedarfDemandTimesForEntry(
 
   const hourStart = timeFieldValue(hour.start_time);
   const hourEnd = timeFieldValue(hour.end_time);
-  if (!areDashboardShiftTimesComplete(hourStart, hourEnd)) return null;
+  if (!areAreaCalendarShiftTimesComplete(hourStart, hourEnd)) return null;
 
   const hasStaffing = staffingRules.some(
     (rule) =>
@@ -164,7 +164,7 @@ export function personalbedarfDemandTimesForEntry(
   const fittingTemplates = assignmentPresets.filter((preset) => {
     const startTime = timeFieldValue(preset.start_time);
     const endTime = timeFieldValue(preset.end_time);
-    if (!areDashboardShiftTimesComplete(startTime, endTime)) return false;
+    if (!areAreaCalendarShiftTimesComplete(startTime, endTime)) return false;
     return availabilityRangeContainedInWindow(
       startTime,
       endTime,
@@ -191,14 +191,14 @@ export function personalbedarfDemandTimesForEntry(
 
 export function personalbedarfTimesForShiftType(
   shiftTypeId: string,
-  assignmentPresets: readonly DashboardAssignmentPreset[]
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[]
 ): { startTime: string; endTime: string } | null {
   if (!shiftTypeId) return null;
   const preset = assignmentPresets.find((item) => item.id === shiftTypeId);
   if (!preset) return null;
   const startTime = timeFieldValue(preset.start_time);
   const endTime = timeFieldValue(preset.end_time);
-  if (!areDashboardShiftTimesComplete(startTime, endTime)) return null;
+  if (!areAreaCalendarShiftTimesComplete(startTime, endTime)) return null;
   return { startTime, endTime };
 }
 
@@ -208,7 +208,7 @@ export function applyPersonalbedarfTimesToBulkRow<
   row: T,
   options: {
     serviceHours: readonly AreaServiceHourRef[];
-    assignmentPresets: readonly DashboardAssignmentPreset[];
+    assignmentPresets: readonly AreaCalendarAssignmentPreset[];
     staffingRules: readonly LocationAreaStaffing[];
     areaId: string;
     staffingEntries: readonly TagAreaHeaderStaffingEntry[];

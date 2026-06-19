@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, MouseEvent, ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import {
   Button,
@@ -41,10 +41,10 @@ export {
   settingsModalRootClass,
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
-  dashboardAlertDialogClass,
-  dashboardModalBackdropClass,
-  dashboardModalDialogClass,
-  dashboardNestedModalOverlayClass,
+  areaCalendarAlertDialogClass,
+  areaCalendarModalBackdropClass,
+  areaCalendarModalDialogClass,
+  areaCalendarNestedModalOverlayClass,
 } from "./settings-modal-shell";
 
 export const SETTINGS_LIST_SCROLL_CLASS =
@@ -60,6 +60,10 @@ export const SETTINGS_STAFFING_PANEL_LIST_SCROLL_CLASS =
 
 export const SETTINGS_LIST_SCROLL_COMPACT_CLASS =
   SETTINGS_FOUR_ROW_TABLE_LIST_SCROLL_CLASS;
+
+/** Tabellenkopf (~1.75rem) + max. 10 sichtbare Datenzeilen à ~1.75rem */
+export const OVERVIEW_ABSENCES_LIST_SCROLL_CLASS =
+  "max-h-[calc(1.75rem+17.5rem)] overflow-auto";
 
 /** Tabellenkopf (~1.75rem) + max. 4 sichtbare Datenzeilen à ~1.75rem */
 export const SETTINGS_ABSENCES_LIST_SCROLL_CLASS =
@@ -266,6 +270,14 @@ export function SettingsListRowDeleteButton({
   return <Tooltip content={title ?? label}>{button}</Tooltip>;
 }
 
+export function shouldIgnoreSettingsListRowActivation(
+  event: MouseEvent<HTMLElement>
+): boolean {
+  return !!event.target.closest(
+    "label, button, input, textarea, select, a, [role='checkbox']"
+  );
+}
+
 export function SettingsListRowCheckbox({
   checked,
   disabled,
@@ -280,17 +292,22 @@ export function SettingsListRowCheckbox({
   className?: string;
 }) {
   return (
-    <Checkbox
-      checked={checked}
-      disabled={disabled}
-      aria-label={ariaLabel}
-      className={cn("mx-auto", className)}
+    <span
+      className="inline-flex"
+      onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
-      onChange={(event) => {
-        event.stopPropagation();
-        onChange();
-      }}
-    />
+    >
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        className={cn("mx-auto", className)}
+        onChange={(event) => {
+          event.stopPropagation();
+          onChange();
+        }}
+      />
+    </span>
   );
 }
 

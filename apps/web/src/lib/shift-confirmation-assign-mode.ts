@@ -15,17 +15,20 @@ export function resolveShiftConfirmationEnabledForAssign(input: {
 export function resolveSimulatedProposedAssignOptions(input: {
   organizationEnabled: boolean;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
   managerEmail: string;
 }): {
   shiftConfirmationEnabled: boolean;
   relaxAppRegistrationGate: boolean;
 } {
   const shiftConfirmationEnabled = resolveShiftConfirmationEnabledForAssign(input);
+  const isSuperadmin = isSuperadminDeveloperEmail(input.managerEmail);
   const relaxAppRegistrationGate =
-    shiftConfirmationEnabled &&
-    !input.organizationEnabled &&
-    input.simulatedProposedOnAssign === true &&
-    isSuperadminDeveloperEmail(input.managerEmail);
+    isSuperadmin &&
+    (input.relaxAppRegistrationGate === true ||
+      (shiftConfirmationEnabled &&
+        !input.organizationEnabled &&
+        input.simulatedProposedOnAssign === true));
 
   return { shiftConfirmationEnabled, relaxAppRegistrationGate };
 }

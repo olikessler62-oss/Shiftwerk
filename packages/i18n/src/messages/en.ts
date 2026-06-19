@@ -36,10 +36,14 @@ export const en = {
     basic: "Employee",
   },
   nav: {
-    dashboard: "Planner",
-    planning: "Dashboard",
+    dashboard: "Dashboard",
+    planning: "Area calendar",
     absences: "Absences",
     reports: "Reports",
+    overview: "Overview",
+    overviewAbsences: "Absences",
+    overviewCompensation: "Pay/Surcharges",
+    overviewAvailabilities: "Availabilities",
     settings: "Settings",
     shiftTypes: "Shift types",
     qualifications: "Jobs",
@@ -59,7 +63,29 @@ export const en = {
     closeMenu: "Close menu",
     superadmin: "Superadmin",
     superadminActionsTitle: "Actions",
-    superadminSimulationTitle: "Simulation",
+    superadminOrganizationTitle: "Organization",
+    superadminOrganizationHint:
+      "Organization checkboxes are persisted with Save. UI simulation applies to this browser session only.",
+    superadminSimulationTitle: "UI simulation (session)",
+    superadminEmployeesTitle: "Employees (test profiles)",
+    superadminEmployeesHint:
+      "Settings are saved immediately. For shift assignment, push/email (outbox), cancellation, and mobile app tests — without using normal profile settings.",
+    superadminEmployeeColumnName: "Name",
+    superadminEmployeeColumnRole: "Role",
+    superadminEmployeeActive: "Active",
+    superadminEmployeeSchedulable: "Schedulable",
+    superadminEmployeeAppRegistered: "App",
+    superadminEmployeeAppRegisteredHint:
+      "App registration — required for assignment when shift confirmation is on and for the push channel.",
+    superadminEmployeeEmailFallback: "Email",
+    superadminEmployeeEmailFallbackHint:
+      "Email mode — alternative to the app; notifications go to the outbox.",
+    superadminEmployeeMobileHint:
+      "Mobile: cancel/swap only with employee role and org shift confirmation enabled.",
+    superadminEmployeeEmpty: "No profiles found.",
+    superadminEmployeeSaving: "Saving…",
+    superadminEmployeeSaveError: "Save failed.",
+    superadminEmployeeLoadError: "Could not load profiles.",
     superadminSimpleCalendar: "Simple calendar",
     superadminSimpleCalendarHint: "Only the first shift per employee and day",
     superadminShiftConfirmation: "Shift confirmation",
@@ -68,6 +94,20 @@ export const en = {
     superadminShiftConfirmationProposedOnAssign: "New assignments as “Proposed”",
     superadminShiftConfirmationProposedOnAssignHint:
       "Saves newly assigned shifts as proposed and allows “Request confirmation” (requested status) — without push/email and without the org setting. Superadmin only.",
+    superadminRelaxAppRegistrationGate: "Skip app registration check",
+    superadminRelaxAppRegistrationGateHint:
+      "Allows shift assignment without app registration or email mode — superadmin only, this session only.",
+    superadminTabSimulation: "Simulation",
+    superadminTabShifts: "Shift statuses",
+    superadminShiftsHint:
+      "All organization shifts — change status directly via dropdown (test mode).",
+    superadminShiftColumnLocationArea: "Location / area",
+    superadminShiftColumnDate: "Date",
+    superadminShiftColumnTemplate: "Shift",
+    superadminShiftColumnTime: "Time",
+    superadminShiftColumnEmployee: "Employee",
+    superadminShiftColumnStatus: "Status",
+    superadminShiftEmpty: "No shifts found.",
     dbReset: "DB reset",
     dbResetPending: "Resetting…",
     dbResetConfirmTitle: "Reset database?",
@@ -76,7 +116,54 @@ export const en = {
     dbResetConfirm:
       "All data for this organization will be deleted — except the organization, locations, roles, and qualifications.\n\nProfiles, auth logins, shifts, areas, absences, and all other planning data will be removed. You will be signed out afterwards.\n\nContinue?",
   },
-  dashboard: {
+  overview: {
+    absencesDescription:
+      "Overview of staff absences and time off.",
+    compensationDescription:
+      "Overview of pay and surcharges.",
+    availabilitiesDescription:
+      "Overview of staff availabilities.",
+    absences: {
+      title: "Absences",
+      listTitle: "Current and upcoming absences",
+      period: "Period",
+      time: "Time",
+      fullDay: "All day",
+      emptyList: "No current or upcoming absences.",
+      inlineEditHint:
+        "Select a row — create, edit, and delete apply to that employee.",
+      selectEmployeeHint:
+        "Select a row, then use an action below — or double-click to edit.",
+      selectedEmployeeHint: "Editing for: {name}",
+      emptyEditHint: "Select an employee row in the list first, then use “New”.",
+    },
+    availabilities: {
+      title: "Availabilities",
+      listTitle: "Current and upcoming availabilities",
+      day: "Day",
+      time: "Time",
+      emptyList: "No current or upcoming availabilities.",
+      inlineEditHint:
+        "Select a row — create, edit, and delete apply to that employee.",
+      selectEmployeeHint:
+        "Select a row, then use an action below — or double-click to edit.",
+      selectedEmployeeHint: "Editing for: {name}",
+      emptyEditHint: "Select an employee row in the list first, then use “New”.",
+      jumpToEmployee: "Select employee …",
+      jumpToEmployeeFilter: "Search employees …",
+      jumpToEmployeeEmpty: "No matching employee in the list.",
+    },
+  },
+  superadmin: {
+    errors: {
+      loadProfilesFailed: "Could not load profiles.",
+      profileNotFound: "Profile not found.",
+      saveProfileFailed: "Could not save profile settings.",
+      loadShiftsFailed: "Could not load shifts.",
+      saveShiftStatusFailed: "Could not save shift status.",
+    },
+  },
+  areaCalendar: {
     location: "Location",
     selectLocation: "Select location",
     noLocations: "No location created",
@@ -101,6 +188,8 @@ export const en = {
     editShift: "Edit shift",
     addShiftTitle: "Add shift",
     bulkShiftTitle: "Assign/edit duty times",
+    bulkShiftNewAssignmentsSection: "New assignments",
+    bulkShiftExistingShiftsSection: "Existing shifts",
     bulkShiftStaffingPrefix: "Staffing:",
     bulkShiftStaffingPeriodLabel: "{weekday} {start} to {end}",
     bulkShiftStaffingTimeRangeLabel: "{start} – {end}",
@@ -340,6 +429,8 @@ export const en = {
     availabilityTo: "To",
     availabilityOvernightConfirm:
       "Availability spans past midnight: {range}. Is that correct?",
+    availabilityDeleteShiftConflict:
+      "Shift assignments still exist for this availability. Please edit the affected shifts first.",
     selectShiftTypeRequired: "Please select a shift type.",
     confirmRemoveAvailability: "really remove?",
     activeYes: "Active",
@@ -534,7 +625,7 @@ export const en = {
     areaQualificationTemplatesAllAssigned:
       "All organization jobs are already assigned.",
     areaShiftTemplatesHint:
-      "Optional presets to fill in times quickly when assigning shifts in the dashboard.",
+      "Optional presets to fill in times quickly when assigning shifts in the area calendar.",
     areaShiftTemplatesEmpty: "No shift templates for this area yet.",
     areaShiftTemplatesCreateTitle: "Add shift template",
     areaShiftTemplatesEditTitle: "Edit shift template",
@@ -637,7 +728,7 @@ export const en = {
       unsavedChanges: "Discard unsaved changes?",
       shiftConflictTitle: "Shifts affected",
       shiftConflictMessage:
-        "{count} scheduled shift(s) fall within the absence period. Save anyway?",
+        "{count} scheduled shift(s) fall within the absence period. Shifts remain assigned and appear under Shift statuses → Conflicts. Save anyway?",
       shiftConflictProceed: "Save anyway",
       shiftConflictBack: "Back",
       filterAll: "All",
@@ -668,7 +759,7 @@ export const en = {
       },
     },
   },
-  planning: {
+  dashboard: {
     headerSubtitle: "Shift plan",
     headerCalendarWeek: "CW {week}",
     readOnlyWeek:
@@ -697,6 +788,7 @@ export const en = {
     cellAbsent: "Absent",
     cellNoAvailability: "No availability",
     cellFree: "Free",
+    addShiftTitle: "Add shift",
     shiftCardTooltipTemplate: "Shift: {name}",
     contextAssignSingle: "Assign single shift",
     contextAssignBulk: "Assign multiple shifts",
@@ -765,6 +857,7 @@ export const en = {
       pending: "Pending",
       rejected: "Rejected",
       confirmed: "Confirmed",
+      canceled: "Canceled",
     },
     tooltipStatus: {
       proposed: "Planned",
@@ -772,11 +865,32 @@ export const en = {
       pending: "Pending",
       rejected: "Rejected",
       confirmed: "Confirmed",
+      canceled: "Canceled",
     },
     actions: {
       requestConfirmation: "Request confirmation",
       sendResponses: "Send responses",
+      cancelShiftManager: "Cancel shift",
+      cancelShiftEmployee: "Decline shift",
+      resendConfirmation: "Request confirmation again",
+      setConfirmed: "Set status to confirmed",
     },
+    cancel: {
+      confirmManager: "Cancel this shift assignment?",
+      confirmManagerNamed: "Cancel the shift for {name}?",
+      confirmEmployee: "Do you really want to decline this shift?",
+      pastShift: "Past shifts can no longer be canceled.",
+      blockedByStatus:
+        "This shift cannot be canceled because its status is \"{status}\".",
+      failed: "Cancel failed.",
+    },
+    pastConfirm: {
+      notPast: "Only past shifts can be confirmed manually.",
+      alreadyConfirmed: "This shift is already confirmed.",
+      failed: "Confirm failed.",
+    },
+    deleteBlockedByStatus:
+      "This shift cannot be deleted because its status is \"{status}\".",
     send: {
       modalTitle: "Request confirmation",
       modalHint:
@@ -821,6 +935,8 @@ export const en = {
         rejected: "Rejected",
         proposed: "Not sent",
         requested: "Confirmation requested",
+        confirmed: "Confirmed",
+        canceled: "Canceled",
       },
     },
     communication: {
@@ -828,17 +944,46 @@ export const en = {
       headerButton: "Shift statuses",
       disabledHint:
         "Shift confirmation is disabled. Enable it in organization settings.",
+      categories: {
+        conflicts: "Conflicts",
+        swaps: "Swap requests",
+        pending: "Pending",
+        rejected: "Rejected",
+        proposed: "Not sent",
+        requested: "Confirmation requested",
+        confirmed: "Confirmed",
+        canceled: "Employee canceled",
+      },
+      colConflict: "Absence",
       colSelection: "Selection",
       colActions: "Actions",
       areaUnknown: "No area",
       rowRequest: "Request",
       rowResend: "Request again",
+      rowReassign: "Reassign",
+      rowSelect: "Select",
+      actionDelete: "Delete",
+      actionDismissFromList: "Remove from list",
+      rowDismissFromList: "Hide",
+      dismissFromListSuccess: "{count} entries removed from the list.",
+      deleteConfirmOne: "Delete this shift?",
+      deleteConfirmMany: "Delete {count} shifts?",
+      cancelConfirmOne: "Cancel this shift assignment?",
+      cancelConfirmMany: "Cancel {count} shift assignments?",
+      deleteSuccess: "{count} shifts deleted.",
+      cancelSuccess: "{count} shifts canceled.",
+      partialDelete: "{done} deleted, {failed} failed.",
+      partialCancel: "{done} canceled, {failed} failed.",
       resendSelected: "Request again",
       resendSuccess: "{count} requests sent.",
       partialResend: "{sent} sent, {failed} failed.",
       tabActionSend: "Send",
       reassignRequiresOne: "Select exactly one shift to reassign.",
       statusRequested: "Confirmation requested",
+      swapColRequester: "Requester",
+      swapColTarget: "Target employee",
+      swapOpenTarget: "Open",
+      swapActionsHint: "Handling swap requests will be added in a later version.",
     },
     settings: {
       enabled: "Employee shift confirmation",
@@ -878,7 +1023,7 @@ export const en = {
     allowRetroactiveCompensationHint:
       "Allows hourly rates with a valid-from date in the past. Future valid-from dates are always allowed.",
     compensationPlanningDisclaimer:
-      "Dashboard costs are planning figures only and do not replace payroll or audit-proof records.",
+      "Area calendar costs are planning figures only and do not replace payroll or audit-proof records.",
     shiftConfirmationEnabledLabel: "Employee shift confirmation",
     shiftConfirmationEnabledHint:
       "Employees must confirm assigned shifts before they become binding.",

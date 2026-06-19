@@ -10,7 +10,7 @@ const MINUTES_PER_DAY = 24 * 60;
 
 type TimeSegment = { start: number; end: number };
 
-function dashboardTimeKey(raw: string): string {
+function areaCalendarTimeKey(raw: string): string {
   const trimmed = raw.trim();
   const parts = trimmed.split(":");
   const hRaw = parts[0] ?? "00";
@@ -68,17 +68,17 @@ export function shiftWindowFitsAvailabilitySlot(
   slotEnd: string
 ): boolean {
   return availabilityRangeContainedInWindow(
-    dashboardTimeKey(shiftStart),
-    dashboardTimeKey(shiftEnd),
-    dashboardTimeKey(slotStart),
-    dashboardTimeKey(slotEnd)
+    areaCalendarTimeKey(shiftStart),
+    areaCalendarTimeKey(shiftEnd),
+    areaCalendarTimeKey(slotStart),
+    areaCalendarTimeKey(slotEnd)
   );
 }
 
 export function areShiftAssignTimesComplete(startTime: string, endTime: string): boolean {
   return parseAvailabilityTimeRange({
-    start_time: dashboardTimeKey(startTime),
-    end_time: dashboardTimeKey(endTime),
+    start_time: areaCalendarTimeKey(startTime),
+    end_time: areaCalendarTimeKey(endTime),
   }).ok;
 }
 

@@ -34,10 +34,14 @@ export const de = {
     basic: "Mitarbeiter",
   },
   nav: {
-    dashboard: "Planer",
-    planning: "Dashboard",
+    dashboard: "Dashboard",
+    planning: "Bereich-Kalender",
     absences: "Abwesenheiten",
     reports: "Berichte",
+    overview: "Übersicht",
+    overviewAbsences: "Abwesenheiten",
+    overviewCompensation: "Entgelt/Zuschläge",
+    overviewAvailabilities: "Verfügbarkeiten",
     settings: "Einstellungen",
     shiftTypes: "Schichtarten",
     qualifications: "Tätigkeiten",
@@ -57,7 +61,29 @@ export const de = {
     closeMenu: "Menü schließen",
     superadmin: "Superadmin",
     superadminActionsTitle: "Aktionen",
-    superadminSimulationTitle: "Simulation",
+    superadminOrganizationTitle: "Organisation",
+    superadminOrganizationHint:
+      "Organisations-Checkboxen werden mit „Speichern“ persistiert. UI-Simulation gilt nur in dieser Browser-Session.",
+    superadminSimulationTitle: "UI-Simulation (Session)",
+    superadminEmployeesTitle: "Mitarbeiter (Testprofile)",
+    superadminEmployeesHint:
+      "Einstellungen werden sofort gespeichert. Für Schichtzuweisung, Push/E-Mail (Outbox), Absage und Mobile-App-Tests — ohne normale Profil-Einstellungen.",
+    superadminEmployeeColumnName: "Name",
+    superadminEmployeeColumnRole: "Rolle",
+    superadminEmployeeActive: "Aktiv",
+    superadminEmployeeSchedulable: "Planbar",
+    superadminEmployeeAppRegistered: "App",
+    superadminEmployeeAppRegisteredHint:
+      "App-Registrierung — Voraussetzung für Zuweisung bei Schichtbestätigung und Push-Kanal.",
+    superadminEmployeeEmailFallback: "E-Mail",
+    superadminEmployeeEmailFallbackHint:
+      "E-Mail-Modus — Alternative zur App; Benachrichtigungen landen in der Outbox.",
+    superadminEmployeeMobileHint:
+      "Mobile: Absage/Tausch nur mit Rolle Mitarbeiter und aktiver Org-Schichtbestätigung.",
+    superadminEmployeeEmpty: "Keine Profile vorhanden.",
+    superadminEmployeeSaving: "Speichert…",
+    superadminEmployeeSaveError: "Speichern fehlgeschlagen.",
+    superadminEmployeeLoadError: "Profile konnten nicht geladen werden.",
     superadminSimpleCalendar: "Simple-Kalender",
     superadminSimpleCalendarHint: "Nur erste Schicht pro Mitarbeiter und Tag",
     superadminShiftConfirmation: "Schichtbestätigung",
@@ -66,6 +92,20 @@ export const de = {
     superadminShiftConfirmationProposedOnAssign: "Neue Zuweisungen als „Geplant“",
     superadminShiftConfirmationProposedOnAssignHint:
       "Speichert neu zugewiesene Schichten mit Status proposed und erlaubt „Bestätigung anfordern“ (Status requested) — ohne Push/E-Mail und ohne Org-Einstellung. Nur für Superadmin.",
+    superadminRelaxAppRegistrationGate: "App-Registrierung nicht prüfen",
+    superadminRelaxAppRegistrationGateHint:
+      "Erlaubt Schichtzuweisung auch ohne App-Registrierung oder E-Mail-Modus — nur Superadmin, nur diese Session.",
+    superadminTabSimulation: "Simulation",
+    superadminTabShifts: "Schicht-Stati",
+    superadminShiftsHint:
+      "Alle Schichten der Organisation — Status direkt per Auswahl ändern (Testmodus).",
+    superadminShiftColumnLocationArea: "Standort / Bereich",
+    superadminShiftColumnDate: "Datum",
+    superadminShiftColumnTemplate: "Schicht",
+    superadminShiftColumnTime: "Zeit",
+    superadminShiftColumnEmployee: "Mitarbeiter",
+    superadminShiftColumnStatus: "Status",
+    superadminShiftEmpty: "Keine Schichten vorhanden.",
     dbReset: "DB reset",
     dbResetPending: "Wird zurückgesetzt…",
     dbResetConfirmTitle: "Datenbank zurücksetzen?",
@@ -74,7 +114,54 @@ export const de = {
     dbResetConfirm:
       "Alle Daten dieser Organisation werden gelöscht — außer Organisation, Standorte, Rollen und Tätigkeiten.\n\nProfile, Auth-Logins, Schichten, Bereiche, Abwesenheiten und alle weiteren Planungsdaten gehen verloren. Danach wirst du abgemeldet.\n\nFortfahren?",
   },
-  dashboard: {
+  overview: {
+    absencesDescription:
+      "Übersicht über Abwesenheiten und Urlaubszeiten des Personals.",
+    compensationDescription:
+      "Übersicht über Arbeitsentgelt und Zuschläge.",
+    availabilitiesDescription:
+      "Übersicht über Verfügbarkeiten des Personals.",
+    absences: {
+      title: "Abwesenheiten",
+      listTitle: "Aktuelle und geplante Abwesenheiten",
+      period: "Zeitraum",
+      time: "Zeit",
+      fullDay: "Ganztägig",
+      emptyList: "Keine aktuellen oder geplanten Abwesenheiten.",
+      inlineEditHint:
+        "Zeile wählen — Anlegen, Bearbeiten und Löschen gelten für den zugehörigen Mitarbeiter.",
+      selectEmployeeHint:
+        "Zeile auswählen, dann Aktion unten — oder Doppelklick zum Bearbeiten.",
+      selectedEmployeeHint: "Bearbeitung für: {name}",
+      emptyEditHint: "Zuerst einen Mitarbeiter in der Liste auswählen, dann „Neu“.",
+    },
+    availabilities: {
+      title: "Verfügbarkeiten",
+      listTitle: "Aktuelle und geplante Verfügbarkeiten",
+      day: "Tag",
+      time: "Zeit",
+      emptyList: "Keine aktuellen oder geplanten Verfügbarkeiten.",
+      inlineEditHint:
+        "Zeile wählen — Anlegen, Bearbeiten und Löschen gelten für den zugehörigen Mitarbeiter.",
+      selectEmployeeHint:
+        "Zeile auswählen, dann Aktion unten — oder Doppelklick zum Bearbeiten.",
+      selectedEmployeeHint: "Bearbeitung für: {name}",
+      emptyEditHint: "Zuerst einen Mitarbeiter in der Liste auswählen, dann „Neu“.",
+      jumpToEmployee: "Mitarbeiter wählen …",
+      jumpToEmployeeFilter: "Mitarbeiter suchen …",
+      jumpToEmployeeEmpty: "Kein passender Mitarbeiter in der Liste.",
+    },
+  },
+  superadmin: {
+    errors: {
+      loadProfilesFailed: "Profile konnten nicht geladen werden.",
+      profileNotFound: "Profil nicht gefunden.",
+      saveProfileFailed: "Profil-Einstellungen konnten nicht gespeichert werden.",
+      loadShiftsFailed: "Schichten konnten nicht geladen werden.",
+      saveShiftStatusFailed: "Schichtstatus konnte nicht gespeichert werden.",
+    },
+  },
+  areaCalendar: {
     location: "Standort",
     selectLocation: "Standort auswählen",
     noLocations: "Kein Standort angelegt",
@@ -99,6 +186,8 @@ export const de = {
     editShift: "Schicht bearbeiten",
     addShiftTitle: "Schicht hinzufügen",
     bulkShiftTitle: "Einsatzzeiten zuweisen/bearbeiten",
+    bulkShiftNewAssignmentsSection: "Neue Zuweisungen",
+    bulkShiftExistingShiftsSection: "Bestehende Schichten",
     bulkShiftStaffingPrefix: "Bedarf:",
     bulkShiftStaffingPeriodLabel: "{weekday} {start} bis {end} Uhr",
     bulkShiftStaffingTimeRangeLabel: "{start} – {end}",
@@ -338,6 +427,8 @@ export const de = {
     availabilityTo: "Bis",
     availabilityOvernightConfirm:
       "Die Verfügbarkeit reicht über die Tagesgrenze: {range}. Ist das so gewünscht?",
+    availabilityDeleteShiftConflict:
+      "Für diese Verfügbarkeit existieren noch Schichtzuweisungen. Bitte bearbeiten Sie zuerst die betroffenen Schichten.",
     selectShiftTypeRequired: "Bitte eine Schichtart auswählen.",
     confirmRemoveAvailability: "wirklich entfernen?",
     activeYes: "Aktiv",
@@ -533,7 +624,7 @@ export const de = {
     areaQualificationTemplatesAllAssigned:
       "Alle Tätigkeiten der Organisation sind bereits zugewiesen.",
     areaShiftTemplatesHint:
-      "Optional: Vorlagen zum schnellen Ausfüllen von Zeiten beim Zuweisen im Dashboard.",
+      "Optional: Vorlagen zum schnellen Ausfüllen von Zeiten beim Zuweisen im Bereich-Kalender.",
     areaShiftTemplatesEmpty: "Noch keine Schichtvorlagen für diesen Bereich.",
     areaShiftTemplatesCreateTitle: "Schichtvorlage anlegen",
     areaShiftTemplatesEditTitle: "Schichtvorlage bearbeiten",
@@ -638,7 +729,7 @@ export const de = {
       unsavedChanges: "Ungespeicherte Änderungen verwerfen?",
       shiftConflictTitle: "Schichten betroffen",
       shiftConflictMessage:
-        "{count} geplante Schicht(en) liegen im Abwesenheitszeitraum. Trotzdem speichern?",
+        "{count} geplante Schicht(en) liegen im Abwesenheitszeitraum. Die Schichten bleiben zugewiesen und erscheinen unter Schicht-Stati → Konflikte. Trotzdem speichern?",
       shiftConflictProceed: "Trotzdem speichern",
       shiftConflictBack: "Zurück",
       filterAll: "Alle",
@@ -697,7 +788,7 @@ export const de = {
       profileCreateFailed: "Profil fehlgeschlagen",
     },
   },
-  planning: {
+  dashboard: {
     headerSubtitle: "Schichtplan",
     headerCalendarWeek: "KW {week}",
     readOnlyWeek:
@@ -727,6 +818,7 @@ export const de = {
     cellAbsent: "Abwesend",
     cellNoAvailability: "Keine Verfügbarkeit",
     cellFree: "Frei",
+    addShiftTitle: "Schicht hinzufügen",
     shiftCardTooltipTemplate: "Schicht: {name}",
     contextAssignSingle: "Einzelne Schicht zuweisen",
     contextAssignBulk: "Mehrfach-Schichtzuweisung",
@@ -767,6 +859,7 @@ export const de = {
       pending: "Ausstehend",
       rejected: "Abgelehnt",
       confirmed: "Bestätigt",
+      canceled: "Abgesagt",
     },
     tooltipStatus: {
       proposed: "Geplant",
@@ -774,11 +867,33 @@ export const de = {
       pending: "Ausstehend",
       rejected: "Abgelehnt",
       confirmed: "Bestätigt",
+      canceled: "Abgesagt",
     },
     actions: {
       requestConfirmation: "Bestätigung anfordern",
       sendResponses: "Antworten senden",
+      cancelShiftManager: "Schicht stornieren",
+      cancelShiftEmployee: "Schicht absagen",
+      resendConfirmation: "Erneute Bestätigung anfordern",
+      setConfirmed: "Status auf bestätigt setzen",
     },
+    cancel: {
+      confirmManager: "Soll diese Schicht wirklich storniert werden?",
+      confirmManagerNamed:
+        "Soll die Schicht für {name} wirklich storniert werden?",
+      confirmEmployee: "Möchtest du diese Schicht wirklich absagen?",
+      pastShift: "Vergangene Schichten können nicht abgesagt werden.",
+      blockedByStatus:
+        "Die Schicht kann nicht abgesagt werden, weil sie den Status „{status}“ hat.",
+      failed: "Absage fehlgeschlagen.",
+    },
+    pastConfirm: {
+      notPast: "Nur vergangene Schichten können manuell bestätigt werden.",
+      alreadyConfirmed: "Die Schicht ist bereits bestätigt.",
+      failed: "Bestätigen fehlgeschlagen.",
+    },
+    deleteBlockedByStatus:
+      "Die Schicht kann nicht gelöscht werden, weil sie den Status „{status}“ hat.",
     send: {
       modalTitle: "Bestätigung anfordern",
       modalHint:
@@ -824,6 +939,8 @@ export const de = {
         rejected: "Abgelehnt",
         proposed: "Nicht versendet",
         requested: "Bestätigung angefordert",
+        confirmed: "Bestätigt",
+        canceled: "Abgesagt",
       },
     },
     communication: {
@@ -831,17 +948,47 @@ export const de = {
       headerButton: "Schicht-Stati",
       disabledHint:
         "Schichtbestätigung ist deaktiviert. Aktivieren Sie die Funktion in den Organisationseinstellungen.",
+      categories: {
+        conflicts: "Konflikte",
+        swaps: "Tausch-Anfragen",
+        pending: "Ausstehend",
+        rejected: "Abgelehnt",
+        proposed: "Nicht versendet",
+        requested: "Bestätigung angefordert",
+        confirmed: "Bestätigt",
+        canceled: "MA abgesagt",
+      },
+      colConflict: "Abwesenheit",
       colSelection: "Auswahl",
       colActions: "Aktionen",
       areaUnknown: "Ohne Bereich",
       rowRequest: "Anfordern",
       rowResend: "Erneut anfordern",
+      rowReassign: "Neu zuweisen",
+      rowSelect: "Auswählen",
+      actionDelete: "Löschen",
+      actionDismissFromList: "Aus Liste entfernen",
+      rowDismissFromList: "Ausblenden",
+      dismissFromListSuccess: "{count} Einträge aus der Liste entfernt.",
+      deleteConfirmOne: "Soll diese Schicht wirklich gelöscht werden?",
+      deleteConfirmMany: "Sollen {count} Schichten wirklich gelöscht werden?",
+      cancelConfirmOne: "Soll diese Schicht wirklich storniert werden?",
+      cancelConfirmMany: "Sollen {count} Schichten wirklich storniert werden?",
+      deleteSuccess: "{count} Schichten gelöscht.",
+      cancelSuccess: "{count} Schichten storniert.",
+      partialDelete: "{done} gelöscht, {failed} fehlgeschlagen.",
+      partialCancel: "{done} storniert, {failed} fehlgeschlagen.",
       resendSelected: "Erneut anfordern",
       resendSuccess: "{count} Anfragen gesendet.",
       partialResend: "{sent} gesendet, {failed} fehlgeschlagen.",
       tabActionSend: "Versenden",
       reassignRequiresOne: "Bitte genau eine Schicht zum Neu zuweisen auswählen.",
       statusRequested: "Bestätigung angefordert",
+      swapColRequester: "Anfragender",
+      swapColTarget: "Ziel-Mitarbeiter",
+      swapOpenTarget: "Offen",
+      swapActionsHint:
+        "Bearbeitung von Tausch-Anfragen folgt in einer späteren Version.",
     },
     settings: {
       enabled: "Schichtbestätigung durch Mitarbeiter",
@@ -881,7 +1028,7 @@ export const de = {
     allowRetroactiveCompensationHint:
       "Erlaubt Stundensätze mit Gültig ab in der Vergangenheit. Einträge mit zukünftigem Gültig ab sind immer möglich.",
     compensationPlanningDisclaimer:
-      "Angezeigte Kosten im Dashboard sind Planungswerte und ersetzen keine Lohnabrechnung oder revisionssichere Belege.",
+      "Angezeigte Kosten im Bereich-Kalender sind Planungswerte und ersetzen keine Lohnabrechnung oder revisionssichere Belege.",
     shiftConfirmationEnabledLabel: "Schichtbestätigung durch Mitarbeiter",
     shiftConfirmationEnabledHint:
       "Mitarbeiter müssen zugewiesene Schichten bestätigen, bevor sie verbindlich sind.",

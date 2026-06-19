@@ -1,7 +1,7 @@
 import {
   resolveShiftTemplateNameForAssignment,
-  type DashboardAssignmentPreset,
-} from "@/lib/dashboard-assignment-presets";
+  type AreaCalendarAssignmentPreset,
+} from "@/lib/areacalendar-assignment-presets";
 import type { PlanningShiftDisplayPart } from "@/lib/planning-overnight-shift-display";
 import { formatTime, formatTimeRange } from "@/lib/planning-utils";
 import type { PlanningShift } from "@/lib/planning-shift-card";
@@ -18,7 +18,7 @@ export type PlanningShiftJobContext = {
   defaultAreaId: string | null;
   serviceHours: readonly AreaServiceHourRef[];
   staffingRules: readonly LocationAreaStaffing[];
-  assignmentPresets: readonly DashboardAssignmentPreset[];
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[];
   profileQualificationIds: Record<string, string[]>;
   qualificationNameById: ReadonlyMap<string, string>;
   qualificationSortOrder: ReadonlyMap<string, number>;
@@ -95,7 +95,7 @@ export type PlanningExpandedShiftCardContent = {
 
 export function resolvePlanningShiftTemplateName(
   shift: PlanningShift,
-  presets: readonly DashboardAssignmentPreset[]
+  presets: readonly AreaCalendarAssignmentPreset[]
 ): string | null {
   return resolveShiftTemplateNameForAssignment(
     shift.startTime,
@@ -121,7 +121,7 @@ export function buildPlanningShiftSegmentTimeLabel(
 
 export function buildPlanningShiftSegmentCardContent(
   shift: PlanningShift,
-  presets: readonly DashboardAssignmentPreset[],
+  presets: readonly AreaCalendarAssignmentPreset[],
   part: PlanningShiftDisplayPart,
   options?: {
     employeeName?: string;
@@ -161,7 +161,7 @@ export function buildPlanningShiftSegmentCardContent(
 
 export function buildPlanningExpandedShiftCardContent(
   shift: PlanningShift,
-  presets: readonly DashboardAssignmentPreset[],
+  presets: readonly AreaCalendarAssignmentPreset[],
   options?: {
     employeeName?: string;
     confirmationStatusLine?: string;

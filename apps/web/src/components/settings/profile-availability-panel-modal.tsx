@@ -11,6 +11,7 @@ import {
   deleteProfileRecurringAvailability,
   fetchProfileRecurringAvailability,
 } from "@/app/actions/profile-availability";
+import { resolveProfileAvailabilityActionError } from "@/lib/profile-availability-action-error";
 import { fetchProfileShiftPreferences } from "@/app/actions/profile-shift-preferences";
 import { sortProfileRecurringAvailabilityBySchedule } from "@schichtwerk/database";
 import {
@@ -167,7 +168,7 @@ export function ProfileAvailabilityPanelModal({
       if (cancelled) return;
       setLoading(false);
       if (!result.ok) {
-        setErrorMessage(result.error);
+        setErrorMessage(resolveProfileAvailabilityActionError(result.error, t));
         applyList([]);
         return;
       }
@@ -247,7 +248,7 @@ export function ProfileAvailabilityPanelModal({
         availabilityId: selectedAvailability.id,
       });
       if (!result.ok) {
-        setErrorMessage(result.error);
+        setErrorMessage(resolveProfileAvailabilityActionError(result.error, t));
         return;
       }
       applyList(result.availability ?? []);
@@ -268,7 +269,7 @@ export function ProfileAvailabilityPanelModal({
           availabilityId,
         });
         if (!result.ok) {
-          setErrorMessage(result.error);
+          setErrorMessage(resolveProfileAvailabilityActionError(result.error, t));
           if (result.availability) applyList(result.availability);
           bulkSelection.clear();
           setConfirmBulkRemove(false);

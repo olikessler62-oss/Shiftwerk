@@ -2,15 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type {
-  DashboardShiftCompensationByKey,
+  AreaCalendarShiftCompensationByKey,
   TagAreaShiftRef,
 } from "@/lib/tag-area-footer-stats";
 
 export function useLazyShiftCompensation(
   shifts: readonly TagAreaShiftRef[]
-): DashboardShiftCompensationByKey {
+): AreaCalendarShiftCompensationByKey {
   const [compensation, setCompensation] =
-    useState<DashboardShiftCompensationByKey>({});
+    useState<AreaCalendarShiftCompensationByKey>({});
 
   const requestKey = useMemo(
     () =>
@@ -32,7 +32,7 @@ export function useLazyShiftCompensation(
     let cancelled = false;
     const controller = new AbortController();
 
-    void fetch("/api/dashboard/shift-compensation", {
+    void fetch("/api/areacalendar/shift-compensation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shifts }),
@@ -42,7 +42,7 @@ export function useLazyShiftCompensation(
         if (!response.ok) return {};
         const data: unknown = await response.json();
         if (typeof data !== "object" || data === null) return {};
-        return data as DashboardShiftCompensationByKey;
+        return data as AreaCalendarShiftCompensationByKey;
       })
       .then((data) => {
         if (!cancelled) setCompensation(data);

@@ -5,6 +5,38 @@ export type BulkShiftRowGroupingRef = {
   endTime: string;
 };
 
+export type BulkShiftRowPartitionRef = BulkShiftRowGroupingRef & {
+  existingShiftId?: string;
+};
+
+export function isExistingBulkShiftRow(row: {
+  existingShiftId?: string;
+}): boolean {
+  return Boolean(row.existingShiftId);
+}
+
+export function partitionBulkShiftRows<T extends { existingShiftId?: string }>(
+  rows: readonly T[]
+): { newRows: T[]; existingRows: T[] } {
+  const newRows: T[] = [];
+  const existingRows: T[] = [];
+  for (const row of rows) {
+    if (isExistingBulkShiftRow(row)) {
+      existingRows.push(row);
+    } else {
+      newRows.push(row);
+    }
+  }
+  return { newRows, existingRows };
+}
+
+export function mergeBulkShiftRowPartitions<T>(
+  newRows: readonly T[],
+  existingRows: readonly T[]
+): T[] {
+  return [...newRows, ...existingRows];
+}
+
 export function bulkShiftRowsMatchForGrouping(
   a: BulkShiftRowGroupingRef,
   b: BulkShiftRowGroupingRef
@@ -24,22 +56,35 @@ export function isBulkShiftEmployeeSortActive(
   return column === "employee" && (direction === "asc" || direction === "desc");
 }
 
-/** Einfügeposition für neue Zeile in der Listen-Reihenfolge. */
-export function insertBulkShiftRowInList<T extends BulkShiftRowGroupingRef>(
-  rows: readonly T[],
+/** Einfügeposition für neue Zeile innerhalb der Sektion „Neue Zuweisungen“. */
+export function insertBulkShiftRowInNewSection<T extends BulkShiftRowGroupingRef>(
+  newRows: readonly T[],
   newRow: T,
   sortByEmployeeActive: boolean
 ): T[] {
   if (sortByEmployeeActive) {
-    return [newRow, ...rows];
+    return [newRow, ...newRows];
   }
 
-  const matchIndex = rows.findIndex((row) =>
+  const matchIndex = newRows.findIndex((row) =>
     bulkShiftRowsMatchForGrouping(row, newRow)
   );
   if (matchIndex === -1) {
-    return [newRow, ...rows];
+    return [newRow, ...newRows];
   }
 
-  return [...rows.slice(0, matchIndex), newRow, ...rows.slice(matchIndex)];
+  return [...newRows.slice(0, matchIndex), newRow, ...newRows.slice(matchIndex)];
+}
+
+/** Einfügeposition für neue Zeile — nur oben bei neuen Zuweisungen, nie bei bestehenden Schichten. */
+export function insertBulkShiftRowInList<T extends BulkShiftRowPartitionRef>(
+  rows: readonly T[],
+  newRow: T,
+  sortByEmployeeActive: boolean
+): T[] {
+  const { newRows, existingRows } = partitionBulkShiftRows(rows);
+  return mergeBulkShiftRowPartitions(
+    insertBulkShiftRowInNewSection(newRows, newRow, sortByEmployeeActive),
+    existingRows
+  );
 }

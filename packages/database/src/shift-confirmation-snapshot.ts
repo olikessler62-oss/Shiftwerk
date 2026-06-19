@@ -24,7 +24,7 @@ export type ShiftConfirmationSnapshotSource = {
 };
 
 const SNAPSHOT_STATUSES_REQUIRING_RESET: ReadonlySet<ShiftConfirmationStatus> =
-  new Set(["requested", "confirmed", "rejected", "pending"]);
+  new Set(["requested", "confirmed", "rejected", "pending", "canceled"]);
 
 export function buildShiftConfirmationSnapshot(
   shift: ShiftConfirmationSnapshotSource

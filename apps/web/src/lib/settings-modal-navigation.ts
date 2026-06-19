@@ -8,7 +8,6 @@ export const SETTINGS_MODAL_QUERY_FLAGS = [
   "qualifikationen",
   "sonderzuschlaege",
   "abwesenheiten",
-  "arbeitsentgelt",
 ] as const;
 
 export type SettingsModalQueryFlag = (typeof SETTINGS_MODAL_QUERY_FLAGS)[number];

@@ -1,0 +1,2351 @@
+"use client";
+
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { assignShiftWithTimes, removeShift } from "@/app/actions/shifts";
+import { cancelShiftAsManager, confirmPastShiftAsManager, resendConfirmationRequestForSelectedShifts } from "@/app/actions/shift-confirmations";
+import { isPastCalendarDate, toISODate, startOfWeek, parseISODate } from "@/lib/dates";
+import { usePlanningEmployeeListContextMenu } from "@/lib/use-planning-employee-list-context-menu";
+import { DashboardCalendarGrid } from "@/components/dashboard/dashboard-calendar-grid";
+import { PlanningEmployeeListContextMenu } from "@/components/planning/planning-employee-list-context-menu";
+import { DashboardHeaderPlacement } from "@/components/dashboard/dashboard-header-placement";
+import { useDashboardAppSidebarContent } from "@/components/dashboard/dashboard-app-sidebar-slot";
+import { DashboardShiftTemplateSidebarList } from "@/components/dashboard/dashboard-shift-template-sidebar-list";
+import { DashboardAvailabilityLegendSidebar } from "@/components/dashboard/dashboard-availability-legend-sidebar";
+import {
+  DashboardAssignShiftModal,
+  type DashboardShiftActionResult,
+} from "@/components/dashboard/dashboard-assign-shift-modal";
+import { AreaCalendarBulkShiftModal } from "@/components/areacalendar/areacalendar-bulk-shift-modal";
+import type { AreaCalendarBulkShiftDialogState } from "@/components/areacalendar/areacalendar-add-shift-modal";
+import {
+  CommunicationHubModal,
+  communicationBadgeCount,
+} from "@/components/areacalendar/communication-hub-modal";
+import { AreaCalendarShiftDeleteConfirmModal } from "@/components/areacalendar/areacalendar-shift-delete-confirm-modal";
+import { ShiftCancelConfirmModal } from "@/components/shifts/shift-cancel-confirm-modal";
+import {
+  planningShiftToAreaCalendarCard,
+  type PlanningShift,
+} from "@/lib/planning-shift-card";
+import { resolveNarrowDayColumnWidthsPx } from "@/lib/day-column-width";
+import {
+  createPlanningActiveDayDates,
+  PLANNING_CALENDAR_LAYOUT_ANIMATION_DELAY_MS,
+  PLANNING_DAY_FOOTER_ROW_HEIGHT,
+  PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
+  PLANNING_EMPLOYEE_ROW_HEIGHT,
+  planningCalendarMinWidth,
+  planningGridTemplateColumns,
+  resolvePlanningLayoutDayDates,
+} from "@/lib/planning-calendar-layout";
+import { CALENDAR_DAY_HEADER_ROW_HEIGHT } from "@/lib/calendar-day-header-styles";
+import { resolveLocationServiceDayTimeline } from "@/lib/shift-card-cell-layout";
+import {
+  isAnyAreaOpenInCalendar,
+  hasServiceHoursOnDate,
+  isAreaOpenOnDate,
+  findServiceHourIdForShift,
+  weekdayLabelFromIndex,
+  type AreaServiceHourRef,
+} from "@/lib/location-staffing-client";
+import {
+  computeBulkStaffingHeaderEntries,
+  staffingAssignmentsForPlanningAreaDay,
+} from "@/lib/bulk-staffing-header";
+import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
+import { resolveDashboardAssignPrefillFromOpenDemand } from "@/lib/dashboard-assign-prefill";
+import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
+import { isPastShiftDate } from "@/lib/planning-readonly";
+import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useOrgFeatures } from "@/lib/org-features-provider";
+import {
+  useEffectiveShiftConfirmationEnabled,
+  useShiftConfirmationSimulation,
+  useSimulatedProposedOnAssignRequest,
+} from "@/lib/shift-confirmation-simulation-context";
+import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
+import { useAppShellModalLockActive, useAppShellWaitCursorActive, useIsAppShellLocked } from "@/lib/app-shell-modal-lock";
+import { translateActionError } from "@/lib/translate-action-error";
+import {
+  canOpenPastUnconfirmedShiftContextMenu,
+  planningShiftCardShowsPointerCursor,
+  shiftCardAllowsRemoveFromAssignDialog,
+  shiftCardContextMenuActionLabelKey,
+  shiftCardContextMenuActions,
+  type ShiftCardContextMenuAction,
+} from "@/lib/shift-card-context-menu-actions";
+import {
+  canDeleteShift,
+  shiftDeleteBlockedMessage,
+} from "@/lib/shift-deletion-policy";
+import { SHIFT_CANCEL_PAST_ERROR } from "@schichtwerk/database";
+import {
+  canCancelShift,
+  shouldDisplayShiftOnPlanningCalendar,
+  translatePastConfirmError,
+  translateShiftCancelError,
+} from "@/lib/shift-cancellation-policy";
+import { toIntlLocale } from "@/i18n/intl-locale";
+import { cn } from "@/lib/cn";
+import {
+  headerToolbarPillButtonClass,
+  headerToolbarPillIconButtonClass,
+  headerToolbarPillPrimaryClass,
+  headerToolbarCountBadgeClass,
+  headerToolbarWeekNavGroupClass,
+  headerToolbarWeekNavIconButtonClass,
+  headerToolbarWeekNavTodayButtonClass,
+} from "@/lib/header-toolbar-styles";
+import {
+  getAreaCalendarWeekHeaderParts,
+  weeklySummary,
+} from "@/lib/planning-utils";
+import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
+import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
+import { buildSettingsModalUrl } from "@/lib/settings-modal-navigation";
+import {
+  areaShiftTemplatesForArea,
+  areaCalendarAssignmentPresetsForArea,
+  resolvePresetIdFromTimes,
+  areaShiftTemplateIdForAssign,
+  type AreaCalendarAssignmentPreset,
+} from "@/lib/areacalendar-assignment-presets";
+import { validateAreaCalendarShiftServiceHours } from "@/lib/service-hours-shift-validation";
+import {
+  areAreaCalendarShiftTimesComplete,
+  profileAvailabilityWeekdayFromAreaCalendarDate,
+} from "@/lib/available-employees-for-shift";
+import {
+  employeeHasRecurringAvailabilityOnWeekday,
+  employeeMatchesShiftAvailability,
+  isEmployeeAbsentOnDate,
+} from "@schichtwerk/database";
+import {
+  buildPlanningShiftsByCellDisplay,
+} from "@/lib/planning-overnight-shift-display";
+import { pickFirstPlanningShiftPerEmployeeDay } from "@/lib/simple-calendar-display-toggle";
+import { useSimpleCalendarDisplay } from "@/lib/simple-calendar-display-context";
+import { useDashboardStaffColumnWidthPx } from "@/lib/use-dashboard-staff-column-width";
+import {
+  APP_PAGE_TOOLBAR_HEADER_CLASS,
+  APP_SHELL_CONTENT_OFFSET_CLASS,
+  DASHBOARD_VIEW_ROOT_CLASS,
+  PLANNING_PAGE_CALENDAR_MAIN_CLASS,
+  PLANNING_PAGE_CALENDAR_SECTION_CLASS,
+} from "@/lib/app-shell-layout";
+import {
+  computeTagAreaDayFooterStatsForDate,
+  formatTagAreaFooterLabels,
+} from "@/lib/tag-area-footer-stats";
+import { useLazyShiftCompensation } from "@/lib/use-lazy-shift-compensation";
+import { useLocallyRemovedShifts } from "@/lib/use-locally-removed-shifts";
+import type {
+  CommunicationOpenOptions,
+  CommunicationSwapRequestRow,
+} from "@/lib/communication-hub";
+import { collectShiftAbsenceConflicts } from "@/lib/shift-absence-conflict";
+import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
+import type {
+  AbsenceRequest,
+  AreaShiftTemplateWithBreaks,
+  CompensationSurchargeType,
+  Location,
+  LocationArea,
+  LocationAreaStaffing,
+  Profile,
+  ProfileRecurringAvailability,
+  Qualification,
+  Role,
+  ManagerNotification,
+} from "@schichtwerk/types";
+import { AreaCalendarNotificationCenter } from "@/components/areacalendar/areacalendar-notification-center";
+import { LanguageSelect } from "@/components/i18n/language-select";
+import { SettingsMessageModal } from "@/components/settings/settings-message-modal";
+import {
+  Alert,
+  Button,
+  IconButton,
+} from "@/components/ui";
+import { Tooltip } from "@/components/ui/tooltip";
+
+export type { PlanningShift } from "@/lib/planning-shift-card";
+
+type Props = {
+  weekStart: string;
+  dates: string[];
+  employees: Profile[];
+  shifts: PlanningShift[];
+  locationShifts: PlanningShift[];
+  recurringAvailability: ProfileRecurringAvailability[];
+  absences: AbsenceRequest[];
+  communicationSwapRequests?: CommunicationSwapRequestRow[];
+  communicationCancelActors?: Record<string, "employee" | "manager">;
+  locations: Location[];
+  selectedLocationId: string | null;
+  areas: LocationArea[];
+  selectedAreaId: string | null;
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
+  serviceHours: AreaServiceHourRef[];
+  staffingRules: LocationAreaStaffing[];
+  qualifications: Qualification[];
+  profileQualificationIds: Record<string, string[]>;
+  readOnlyWeek?: boolean;
+  managerNotifications?: ManagerNotification[];
+  settingsModals?: {
+    profiles: Profile[];
+    roles: Role[];
+    compensationSurchargeTypes: CompensationSurchargeType[];
+  };
+};
+
+type Picker = { employeeId: string; date: string; shiftId?: string };
+
+type CellContextMenuState = {
+  x: number;
+  y: number;
+  employeeId: string;
+  date: string;
+  shiftId?: string;
+};
+
+type DayAssignBlockReason = "absent" | "no_availability";
+
+const PLANNING_CELL_CONTEXT_MENU_WIDTH_PX = 240;
+const PLANNING_CELL_CONTEXT_MENU_ITEM_HEIGHT_PX = 36;
+const CONTEXT_MENU_CLOSE_DISTANCE_PX = 20;
+
+function planningCellContextMenuHeightPx(
+  simplePlanning: boolean,
+  shiftConfirmationEnabled: boolean
+): number {
+  const items =
+    (simplePlanning ? 2 : 3) + (shiftConfirmationEnabled ? 1 : 0);
+  return items * PLANNING_CELL_CONTEXT_MENU_ITEM_HEIGHT_PX + 8;
+}
+
+function planningShiftContextMenuHeightPx(actionCount: number): number {
+  return actionCount * PLANNING_CELL_CONTEXT_MENU_ITEM_HEIGHT_PX + 8;
+}
+
+function clampPlanningContextMenuPosition(
+  clientX: number,
+  clientY: number,
+  menuHeight: number
+): { x: number; y: number } {
+  if (typeof window === "undefined") {
+    return { x: clientX, y: clientY };
+  }
+  const padding = 8;
+  const menuWidth = PLANNING_CELL_CONTEXT_MENU_WIDTH_PX;
+  const maxX = Math.max(padding, window.innerWidth - menuWidth - padding);
+  const maxY = Math.max(padding, window.innerHeight - menuHeight - padding);
+  return {
+    x: Math.min(Math.max(padding, clientX), maxX),
+    y: Math.min(Math.max(padding, clientY), maxY),
+  };
+}
+
+function clampPlanningCellContextMenuPosition(
+  clientX: number,
+  clientY: number,
+  simplePlanning: boolean,
+  shiftConfirmationEnabled: boolean
+): { x: number; y: number } {
+  return clampPlanningContextMenuPosition(
+    clientX,
+    clientY,
+    planningCellContextMenuHeightPx(simplePlanning, shiftConfirmationEnabled)
+  );
+}
+
+function distanceFromPointToMenu(
+  clientX: number,
+  clientY: number,
+  menu: HTMLElement
+): number {
+  const rect = menu.getBoundingClientRect();
+  const closestX = Math.max(rect.left, Math.min(clientX, rect.right));
+  const closestY = Math.max(rect.top, Math.min(clientY, rect.bottom));
+  return Math.hypot(clientX - closestX, clientY - closestY);
+}
+
+function getDayAssignBlockReason(
+  employeeId: string,
+  date: string,
+  recurringAvailability: ProfileRecurringAvailability[],
+  absences: AbsenceRequest[]
+): DayAssignBlockReason | null {
+  if (isEmployeeAbsentOnDate(employeeId, absences, date)) return "absent";
+  const weekday = profileAvailabilityWeekdayFromAreaCalendarDate(date);
+  if (
+    !employeeHasRecurringAvailabilityOnWeekday(
+      employeeId,
+      recurringAvailability,
+      weekday
+    )
+  ) {
+    return "no_availability";
+  }
+  return null;
+}
+
+function timeFieldValue(time: string): string {
+  return time.slice(0, 5);
+}
+
+export function DashboardView({
+  weekStart,
+  dates,
+  employees,
+  shifts,
+  locationShifts,
+  recurringAvailability,
+  absences,
+  communicationSwapRequests = [],
+  communicationCancelActors = {},
+  locations,
+  selectedLocationId,
+  areas,
+  selectedAreaId,
+  areaShiftTemplates,
+  serviceHours,
+  staffingRules,
+  qualifications,
+  profileQualificationIds: profileQualificationIdsRecord,
+  readOnlyWeek = false,
+  managerNotifications = [],
+  settingsModals,
+}: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const t = useTranslations();
+  const { locale } = useLocale();
+  const features = useOrgFeatures();
+  const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
+  const { blocksOutboundSend } = useShiftConfirmationSimulation();
+  const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
+    useSimulatedProposedOnAssignRequest();
+  const atEarliestWeek = isPlanningWeekAtEarliest(weekStart);
+  const simplePlanning = !features.areas;
+  const intlLocale = toIntlLocale(locale);
+  const todayISO = useMemo(() => toISODate(new Date()), []);
+  const [pending, startTransition] = useTransition();
+  const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<string | null>(
+    null
+  );
+  const [picker, setPicker] = useState<Picker | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [qualificationId, setQualificationId] = useState("");
+  const [qualificationManuallySelected, setQualificationManuallySelected] =
+    useState(false);
+  const [cellContextMenu, setCellContextMenu] =
+    useState<CellContextMenuState | null>(null);
+  const {
+    menu: employeeListContextMenu,
+    menuRef: employeeListContextMenuRef,
+    openMenu: openEmployeeListContextMenu,
+    openAvailabilities: openEmployeeAvailabilities,
+  } = usePlanningEmployeeListContextMenu();
+  const [bulkShiftDialog, setBulkShiftDialog] =
+    useState<AreaCalendarBulkShiftDialogState | null>(null);
+  const [shiftDeleteConfirmId, setShiftDeleteConfirmId] = useState<string | null>(
+    null
+  );
+  const [deleteShiftError, setDeleteShiftError] = useState<string | null>(null);
+  const [deleteShiftPending, startDeleteShift] = useTransition();
+  const [shiftCancelConfirm, setShiftCancelConfirm] = useState<{
+    shiftId: string;
+    employeeName: string;
+  } | null>(null);
+  const [cancelShiftError, setCancelShiftError] = useState<string | null>(null);
+  const [cancelShiftPending, startCancelShift] = useTransition();
+  const [communicationOpen, setCommunicationOpen] = useState(false);
+  const [communicationBusy, setCommunicationBusy] = useState(false);
+  const [communicationOptions, setCommunicationOptions] = useState<
+    CommunicationOpenOptions | undefined
+  >(undefined);
+  const { simpleCalendarFirstShiftOnly } = useSimpleCalendarDisplay();
+  const [confirmationSendError, setConfirmationSendError] = useState<string | null>(
+    null
+  );
+  const [sendConfirmationPending, startSendConfirmation] = useTransition();
+  const [confirmShiftError, setConfirmShiftError] = useState<string | null>(null);
+  const [confirmShiftPending, startConfirmShift] = useTransition();
+  const cellContextMenuRef = useRef<HTMLDivElement>(null);
+  const skipCellContextMenuCloseRef = useRef(false);
+  const cellContextMenuOpenedAtRef = useRef(0);
+  const [selectedPresetId, setSelectedPresetId] = useState("");
+  const [startTime, setStartTime] = useState("00:00");
+  const [endTime, setEndTime] = useState("00:00");
+  const [note, setNote] = useState("");
+  const skipPresetFromTimesSyncRef = useRef(false);
+
+  const shellLocked = useIsAppShellLocked();
+  const controlsDisabled = pending || shellLocked;
+
+  useAppShellModalLockActive(
+    Boolean(picker) ||
+      Boolean(bulkShiftDialog) ||
+      Boolean(shiftDeleteConfirmId) ||
+      Boolean(shiftCancelConfirm) ||
+      communicationOpen
+  );
+  useAppShellWaitCursorActive(communicationBusy);
+
+  function openCommunication(options?: CommunicationOpenOptions) {
+    setCommunicationOptions(options);
+    setCommunicationBusy(false);
+    setCommunicationOpen(true);
+  }
+
+  function closeCommunication() {
+    setCommunicationOpen(false);
+    setCommunicationBusy(false);
+    setCommunicationOptions(undefined);
+  }
+
+  const templatesForArea = useMemo(
+    () =>
+      selectedAreaId
+        ? areaShiftTemplatesForArea(selectedAreaId, areaShiftTemplates)
+        : [],
+    [areaShiftTemplates, selectedAreaId]
+  );
+
+  const assignmentPresets = useMemo(
+    () => areaCalendarAssignmentPresetsForArea(templatesForArea),
+    [templatesForArea]
+  );
+
+  const planningAppSidebarContent = useMemo(
+    () => (
+      <div className="space-y-4">
+        {!simplePlanning ? (
+          <DashboardShiftTemplateSidebarList
+            presets={assignmentPresets}
+            emptyLabel={t("areaCalendar.noShiftTemplatesForArea")}
+            locale={locale}
+          />
+        ) : null}
+        <DashboardAvailabilityLegendSidebar
+          title={t("dashboard.legendAvailability")}
+          availableLabel={t("dashboard.legendAvailable")}
+          noAvailabilityLabel={t("dashboard.legendNoAvailability")}
+          absentLabel={t("dashboard.legendAbsent")}
+        />
+      </div>
+    ),
+    [simplePlanning, assignmentPresets, locale, t]
+  );
+
+  useDashboardAppSidebarContent(planningAppSidebarContent);
+
+  const serviceHourAreaIds = useMemo(
+    () => (selectedAreaId ? [selectedAreaId] : areas.map((area) => area.id)),
+    [selectedAreaId, areas]
+  );
+
+  const holidayNames = useMemo(
+    () => buildHolidayNamesByDate(dates, locale === "en" ? "en" : "de"),
+    [dates, locale]
+  );
+
+  const dayHasServiceHours = useMemo(
+    () =>
+      dates.map((date) =>
+        hasServiceHoursOnDate(serviceHours, date, serviceHourAreaIds)
+      ),
+    [dates, serviceHours, serviceHourAreaIds]
+  );
+
+  const currentWeekStart = useMemo(
+    () => toISODate(startOfWeek(new Date())),
+    [todayISO]
+  );
+  const isCurrentWeek = weekStart === currentWeekStart;
+
+  const locallyRemovedShiftsScopeKey = `${weekStart}:${selectedLocationId ?? ""}:${selectedAreaId ?? ""}`;
+  const { removedIds, markRemoved, unmarkRemoved } = useLocallyRemovedShifts(
+    locallyRemovedShiftsScopeKey
+  );
+
+  const visibleShifts = useMemo(
+    () => shifts.filter((shift) => !removedIds.has(shift.id)),
+    [shifts, removedIds]
+  );
+
+  const visibleLocationShifts = useMemo(
+    () => locationShifts.filter((shift) => !removedIds.has(shift.id)),
+    [locationShifts, removedIds]
+  );
+
+  const communicationCancelActorsMap = useMemo(
+    () => new Map(Object.entries(communicationCancelActors)),
+    [communicationCancelActors]
+  );
+
+  const calendarPlanningShifts = useMemo(
+    () =>
+      visibleShifts.filter((shift) =>
+        shouldDisplayShiftOnPlanningCalendar({
+          id: shift.id,
+          confirmationStatus: shift.confirmationStatus,
+          cancelActors: communicationCancelActorsMap,
+        })
+      ),
+    [visibleShifts, communicationCancelActorsMap]
+  );
+
+  const shiftsByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const shift of calendarPlanningShifts) {
+      map.set(shift.shift_date, (map.get(shift.shift_date) ?? 0) + 1);
+    }
+    return map;
+  }, [calendarPlanningShifts]);
+
+  const dayReferenceShiftTimesByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      readonly { startTime: string; endTime: string }[]
+    >();
+    for (const date of dates) {
+      map.set(
+        date,
+        calendarPlanningShifts
+          .filter((shift) => shift.shift_date === date)
+          .map((shift) => ({
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+          }))
+      );
+    }
+    return map;
+  }, [dates, calendarPlanningShifts]);
+
+  const serviceTimelinesByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      ReturnType<typeof resolveLocationServiceDayTimeline>
+    >();
+    for (const date of dates) {
+      map.set(date, resolveLocationServiceDayTimeline(serviceHours, date));
+    }
+    return map;
+  }, [dates, serviceHours]);
+
+  const dayHasOpenArea = useMemo(
+    () =>
+      dates.map((date) => {
+        const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
+        if (simplePlanning) {
+          return !isPastCalendarDate(date, todayISO);
+        }
+        return isAnyAreaOpenInCalendar(
+          serviceHours,
+          serviceHourAreaIds,
+          date,
+          hasShifts
+        );
+      }),
+    [
+      dates,
+      serviceHours,
+      serviceHourAreaIds,
+      shiftsByDate,
+      simplePlanning,
+      todayISO,
+    ]
+  );
+
+  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(() =>
+    createPlanningActiveDayDates(
+      dates,
+      serviceHourAreaIds,
+      serviceHours,
+      shiftsByDate,
+      { simplePlanning, todayISO }
+    )
+  );
+  const [layoutActiveDayDates, setLayoutActiveDayDates] = useState<Set<string>>(
+    () =>
+      createPlanningActiveDayDates(
+        dates,
+        serviceHourAreaIds,
+        serviceHours,
+        shiftsByDate,
+        { simplePlanning, todayISO }
+      )
+  );
+  const layoutDayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const planningLayoutScopeRef = useRef<string | null>(null);
+  const currentWeekDayExpansionRef = useRef<Set<string>>(new Set());
+  const hasInitializedCurrentWeekDayLayoutRef = useRef(false);
+  const [isPlanningCalendarVisible, setIsPlanningCalendarVisible] =
+    useState(false);
+  const [layoutTransitionEnabled, setLayoutTransitionEnabled] = useState(false);
+
+  const clearLayoutDayTimer = useCallback(() => {
+    if (layoutDayTimerRef.current !== null) {
+      clearTimeout(layoutDayTimerRef.current);
+      layoutDayTimerRef.current = null;
+    }
+  }, []);
+
+  const syncLayoutDaysImmediate = useCallback(
+    (next: Set<string>) => {
+      clearLayoutDayTimer();
+      setLayoutActiveDayDates(new Set(next));
+    },
+    [clearLayoutDayTimer]
+  );
+
+  const scheduleLayoutDays = useCallback(
+    (next: Set<string>) => {
+      clearLayoutDayTimer();
+      layoutDayTimerRef.current = setTimeout(() => {
+        setLayoutActiveDayDates(new Set(next));
+        layoutDayTimerRef.current = null;
+      }, PLANNING_CALENDAR_LAYOUT_ANIMATION_DELAY_MS);
+    },
+    [clearLayoutDayTimer]
+  );
+
+  useEffect(
+    () => () => {
+      clearLayoutDayTimer();
+    },
+    [clearLayoutDayTimer]
+  );
+
+  useLayoutEffect(() => {
+    const scopeKey = `${weekStart}:${selectedLocationId ?? ""}:${selectedAreaId ?? ""}`;
+    if (planningLayoutScopeRef.current === scopeKey) {
+      return;
+    }
+    planningLayoutScopeRef.current = scopeKey;
+
+    const isFirstCurrentWeekView =
+      weekStart === currentWeekStart &&
+      !hasInitializedCurrentWeekDayLayoutRef.current;
+    const nextDays = resolvePlanningLayoutDayDates(
+      dates,
+      serviceHourAreaIds,
+      serviceHours,
+      shiftsByDate,
+      {
+        weekStart,
+        currentWeekStart,
+        todayISO,
+        savedCurrentWeekExpansion: isFirstCurrentWeekView
+          ? null
+          : currentWeekDayExpansionRef.current,
+        isFirstCurrentWeekView,
+        simplePlanning,
+      }
+    );
+    if (weekStart === currentWeekStart) {
+      if (isFirstCurrentWeekView) {
+        hasInitializedCurrentWeekDayLayoutRef.current = true;
+      }
+      currentWeekDayExpansionRef.current = new Set(nextDays);
+    }
+    setActiveDayDates(nextDays);
+    setLayoutTransitionEnabled(false);
+    syncLayoutDaysImmediate(nextDays);
+    setIsPlanningCalendarVisible(true);
+  }, [
+    dates,
+    weekStart,
+    currentWeekStart,
+    todayISO,
+    selectedLocationId,
+    selectedAreaId,
+    serviceHourAreaIds,
+    serviceHours,
+    shiftsByDate,
+    simplePlanning,
+    syncLayoutDaysImmediate,
+  ]);
+
+  const toggleDayActive = useCallback(
+    (date: string, active: boolean) => {
+      setLayoutTransitionEnabled(true);
+      setActiveDayDates((prev) => {
+        const next = new Set(prev);
+        if (active) next.add(date);
+        else next.delete(date);
+        if (isCurrentWeek) {
+          currentWeekDayExpansionRef.current = new Set(next);
+        }
+        scheduleLayoutDays(next);
+        return next;
+      });
+    },
+    [isCurrentWeek, scheduleLayoutDays]
+  );
+
+  const dayUsesWideColumn = useMemo(
+    () =>
+      dates.map((date, dayIndex) => {
+        if (!layoutActiveDayDates.has(date)) return false;
+        if (!dayHasOpenArea[dayIndex]) return false;
+        const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
+        return hasShifts || dayHasServiceHours[dayIndex];
+      }),
+    [
+      dates,
+      dayHasOpenArea,
+      dayHasServiceHours,
+      shiftsByDate,
+      layoutActiveDayDates,
+    ]
+  );
+
+  const fillColumnsEqually = useMemo(
+    () => !dayUsesWideColumn.some(Boolean),
+    [dayUsesWideColumn]
+  );
+
+  const narrowDayColumnWidthsPx = useMemo(
+    () => resolveNarrowDayColumnWidthsPx(dates, holidayNames, intlLocale),
+    [dates, holidayNames, intlLocale]
+  );
+
+  const staffColumnWidthPx = useDashboardStaffColumnWidthPx({
+    employees,
+    shifts: calendarPlanningShifts,
+    locale,
+    staffColumnHeaderLabel: t("dashboard.staffColumn"),
+    employeeHoursLabel: t("common.basic"),
+  });
+
+  const columnTemplate = useMemo(
+    () =>
+      planningGridTemplateColumns(
+        staffColumnWidthPx,
+        dayUsesWideColumn,
+        narrowDayColumnWidthsPx,
+        fillColumnsEqually
+      ),
+    [staffColumnWidthPx, dayUsesWideColumn, narrowDayColumnWidthsPx, fillColumnsEqually]
+  );
+
+  const minPlanningCalendarWidth = useMemo(() => {
+    if (fillColumnsEqually) return undefined;
+    return planningCalendarMinWidth(
+      staffColumnWidthPx,
+      dayUsesWideColumn,
+      narrowDayColumnWidthsPx
+    );
+  }, [staffColumnWidthPx, dayUsesWideColumn, narrowDayColumnWidthsPx, fillColumnsEqually]);
+
+  const profileQualificationIds = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const [profileId, ids] of Object.entries(profileQualificationIdsRecord)) {
+      map.set(profileId, new Set(ids));
+    }
+    return map;
+  }, [profileQualificationIdsRecord]);
+
+  const showStaffingHeaderRow = !simplePlanning && Boolean(selectedAreaId);
+
+  const formatStaffingTimeLabel = useCallback(
+    (weekdayLabel: string, startTime: string, endTime: string) =>
+      t("areaCalendar.bulkShiftStaffingPeriodLabel", {
+        weekday: weekdayLabel,
+        start: startTime,
+        end: endTime,
+      }),
+    [t]
+  );
+
+  const formatCalendarStaffingTimeLabel = useCallback(
+    (startTime: string, endTime: string) =>
+      t("areaCalendar.bulkShiftStaffingCalendarTooltipTimeLabel", {
+        start: startTime,
+        end: endTime,
+      }),
+    [t]
+  );
+
+  const staffingWeekdayLabel = useCallback(
+    (weekdayIndex: number) => weekdayLabelFromIndex(weekdayIndex, t),
+    [t]
+  );
+
+  const planningHeaderRowTemplate = useMemo(() => {
+    return showStaffingHeaderRow
+      ? `${CALENDAR_DAY_HEADER_ROW_HEIGHT} ${PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT}`
+      : CALENDAR_DAY_HEADER_ROW_HEIGHT;
+  }, [showStaffingHeaderRow]);
+
+  const planningBodyRowTemplate = useMemo(() => {
+    return employees.length > 0
+      ? `repeat(${employees.length}, minmax(${PLANNING_EMPLOYEE_ROW_HEIGHT}, 1fr))`
+      : "";
+  }, [employees.length]);
+
+  const timesComplete = areAreaCalendarShiftTimesComplete(startTime, endTime);
+
+  const calendarDisplayShifts = useMemo(
+    () =>
+      simpleCalendarFirstShiftOnly
+        ? pickFirstPlanningShiftPerEmployeeDay(calendarPlanningShifts)
+        : calendarPlanningShifts,
+    [calendarPlanningShifts, simpleCalendarFirstShiftOnly]
+  );
+
+  const visibleEmployeeIds = useMemo(
+    () => new Set(employees.map((employee) => employee.id)),
+    [employees]
+  );
+
+  const dailyStaffingByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      ReturnType<typeof computeBulkStaffingHeaderEntries>
+    >();
+    if (!showStaffingHeaderRow || !selectedAreaId) return map;
+
+    for (const date of dates) {
+      map.set(
+        date,
+        computeBulkStaffingHeaderEntries({
+          staffingRules,
+          areaId: selectedAreaId,
+          dateISO: date,
+          serviceHours,
+          assignments: staffingAssignmentsForPlanningAreaDay(
+            calendarDisplayShifts,
+            date,
+            selectedAreaId,
+            visibleEmployeeIds
+          ),
+          assignmentPresets,
+          qualifications,
+          profileQualificationIds,
+          formatTimeLabel: formatStaffingTimeLabel,
+          weekdayLabel: staffingWeekdayLabel,
+          formatCalendarTimeLabel: formatCalendarStaffingTimeLabel,
+        })
+      );
+    }
+    return map;
+  }, [
+    showStaffingHeaderRow,
+    selectedAreaId,
+    dates,
+    calendarDisplayShifts,
+    visibleEmployeeIds,
+    staffingRules,
+    serviceHours,
+    assignmentPresets,
+    qualifications,
+    profileQualificationIds,
+    formatStaffingTimeLabel,
+    staffingWeekdayLabel,
+    formatCalendarStaffingTimeLabel,
+  ]);
+
+  const planningTagAreaShiftRefs = useMemo(
+    () =>
+      calendarDisplayShifts.map((shift) => ({
+        employeeId: shift.employee_id,
+        shift_date: shift.shift_date,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+      })),
+    [calendarDisplayShifts]
+  );
+
+  const shiftCompensation = useLazyShiftCompensation(planningTagAreaShiftRefs);
+
+  const dailyFooterLabelsByDate = useMemo(() => {
+    const map = new Map<
+      string,
+      ReturnType<typeof formatTagAreaFooterLabels>
+    >();
+    if (planningTagAreaShiftRefs.length === 0) return map;
+    for (const date of dates) {
+      const stats = computeTagAreaDayFooterStatsForDate(
+        date,
+        planningTagAreaShiftRefs,
+        shiftCompensation
+      );
+      if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
+      map.set(
+        date,
+        formatTagAreaFooterLabels(stats, t, locale === "en" ? "en" : "de")
+      );
+    }
+    return map;
+  }, [dates, planningTagAreaShiftRefs, shiftCompensation, t, locale]);
+
+  const shiftsByCellDisplay = useMemo(
+    () => buildPlanningShiftsByCellDisplay(dates, calendarDisplayShifts),
+    [dates, calendarDisplayShifts]
+  );
+
+  const calendarShiftsByCell = useMemo(() => {
+    const map = new Map<string, PlanningShift[]>();
+    for (const shift of calendarDisplayShifts) {
+      const key = `${shift.employee_id}:${shift.shift_date}`;
+      const list = map.get(key) ?? [];
+      list.push(shift);
+      map.set(key, list);
+    }
+    for (const list of map.values()) {
+      list.sort(
+        (a, b) =>
+          a.startTime.localeCompare(b.startTime) || a.id.localeCompare(b.id)
+      );
+    }
+    return map;
+  }, [calendarDisplayShifts]);
+
+  const shiftsByCell = useMemo(() => {
+    const map = new Map<string, PlanningShift[]>();
+    for (const shift of calendarPlanningShifts) {
+      const key = `${shift.employee_id}:${shift.shift_date}`;
+      const list = map.get(key) ?? [];
+      list.push(shift);
+      map.set(key, list);
+    }
+    for (const list of map.values()) {
+      list.sort(
+        (a, b) =>
+          a.startTime.localeCompare(b.startTime) || a.id.localeCompare(b.id)
+      );
+    }
+    return map;
+  }, [calendarPlanningShifts]);
+
+  const employeesById = useMemo(
+    () => new Map(employees.map((employee) => [employee.id, employee])),
+    [employees]
+  );
+
+  const areaCalendarShiftsForConfirmation = useMemo(
+    () =>
+      visibleLocationShifts.flatMap((shift) => {
+        const employee = employeesById.get(shift.employee_id);
+        return employee ? [planningShiftToAreaCalendarCard(shift, employee)] : [];
+      }),
+    [visibleLocationShifts, employeesById]
+  );
+
+  const communicationHubOptions = useMemo(
+    () => ({
+      absences,
+      swapRequests: communicationSwapRequests,
+      cancelActors: communicationCancelActorsMap,
+    }),
+    [absences, communicationSwapRequests, communicationCancelActorsMap]
+  );
+
+  const absenceConflictShiftIds = useMemo(() => {
+    const conflicts = collectShiftAbsenceConflicts(
+      calendarDisplayShifts.map((shift) => ({
+        id: shift.id,
+        employeeId: shift.employee_id,
+        shift_date: shift.shift_date,
+      })),
+      absences
+    );
+    return new Set(conflicts.map((conflict) => conflict.shiftId));
+  }, [calendarDisplayShifts, absences]);
+
+  const communicationItemCount = useMemo(
+    () =>
+      shiftConfirmationEnabled
+        ? communicationBadgeCount(
+            areaCalendarShiftsForConfirmation,
+            communicationHubOptions
+          )
+        : 0,
+    [
+      shiftConfirmationEnabled,
+      areaCalendarShiftsForConfirmation,
+      communicationHubOptions,
+    ]
+  );
+
+  const shiftsById = useMemo(() => {
+    const map = new Map<string, PlanningShift>();
+    for (const shift of visibleLocationShifts) {
+      map.set(shift.id, shift);
+    }
+    return map;
+  }, [visibleLocationShifts]);
+
+  const summary = useMemo(
+    () => weeklySummary(calendarDisplayShifts, employees),
+    [calendarDisplayShifts, employees]
+  );
+
+  const selectedAreaName = useMemo(
+    () => areas.find((area) => area.id === selectedAreaId)?.name ?? "",
+    [areas, selectedAreaId]
+  );
+
+  const selectedLocationName = useMemo(
+    () => locations.find((location) => location.id === selectedLocationId)?.name ?? "",
+    [locations, selectedLocationId]
+  );
+
+  const pushPlanungQuery = useCallback(
+    (updates: Record<string, string>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of Object.entries(updates)) {
+        params.set(key, value);
+      }
+      const q = params.toString();
+      startTransition(() => {
+        router.push(q ? `${pathname}?${q}` : pathname);
+      });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const weekHeader = useMemo(
+    () => getAreaCalendarWeekHeaderParts(weekStart, intlLocale),
+    [weekStart, intlLocale]
+  );
+
+  const weekLabelTitle = `${weekHeader.rangeLabel} ${weekHeader.year} KW ${weekHeader.calendarWeek}`;
+
+  const navigateWeek = useCallback(
+    (delta: number) => {
+      if (delta < 0 && atEarliestWeek) return;
+      const d = parseISODate(weekStart);
+      d.setDate(d.getDate() + delta * 7);
+      pushPlanungQuery({ week: toISODate(d) });
+    },
+    [atEarliestWeek, pushPlanungQuery, weekStart]
+  );
+
+  const goToToday = useCallback(() => {
+    pushPlanungQuery({ week: toISODate(startOfWeek(new Date())) });
+  }, [pushPlanungQuery]);
+
+  const navigateToWeekFromNotification = useCallback(
+    (nextWeekStart: string) => {
+      if (nextWeekStart === weekStart) return;
+      pushPlanungQuery({ week: nextWeekStart });
+    },
+    [pushPlanungQuery, weekStart]
+  );
+
+  function isDayReadOnly(date: string) {
+    return readOnlyWeek || isPastShiftDate(date);
+  }
+
+  function applyPreset(preset: AreaCalendarAssignmentPreset) {
+    setSelectedPresetId(preset.id);
+    setStartTime(timeFieldValue(preset.start_time));
+    setEndTime(timeFieldValue(preset.end_time));
+  }
+
+  function openPicker(employeeId: string, date: string, shiftId?: string) {
+    if (shiftId) {
+      const shift = shiftsById.get(shiftId);
+      if (
+        shift &&
+        !planningShiftCardShowsPointerCursor(
+          {
+            shift_date: shift.shift_date,
+            confirmationStatus: shift.confirmationStatus,
+            requestedAt: shift.requestedAt,
+          },
+          date,
+          isPastShiftDate
+        )
+      ) {
+        return;
+      }
+    }
+
+    const cellShifts = shiftsByCell.get(`${employeeId}:${date}`) ?? [];
+    const existing = shiftId
+      ? cellShifts.find((shift) => shift.id === shiftId)
+      : undefined;
+    if (isDayReadOnly(date) && !existing && cellShifts.length === 0) return;
+    if (
+      !existing &&
+      cellShifts.length === 0 &&
+      getDayAssignBlockReason(employeeId, date, recurringAvailability, absences)
+    ) {
+      return;
+    }
+    setPicker({
+      employeeId: existing?.employee_id ?? employeeId,
+      date,
+      shiftId,
+    });
+    setSelectedEmployeeId(existing?.employee_id ?? employeeId);
+    setQualificationManuallySelected(false);
+    if (existing) {
+      setStartTime(existing.startTime);
+      setEndTime(existing.endTime);
+      const matchedPresetId =
+        resolvePresetIdFromTimes(
+          existing.startTime,
+          existing.endTime,
+          assignmentPresets
+        ) ?? "";
+      setSelectedPresetId(matchedPresetId);
+      if (selectedAreaId) {
+        const serviceHourId = findServiceHourIdForShift(
+          serviceHours,
+          selectedAreaId,
+          date,
+          existing.startTime,
+          existing.endTime
+        );
+        setQualificationId(
+          presetQualificationForServiceHour(
+            staffingRules,
+            selectedAreaId,
+            serviceHourId
+          )
+        );
+      } else {
+        setQualificationId("");
+      }
+    } else {
+      const demandPrefill =
+        !simplePlanning && selectedAreaId && showStaffingHeaderRow
+          ? resolveDashboardAssignPrefillFromOpenDemand({
+              employeeId,
+              dateISO: date,
+              areaId: selectedAreaId,
+              staffingEntries: dailyStaffingByDate.get(date) ?? [],
+              serviceHours,
+              assignmentPresets,
+      staffingRules,
+      profileQualificationIds,
+              recurringAvailability,
+              absences,
+              employees,
+            })
+          : null;
+
+      if (demandPrefill) {
+        setSelectedPresetId(demandPrefill.presetId);
+        setStartTime(demandPrefill.startTime);
+        setEndTime(demandPrefill.endTime);
+        setQualificationId(demandPrefill.qualificationId);
+      } else if (assignmentPresets[0]) {
+        applyPreset(assignmentPresets[0]);
+        if (selectedAreaId) {
+          const preset = assignmentPresets[0];
+          const serviceHourId = findServiceHourIdForShift(
+            serviceHours,
+            selectedAreaId,
+            date,
+            timeFieldValue(preset.start_time),
+            timeFieldValue(preset.end_time)
+          );
+          setQualificationId(
+            presetQualificationForServiceHour(
+              staffingRules,
+              selectedAreaId,
+              serviceHourId
+            )
+          );
+        } else {
+          setQualificationId("");
+        }
+      } else {
+        setSelectedPresetId("");
+        setStartTime("00:00");
+        setEndTime("00:00");
+        setQualificationId("");
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (skipPresetFromTimesSyncRef.current) {
+      skipPresetFromTimesSyncRef.current = false;
+      return;
+    }
+    if (!timesComplete) {
+      if (selectedPresetId) setSelectedPresetId("");
+      return;
+    }
+    const matchedPresetId = resolvePresetIdFromTimes(
+      startTime,
+      endTime,
+      assignmentPresets
+    );
+    if (matchedPresetId !== selectedPresetId) {
+      setSelectedPresetId(matchedPresetId ?? "");
+    }
+  }, [startTime, endTime, assignmentPresets, selectedPresetId, timesComplete]);
+
+  function handlePresetChange(presetId: string) {
+    const preset = assignmentPresets.find((entry) => entry.id === presetId);
+    if (preset) {
+      skipPresetFromTimesSyncRef.current = true;
+      applyPreset(preset);
+    } else {
+      setSelectedPresetId(presetId);
+    }
+  }
+
+  async function handleAssign(options?: {
+    withoutServiceHours?: boolean;
+  }): Promise<DashboardShiftActionResult> {
+    if (!picker || isDayReadOnly(picker.date) || !selectedEmployeeId) {
+      return { ok: false, error: t("areaCalendar.bulkShiftValidationTimesRequired") };
+    }
+    if (!selectedLocationId) {
+      return { ok: false, error: t("areaCalendar.noLocations") };
+    }
+    if (!simplePlanning && !selectedAreaId) {
+      return { ok: false, error: t("dashboard.noAreas") };
+    }
+    if (!timesComplete) {
+      return { ok: false, error: t("areaCalendar.bulkShiftValidationTimesRequired") };
+    }
+
+    if (!options?.withoutServiceHours && !simplePlanning) {
+      const serviceHoursCheck = validateAreaCalendarShiftServiceHours(
+        serviceHours,
+        selectedAreaId!,
+        picker.date,
+        startTime,
+        endTime
+      );
+      if (!serviceHoursCheck.ok) {
+        return {
+          ok: false,
+          error: translateActionError(serviceHoursCheck.error, t),
+        };
+      }
+    }
+
+    const weekday = profileAvailabilityWeekdayFromAreaCalendarDate(picker.date);
+    if (isEmployeeAbsentOnDate(selectedEmployeeId, absences, picker.date)) {
+      return { ok: false, error: t("shiftAssign.employeeAbsent") };
+    }
+    if (
+      !employeeMatchesShiftAvailability(
+        selectedEmployeeId,
+        recurringAvailability,
+        weekday,
+        startTime,
+        endTime
+      )
+    ) {
+      return { ok: false, error: t("shiftAssign.shiftOutsideAvailability") };
+    }
+
+    const editingShift = picker.shiftId
+      ? shiftsById.get(picker.shiftId)
+      : undefined;
+    const reassigningToDifferentEmployee =
+      editingShift != null && selectedEmployeeId !== picker.employeeId;
+
+    if (reassigningToDifferentEmployee) {
+      const removeResult = await removeShift(editingShift.id);
+      if (!removeResult.ok) {
+        return {
+          ok: false,
+          error: translateActionError(removeResult.error, t),
+        };
+      }
+    }
+
+    const result = await assignShiftWithTimes({
+      employeeId: selectedEmployeeId,
+      shiftDate: picker.date,
+      startTime,
+      endTime,
+      areaShiftTemplateId: simplePlanning
+        ? null
+        : areaShiftTemplateIdForAssign(selectedPresetId),
+      locationId: selectedLocationId,
+      locationAreaId: simplePlanning ? null : selectedAreaId,
+      withoutServiceHours: options?.withoutServiceHours,
+      existingShiftId:
+        reassigningToDifferentEmployee ? undefined : editingShift?.id,
+      simulatedProposedOnAssign,
+      relaxAppRegistrationGate,
+    });
+
+    if (!result.ok) {
+      return { ok: false, error: translateActionError(result.error, t) };
+    }
+
+    router.refresh();
+
+    if (result.warnings?.length) {
+      return { ok: true, warnings: result.warnings };
+    }
+
+    setPicker(null);
+    setSelectedEmployeeId("");
+    setQualificationId("");
+    setNote("");
+    return { ok: true };
+  }
+
+  async function handleRemove(shiftId: string): Promise<DashboardShiftActionResult> {
+    const shift = shiftsById.get(shiftId);
+    const canDelete =
+      shift &&
+      canDeleteShift({
+        shiftDate: shift.shift_date,
+        confirmationStatus: shift.confirmationStatus,
+        requestedAt: shift.requestedAt,
+        isPastShiftDate,
+      });
+    if (picker && isDayReadOnly(picker.date) && !canDelete) {
+      return { ok: false, error: t("dashboard.readOnlyDay") };
+    }
+
+    const result = await removeShift(shiftId);
+    if (!result.ok) {
+      return { ok: false, error: translateActionError(result.error, t) };
+    }
+
+    setPicker(null);
+    setSelectedEmployeeId("");
+    setQualificationId("");
+    router.refresh();
+    return { ok: true };
+  }
+
+  const openBulkShiftDialogForAreaDay = useCallback(
+    (
+      areaId: string,
+      date: string,
+      options?: { focusShiftId?: string; withoutServiceHours?: boolean }
+    ) => {
+      setBulkShiftDialog({
+        areaId,
+        date,
+        focusShiftId: options?.focusShiftId,
+        withoutServiceHours:
+          options?.withoutServiceHours ??
+          !isAreaOpenOnDate(serviceHours, areaId, date),
+      });
+      setCellContextMenu(null);
+    },
+    [serviceHours]
+  );
+
+  const openCellContextMenuAt = useCallback(
+    (
+      employeeId: string,
+      date: string,
+      clientX: number,
+      clientY: number,
+      shiftId?: string
+    ) => {
+      const actionCount =
+        shiftId && shiftConfirmationEnabled
+          ? Math.max(
+              1,
+              shiftCardContextMenuActions(
+                shiftsById.get(shiftId)?.confirmationStatus,
+                shiftsById.get(shiftId)?.requestedAt,
+                (() => {
+                  const shift = shiftsById.get(shiftId);
+                  return shift
+                    ? { shiftDate: shift.shift_date, isPastShiftDate }
+                    : undefined;
+                })()
+              ).length
+            )
+          : 1;
+      const { x, y } = shiftId
+        ? clampPlanningContextMenuPosition(
+            clientX,
+            clientY,
+            planningShiftContextMenuHeightPx(actionCount)
+          )
+        : clampPlanningCellContextMenuPosition(
+            clientX,
+            clientY,
+            simplePlanning,
+            shiftConfirmationEnabled
+          );
+      skipCellContextMenuCloseRef.current = true;
+      cellContextMenuOpenedAtRef.current = performance.now();
+      setCellContextMenu({ x, y, employeeId, date, shiftId });
+    },
+    [shiftConfirmationEnabled, shiftsById, simplePlanning]
+  );
+
+  const handleCellContextMenu = useCallback(
+    (employeeId: string, date: string, clientX: number, clientY: number) => {
+      if (isPastShiftDate(date)) return;
+      const cellSegments =
+        shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
+      if (
+        cellSegments.length === 0 &&
+        isEmployeeAbsentOnDate(employeeId, absences, date)
+      ) {
+        return;
+      }
+      openCellContextMenuAt(employeeId, date, clientX, clientY);
+    },
+    [openCellContextMenuAt, shiftsByCellDisplay, absences]
+  );
+
+  const handleShiftContextMenu = useCallback(
+    (
+      employeeId: string,
+      date: string,
+      shiftId: string,
+      clientX: number,
+      clientY: number
+    ) => {
+      const shift = shiftsById.get(shiftId);
+      if (!shift) return;
+      const menuOptions = { shiftDate: shift.shift_date, isPastShiftDate };
+      if (
+        isPastShiftDate(shift.shift_date) &&
+        !canOpenPastUnconfirmedShiftContextMenu(
+          shift.confirmationStatus,
+          shift.requestedAt,
+          menuOptions
+        )
+      ) {
+        return;
+      }
+      openCellContextMenuAt(employeeId, date, clientX, clientY, shiftId);
+    },
+    [openCellContextMenuAt, shiftsById]
+  );
+
+  const canOpenSingleAssignFromContext = useCallback(
+    (employeeId: string, date: string) => {
+      const cellSegments = shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
+      if (isDayReadOnly(date) && cellSegments.length === 0) return false;
+      if (
+        cellSegments.length === 0 &&
+        getDayAssignBlockReason(employeeId, date, recurringAvailability, absences)
+      ) {
+        return false;
+      }
+      return true;
+    },
+    [shiftsByCellDisplay, recurringAvailability, absences, readOnlyWeek]
+  );
+
+  const handleEmployeeRowContextMenu = useCallback(
+    (employeeId: string, clientX: number, clientY: number) => {
+      setCellContextMenu(null);
+      openEmployeeListContextMenu(employeeId, clientX, clientY);
+    },
+    [openEmployeeListContextMenu]
+  );
+
+  useEffect(() => {
+    if (!cellContextMenu) return;
+
+    function closeMenu() {
+      setCellContextMenu(null);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu();
+    }
+
+    function onMouseMove(event: MouseEvent) {
+      if (performance.now() - cellContextMenuOpenedAtRef.current < 200) return;
+      const menu = cellContextMenuRef.current;
+      if (!menu) return;
+      if (
+        distanceFromPointToMenu(event.clientX, event.clientY, menu) >
+        CONTEXT_MENU_CLOSE_DISTANCE_PX
+      ) {
+        closeMenu();
+      }
+    }
+
+    function onDocumentContextMenu() {
+      if (skipCellContextMenuCloseRef.current) {
+        skipCellContextMenuCloseRef.current = false;
+        return;
+      }
+      closeMenu();
+    }
+
+    function onDocumentClick() {
+      if (skipCellContextMenuCloseRef.current) {
+        skipCellContextMenuCloseRef.current = false;
+        return;
+      }
+      closeMenu();
+    }
+
+    document.addEventListener("click", onDocumentClick);
+    document.addEventListener("contextmenu", onDocumentContextMenu);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("scroll", closeMenu, true);
+    return () => {
+      document.removeEventListener("click", onDocumentClick);
+      document.removeEventListener("contextmenu", onDocumentContextMenu);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [cellContextMenu]);
+
+  const handleContextAssignSingle = useCallback(() => {
+    if (!cellContextMenu) return;
+    skipCellContextMenuCloseRef.current = true;
+    const { employeeId, date } = cellContextMenu;
+    setCellContextMenu(null);
+    openPicker(employeeId, date);
+  }, [cellContextMenu, openPicker]);
+
+  const handleContextAssignBulk = useCallback(() => {
+    if (!cellContextMenu || !selectedAreaId) return;
+    skipCellContextMenuCloseRef.current = true;
+    const { employeeId, date } = cellContextMenu;
+    const cellSegments = shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
+    const uniqueShiftIds = [
+      ...new Set(cellSegments.map((segment) => segment.shift.id)),
+    ];
+    setCellContextMenu(null);
+    openBulkShiftDialogForAreaDay(selectedAreaId, date, {
+      focusShiftId: uniqueShiftIds.length === 1 ? uniqueShiftIds[0] : undefined,
+    });
+  }, [cellContextMenu, selectedAreaId, shiftsByCellDisplay, openBulkShiftDialogForAreaDay]);
+
+  const handleContextRemoveShift = useCallback(() => {
+    if (!cellContextMenu) return;
+    const cellSegments =
+      shiftsByCellDisplay.get(
+        `${cellContextMenu.employeeId}:${cellContextMenu.date}`
+      ) ?? [];
+    const uniqueShiftIds = [
+      ...new Set(cellSegments.map((segment) => segment.shift.id)),
+    ];
+    const shiftId =
+      cellContextMenu.shiftId ??
+      (uniqueShiftIds.length === 1 ? uniqueShiftIds[0] : undefined);
+    if (!shiftId) return;
+    const shift = shiftsById.get(shiftId);
+    if (!shift) return;
+
+    const canDelete = canDeleteShift({
+      shiftDate: shift.shift_date,
+      confirmationStatus: shift.confirmationStatus,
+      requestedAt: shift.requestedAt,
+      isPastShiftDate,
+    });
+    if (isDayReadOnly(cellContextMenu.date) && !canDelete) return;
+
+    skipCellContextMenuCloseRef.current = true;
+    setCellContextMenu(null);
+    setDeleteShiftError(null);
+    setShiftDeleteConfirmId(null);
+
+    if (!canDelete) {
+      const status = shift.confirmationStatus ?? "confirmed";
+      setDeleteShiftError(shiftDeleteBlockedMessage(status, t));
+      return;
+    }
+
+    setShiftDeleteConfirmId(shiftId);
+  }, [cellContextMenu, shiftsByCellDisplay, shiftsById, readOnlyWeek, t]);
+
+  const handleReassignFromPanel = useCallback(
+    (shift: AreaCalendarShiftCard) => {
+      setCommunicationOpen(false);
+      if (!shift.locationAreaId) return;
+      openBulkShiftDialogForAreaDay(shift.locationAreaId, shift.shift_date, {
+        focusShiftId: shift.id,
+      });
+    },
+    [openBulkShiftDialogForAreaDay]
+  );
+
+  const handleConfirmDeleteShift = useCallback(() => {
+    if (!shiftDeleteConfirmId) return;
+    setDeleteShiftError(null);
+    startDeleteShift(async () => {
+      const result = await removeShift(shiftDeleteConfirmId);
+      if (!result.ok) {
+        setDeleteShiftError(translateActionError(result.error, t));
+        return;
+      }
+      setShiftDeleteConfirmId(null);
+      setPicker(null);
+      router.refresh();
+    });
+  }, [shiftDeleteConfirmId, router, t]);
+
+  const handleContextCancelShift = useCallback(() => {
+    if (!cellContextMenu) return;
+    const cellSegments =
+      shiftsByCellDisplay.get(
+        `${cellContextMenu.employeeId}:${cellContextMenu.date}`
+      ) ?? [];
+    const uniqueShiftIds = [
+      ...new Set(cellSegments.map((segment) => segment.shift.id)),
+    ];
+    const shiftId =
+      cellContextMenu.shiftId ??
+      (uniqueShiftIds.length === 1 ? uniqueShiftIds[0] : undefined);
+    if (!shiftId) return;
+    const shift = shiftsById.get(shiftId);
+    if (!shift) return;
+    skipCellContextMenuCloseRef.current = true;
+    setCellContextMenu(null);
+    setCancelShiftError(null);
+    setShiftCancelConfirm(null);
+
+    if (
+      !canCancelShift({
+        shiftDate: shift.shift_date,
+        confirmationStatus: shift.confirmationStatus,
+        requestedAt: shift.requestedAt,
+        isPastShiftDate,
+      })
+    ) {
+      if (isPastShiftDate(shift.shift_date)) {
+        setCancelShiftError(translateShiftCancelError(SHIFT_CANCEL_PAST_ERROR, t));
+      } else {
+        setCancelShiftError(
+          translateShiftCancelError(
+            `SHIFT_CANCEL_BLOCKED:${shift.confirmationStatus ?? "confirmed"}`,
+            t
+          )
+        );
+      }
+      return;
+    }
+
+    const employee = employees.find((entry) => entry.id === shift.employee_id);
+    setShiftCancelConfirm({
+      shiftId,
+      employeeName: employee?.full_name ?? shift.employee_id,
+    });
+  }, [cellContextMenu, shiftsByCellDisplay, shiftsById, employees, t]);
+
+  const handleContextReassignShift = useCallback(() => {
+    if (!cellContextMenu?.shiftId || !selectedAreaId) return;
+    skipCellContextMenuCloseRef.current = true;
+    const { shiftId, date } = cellContextMenu;
+    setCellContextMenu(null);
+    openBulkShiftDialogForAreaDay(selectedAreaId, date, { focusShiftId: shiftId });
+  }, [cellContextMenu, selectedAreaId, openBulkShiftDialogForAreaDay]);
+
+  const handleContextResendConfirmation = useCallback(() => {
+    if (!cellContextMenu?.shiftId || !selectedLocationId) return;
+    const shiftId = cellContextMenu.shiftId;
+    skipCellContextMenuCloseRef.current = true;
+    setCellContextMenu(null);
+    setConfirmationSendError(null);
+    startSendConfirmation(async () => {
+      if (blocksOutboundSend && !simulatedProposedOnAssign) {
+        setConfirmationSendError(
+          getShiftConfirmationSimulationSendBlockedResult().error
+        );
+        return;
+      }
+      const result = await resendConfirmationRequestForSelectedShifts({
+        shiftIds: [shiftId],
+        weekStart,
+        locationId: selectedLocationId,
+      });
+      if (!result.ok) {
+        setConfirmationSendError(translateActionError(result.error, t));
+        return;
+      }
+      if (result.failed.length > 0) {
+        setConfirmationSendError(
+          translateActionError(result.failed[0]!.error, t)
+        );
+        return;
+      }
+      router.refresh();
+    });
+  }, [
+    cellContextMenu,
+    selectedLocationId,
+    weekStart,
+    router,
+    t,
+    blocksOutboundSend,
+    simulatedProposedOnAssign,
+  ]);
+
+  const handleContextSetConfirmed = useCallback(() => {
+    if (!cellContextMenu?.shiftId) return;
+    const shiftId = cellContextMenu.shiftId;
+    skipCellContextMenuCloseRef.current = true;
+    setCellContextMenu(null);
+    setConfirmShiftError(null);
+    startConfirmShift(async () => {
+      const result = await confirmPastShiftAsManager(shiftId);
+      if (!result.ok) {
+        setConfirmShiftError(translatePastConfirmError(result.error, t));
+        return;
+      }
+      router.refresh();
+    });
+  }, [cellContextMenu, router, t]);
+
+  const handleContextShiftAction = useCallback(
+    (action: ShiftCardContextMenuAction) => {
+      switch (action) {
+        case "delete":
+          handleContextRemoveShift();
+          break;
+        case "cancel":
+          handleContextCancelShift();
+          break;
+        case "reassign":
+          handleContextReassignShift();
+          break;
+        case "resendConfirmation":
+          handleContextResendConfirmation();
+          break;
+        case "setConfirmed":
+          handleContextSetConfirmed();
+          break;
+      }
+    },
+    [
+      handleContextRemoveShift,
+      handleContextCancelShift,
+      handleContextReassignShift,
+      handleContextResendConfirmation,
+      handleContextSetConfirmed,
+    ]
+  );
+
+  const handleConfirmCancelShift = useCallback(() => {
+    if (!shiftCancelConfirm) return;
+    const shiftId = shiftCancelConfirm.shiftId;
+    setCancelShiftError(null);
+    setShiftCancelConfirm(null);
+    markRemoved([shiftId]);
+    startCancelShift(async () => {
+      try {
+        const result = await cancelShiftAsManager(shiftId);
+        if (!result.ok) {
+          unmarkRemoved([shiftId]);
+          setCancelShiftError(translateShiftCancelError(result.error, t));
+        }
+      } catch {
+        unmarkRemoved([shiftId]);
+        setCancelShiftError(t("shiftConfirmation.cancel.failed"));
+      }
+    });
+  }, [shiftCancelConfirm, markRemoved, unmarkRemoved, t]);
+
+  const handleBulkShiftSaved = useCallback(() => {
+    router.refresh();
+  }, [router]);
+
+  const contextMenuRemoveShiftId = cellContextMenu
+    ? (cellContextMenu.shiftId ??
+      (() => {
+        const cellSegments =
+          shiftsByCellDisplay.get(
+            `${cellContextMenu.employeeId}:${cellContextMenu.date}`
+          ) ?? [];
+        const uniqueShiftIds = [
+          ...new Set(cellSegments.map((segment) => segment.shift.id)),
+        ];
+        return uniqueShiftIds.length === 1 ? uniqueShiftIds[0] : undefined;
+      })())
+    : undefined;
+
+  const contextMenuShiftActions = useMemo(() => {
+    if (!cellContextMenu?.shiftId || !shiftConfirmationEnabled) return [];
+    const shift = shiftsById.get(cellContextMenu.shiftId);
+    if (!shift) return [];
+    return shiftCardContextMenuActions(
+      shift.confirmationStatus,
+      shift.requestedAt,
+      { shiftDate: shift.shift_date, isPastShiftDate }
+    );
+  }, [cellContextMenu, shiftsById, shiftConfirmationEnabled]);
+
+  const contextMenuShift = cellContextMenu?.shiftId
+    ? shiftsById.get(cellContextMenu.shiftId)
+    : undefined;
+
+  const pickerShowRemoveButton = useMemo(() => {
+    if (!picker?.shiftId) return false;
+    if (!shiftConfirmationEnabled) return true;
+    const shift = shiftsById.get(picker.shiftId);
+    return shiftCardAllowsRemoveFromAssignDialog(
+      shift?.confirmationStatus,
+      shift?.requestedAt,
+      shift
+        ? { shiftDate: shift.shift_date, isPastShiftDate }
+        : undefined
+    );
+  }, [picker, shiftsById, shiftConfirmationEnabled]);
+
+  if (employees.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-surface p-12 text-center">
+        <p className="text-muted">
+          {t("dashboard.noEmployeesPrefix")}{" "}
+          <a
+            href={buildSettingsModalUrl(pathname, searchParams, "profiles")}
+            className="font-medium text-primary"
+          >
+            {t("dashboard.noEmployeesProfilesLink")}
+          </a>{" "}
+          {t("dashboard.noEmployeesSuffix")}
+        </p>
+      </div>
+    );
+  }
+
+  const getDayAssignBlockReasonForCell = useCallback(
+    (employeeId: string, date: string) =>
+      getDayAssignBlockReason(
+        employeeId,
+        date,
+        recurringAvailability,
+        absences
+      ),
+    [recurringAvailability, absences]
+  );
+
+  const canAssign =
+    Boolean(selectedLocationId) &&
+    (simplePlanning ||
+      (Boolean(selectedAreaId) && assignmentPresets.length > 0));
+
+  return (
+    <div className={DASHBOARD_VIEW_ROOT_CLASS}>
+      <header
+        className={cn(
+          APP_PAGE_TOOLBAR_HEADER_CLASS,
+          shellLocked && "pointer-events-none opacity-50"
+        )}
+        aria-hidden={shellLocked || undefined}
+        {...(shellLocked ? { inert: true } : {})}
+      >
+        <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4">
+          <div className="min-w-0 shrink-0" title={weekLabelTitle}>
+            <h1 className="text-xl font-semibold tracking-tight text-white sm:text-2xl md:text-xl">
+              <span>{weekHeader.monthYearLabel}</span>
+              <span className="font-normal"> · </span>
+              <span className="tabular-nums text-base font-normal sm:text-lg md:text-base">
+                {t("dashboard.headerCalendarWeek", {
+                  week: weekHeader.calendarWeek,
+                })}
+              </span>
+            </h1>
+          </div>
+
+          <div className="flex min-w-0 flex-wrap items-center gap-3 select-none md:gap-4 md:ml-2">
+            <div
+              role="group"
+              aria-label={`${t("common.prevWeek")} / ${t("common.nextWeek")}`}
+              className={headerToolbarWeekNavGroupClass}
+            >
+              <IconButton
+                size="sm"
+                onClick={() => navigateWeek(-1)}
+                disabled={controlsDisabled || atEarliestWeek}
+                aria-label={t("common.prevWeek")}
+                className={headerToolbarWeekNavIconButtonClass}
+              >
+                <ChevronIcon direction="left" />
+              </IconButton>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={goToToday}
+                disabled={controlsDisabled}
+                className={headerToolbarWeekNavTodayButtonClass}
+              >
+                {t("common.today")}
+              </Button>
+
+              <IconButton
+                size="sm"
+                onClick={() => navigateWeek(1)}
+                disabled={controlsDisabled}
+                aria-label={t("common.nextWeek")}
+                className={headerToolbarWeekNavIconButtonClass}
+              >
+                <ChevronIcon direction="right" />
+              </IconButton>
+            </div>
+
+            {features.areas ? (
+              <DashboardHeaderPlacement
+                locations={locations}
+                selectedLocationId={selectedLocationId}
+                areas={areas}
+                selectedAreaId={selectedAreaId}
+                disabled={controlsDisabled}
+                className="md:ml-1 md:border-l md:border-foreground/10 md:pl-3"
+                onAreaChange={(areaId) => pushPlanungQuery({ area: areaId })}
+              />
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2 self-end md:self-auto">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => openCommunication()}
+            disabled={controlsDisabled || sendConfirmationPending}
+            className={cn(
+              communicationItemCount > 0
+                ? headerToolbarPillPrimaryClass
+                : headerToolbarPillButtonClass,
+              "relative font-semibold"
+            )}
+          >
+            {t("shiftConfirmation.communication.headerButton")}
+            {shiftConfirmationEnabled && communicationItemCount > 0 ? (
+              <span
+                className={cn(
+                  "ml-1.5 flex h-4 min-w-4 items-center justify-center leading-none",
+                  headerToolbarCountBadgeClass
+                )}
+              >
+                {communicationItemCount > 99 ? "99+" : communicationItemCount}
+              </span>
+            ) : null}
+          </Button>
+          {shiftConfirmationEnabled ? (
+            <AreaCalendarNotificationCenter
+              enabled={shiftConfirmationEnabled}
+              initialNotifications={managerNotifications}
+              onOpenCommunication={openCommunication}
+              onNavigateToWeek={navigateToWeekFromNotification}
+              triggerClassName={headerToolbarPillIconButtonClass}
+            />
+          ) : null}
+          <LanguageSelect variant="header" className="shrink-0" />
+        </div>
+      </header>
+
+      {readOnlyWeek && (
+        <Alert variant="info" className="mx-4 mt-4 md:mx-6">
+          {t("dashboard.readOnlyWeek")}
+        </Alert>
+      )}
+
+      <div className={PLANNING_PAGE_CALENDAR_SECTION_CLASS}>
+        <main
+          className={cn(
+            PLANNING_PAGE_CALENDAR_MAIN_CLASS,
+            "px-3 pb-3 md:px-4 md:pb-4",
+            APP_SHELL_CONTENT_OFFSET_CLASS
+          )}
+        >
+          <DashboardCalendarGrid
+            dates={dates}
+            employees={employees}
+            shifts={calendarPlanningShifts}
+            calendarDisplayShifts={calendarDisplayShifts}
+            shiftsByCell={calendarShiftsByCell}
+            shiftsByCellDisplay={shiftsByCellDisplay}
+            holidayNames={holidayNames}
+            dayHasServiceHours={dayHasServiceHours}
+            dayHasOpenArea={dayHasOpenArea}
+            activeDayDates={activeDayDates}
+            layoutActiveDayDates={layoutActiveDayDates}
+            layoutTransitionEnabled={layoutTransitionEnabled}
+            dayReferenceShiftTimesByDate={dayReferenceShiftTimesByDate}
+            serviceTimelinesByDate={serviceTimelinesByDate}
+            columnTemplate={columnTemplate}
+            headerRowTemplate={planningHeaderRowTemplate}
+            bodyRowTemplate={planningBodyRowTemplate}
+            minCalendarWidth={minPlanningCalendarWidth}
+            fillColumnsEqually={fillColumnsEqually}
+            narrowDayColumnWidthsPx={narrowDayColumnWidthsPx}
+            dayUsesWideColumn={dayUsesWideColumn}
+            isCalendarVisible={isPlanningCalendarVisible}
+            todayISO={todayISO}
+            intlLocale={intlLocale}
+            locale={locale}
+            pending={pending}
+            canAssign={canAssign}
+            assignmentPresets={assignmentPresets}
+            picker={picker}
+            showStaffingHeaderRow={showStaffingHeaderRow}
+            dailyStaffingByDate={dailyStaffingByDate}
+            dailyFooterLabelsByDate={dailyFooterLabelsByDate}
+            weeklySummary={summary}
+            t={t}
+            isDayReadOnly={isDayReadOnly}
+            getDayAssignBlockReason={getDayAssignBlockReasonForCell}
+            onToggleDayActive={toggleDayActive}
+            onOpenPicker={openPicker}
+            onCellContextMenu={handleCellContextMenu}
+            onShiftContextMenu={handleShiftContextMenu}
+            onEmployeeRowContextMenu={handleEmployeeRowContextMenu}
+            selectedAreaId={selectedAreaId}
+            serviceHours={serviceHours}
+            staffingRules={staffingRules}
+            qualifications={qualifications}
+            profileQualificationIds={profileQualificationIdsRecord}
+            highlightedEmployeeId={highlightedEmployeeId}
+            onEmployeeHover={setHighlightedEmployeeId}
+            absenceConflictShiftIds={absenceConflictShiftIds}
+          />
+        </main>
+
+        {cellContextMenu ? (
+          <div
+            ref={cellContextMenuRef}
+            className="fixed z-[100] min-w-[15rem] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
+            style={{ left: cellContextMenu.x, top: cellContextMenu.y }}
+            role="menu"
+            aria-label={t("dashboard.contextAssignSingle")}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            {!cellContextMenu.shiftId ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={
+                    !canOpenSingleAssignFromContext(
+                      cellContextMenu.employeeId,
+                      cellContextMenu.date
+                    )
+                  }
+                  onClick={handleContextAssignSingle}
+                >
+                  {t("dashboard.contextAssignSingle")}
+                </button>
+                {!simplePlanning ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!selectedAreaId}
+                    onClick={handleContextAssignBulk}
+                  >
+                    {t("dashboard.contextAssignBulk")}
+                  </button>
+                ) : null}
+                {contextMenuRemoveShiftId ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isDayReadOnly(cellContextMenu.date)}
+                    onClick={handleContextRemoveShift}
+                  >
+                    {t("dashboard.contextRemoveShift")}
+                  </button>
+                ) : null}
+              </>
+            ) : shiftConfirmationEnabled ? (
+              contextMenuShiftActions.map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  role="menuitem"
+                  className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={
+                    (action === "delete" &&
+                      (deleteShiftPending ||
+                        !(
+                          contextMenuShift &&
+                          canDeleteShift({
+                            shiftDate: contextMenuShift.shift_date,
+                            confirmationStatus: contextMenuShift.confirmationStatus,
+                            requestedAt: contextMenuShift.requestedAt,
+                            isPastShiftDate,
+                          })
+                        ))) ||
+                    (action === "cancel" && cancelShiftPending) ||
+                    (action === "resendConfirmation" && sendConfirmationPending) ||
+                    (action === "setConfirmed" && confirmShiftPending)
+                  }
+                  onClick={() => handleContextShiftAction(action)}
+                >
+                  {t(shiftCardContextMenuActionLabelKey(action))}
+                </button>
+              ))
+            ) : (
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={
+                  deleteShiftPending || isDayReadOnly(cellContextMenu.date)
+                }
+                onClick={handleContextRemoveShift}
+              >
+                {t("dashboard.contextRemoveShift")}
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        {employeeListContextMenu ? (
+          <PlanningEmployeeListContextMenu
+            state={employeeListContextMenu}
+            menuRef={employeeListContextMenuRef}
+            onOpenAvailabilities={openEmployeeAvailabilities}
+          />
+        ) : null}
+
+        {picker ? (
+          <DashboardAssignShiftModal
+            date={picker.date}
+            areaName={selectedAreaName}
+            areaId={selectedAreaId}
+            intlLocale={intlLocale}
+            t={t}
+            simplePlanning={simplePlanning}
+            assignmentPresets={assignmentPresets}
+            selectedPresetId={selectedPresetId}
+            onPresetChange={handlePresetChange}
+            startTime={startTime}
+            endTime={endTime}
+            onStartTimeChange={setStartTime}
+            onEndTimeChange={setEndTime}
+            selectedEmployeeId={selectedEmployeeId}
+            onEmployeeChange={setSelectedEmployeeId}
+            qualificationId={qualificationId}
+            onQualificationChange={setQualificationId}
+            qualificationManuallySelected={qualificationManuallySelected}
+            onQualificationManuallySelectedChange={setQualificationManuallySelected}
+            staffingRules={staffingRules}
+            serviceHours={serviceHours}
+            qualifications={qualifications}
+            profileQualificationIds={profileQualificationIds}
+            note={note}
+            onNoteChange={setNote}
+            dayReadOnly={isDayReadOnly(picker.date)}
+            timesComplete={timesComplete}
+            canAssign={canAssign}
+            hasExistingShift={Boolean(picker.shiftId)}
+            showRemoveButton={pickerShowRemoveButton}
+            presetEmployeeId={
+              picker.shiftId ? undefined : picker.employeeId
+            }
+            presetEmployee={(() => {
+              if (picker.shiftId) return undefined;
+              const profile = employees.find(
+                (entry) => entry.id === picker.employeeId
+              );
+              if (!profile) return undefined;
+              return {
+                id: profile.id,
+                full_name: profile.full_name,
+                color: profile.color ?? null,
+              };
+            })()}
+            onAssign={handleAssign}
+            onRemove={async () => {
+              if (!picker.shiftId) {
+                return { ok: false, error: t("dashboard.readOnlyDay") };
+              }
+              return handleRemove(picker.shiftId);
+            }}
+            onClose={() => {
+              setPicker(null);
+              setSelectedEmployeeId("");
+              setQualificationId("");
+              setNote("");
+            }}
+          />
+        ) : null}
+
+      {bulkShiftDialog && selectedLocationId && selectedAreaId && !simplePlanning ? (
+        <AreaCalendarBulkShiftModal
+          key={`planning-bulk:${bulkShiftDialog.areaId}:${bulkShiftDialog.date}:${bulkShiftDialog.focusShiftId ?? ""}:${bulkShiftDialog.withoutServiceHours ? "nosh" : "sh"}`}
+          dialog={bulkShiftDialog}
+          locationId={selectedLocationId}
+          locationName={selectedLocationName}
+          areas={areas}
+          areaShiftTemplates={areaShiftTemplates}
+          staffingRules={staffingRules}
+          serviceHours={serviceHours}
+          qualifications={qualifications}
+          existingAreaShifts={visibleLocationShifts
+            .filter(
+              (shift) =>
+                shift.location_area_id === bulkShiftDialog.areaId &&
+                shift.shift_date === bulkShiftDialog.date
+            )
+            .map((shift) => ({
+              id: shift.id,
+              employeeId: shift.employee_id,
+              startTime: shift.startTime,
+              endTime: shift.endTime,
+              areaShiftTemplateId: shift.area_shift_template_id,
+              confirmationStatus: shift.confirmationStatus,
+              requestedAt: shift.requestedAt,
+            }))}
+          areaExistingAssignments={visibleLocationShifts
+            .filter(
+              (shift) =>
+                shift.location_area_id === bulkShiftDialog.areaId &&
+                shift.shift_date === bulkShiftDialog.date
+            )
+            .map((shift) => ({
+              employeeId: shift.employee_id,
+              startTime: shift.startTime,
+              endTime: shift.endTime,
+            }))}
+          locationDayAssignments={visibleLocationShifts
+            .filter((shift) => shift.shift_date === bulkShiftDialog.date)
+            .map((shift) => ({
+              employeeId: shift.employee_id,
+              startTime: shift.startTime,
+              endTime: shift.endTime,
+              locationAreaId: shift.location_area_id,
+            }))}
+          onClose={() => setBulkShiftDialog(null)}
+          onSaved={handleBulkShiftSaved}
+        />
+      ) : null}
+
+      {shiftDeleteConfirmId ? (
+        <AreaCalendarShiftDeleteConfirmModal
+          pending={deleteShiftPending}
+          onCancel={() => {
+            if (deleteShiftPending) return;
+            setShiftDeleteConfirmId(null);
+            setDeleteShiftError(null);
+          }}
+          onConfirm={handleConfirmDeleteShift}
+        />
+      ) : null}
+
+      {shiftCancelConfirm ? (
+        <ShiftCancelConfirmModal
+          placement="fixed"
+          variant="manager"
+          employeeName={shiftCancelConfirm.employeeName}
+          pending={cancelShiftPending}
+          onCancel={() => {
+            if (cancelShiftPending) return;
+            setShiftCancelConfirm(null);
+            setCancelShiftError(null);
+          }}
+          onConfirm={handleConfirmCancelShift}
+        />
+      ) : null}
+
+      {cancelShiftError ? (
+        <SettingsMessageModal
+          placement="fixed"
+          message={cancelShiftError}
+          onClose={() => setCancelShiftError(null)}
+        />
+      ) : null}
+
+      {confirmShiftError ? (
+        <SettingsMessageModal
+          placement="fixed"
+          message={confirmShiftError}
+          onClose={() => setConfirmShiftError(null)}
+        />
+      ) : null}
+
+      {deleteShiftError ? (
+        <SettingsMessageModal
+          placement="fixed"
+          message={deleteShiftError}
+          onClose={() => setDeleteShiftError(null)}
+        />
+      ) : null}
+
+      {confirmationSendError ? (
+        <SettingsMessageModal
+          placement="fixed"
+          message={confirmationSendError}
+          onClose={() => setConfirmationSendError(null)}
+        />
+      ) : null}
+
+      {communicationOpen ? (
+        <CommunicationHubModal
+          key={communicationOptions?.category ?? communicationOptions?.responseTab ?? "auto"}
+          weekStart={weekStart}
+          locationId={selectedLocationId}
+          locationName={selectedLocationName}
+          areas={areas}
+          shifts={areaCalendarShiftsForConfirmation}
+          absences={absences}
+          swapRequests={communicationSwapRequests}
+          cancelActors={communicationCancelActorsMap}
+          shiftConfirmationEnabled={shiftConfirmationEnabled}
+          initialOptions={communicationOptions}
+          onClose={closeCommunication}
+          onReassign={handleReassignFromPanel}
+          onBusyChange={setCommunicationBusy}
+          onLocalShiftRemoved={markRemoved}
+          onLocalShiftRestore={unmarkRemoved}
+        />
+      ) : null}
+
+      {SETTINGS_MODALS_ON_CURRENT_PAGE && settingsModals ? (
+        <SettingsModalsLayer
+          data={{
+            locations,
+            selectedLocationId,
+            areas,
+            serviceHours,
+            fullStaffingRules: staffingRules,
+            areaShiftTemplates,
+            qualifications,
+            compensationSurchargeTypes:
+              settingsModals.compensationSurchargeTypes,
+            roles: settingsModals.roles,
+            profiles: settingsModals.profiles,
+          }}
+        />
+      ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ChevronIcon({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg
+      width="8"
+      height="12"
+      viewBox="0 0 8 12"
+      fill="currentColor"
+      aria-hidden
+      className={direction === "right" ? "scale-x-[-1]" : undefined}
+    >
+      <path d="M7 0L1 6l6 6V0z" />
+    </svg>
+  );
+}
+
+/** @deprecated Use DashboardView */
+export const WeekCalendar = DashboardView;

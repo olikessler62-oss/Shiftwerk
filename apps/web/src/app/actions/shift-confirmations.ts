@@ -2,9 +2,9 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import {
-  dashboardShiftsCacheTag,
+  areaCalendarShiftsCacheTag,
   weekStartsForShiftCacheInvalidation,
-} from "@/lib/cached-dashboard-shifts";
+} from "@/lib/cached-areacalendar-shifts";
 import { getDatabase } from "@/lib/db";
 import { runShiftConfirmationPendingJobSafe } from "@/lib/run-shift-confirmation-pending-job";
 import { shiftTimeFromTimestamp } from "@/lib/dates";
@@ -46,14 +46,14 @@ function revalidateConfirmationPaths(input: {
   locationId?: string;
   weekStart: string;
 }) {
-  revalidatePath("/planer");
   revalidatePath("/dashboard");
+  revalidatePath("/bereich-kalender");
 
   if (!input.locationId) return;
 
   for (const weekStart of weekStartsForShiftCacheInvalidation(input.weekStart)) {
     revalidateTag(
-      dashboardShiftsCacheTag(input.organizationId, input.locationId, weekStart)
+      areaCalendarShiftsCacheTag(input.organizationId, input.locationId, weekStart)
     );
   }
 }
@@ -66,12 +66,14 @@ async function sendConfirmationForEmployee(input: {
   shiftId?: string;
   locationId?: string;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<ConfirmationSendActionResult> {
   const { organizationId, userId, organization, profile: managerProfile } =
     await requireManager();
   const assignMode = resolveSimulatedProposedAssignOptions({
     organizationEnabled: organization.shift_confirmation_enabled,
     simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+    relaxAppRegistrationGate: input.relaxAppRegistrationGate,
     managerEmail: managerProfile.email,
   });
 
@@ -160,6 +162,7 @@ export async function sendConfirmationRequestForShift(input: {
   weekStart: string;
   locationId?: string;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<ConfirmationSendActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -176,6 +179,7 @@ export async function sendConfirmationRequestForShift(input: {
       shiftId: input.shiftId,
       locationId: input.locationId ?? shift.location_id ?? undefined,
       simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
     });
   } catch (e) {
     return {
@@ -191,6 +195,7 @@ export async function sendConfirmationRequestForEmployeeDay(input: {
   weekStart: string;
   locationId?: string;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<ConfirmationSendActionResult> {
   try {
     return sendConfirmationForEmployee({
@@ -200,6 +205,7 @@ export async function sendConfirmationRequestForEmployeeDay(input: {
       shiftDate: input.shiftDate,
       locationId: input.locationId,
       simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
     });
   } catch (e) {
     return {
@@ -214,6 +220,7 @@ export async function sendConfirmationRequestForEmployeeWeek(input: {
   weekStart: string;
   locationId?: string;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<ConfirmationSendActionResult> {
   try {
     return sendConfirmationForEmployee({
@@ -222,6 +229,7 @@ export async function sendConfirmationRequestForEmployeeWeek(input: {
       employeeId: input.employeeId,
       locationId: input.locationId,
       simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
     });
   } catch (e) {
     return {
@@ -236,6 +244,7 @@ export async function sendConfirmationRequestForSelectedShifts(input: {
   weekStart: string;
   locationId?: string;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<
   | {
       ok: true;
@@ -273,6 +282,7 @@ export async function sendConfirmationRequestForSelectedShifts(input: {
         shiftId,
         locationId: input.locationId,
         simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
       });
       if (result.ok) {
         results.push({
@@ -306,6 +316,7 @@ export async function sendConfirmationRequestBulkWeek(input: {
   employeeIds: string[];
   locationId?: string;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<
   | {
       ok: true;
@@ -336,6 +347,7 @@ export async function sendConfirmationRequestBulkWeek(input: {
         employeeId,
         locationId: input.locationId,
         simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
       });
       if (result.ok) {
         results.push({
@@ -368,12 +380,14 @@ export async function listConfirmationSendShifts(input: {
   weekStart: string;
   locationId?: string;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<ListConfirmationSendShiftsResult> {
   try {
     const { organizationId, organization, profile } = await requireManager();
     const assignMode = resolveSimulatedProposedAssignOptions({
       organizationEnabled: organization.shift_confirmation_enabled,
       simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
       managerEmail: profile.email,
     });
     if (!assignMode.shiftConfirmationEnabled) {
@@ -492,6 +506,7 @@ export async function submitCommunicationConfirmationRequests(input: {
   weekStart: string;
   locationId?: string;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<
   | {
       ok: true;
@@ -535,6 +550,7 @@ export async function submitCommunicationConfirmationRequests(input: {
         weekStart: input.weekStart,
         locationId: input.locationId,
         simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
       });
       if (!sendResult.ok) {
         errors.push(sendResult.error);
@@ -576,6 +592,138 @@ export async function submitCommunicationConfirmationRequests(input: {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Senden fehlgeschlagen.",
+    };
+  }
+}
+
+export type CancelShiftActionResult = { ok: true } | { ok: false; error: string };
+
+export type ConfirmPastShiftActionResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function cancelShiftAsManager(
+  shiftId: string
+): Promise<CancelShiftActionResult> {
+  try {
+    const { organizationId, userId } = await requireManager();
+    const db = await getDatabase();
+    const result = await db.cancelShift({
+      organizationId,
+      shiftId,
+      actorId: userId,
+      actorRole: "manager",
+    });
+
+    revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
+    if (result.locationId) {
+      for (const weekStart of weekStartsForShiftCacheInvalidation(result.shiftDate)) {
+        revalidateTag(areaCalendarShiftsCacheTag(organizationId, result.locationId, weekStart));
+      }
+    }
+
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Stornieren fehlgeschlagen.",
+    };
+  }
+}
+
+export async function confirmPastShiftAsManager(
+  shiftId: string
+): Promise<ConfirmPastShiftActionResult> {
+  try {
+    const { organizationId, userId } = await requireManager();
+    const db = await getDatabase();
+    const result = await db.confirmPastShiftAsManager({
+      organizationId,
+      shiftId,
+      actorId: userId,
+    });
+
+    revalidateConfirmationPaths({
+      organizationId,
+      locationId: result.locationId ?? undefined,
+      weekStart: result.shiftDate,
+    });
+
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Bestätigen fehlgeschlagen.",
+    };
+  }
+}
+
+export async function cancelShiftsAsManager(shiftIds: string[]): Promise<
+  | {
+      ok: true;
+      canceledCount: number;
+      failedCount: number;
+      errors: string[];
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const uniqueShiftIds = [...new Set(shiftIds.filter(Boolean))];
+    if (!uniqueShiftIds.length) {
+      return { ok: false, error: "Keine Schichten ausgewählt." };
+    }
+
+    const { organizationId, userId } = await requireManager();
+    const db = await getDatabase();
+    let canceledCount = 0;
+    const errors: string[] = [];
+    const touchedDates = new Map<string | null, Set<string>>();
+
+    for (const shiftId of uniqueShiftIds) {
+      try {
+        const result = await db.cancelShift({
+          organizationId,
+          shiftId,
+          actorId: userId,
+          actorRole: "manager",
+        });
+        canceledCount += 1;
+        const dates = touchedDates.get(result.locationId) ?? new Set<string>();
+        dates.add(result.shiftDate);
+        touchedDates.set(result.locationId, dates);
+      } catch (error) {
+        errors.push(
+          error instanceof Error ? error.message : "Stornieren fehlgeschlagen."
+        );
+      }
+    }
+
+    revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
+    for (const [locationId, dates] of touchedDates) {
+      if (!locationId) continue;
+      for (const shiftDate of dates) {
+        for (const weekStart of weekStartsForShiftCacheInvalidation(shiftDate)) {
+          revalidateTag(areaCalendarShiftsCacheTag(organizationId, locationId, weekStart));
+        }
+      }
+    }
+
+    if (canceledCount === 0) {
+      return { ok: false, error: errors[0] ?? "Stornieren fehlgeschlagen." };
+    }
+
+    return {
+      ok: true,
+      canceledCount,
+      failedCount: errors.length,
+      errors,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Stornieren fehlgeschlagen.",
     };
   }
 }

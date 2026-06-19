@@ -44,10 +44,7 @@ type CornerCheckboxProps = CalendarToggleCheckboxProps & {
   insetTop?: number;
 };
 
-/** Checkbox in Tag-Header-Zellen (inline neben Wochentag). */
-export const CalendarDayHeaderCheckbox = CalendarToggleCheckbox;
-
-/** Checkbox oben links in Kalender-Tag-Header-Zellen (absolute Position). */
+/** Checkbox oben links in Kalender-Tag-Header-Zellen. */
 export function CalendarCornerCheckbox({
   insetTop = CALENDAR_DAY_CHECKBOX_INSET_TOP_PX,
   ...props

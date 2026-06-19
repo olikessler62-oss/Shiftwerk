@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { saveServiceHourStaffing } from "@/app/actions/location-staffing";
-import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
+import { resolvePresetIdFromTimes } from "@/lib/areacalendar-assignment-presets";
 import { SERVICE_HOUR_WEEKDAY_COUNT } from "@/lib/location-service-hour-entries";
 import {
   isShiftTemplateBlockedOnWeekday,

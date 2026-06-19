@@ -117,7 +117,7 @@ export async function saveProfileCompensationSurcharge(input: {
       organizationId,
       input.profileId
     );
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     return { ok: true, entry, ...slice };
   } catch (e) {
     return {
@@ -171,7 +171,7 @@ export async function updateProfileCompensationSurcharge(input: {
       organizationId,
       input.profileId
     );
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     return { ok: true, entry, ...slice };
   } catch (e) {
     return {
@@ -206,7 +206,7 @@ export async function deleteProfileCompensationSurcharge(input: {
       organizationId,
       input.profileId
     );
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     return { ok: true, ...slice };
   } catch (e) {
     return {

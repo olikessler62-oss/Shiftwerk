@@ -12,5 +12,5 @@ export default async function PlanungRedirectPage({
     else if (Array.isArray(value) && value[0]) qs.set(key, value[0]);
   }
   const query = qs.toString();
-  redirect(query ? `/dashboard?${query}` : "/dashboard");
+  redirect(query ? `/bereich-kalender?${query}` : "/bereich-kalender");
 }

@@ -5,7 +5,7 @@ import {
   staffingQualificationIdsForServiceHour,
 } from "@schichtwerk/database";
 import type { LocationAreaStaffing, Qualification } from "@schichtwerk/types";
-import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
+import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import {
   buildDemandWindowsForAreaDay,
   resolveBestDemandServiceHourForAssignment,
@@ -126,7 +126,7 @@ export function staffingQualificationIdsForAssignment(
   staffingRules: readonly LocationAreaStaffing[],
   areaId: string,
   serviceHours: readonly AreaServiceHourRef[],
-  assignmentPresets: readonly DashboardAssignmentPreset[],
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[],
   dateISO: string,
   startTime: string,
   endTime: string

@@ -37,7 +37,7 @@ export function NoServiceHoursShiftConfirmModal({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <p id="no-service-hours-shift-confirm-desc" className="text-sm text-foreground">
-          {t("dashboard.noServiceHoursShiftConfirm", { area: areaName })}
+          {t("areaCalendar.noServiceHoursShiftConfirm", { area: areaName })}
         </p>
         <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
           <Button type="button" variant="outline" onClick={onCancel}>

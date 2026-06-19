@@ -1,5 +1,5 @@
 import type { ConfirmationDecision, ConfirmationRespondBody } from "@schichtwerk/types";
-import { revalidateDashboardShiftsAfterChange } from "@/lib/cached-dashboard-shifts";
+import { revalidateAreaCalendarShiftsAfterChange } from "@/lib/cached-areacalendar-shifts";
 import { MobileApiError, requireMobileApiEmployee } from "@/lib/mobile-api-auth";
 import {
   mobileApiJsonResponse,
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     });
 
     if (result.updatedShifts.length > 0) {
-      revalidateDashboardShiftsAfterChange({
+      revalidateAreaCalendarShiftsAfterChange({
         organizationId: organization.id,
         shifts: result.updatedShifts,
       });

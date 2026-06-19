@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  pickFirstDashboardShiftPerEmployeeDay,
+  pickFirstAreaCalendarShiftPerEmployeeDay,
   pickFirstPlanningShiftPerEmployeeDay,
 } from "./simple-calendar-display-toggle";
 
@@ -48,7 +48,7 @@ describe("pickFirstPlanningShiftPerEmployeeDay", () => {
   });
 });
 
-describe("pickFirstDashboardShiftPerEmployeeDay", () => {
+describe("pickFirstAreaCalendarShiftPerEmployeeDay", () => {
   it("keeps earliest shift per employee and day", () => {
     const shifts = [
       {
@@ -80,7 +80,7 @@ describe("pickFirstDashboardShiftPerEmployeeDay", () => {
     ];
 
     expect(
-      pickFirstDashboardShiftPerEmployeeDay(shifts).map((shift) => shift.id)
+      pickFirstAreaCalendarShiftPerEmployeeDay(shifts).map((shift) => shift.id)
     ).toEqual(["s1"]);
   });
 });

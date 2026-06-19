@@ -1,5 +1,5 @@
-import { areDashboardShiftTimesComplete } from "@/lib/available-employees-for-shift";
-import { DASHBOARD_EMPTY_EMPLOYEE_ID } from "@/components/dashboard/dashboard-add-shift-modal";
+import { areAreaCalendarShiftTimesComplete } from "@/lib/available-employees-for-shift";
+import { AREA_CALENDAR_EMPTY_EMPLOYEE_ID } from "@/components/areacalendar/areacalendar-add-shift-modal";
 import {
   validateEmployeeDayShiftAssignments,
   weekdayIndexFromDate,
@@ -42,7 +42,7 @@ export function formatBulkShiftComplianceViolationMessage(
   ) => string
 ): string {
   if (violation.kind === "shift_duration") {
-    return translate("dashboard.bulkShiftValidationShiftDuration", {
+    return translate("areaCalendar.bulkShiftValidationShiftDuration", {
       name: employeeName,
       start: violation.shiftStartTime ?? "",
       end: violation.shiftEndTime ?? "",
@@ -52,7 +52,7 @@ export function formatBulkShiftComplianceViolationMessage(
   }
 
   if (violation.kind === "daily_hours") {
-    return translate("dashboard.bulkShiftValidationDailyHours", {
+    return translate("areaCalendar.bulkShiftValidationDailyHours", {
       name: employeeName,
       total: formatHours(violation.totalHours ?? 0),
       limit: violation.limitHours ?? 8,
@@ -60,7 +60,7 @@ export function formatBulkShiftComplianceViolationMessage(
     });
   }
 
-  return translate("dashboard.bulkShiftValidationRestPeriod", {
+  return translate("areaCalendar.bulkShiftValidationRestPeriod", {
     name: employeeName,
     minRest: violation.minRestHours ?? 11,
     actualRest: formatHours(violation.actualRestHours ?? 0),
@@ -86,8 +86,8 @@ export function findBulkShiftDayComplianceViolation(
   const modalWindowsByEmployee = new Map<string, DayShiftTimeWindow[]>();
 
   for (const row of modalRows) {
-    if (row.employeeId === DASHBOARD_EMPTY_EMPLOYEE_ID) continue;
-    if (!areDashboardShiftTimesComplete(row.startTime, row.endTime)) continue;
+    if (row.employeeId === AREA_CALENDAR_EMPTY_EMPLOYEE_ID) continue;
+    if (!areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)) continue;
 
     const windows = modalWindowsByEmployee.get(row.employeeId) ?? [];
     windows.push({ startTime: row.startTime, endTime: row.endTime });
@@ -100,7 +100,7 @@ export function findBulkShiftDayComplianceViolation(
         (assignment) =>
           assignment.employeeId === employeeId &&
           assignment.locationAreaId !== currentAreaId &&
-          areDashboardShiftTimesComplete(
+          areAreaCalendarShiftTimesComplete(
             assignment.startTime,
             assignment.endTime
           )

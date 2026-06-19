@@ -8,10 +8,10 @@ Stand: Juni 2025. Bei Bedarf die unten genannten **Originalwerte** wiederherstel
 | Datei | Änderung |
 |-------|----------|
 | `src/app/layout.tsx` | `viewport` export |
-| `src/components/dashboard/app-shell.tsx` | Mobile Top-Bar, Padding |
-| `src/components/dashboard/dashboard-view.tsx` | Negative Margins / Höhe |
-| `src/components/dashboard/dashboard-header.tsx` | Header-Layout, Breiten |
-| `src/components/planning/shift-planner.tsx` | Planungs-Layout |
+| `src/components/areacalendar/app-shell.tsx` | Mobile Top-Bar, Padding, **Mobile-Scroll (Jun 2025)** |
+| `src/lib/app-shell-layout.ts` | **Mobile-Scroll-Klassen (max-md only)** |
+| `src/components/dashboard/dashboard-view.tsx` | Negative Margins / Höhe, **Mobile-Scroll** |
+| `src/components/areacalendar/areacalendar-view.tsx` | **Mobile-Scroll / Legend-Stack** |
 
 **Nicht geändert (bewusst):** `dashboard-calendar.tsx` — Grid, minWidth, Scroll-Verhalten.
 
@@ -53,7 +53,7 @@ className="relative flex w-56 shrink-0 flex-col border-r border-border bg-surfac
 className="!mt-0 w-[11rem] shrink-0 font-semibold"
 ```
 
-### `shift-planner.tsx`
+### `dashboard-view.tsx`
 
 ```tsx
 <div className="-m-6 flex min-h-[calc(100vh-4.5rem)] flex-col bg-subtle">
@@ -77,6 +77,6 @@ git checkout -- apps/web/src/app/layout.tsx `
   apps/web/src/components/dashboard/app-shell.tsx `
   apps/web/src/components/dashboard/dashboard-view.tsx `
   apps/web/src/components/dashboard/dashboard-header.tsx `
-  apps/web/src/components/planning/shift-planner.tsx
+  apps/web/src/components/dashboard/dashboard-view.tsx
 Remove-Item apps/web/RESPONSIVE_ROLLBACK.md
 ```

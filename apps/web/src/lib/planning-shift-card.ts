@@ -1,4 +1,4 @@
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
+import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { Profile, ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export type PlanningShift = {
@@ -12,12 +12,14 @@ export type PlanningShift = {
   location_area_id: string | null;
   area_shift_template_id: string | null;
   confirmationStatus?: ShiftConfirmationStatus;
+  requestedAt?: string | null;
+  confirmationStatusUpdatedAt?: string | null;
 };
 
-export function planningShiftToDashboardCard(
+export function planningShiftToAreaCalendarCard(
   shift: PlanningShift,
   employee: Profile
-): DashboardShiftCard {
+): AreaCalendarShiftCard {
   return {
     id: shift.id,
     shift_date: shift.shift_date,
@@ -31,6 +33,8 @@ export function planningShiftToDashboardCard(
     employeeName: employee.full_name,
     employeeColor: employee.color ?? null,
     confirmationStatus: shift.confirmationStatus,
+    requestedAt: shift.requestedAt,
+    confirmationStatusUpdatedAt: shift.confirmationStatusUpdatedAt,
   };
 }
 

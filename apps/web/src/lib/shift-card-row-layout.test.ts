@@ -111,7 +111,7 @@ describe("shift-card-row-layout", () => {
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(availableBodyHeightPx);
   });
 
-  it("T5: collapsed rows stay at 50 px and expanded rows take slack", () => {
+  it("T5: collapsed rows stay at 68 px and expanded rows take slack", () => {
     const areas = [{ id: "restaurant" }, { id: "bar" }];
     const availableBodyHeightPx = 700;
     const layouts = computeAreaRowLayouts(
@@ -192,7 +192,7 @@ describe("shift-card-row-layout", () => {
       ["kitchen", 0],
     ]);
     const requiredRestaurant = areaRowRequiredHeightPx(12);
-    const availableBodyHeightPx = requiredRestaurant + 100;
+    const availableBodyHeightPx = requiredRestaurant + 136;
 
     const layouts = computeAreaRowLayouts(
       areas,
@@ -216,7 +216,7 @@ describe("shift-card-row-layout", () => {
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(availableBodyHeightPx);
   });
 
-  it("T9: service-dormant expanded areas stay at 50 px and forfeit slack", () => {
+  it("T9: service-dormant expanded areas stay at 68 px and forfeit slack", () => {
     const areas = [{ id: "restaurant" }, { id: "bar" }, { id: "kitchen" }];
     const maxShifts = new Map([
       ["restaurant", 12],
@@ -237,7 +237,7 @@ describe("shift-card-row-layout", () => {
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(900);
   });
 
-  it("T10: sole service-dormant area stays at 50 px without absorbing slack", () => {
+  it("T10: sole service-dormant area stays at 68 px without absorbing slack", () => {
     const areas = [{ id: "bar" }];
     const layouts = computeAreaRowLayouts(
       areas,
@@ -251,7 +251,7 @@ describe("shift-card-row-layout", () => {
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(AREA_ROW_MIN_HEIGHT_PX);
   });
 
-  it("T11: all service-dormant areas stay at 50 px", () => {
+  it("T11: all service-dormant areas stay at 68 px", () => {
     const areas = [{ id: "bar" }, { id: "kitchen" }];
     const layouts = computeAreaRowLayouts(
       areas,
@@ -309,7 +309,7 @@ describe("shift-card-row-layout", () => {
   });
 
   it("reserves header and footer chrome when measuring calendar body height", () => {
-    expect(calendarAvailableBodyHeightPx(800)).toBe(694);
+    expect(calendarAvailableBodyHeightPx(800)).toBe(682);
     expect(calendarAvailableBodyHeightPx(100)).toBe(0);
   });
 });

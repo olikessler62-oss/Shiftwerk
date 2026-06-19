@@ -6,6 +6,7 @@ const STATUS_LABELS: Record<ShiftConfirmationStatus, string> = {
   confirmed: "Bestätigt",
   rejected: "Abgelehnt",
   pending: "Antwort ausstehend",
+  canceled: "Abgesagt",
 };
 
 export function shiftConfirmationStatusLabel(

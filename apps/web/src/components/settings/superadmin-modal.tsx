@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { resetOrganizationDatabase } from "@/app/actions/db-reset";
-import { OrganizationPlanningModeModal } from "@/components/settings/organization-planning-mode-modal";
-import { OrganizationCompensationSettingsModal } from "@/components/settings/organization-compensation-settings-modal";
 import { NotificationOutboxModal } from "@/components/settings/notification-outbox-modal";
+import { SuperadminEmployeesSection } from "@/components/settings/superadmin-employees-section";
+import { SuperadminOrganizationSection } from "@/components/settings/superadmin-organization-section";
+import { SuperadminShiftsSection } from "@/components/settings/superadmin-shifts-section";
 import { Alert, Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { useSimpleCalendarDisplay } from "@/lib/simple-calendar-display-context";
-import { useShiftConfirmationSimulation } from "@/lib/shift-confirmation-simulation-context";
 import {
+  MODAL_SCROLLBAR_CLASS,
   SETTINGS_MODAL_MAX_WIDTH,
   SETTINGS_MODAL_TITLE_CLASS,
-  dashboardModalBackdropClass,
+  areaCalendarModalBackdropClass,
   settingsConfirmDialogClass,
   settingsModalBodyPaddingClass,
   settingsModalDialogClass,
@@ -26,29 +26,21 @@ type Props = {
   onClose: () => void;
 };
 
+type SuperadminTab = "simulation" | "shifts";
+
 export function SuperadminModal({ onClose }: Props) {
   const t = useTranslations();
-  const [planningModeOpen, setPlanningModeOpen] = useState(false);
-  const [compensationSettingsOpen, setCompensationSettingsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<SuperadminTab>("simulation");
   const [notificationOutboxOpen, setNotificationOutboxOpen] = useState(false);
   const [dbResetConfirmOpen, setDbResetConfirmOpen] = useState(false);
   const [dbResetError, setDbResetError] = useState<string | null>(null);
+  const [orgHasChanges, setOrgHasChanges] = useState(false);
+  const [orgSavePending, setOrgSavePending] = useState(false);
+  const orgSaveRef = useRef<() => void>(() => {});
   const [dbResetPending, startDbResetTransition] = useTransition();
-  const { simpleCalendarFirstShiftOnly, setSimpleCalendarFirstShiftOnly } =
-    useSimpleCalendarDisplay();
-  const {
-    shiftConfirmationEnabled,
-    setShiftConfirmationEnabled,
-    simulatedProposedOnAssign,
-    setSimulatedProposedOnAssign,
-  } = useShiftConfirmationSimulation();
 
   const overlayOpen =
-    planningModeOpen ||
-    compensationSettingsOpen ||
-    notificationOutboxOpen ||
-    dbResetConfirmOpen ||
-    dbResetPending;
+    notificationOutboxOpen || dbResetConfirmOpen || dbResetPending;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -57,12 +49,12 @@ export function SuperadminModal({ onClose }: Props) {
         setDbResetConfirmOpen(false);
         return;
       }
-      if (planningModeOpen || compensationSettingsOpen || notificationOutboxOpen) return;
+      if (notificationOutboxOpen) return;
       onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [compensationSettingsOpen, dbResetConfirmOpen, dbResetPending, notificationOutboxOpen, onClose, planningModeOpen]);
+  }, [dbResetConfirmOpen, dbResetPending, notificationOutboxOpen, onClose]);
 
   function handleDbResetConfirm() {
     setDbResetError(null);
@@ -77,7 +69,7 @@ export function SuperadminModal({ onClose }: Props) {
 
   return (
     <div
-      className={dashboardModalBackdropClass()}
+      className={areaCalendarModalBackdropClass()}
       role="presentation"
       aria-busy={dbResetPending}
       onMouseDown={(event) => {
@@ -112,141 +104,117 @@ export function SuperadminModal({ onClose }: Props) {
             <h2 id="superadmin-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               {t("nav.superadmin")}
             </h2>
+            <div
+              className="mt-3 flex flex-wrap gap-1 border-b border-border"
+              role="tablist"
+              aria-label={t("nav.superadmin")}
+            >
+              {(
+                [
+                  ["simulation", "nav.superadminTabSimulation"],
+                  ["shifts", "nav.superadminTabShifts"],
+                ] as const
+              ).map(([tab, labelKey]) => {
+                const selected = activeTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    disabled={dbResetPending}
+                    onClick={() => setActiveTab(tab)}
+                    className={cn(
+                      "border-b-2 px-3 py-2 text-sm font-semibold transition-colors",
+                      selected
+                        ? "border-primary text-foreground"
+                        : "border-transparent text-muted hover:border-border hover:text-foreground"
+                    )}
+                  >
+                    {t(labelKey)}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <div className={cn(settingsModalBodyPaddingClass(), "space-y-6")}>
+          <div
+            className={cn(
+              settingsModalBodyPaddingClass(),
+              MODAL_SCROLLBAR_CLASS,
+              "min-h-0 flex-1 space-y-6 overflow-y-auto"
+            )}
+          >
             {dbResetError ? <Alert variant="error">{dbResetError}</Alert> : null}
 
-            <section className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                {t("nav.superadminActionsTitle")}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={dbResetPending}
-                  onClick={() => setCompensationSettingsOpen(true)}
-                >
-                  {t("nav.compensationSettings")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={dbResetPending}
-                  onClick={() => setPlanningModeOpen(true)}
-                >
-                  {t("nav.planningMode")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={dbResetPending}
-                  onClick={() => setNotificationOutboxOpen(true)}
-                >
-                  {t("nav.notificationOutbox")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={dbResetPending}
-                  className="text-destructive hover:bg-destructive/5 hover:text-destructive"
-                  onClick={() => setDbResetConfirmOpen(true)}
-                >
-                  {t("nav.dbReset")}
-                </Button>
-              </div>
-            </section>
+            {activeTab === "simulation" ? (
+              <>
+                <section className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    {t("nav.superadminActionsTitle")}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={dbResetPending}
+                      onClick={() => setNotificationOutboxOpen(true)}
+                    >
+                      {t("nav.notificationOutbox")}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={dbResetPending}
+                      className="text-destructive hover:bg-destructive/5 hover:text-destructive"
+                      onClick={() => setDbResetConfirmOpen(true)}
+                    >
+                      {t("nav.dbReset")}
+                    </Button>
+                  </div>
+                </section>
 
-            <section className="space-y-4 border-t border-border pt-5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                {t("nav.superadminSimulationTitle")}
-              </p>
-
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border px-3 py-3 hover:bg-primary/5">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 shrink-0"
-                  checked={simpleCalendarFirstShiftOnly}
-                  disabled={dbResetPending}
-                  onChange={(event) =>
-                    setSimpleCalendarFirstShiftOnly(event.target.checked)
-                  }
-                />
-                <span>
-                  <span className="text-sm font-medium text-foreground">
-                    {t("nav.superadminSimpleCalendar")}
-                  </span>
-                  <span className="mt-1 block text-xs leading-snug text-muted">
-                    {t("nav.superadminSimpleCalendarHint")}
-                  </span>
-                </span>
-              </label>
-
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border px-3 py-3 hover:bg-primary/5">
-                <input
-                  type="checkbox"
-                  className="mt-0.5 shrink-0"
-                  checked={shiftConfirmationEnabled}
-                  disabled={dbResetPending}
-                  onChange={(event) =>
-                    setShiftConfirmationEnabled(event.target.checked)
-                  }
-                />
-                <span>
-                  <span className="text-sm font-medium text-foreground">
-                    {t("nav.superadminShiftConfirmation")}
-                  </span>
-                  <span className="mt-1 block text-xs leading-snug text-muted">
-                    {t("nav.superadminShiftConfirmationHint")}
-                  </span>
-                </span>
-              </label>
-
-              {shiftConfirmationEnabled ? (
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border px-3 py-3 hover:bg-primary/5">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 shrink-0"
-                    checked={simulatedProposedOnAssign}
+                <section className="space-y-4 border-t border-border pt-5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    {t("nav.superadminOrganizationTitle")}
+                  </p>
+                  <SuperadminOrganizationSection
                     disabled={dbResetPending}
-                    onChange={(event) =>
-                      setSimulatedProposedOnAssign(event.target.checked)
-                    }
+                    onSaveStateChange={({ hasChanges, pending, save }) => {
+                      setOrgHasChanges(hasChanges);
+                      setOrgSavePending(pending);
+                      orgSaveRef.current = save;
+                    }}
                   />
-                  <span>
-                    <span className="text-sm font-medium text-foreground">
-                      {t("nav.superadminShiftConfirmationProposedOnAssign")}
-                    </span>
-                    <span className="mt-1 block text-xs leading-snug text-muted">
-                      {t("nav.superadminShiftConfirmationProposedOnAssignHint")}
-                    </span>
-                  </span>
-                </label>
-              ) : null}
-            </section>
+                </section>
+
+                <section className="space-y-4 border-t border-border pt-5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    {t("nav.superadminEmployeesTitle")}
+                  </p>
+                  <SuperadminEmployeesSection disabled={dbResetPending} />
+                </section>
+              </>
+            ) : (
+              <SuperadminShiftsSection disabled={dbResetPending} />
+            )}
           </div>
 
           <div className={settingsModalFooterClass()}>
             <Button type="button" variant="outline" disabled={dbResetPending} onClick={onClose}>
               {t("common.close")}
             </Button>
+            {activeTab === "simulation" ? (
+              <Button
+                type="button"
+                disabled={dbResetPending || orgSavePending || !orgHasChanges}
+                onClick={() => orgSaveRef.current()}
+              >
+                {t("common.save")}
+              </Button>
+            ) : null}
           </div>
         </div>
-
-        {planningModeOpen ? (
-          <OrganizationPlanningModeModal
-            nested
-            onClose={() => setPlanningModeOpen(false)}
-          />
-        ) : null}
-
-        {compensationSettingsOpen ? (
-          <OrganizationCompensationSettingsModal
-            nested
-            onClose={() => setCompensationSettingsOpen(false)}
-          />
-        ) : null}
 
         {notificationOutboxOpen ? (
           <NotificationOutboxModal onClose={() => setNotificationOutboxOpen(false)} />

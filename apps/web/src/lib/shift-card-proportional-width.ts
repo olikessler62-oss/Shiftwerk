@@ -32,7 +32,7 @@ export function widthFrom24hDurationPx(
 }
 
 /**
- * Dashboard Overnight-Span: Dauer / 24 h × kombinierte Zellbreite, mit MIN.
+ * Bereich-Kalender Overnight-Span: Dauer / 24 h × kombinierte Zellbreite, mit MIN.
  */
 export function resolveOvernightSpanWidthPx(options: {
   startTime: string;

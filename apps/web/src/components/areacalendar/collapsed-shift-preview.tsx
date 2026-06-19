@@ -1,8 +1,8 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
-import { buildShiftCardDisplayContent } from "@/components/dashboard/dashboard-shift-card-view";
+import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
+import { buildShiftCardDisplayContent } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import {
   COLLAPSED_PAST_AREA_PIXEL_COLOR,
@@ -19,19 +19,22 @@ import {
 } from "@/lib/shift-card-row-layout";
 import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
-import { buildDashboardCellShiftRows } from "@/lib/dashboard-overnight-shift-display";
+import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
+import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
 import { useTranslations } from "@/i18n/locale-provider";
+import { isPastShiftDate } from "@/lib/planning-readonly";
+import { planningShiftCardShowsPointerCursor } from "@/lib/shift-card-context-menu-actions";
 
 const COLLAPSED_SHIFT_LINE_FALLBACK_COLOR = "#94a3b8";
 
 type Props = {
-  shifts: DashboardShiftCard[];
+  shifts: AreaCalendarShiftCard[];
   serviceTimeline: ShiftCardServiceTimeline;
   /** Vergangener Kalendertag — einheitlich grau, kein Scroll. */
   isPastDay: boolean;
+  cellDate: string;
   /** Alle Schichten des Tages (alle Bereiche) — für einheitliche Balkenbreite im zugeklappten Tag. */
-  dayReferenceShifts?: readonly DashboardShiftCard[];
+  dayReferenceShifts?: readonly AreaCalendarShiftCard[];
   /** Zugeklappter Bereich — nur einzelne Pixel statt Balken. */
   areaCollapsed?: boolean;
   /** Zugeklappter Tag — kein Scroll, Inhalt abschneiden. */
@@ -46,7 +49,7 @@ type Props = {
   markerWidthDeltaPx?: number;
   /** Zusätzliche Marker-Höhe (px), z. B. +5 im Schichtplan. */
   markerHeightDeltaPx?: number;
-  onShiftClick?: (shift: DashboardShiftCard) => void;
+  onShiftClick?: (shift: AreaCalendarShiftCard) => void;
   selectedShiftId?: string | null;
   disabled?: boolean;
   className?: string;
@@ -54,13 +57,13 @@ type Props = {
   overnightAnchorShiftIds?: ReadonlySet<string>;
   /** Endtag: Zeilenindex → Schicht-ID für eingehende Nachtschicht-Fortsetzung. */
   incomingOvernightTailRowsByIndex?: ReadonlyMap<number, string>;
-  assignmentPresets?: readonly DashboardAssignmentPreset[];
+  assignmentPresets?: readonly AreaCalendarAssignmentPreset[];
 };
 
 type CollapsedPreviewItem =
   | {
       kind: "shift";
-      shift: DashboardShiftCard;
+      shift: AreaCalendarShiftCard;
       display: ReturnType<typeof buildShiftCardDisplayContent>;
       marginLeftPx: number;
       widthPx: number;
@@ -69,7 +72,7 @@ type CollapsedPreviewItem =
   | { kind: "overnight-anchor"; shiftId: string; heightPx: number }
   | { kind: "spacer"; spacerKey: string; heightPx: number };
 
-function compareShiftCards(a: DashboardShiftCard, b: DashboardShiftCard): number {
+function compareShiftCards(a: AreaCalendarShiftCard, b: AreaCalendarShiftCard): number {
   const startDiff = a.startTime.localeCompare(b.startTime);
   if (startDiff !== 0) return startDiff;
   const endDiff = a.endTime.localeCompare(b.endTime);
@@ -78,7 +81,7 @@ function compareShiftCards(a: DashboardShiftCard, b: DashboardShiftCard): number
 }
 
 function resolvePreviewColor(
-  shift: DashboardShiftCard,
+  shift: AreaCalendarShiftCard,
   isPastDay: boolean,
   areaCollapsed: boolean
 ): string {
@@ -94,6 +97,7 @@ export function CollapsedShiftPreview({
   shifts,
   serviceTimeline,
   isPastDay,
+  cellDate,
   dayReferenceShifts,
   areaCollapsed = false,
   dayCollapsed = false,
@@ -193,7 +197,7 @@ export function CollapsedShiftPreview({
       sortedShifts.map((shift, index) => [shift.id, index] as const)
     );
 
-    const cellRows = buildDashboardCellShiftRows(sortedShifts, {
+    const cellRows = buildAreaCalendarCellShiftRows(sortedShifts, {
       overnightAnchorShiftIds,
       incomingOvernightTailRowsByIndex,
     });
@@ -306,7 +310,7 @@ export function CollapsedShiftPreview({
           return (
             <div
               key={item.shiftId}
-              data-dashboard-overnight-span-anchor={item.shiftId}
+              data-areacalendar-overnight-span-anchor={item.shiftId}
               className="self-start shrink-0"
               style={{
                 height: item.heightPx,
@@ -323,7 +327,7 @@ export function CollapsedShiftPreview({
           return (
             <div
               key={shift.id}
-              data-dashboard-overnight-span-anchor={shift.id}
+              data-areacalendar-overnight-span-anchor={shift.id}
               className="self-start shrink-0"
               style={{
                 height: COLLAPSED_SHIFT_PIXEL_SIZE_PX,
@@ -336,6 +340,17 @@ export function CollapsedShiftPreview({
 
         const color = resolvePreviewColor(shift, isPastDay, areaCollapsed);
         const isSelected = selectedShiftId === shift.id;
+        const shiftInteractive =
+          interactive &&
+          planningShiftCardShowsPointerCursor(
+            {
+              shift_date: shift.shift_date,
+              confirmationStatus: shift.confirmationStatus,
+              requestedAt: shift.requestedAt,
+            },
+            cellDate,
+            isPastShiftDate
+          );
 
         if (areaCollapsed) {
           const marker = (
@@ -346,14 +361,15 @@ export function CollapsedShiftPreview({
             />
           );
 
-          if (interactive) {
+          if (shiftInteractive) {
             return (
               <button
                 key={shift.id}
                 type="button"
                 onClick={() => onShiftClick!(shift)}
                 className={cn(
-                  "absolute top-1/2 -translate-y-1/2 cursor-pointer border-0 bg-transparent p-0",
+                  "absolute top-1/2 -translate-y-1/2 border-0 bg-transparent p-0",
+                  shiftInteractive ? "cursor-pointer" : "!cursor-default",
                   isSelected && "ring-2 ring-primary ring-offset-1"
                 )}
                 style={{
@@ -396,12 +412,16 @@ export function CollapsedShiftPreview({
           isSelected && "ring-2 ring-primary ring-offset-1"
         );
 
-        if (interactive) {
+        if (shiftInteractive) {
           const button = (
             <button
               type="button"
               onClick={() => onShiftClick!(shift)}
-              className={cn(markerClass, "cursor-pointer border-0 p-0")}
+              className={cn(
+                markerClass,
+                "border-0 p-0",
+                shiftInteractive ? "cursor-pointer" : "!cursor-default"
+              )}
               style={markerStyle}
               aria-label={display.tooltipBody}
             />

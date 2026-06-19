@@ -1,4 +1,4 @@
-import { areDashboardShiftTimesComplete } from "@/lib/available-employees-for-shift";
+import { areAreaCalendarShiftTimesComplete } from "@/lib/available-employees-for-shift";
 
 export type BulkShiftSaveRow = {
   id: string;
@@ -14,7 +14,7 @@ export function isSaveableNewBulkShiftRow(row: BulkShiftSaveRow): boolean {
     !row.existingShiftId &&
     Boolean(row.employeeId) &&
     row.qualificationId.length > 0 &&
-    areDashboardShiftTimesComplete(row.startTime, row.endTime)
+    areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)
   );
 }
 

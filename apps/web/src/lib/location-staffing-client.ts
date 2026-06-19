@@ -1,6 +1,6 @@
 /** Reine Hilfsfunktionen für Client-Komponenten (kein @schichtwerk/database-Import). */
 
-import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
+import { resolvePresetIdFromTimes } from "@/lib/areacalendar-assignment-presets";
 import { isPastCalendarDate } from "@/lib/dates";
 import { isGermanPublicHoliday } from "@/lib/german-public-holidays";
 import { formatTimeRange } from "@/lib/planning-utils";
@@ -444,7 +444,7 @@ export function areaHasStaffingRequirementInWeek(
   );
 }
 
-/** Öffnungsstatus im Dashboard: Servicezeit oder Schichten im Bereich. */
+/** Öffnungsstatus im Bereich-Kalender: Servicezeit oder Schichten im Bereich. */
 export function isAreaOpenInCalendar(
   serviceHours: AreaServiceHourRef[],
   areaId: string,
@@ -457,7 +457,7 @@ export function isAreaOpenInCalendar(
   );
 }
 
-/** Mindestens ein Bereich geöffnet (Dashboard). */
+/** Mindestens ein Bereich geöffnet (Bereich-Kalender). */
 export function isAnyAreaOpenInCalendar(
   serviceHours: AreaServiceHourRef[],
   areaIds: readonly string[],
@@ -469,7 +469,7 @@ export function isAnyAreaOpenInCalendar(
   );
 }
 
-/** Personalbedarf an geöffneten Bereichen (Dashboard). */
+/** Personalbedarf an geöffneten Bereichen (Bereich-Kalender). */
 export function hasStaffingRequirementInCalendar(
   rules: StaffingRule[],
   areaIds: readonly string[],
@@ -521,7 +521,7 @@ export type TagAreaHeaderStaffingEntry = {
   qualifications?: StaffingQualificationCoverage[];
 };
 
-/** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header (Dashboard). */
+/** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header (Bereich-Kalender). */
 export function tagAreaHeaderStaffingEntriesInCalendar(
   rules: StaffingRule[],
   areaId: string,

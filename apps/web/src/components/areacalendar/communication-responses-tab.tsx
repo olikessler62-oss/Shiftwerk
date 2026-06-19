@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
-import { submitCommunicationConfirmationRequests } from "@/app/actions/shift-confirmations";
+import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
+import {
+  cancelShiftsAsManager,
+  submitCommunicationConfirmationRequests,
+} from "@/app/actions/shift-confirmations";
+import { removeShiftsAsManager } from "@/app/actions/shifts";
+import { AreaCalendarShiftDeleteConfirmModal } from "@/components/areacalendar/areacalendar-shift-delete-confirm-modal";
+import { CommunicationCategoryTabs } from "@/components/areacalendar/communication-category-tabs";
 import { Alert, Button } from "@/components/ui";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
@@ -12,20 +18,27 @@ import { formatDayHeader } from "@/lib/planning-utils";
 import {
   COMMUNICATION_LIST_ROW_HEIGHT_PX,
   COMMUNICATION_LIST_SCROLL_THRESHOLD,
-  COMMUNICATION_RESPONSE_TAB_ORDER,
-  communicationResponseTabLabelClass,
-  communicationTabHasActionButton,
-  communicationTabShowsSelection,
+  communicationHubCounts,
   defaultSelectedResponseShiftIds,
-  groupCommunicationResponseShifts,
+  groupCommunicationHubData,
   groupCommunicationShiftsByArea,
-  type CommunicationResponseTab,
+  type CommunicationHubCategory,
+  type CommunicationSwapRequestRow,
 } from "@/lib/communication-hub";
+import {
+  communicationActionRequiresExactlyOneSelection,
+  communicationTabActions,
+  communicationTabShowsSelection,
+  type CommunicationTabAction,
+} from "@/lib/communication-tab-actions";
 import {
   shiftConfirmationStatusLabelKey,
   shiftConfirmationTooltipStatusTextClass,
 } from "@/lib/shift-confirmation-display";
-import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import { absenceTypeLabelKey } from "@/lib/shift-absence-conflict";
+import { translateShiftCancelError } from "@/lib/shift-cancellation-policy";
+import { translateActionError } from "@/lib/translate-action-error";
+import type { AbsenceRequest, ShiftConfirmationStatus } from "@schichtwerk/types";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import {
   useShiftConfirmationSimulation,
@@ -38,12 +51,22 @@ type Props = {
   weekStart: string;
   locationId: string | null;
   areas: LocationArea[];
-  shifts: DashboardShiftCard[];
-  initialTab?: CommunicationResponseTab;
+  shifts: AreaCalendarShiftCard[];
+  absences?: AbsenceRequest[];
+  swapRequests?: CommunicationSwapRequestRow[];
+  cancelActors?: ReadonlyMap<string, "employee" | "manager">;
+  initialCategory?: CommunicationHubCategory;
   onClose: () => void;
-  onReassign: (shift: DashboardShiftCard) => void;
+  onReassign: (shift: AreaCalendarShiftCard) => void;
   onBusyChange?: (busy: boolean) => void;
+  onLocalShiftRemoved?: (shiftIds: readonly string[]) => void;
+  onLocalShiftRestore?: (shiftIds: readonly string[]) => void;
 };
+
+type BatchConfirmState =
+  | { action: "delete"; shiftIds: string[] }
+  | { action: "cancel"; shiftIds: string[] }
+  | null;
 
 const RESPONSE_ROW_GRID_WITH_SELECTION_CLASS =
   "grid h-10 grid-cols-[minmax(9.5rem,1.05fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.85fr)] items-center gap-x-3";
@@ -57,10 +80,51 @@ const HEADER_CELL_CLASS =
 const CHECKBOX_LABEL_CLASS =
   "flex min-w-0 items-center gap-2 whitespace-nowrap text-left text-xs text-muted";
 
-function checkboxLabelKey(tab: CommunicationResponseTab) {
-  return tab === "proposed"
-    ? "shiftConfirmation.communication.rowRequest"
-    : "shiftConfirmation.communication.rowResend";
+const RESPONSE_ROW_GRID_CONFLICTS_CLASS =
+  "grid h-10 grid-cols-[minmax(9.5rem,1.05fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.85fr)_minmax(0,0.75fr)] items-center gap-x-3";
+
+const SWAP_ROW_GRID_CLASS =
+  "grid h-10 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,1fr)] items-center gap-x-3";
+
+function checkboxLabelKey(category: CommunicationHubCategory) {
+  if (category === "proposed") {
+    return "shiftConfirmation.communication.rowRequest";
+  }
+  if (category === "pending") {
+    return "shiftConfirmation.communication.rowResend";
+  }
+  if (category === "rejected" || category === "canceled" || category === "conflicts") {
+    return "shiftConfirmation.communication.rowReassign";
+  }
+  return "shiftConfirmation.communication.rowSelect";
+}
+
+function actionButtonLabel(
+  action: CommunicationTabAction,
+  t: ReturnType<typeof useTranslations>
+): string {
+  switch (action) {
+    case "delete":
+      return t("shiftConfirmation.communication.actionDelete");
+    case "cancel":
+      return t("shiftConfirmation.actions.cancelShiftManager");
+    case "reassign":
+      return t("shiftConfirmation.panel.reassign");
+    case "requestConfirmation":
+      return t("shiftConfirmation.actions.requestConfirmation");
+  }
+}
+
+function isActionDisabled(
+  action: CommunicationTabAction,
+  selectedCount: number,
+  pending: boolean
+): boolean {
+  if (pending) return true;
+  if (communicationActionRequiresExactlyOneSelection(action)) {
+    return selectedCount !== 1;
+  }
+  return selectedCount === 0;
 }
 
 function resolveAreaNameForGroup(
@@ -85,53 +149,76 @@ function responseStatusLabelKey(
   return shiftConfirmationStatusLabelKey(status);
 }
 
-function tabActionLabel(
-  tab: CommunicationResponseTab,
-  t: ReturnType<typeof useTranslations>
-): string {
-  switch (tab) {
-    case "pending":
-      return t("shiftConfirmation.actions.requestConfirmation");
-    case "proposed":
-      return t("shiftConfirmation.communication.tabActionSend");
-    case "rejected":
-      return t("shiftConfirmation.panel.reassign");
-    default:
-      return "";
-  }
-}
-
 export function CommunicationResponsesTab({
   weekStart,
   locationId,
   areas,
   shifts,
-  initialTab = "rejected",
+  absences = [],
+  swapRequests = [],
+  cancelActors,
+  initialCategory = "conflicts",
   onClose,
   onReassign,
   onBusyChange,
+  onLocalShiftRemoved,
+  onLocalShiftRestore,
 }: Props) {
   const t = useTranslations();
   const { locale } = useLocale();
   const intlLocale = toIntlLocale(locale);
   const router = useRouter();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
-  const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
+  const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
+    useSimulatedProposedOnAssignRequest();
   const [pending, startTransition] = useTransition();
-  const [activeTab, setActiveTab] = useState<CommunicationResponseTab>(initialTab);
+  const hubOptions = useMemo(
+    () => ({
+      absences,
+      swapRequests,
+      cancelActors,
+    }),
+    [absences, swapRequests, cancelActors]
+  );
+  const grouped = useMemo(
+    () => groupCommunicationHubData(shifts, hubOptions),
+    [shifts, hubOptions]
+  );
+  const counts = useMemo(() => communicationHubCounts(grouped), [grouped]);
+  const [activeCategory, setActiveCategory] =
+    useState<CommunicationHubCategory>(initialCategory);
   const [selected, setSelected] = useState<Set<string>>(() =>
-    defaultSelectedResponseShiftIds(initialTab, shifts)
+    defaultSelectedResponseShiftIds(initialCategory, shifts, hubOptions)
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [batchConfirm, setBatchConfirm] = useState<BatchConfirmState>(null);
 
-  const showSelection = communicationTabShowsSelection(activeTab);
+  const categoryActions = communicationTabActions(activeCategory);
+  const showSelection = communicationTabShowsSelection(activeCategory);
+  const showConflictColumn = activeCategory === "conflicts";
   const rowGridClass = showSelection
-    ? RESPONSE_ROW_GRID_WITH_SELECTION_CLASS
+    ? showConflictColumn
+      ? RESPONSE_ROW_GRID_CONFLICTS_CLASS
+      : RESPONSE_ROW_GRID_WITH_SELECTION_CLASS
     : RESPONSE_ROW_GRID_READONLY_CLASS;
 
-  const grouped = useMemo(() => groupCommunicationResponseShifts(shifts), [shifts]);
-  const visibleShifts = grouped[activeTab];
+  const visibleShifts = useMemo(() => {
+    if (activeCategory === "conflicts") return grouped.conflicts;
+    if (activeCategory === "swaps") return [];
+    return grouped[activeCategory as keyof typeof grouped] as
+      | AreaCalendarShiftCard[]
+      | undefined ?? [];
+  }, [activeCategory, grouped]);
+
+  const visibleSwaps =
+    activeCategory === "swaps" ? grouped.swaps : [];
+
+  const categoryLabel = useCallback(
+    (category: CommunicationHubCategory) =>
+      t(`shiftConfirmation.communication.categories.${category}`),
+    [t]
+  );
 
   const areaNameById = useMemo(
     () => new Map(areas.map((area) => [area.id, area.name])),
@@ -147,7 +234,7 @@ export function CommunicationResponsesTab({
     const unknownAreaLabel = t("shiftConfirmation.communication.areaUnknown");
     const items: Array<
       | { kind: "area"; key: string; areaName: string }
-      | { kind: "shift"; key: string; shift: DashboardShiftCard }
+      | { kind: "shift"; key: string; shift: AreaCalendarShiftCard }
     > = [];
 
     for (const group of areaGroups) {
@@ -168,27 +255,26 @@ export function CommunicationResponsesTab({
     return items;
   }, [areaGroups, areaNameById, t]);
 
-  const listRowCount = listItems.length;
+  const listRowCount =
+    activeCategory === "swaps" ? visibleSwaps.length : listItems.length;
   const listScrollEnabled = listRowCount > COMMUNICATION_LIST_SCROLL_THRESHOLD;
 
-  const tabs = COMMUNICATION_RESPONSE_TAB_ORDER.map((id) => ({
-    id,
-    label: t(`shiftConfirmation.panel.tabs.${id}`),
-    count: grouped[id].length,
-  }));
-
-  const selectedCount = visibleShifts.filter((shift) => selected.has(shift.id)).length;
+  const selectedShifts = visibleShifts.filter((shift) => selected.has(shift.id));
+  const selectedCount = selectedShifts.length;
+  const listIsEmpty =
+    activeCategory === "swaps" ? visibleSwaps.length === 0 : visibleShifts.length === 0;
 
   useEffect(() => {
-    setActiveTab(initialTab);
-    setSelected(defaultSelectedResponseShiftIds(initialTab, shifts));
-  }, [initialTab, shifts]);
+    setActiveCategory(initialCategory);
+    setSelected(defaultSelectedResponseShiftIds(initialCategory, shifts, hubOptions));
+  }, [initialCategory, shifts, hubOptions]);
 
   useEffect(() => {
-    setSelected(defaultSelectedResponseShiftIds(activeTab, shifts));
+    setSelected(defaultSelectedResponseShiftIds(activeCategory, shifts, hubOptions));
     setErrorMessage(null);
     setSuccessMessage(null);
-  }, [activeTab, shifts]);
+    setBatchConfirm(null);
+  }, [activeCategory, shifts, hubOptions]);
 
   useEffect(() => {
     onBusyChange?.(pending);
@@ -217,10 +303,7 @@ export function CommunicationResponsesTab({
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const shiftIds = visibleShifts
-      .filter((shift) => selected.has(shift.id))
-      .map((shift) => shift.id);
-
+    const shiftIds = selectedShifts.map((shift) => shift.id);
     if (!shiftIds.length) {
       setErrorMessage(t("shiftConfirmation.send.noSelection"));
       return;
@@ -237,6 +320,7 @@ export function CommunicationResponsesTab({
         weekStart,
         locationId: locationId ?? undefined,
         simulatedProposedOnAssign,
+        relaxAppRegistrationGate,
       });
 
       if (!result.ok) {
@@ -273,7 +357,6 @@ export function CommunicationResponsesTab({
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const selectedShifts = visibleShifts.filter((shift) => selected.has(shift.id));
     if (selectedShifts.length !== 1) {
       setErrorMessage(t("shiftConfirmation.communication.reassignRequiresOne"));
       return;
@@ -282,58 +365,188 @@ export function CommunicationResponsesTab({
     onReassign(selectedShifts[0]!);
   }
 
-  function handleTabAction() {
-    if (activeTab === "rejected") {
+  function handleActionClick(action: CommunicationTabAction) {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (action === "reassign") {
       handleReassignSelected();
       return;
     }
-    if (activeTab === "pending" || activeTab === "proposed") {
+
+    if (action === "requestConfirmation") {
       handleSendSelected();
+      return;
     }
+
+    const shiftIds = selectedShifts.map((shift) => shift.id);
+    if (!shiftIds.length) {
+      setErrorMessage(t("shiftConfirmation.send.noSelection"));
+      return;
+    }
+
+    setBatchConfirm({ action, shiftIds });
   }
 
-  const tabActionDisabled =
-    pending ||
-    (activeTab === "rejected"
-      ? selectedCount !== 1
-      : activeTab === "pending" || activeTab === "proposed"
-        ? selectedCount === 0
-        : true);
+  function handleConfirmBatchAction() {
+    if (!batchConfirm) return;
 
-  const tabActionLabelWithCount =
-    activeTab === "rejected" || activeTab === "requested"
-      ? tabActionLabel(activeTab, t)
-      : selectedCount > 0
-        ? `${tabActionLabel(activeTab, t)} (${selectedCount})`
-        : tabActionLabel(activeTab, t);
+    startTransition(async () => {
+      if (batchConfirm.action === "delete") {
+        const result = await removeShiftsAsManager(batchConfirm.shiftIds);
+        setBatchConfirm(null);
+        if (!result.ok) {
+          setErrorMessage(translateActionError(result.error, t));
+          return;
+        }
+        router.refresh();
+        if (result.failedCount > 0) {
+          setSuccessMessage(
+            t("shiftConfirmation.communication.partialDelete", {
+              done: result.deletedCount,
+              failed: result.failedCount,
+            })
+          );
+        } else {
+          setSuccessMessage(
+            t("shiftConfirmation.communication.deleteSuccess", {
+              count: result.deletedCount,
+            })
+          );
+          setSelected(new Set());
+        }
+        return;
+      }
+
+      const shiftIds = batchConfirm.shiftIds;
+      setBatchConfirm(null);
+      onLocalShiftRemoved?.(shiftIds);
+
+      const result = await cancelShiftsAsManager(shiftIds);
+      if (!result.ok) {
+        onLocalShiftRestore?.(shiftIds);
+        setErrorMessage(translateShiftCancelError(result.error, t));
+        return;
+      }
+      if (result.failedCount > 0) {
+        onLocalShiftRestore?.(shiftIds);
+        router.refresh();
+        setSuccessMessage(
+          t("shiftConfirmation.communication.partialCancel", {
+            done: result.canceledCount,
+            failed: result.failedCount,
+          })
+        );
+      } else {
+        setSuccessMessage(
+          t("shiftConfirmation.communication.cancelSuccess", {
+            count: result.canceledCount,
+          })
+        );
+        setSelected(new Set());
+      }
+    });
+  }
+
+  const batchConfirmMessage = batchConfirm
+    ? batchConfirm.action === "delete"
+      ? batchConfirm.shiftIds.length === 1
+        ? t("shiftConfirmation.communication.deleteConfirmOne")
+        : t("shiftConfirmation.communication.deleteConfirmMany", {
+            count: batchConfirm.shiftIds.length,
+          })
+      : batchConfirm.shiftIds.length === 1
+        ? t("shiftConfirmation.communication.cancelConfirmOne")
+        : t("shiftConfirmation.communication.cancelConfirmMany", {
+            count: batchConfirm.shiftIds.length,
+          })
+    : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
       {successMessage ? <Alert variant="success">{successMessage}</Alert> : null}
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-3">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={cn(
-              "rounded-md px-3 py-2 text-base font-semibold transition-colors",
-              communicationResponseTabLabelClass(tab.id),
-              tab.count <= 0 && "opacity-50",
-              activeTab === tab.id
-                ? "bg-subtle ring-1 ring-border"
-                : "hover:bg-subtle/70"
-            )}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-            <span className="ml-1.5 tabular-nums">({tab.count})</span>
-          </button>
-        ))}
-      </div>
+      <CommunicationCategoryTabs
+        counts={counts}
+        activeCategory={activeCategory}
+        onSelect={setActiveCategory}
+        labelFor={categoryLabel}
+        disabled={pending}
+      />
 
-      {visibleShifts.length === 0 ? (
+      {activeCategory === "swaps" ? (
+        listIsEmpty ? (
+          <p className="py-6 text-sm text-muted">{t("shiftConfirmation.panel.empty")}</p>
+        ) : (
+          <div className="min-h-0 flex-1 rounded border border-border">
+            <div className={cn(SWAP_ROW_GRID_CLASS, "border-b border-border bg-subtle/40 px-3")}>
+              <span className={HEADER_CELL_CLASS}>
+                {t("shiftConfirmation.communication.swapColRequester")}
+              </span>
+              <span className={HEADER_CELL_CLASS}>
+                {t("shiftConfirmation.send.colEmployee")}
+              </span>
+              <span className={HEADER_CELL_CLASS}>
+                {t("shiftConfirmation.send.colDate")}
+              </span>
+              <span className={HEADER_CELL_CLASS}>
+                {t("shiftConfirmation.send.colTime")}
+              </span>
+              <span className={HEADER_CELL_CLASS}>
+                {t("shiftConfirmation.communication.swapColTarget")}
+              </span>
+            </div>
+            <ul
+              className={cn(
+                "divide-y divide-border",
+                listScrollEnabled && "overflow-y-auto",
+                listScrollEnabled && MODAL_SCROLLBAR_CLASS
+              )}
+              style={
+                listScrollEnabled
+                  ? {
+                      maxHeight:
+                        COMMUNICATION_LIST_SCROLL_THRESHOLD *
+                        COMMUNICATION_LIST_ROW_HEIGHT_PX,
+                    }
+                  : undefined
+              }
+            >
+              {visibleSwaps.map((swap) => {
+                const { weekday, label } = formatDayHeader(
+                  swap.shiftDate,
+                  intlLocale,
+                  "long"
+                );
+                return (
+                  <li key={swap.id} className={cn(SWAP_ROW_GRID_CLASS, "px-3")}>
+                    <span className={cn(CELL_CLASS, "font-medium text-foreground")}>
+                      {swap.requesterName}
+                    </span>
+                    <span className={cn(CELL_CLASS, "text-muted")}>
+                      {swap.assigneeName}
+                    </span>
+                    <span className={cn(CELL_CLASS, "text-muted")}>
+                      {weekday}, {label}
+                    </span>
+                    <span className={cn(CELL_CLASS, "whitespace-nowrap text-muted")}>
+                      {swap.startTime} - {swap.endTime}
+                    </span>
+                    <span className={cn(CELL_CLASS, "text-muted")}>
+                      {swap.targetEmployeeName ??
+                        t("shiftConfirmation.communication.swapOpenTarget")}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="border-t border-border px-3 py-2 text-xs text-muted">
+              {t("shiftConfirmation.communication.swapActionsHint")}
+            </p>
+          </div>
+        )
+      ) : listIsEmpty ? (
         <p className="py-6 text-sm text-muted">{t("shiftConfirmation.panel.empty")}</p>
       ) : (
         <div className="min-h-0 flex-1 rounded border border-border">
@@ -360,6 +573,11 @@ export function CommunicationResponsesTab({
             <span className={HEADER_CELL_CLASS}>
               {t("shiftConfirmation.send.colStatus")}
             </span>
+            {showConflictColumn ? (
+              <span className={HEADER_CELL_CLASS}>
+                {t("shiftConfirmation.communication.colConflict")}
+              </span>
+            ) : null}
           </div>
 
           <ul
@@ -400,6 +618,7 @@ export function CommunicationResponsesTab({
                     ? shift.shiftName.trim()
                     : t("shiftConfirmation.send.noTemplate");
                   const status = shift.confirmationStatus;
+                  const conflict = grouped.conflictDetailsByShiftId.get(shift.id);
 
                   return (
                     <li key={item.key} className={cn(rowGridClass, "px-3")}>
@@ -411,10 +630,10 @@ export function CommunicationResponsesTab({
                             checked={selected.has(shift.id)}
                             disabled={pending}
                             onChange={() => toggleShift(shift.id)}
-                            aria-label={t(checkboxLabelKey(activeTab))}
+                            aria-label={t(checkboxLabelKey(activeCategory))}
                           />
                           <span className="truncate">
-                            {t(checkboxLabelKey(activeTab))}
+                            {t(checkboxLabelKey(activeCategory))}
                           </span>
                         </label>
                       ) : null}
@@ -447,6 +666,13 @@ export function CommunicationResponsesTab({
                       >
                         {status ? t(responseStatusLabelKey(status)) : "—"}
                       </span>
+                      {showConflictColumn ? (
+                        <span className={cn(CELL_CLASS, "font-medium text-rose-700")}>
+                          {conflict
+                            ? t(absenceTypeLabelKey(conflict.absenceType))
+                            : "—"}
+                        </span>
+                      ) : null}
                     </li>
                   );
                 })()
@@ -476,19 +702,27 @@ export function CommunicationResponsesTab({
               <span aria-hidden className="min-w-0" />
               <span aria-hidden className="min-w-0" />
               <span aria-hidden className="min-w-0" />
-              <span aria-hidden className="min-w-0" />
+              {showConflictColumn ? <span aria-hidden className="min-w-0" /> : null}
             </div>
           ) : null}
 
-          {communicationTabHasActionButton(activeTab) ? (
-            <div className="flex justify-end border-t border-border px-3 py-2">
-              <Button
-                type="button"
-                onClick={handleTabAction}
-                disabled={tabActionDisabled}
-              >
-                {tabActionLabelWithCount}
-              </Button>
+          {categoryActions.length > 0 ? (
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border px-3 py-2">
+              {categoryActions.map((action) => (
+                <Button
+                  key={action}
+                  type="button"
+                  variant={action === "delete" ? "outline" : "primary"}
+                  onClick={() => handleActionClick(action)}
+                  disabled={isActionDisabled(action, selectedCount, pending)}
+                >
+                  {actionButtonLabel(action, t)}
+                  {selectedCount > 0 &&
+                  !communicationActionRequiresExactlyOneSelection(action)
+                    ? ` (${selectedCount})`
+                    : null}
+                </Button>
+              ))}
             </div>
           ) : null}
         </div>
@@ -499,6 +733,18 @@ export function CommunicationResponsesTab({
           {t("common.close")}
         </Button>
       </div>
+
+      {batchConfirm && batchConfirmMessage ? (
+        <AreaCalendarShiftDeleteConfirmModal
+          message={batchConfirmMessage}
+          pending={pending}
+          onCancel={() => {
+            if (pending) return;
+            setBatchConfirm(null);
+          }}
+          onConfirm={handleConfirmBatchAction}
+        />
+      ) : null}
     </div>
   );
 }

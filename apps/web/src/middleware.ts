@@ -4,11 +4,13 @@ import { createDatabase } from "@schichtwerk/database";
 import { updateSession } from "@/lib/supabase/middleware";
 
 const MANAGER_ROUTES = [
+  "/bereich-kalender",
   "/dashboard",
   "/planer",
   "/planung",
   "/abwesenheiten",
   "/berichte",
+  "/uebersicht",
   "/einstellungen",
   "/settings",
 ];
@@ -64,11 +66,13 @@ export const config = {
     "/register",
     "/forgot-password",
     "/reset-password",
+    "/bereich-kalender/:path*",
     "/dashboard/:path*",
     "/planer/:path*",
     "/planung/:path*",
     "/abwesenheiten/:path*",
     "/berichte/:path*",
+    "/uebersicht/:path*",
     "/einstellungen/:path*",
     "/settings/:path*",
     "/auth/callback",

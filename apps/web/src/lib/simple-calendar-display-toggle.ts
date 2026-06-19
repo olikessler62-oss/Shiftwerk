@@ -1,4 +1,4 @@
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
+import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 
 /** Temporär: Simple-Kalender (nur erste Schicht pro Mitarbeiter/Tag). */
@@ -57,11 +57,11 @@ export function pickFirstPlanningShiftPerEmployeeDay(
   });
 }
 
-/** Simple-Modus im Dashboard: früheste Schicht pro Mitarbeiter und Tag. */
-export function pickFirstDashboardShiftPerEmployeeDay(
-  shifts: readonly DashboardShiftCard[]
-): DashboardShiftCard[] {
-  const byKey = new Map<string, DashboardShiftCard>();
+/** Simple-Modus im Bereich-Kalender: früheste Schicht pro Mitarbeiter und Tag. */
+export function pickFirstAreaCalendarShiftPerEmployeeDay(
+  shifts: readonly AreaCalendarShiftCard[]
+): AreaCalendarShiftCard[] {
+  const byKey = new Map<string, AreaCalendarShiftCard>();
   for (const shift of shifts) {
     const key = `${shift.employeeId}:${shift.shift_date}`;
     const existing = byKey.get(key);
@@ -78,23 +78,23 @@ export function pickFirstDashboardShiftPerEmployeeDay(
   });
 }
 
-export function filterDashboardShiftsByAreaDateFirstOnly(
-  byAreaDate: ReadonlyMap<string, readonly DashboardShiftCard[]>
-): Map<string, DashboardShiftCard[]> {
-  const filtered = new Map<string, DashboardShiftCard[]>();
+export function filterAreaCalendarShiftsByAreaDateFirstOnly(
+  byAreaDate: ReadonlyMap<string, readonly AreaCalendarShiftCard[]>
+): Map<string, AreaCalendarShiftCard[]> {
+  const filtered = new Map<string, AreaCalendarShiftCard[]>();
   for (const [key, list] of byAreaDate) {
-    const next = pickFirstDashboardShiftPerEmployeeDay(list);
+    const next = pickFirstAreaCalendarShiftPerEmployeeDay(list);
     if (next.length > 0) filtered.set(key, next);
   }
   return filtered;
 }
 
-export function filterDashboardShiftsByDateFirstOnly(
-  shiftsByDate: ReadonlyMap<string, readonly DashboardShiftCard[]>
-): Map<string, DashboardShiftCard[]> {
-  const filtered = new Map<string, DashboardShiftCard[]>();
+export function filterAreaCalendarShiftsByDateFirstOnly(
+  shiftsByDate: ReadonlyMap<string, readonly AreaCalendarShiftCard[]>
+): Map<string, AreaCalendarShiftCard[]> {
+  const filtered = new Map<string, AreaCalendarShiftCard[]>();
   for (const [date, list] of shiftsByDate) {
-    const next = pickFirstDashboardShiftPerEmployeeDay(list);
+    const next = pickFirstAreaCalendarShiftPerEmployeeDay(list);
     if (next.length > 0) filtered.set(date, next);
   }
   return filtered;

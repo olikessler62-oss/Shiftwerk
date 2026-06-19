@@ -15,7 +15,7 @@ export function shiftsOverlapIso(
   return a0 < b1 && b0 < a1;
 }
 
-export function dashboardShiftWindowsOverlap(
+export function areaCalendarShiftWindowsOverlap(
   shiftDate: string,
   startA: string,
   endA: string,
@@ -28,23 +28,23 @@ export function dashboardShiftWindowsOverlap(
   return shiftsOverlapIso(a.starts_at, a.ends_at, b.starts_at, b.ends_at);
 }
 
-export type DashboardAssignmentTimeWindow = {
+export type AreaCalendarAssignmentTimeWindow = {
   employeeId: string;
   startTime: string;
   endTime: string;
 };
 
-export function employeeHasOverlappingDashboardAssignment(
+export function employeeHasOverlappingAreaCalendarAssignment(
   employeeId: string,
   shiftDate: string,
   windowStart: string,
   windowEnd: string,
-  assignments: readonly DashboardAssignmentTimeWindow[]
+  assignments: readonly AreaCalendarAssignmentTimeWindow[]
 ): boolean {
   return assignments.some(
     (assignment) =>
       assignment.employeeId === employeeId &&
-      dashboardShiftWindowsOverlap(
+      areaCalendarShiftWindowsOverlap(
         shiftDate,
         windowStart,
         windowEnd,
@@ -54,10 +54,10 @@ export function employeeHasOverlappingDashboardAssignment(
   );
 }
 
-export function findEmployeeWithOverlappingDashboardAssignments(
+export function findEmployeeWithOverlappingAreaCalendarAssignments(
   shiftDate: string,
-  candidateRows: readonly DashboardAssignmentTimeWindow[],
-  existingAssignments: readonly DashboardAssignmentTimeWindow[],
+  candidateRows: readonly AreaCalendarAssignmentTimeWindow[],
+  existingAssignments: readonly AreaCalendarAssignmentTimeWindow[],
   employeeNameById: ReadonlyMap<string, string>,
   timeZone: string = DEFAULT_ORGANIZATION_TIME_ZONE
 ): string | null {
@@ -67,7 +67,7 @@ export function findEmployeeWithOverlappingDashboardAssignments(
     for (const existing of existingAssignments) {
       if (existing.employeeId !== row.employeeId) continue;
       if (
-        dashboardShiftWindowsOverlap(
+        areaCalendarShiftWindowsOverlap(
           shiftDate,
           row.startTime,
           row.endTime,
@@ -84,7 +84,7 @@ export function findEmployeeWithOverlappingDashboardAssignments(
       const other = candidateRows[j];
       if (other.employeeId !== row.employeeId) continue;
       if (
-        dashboardShiftWindowsOverlap(
+        areaCalendarShiftWindowsOverlap(
           shiftDate,
           row.startTime,
           row.endTime,

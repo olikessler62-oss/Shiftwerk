@@ -9,15 +9,20 @@ import {
   Pressable,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { isEmployeeRespondableConfirmationStatus } from "@schichtwerk/database";
+import {
+  canCancelShiftByConfirmationStatus,
+  isEmployeeRespondableConfirmationStatus,
+  isShiftDateInPast,
+} from "@schichtwerk/database";
 import type { ConfirmationDecision, ConfirmationWeekItem, Shift } from "@schichtwerk/types";
 import { getDatabase } from "@/lib/db";
 import {
   fetchConfirmationWeek,
   submitConfirmationResponses,
+  cancelConfirmationShift,
 } from "@/lib/confirmations-api";
 import { MobileApiError } from "@/lib/mobile-api-client";
-import { showAppAlert } from "@/lib/app-alert";
+import { confirmAlert, showAppAlert } from "@/lib/app-alert";
 import { shiftConfirmationStatusLabel } from "@/lib/shift-confirmation-labels";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 
@@ -57,6 +62,8 @@ function statusBadgeStyle(status: Shift["confirmation_status"]) {
       return styles.statusBadgeConfirmed;
     case "rejected":
       return styles.statusBadgeRejected;
+    case "canceled":
+      return styles.statusBadgeCanceled;
     default:
       return styles.statusBadgeNeutral;
   }
@@ -74,6 +81,7 @@ export default function WeekScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelingShiftId, setCancelingShiftId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { from, to } = weekRange();
@@ -165,6 +173,32 @@ export default function WeekScreen() {
     }
   }
 
+  async function handleCancelShift(shiftId: string) {
+    const confirmed = await confirmAlert({
+      title: "Schicht absagen",
+      message: "Möchtest du diese Schicht wirklich absagen?",
+      confirmLabel: "Ja, absagen",
+    });
+    if (!confirmed) return;
+
+    setCancelingShiftId(shiftId);
+    try {
+      await cancelConfirmationShift(shiftId);
+      showAppAlert("Abgesagt", "Die Schicht wurde abgesagt.");
+      setRefreshing(true);
+      await load();
+    } catch (error) {
+      showAppAlert(
+        "Absage fehlgeschlagen",
+        error instanceof MobileApiError
+          ? error.message
+          : "Die Schicht konnte nicht abgesagt werden."
+      );
+    } finally {
+      setCancelingShiftId(null);
+    }
+  }
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -217,6 +251,9 @@ export default function WeekScreen() {
           const needsResponse = isEmployeeRespondableConfirmationStatus(
             item.confirmation_status
           );
+          const canCancel =
+            !isShiftDateInPast(item.shift_date) &&
+            canCancelShiftByConfirmationStatus(item.confirmation_status);
           const draft = drafts[item.id];
 
           return (
@@ -285,6 +322,23 @@ export default function WeekScreen() {
                     </Text>
                   </Pressable>
                 </View>
+              ) : null}
+
+              {canCancel ? (
+                <Pressable
+                  style={[
+                    styles.cancelButton,
+                    cancelingShiftId === item.id && styles.cancelButtonDisabled,
+                  ]}
+                  disabled={cancelingShiftId === item.id}
+                  onPress={() => void handleCancelShift(item.id)}
+                >
+                  {cancelingShiftId === item.id ? (
+                    <ActivityIndicator color={colors.destructive} />
+                  ) : (
+                    <Text style={styles.cancelButtonText}>Schicht absagen</Text>
+                  )}
+                </Pressable>
               ) : null}
             </View>
           );
@@ -380,6 +434,7 @@ const styles = StyleSheet.create({
   statusBadgeOpen: { backgroundColor: "#FEF3C7" },
   statusBadgeConfirmed: { backgroundColor: "#DCFCE7" },
   statusBadgeRejected: { backgroundColor: "#FEE2E2" },
+  statusBadgeCanceled: { backgroundColor: "#FFEDD5" },
   statusBadgeNeutral: { backgroundColor: colors.background },
   statusBadgeText: {
     fontSize: 11,
@@ -419,6 +474,24 @@ const styles = StyleSheet.create({
   },
   actionButtonTextActive: {
     color: colors.foreground,
+  },
+  cancelButton: {
+    marginTop: spacing.md,
+    minHeight: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.destructive,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF7ED",
+  },
+  cancelButtonDisabled: {
+    opacity: 0.7,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.destructive,
   },
   empty: { padding: spacing.xl, alignItems: "center" },
   emptyText: { color: colors.muted, textAlign: "center" },

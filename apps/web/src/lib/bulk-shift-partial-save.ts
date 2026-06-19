@@ -73,13 +73,13 @@ export function formatBulkShiftPartialSaveMessage(
   failures: readonly BulkShiftPartialSaveFailure[],
   translate: (key: string, params?: Record<string, string | number>) => string
 ): string {
-  const intro = translate("dashboard.bulkShiftPartialSuccess");
+  const intro = translate("areaCalendar.bulkShiftPartialSuccess");
   if (failures.length === 0) {
     return intro;
   }
 
   const entries = failures.map((failure) =>
-    translate("dashboard.bulkShiftPartialSuccessEntry", {
+    translate("areaCalendar.bulkShiftPartialSuccessEntry", {
       name: failure.name,
       start: failure.startTime.slice(0, 5),
       end: failure.endTime.slice(0, 5),

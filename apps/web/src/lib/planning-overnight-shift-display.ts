@@ -1,5 +1,9 @@
-import { parseISODate, toISODate } from "@/lib/dates";
+import { isPastCalendarDate, parseISODate, toISODate } from "@/lib/dates";
 import { parseClockTimeToMinutes } from "@/lib/shift-card-time-gradient";
+import {
+  canOpenPastUnconfirmedShiftContextMenu,
+  type ShiftCardContextMenuOptions,
+} from "@/lib/shift-card-context-menu-actions";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 
 export type PlanningShiftDisplayPart = "full" | "overnight-start" | "overnight-end";
@@ -233,4 +237,88 @@ export function resolveOvernightSpanDisplayMode(
   const startExpanded = layoutActiveDayDates.has(span.startDate);
   const endExpanded = layoutActiveDayDates.has(span.endDate);
   return startExpanded || endExpanded ? "expanded" : "collapsed";
+}
+
+function isPlanningOvernightShiftDayInteractable(
+  date: string,
+  todayISO: string,
+  isDayReadOnly: (date: string) => boolean
+): boolean {
+  return !isPastCalendarDate(date, todayISO) && !isDayReadOnly(date);
+}
+
+export function canOpenPlanningOvernightShiftContextMenu(
+  span: Pick<PlanningOvernightSpan, "startDate" | "endDate" | "shift">,
+  options: {
+    todayISO: string;
+    isDayReadOnly: (date: string) => boolean;
+    pastUnconfirmedMenu?: ShiftCardContextMenuOptions;
+  }
+): boolean {
+  if (
+    isPlanningOvernightShiftDayInteractable(
+      span.startDate,
+      options.todayISO,
+      options.isDayReadOnly
+    ) ||
+    isPlanningOvernightShiftDayInteractable(
+      span.endDate,
+      options.todayISO,
+      options.isDayReadOnly
+    )
+  ) {
+    return true;
+  }
+
+  if (!options.pastUnconfirmedMenu) return false;
+
+  return canOpenPastUnconfirmedShiftContextMenu(
+    span.shift.confirmationStatus,
+    span.shift.requestedAt,
+    options.pastUnconfirmedMenu
+  );
+}
+
+export function resolvePlanningOvernightShiftContextMenuDate(
+  span: Pick<PlanningOvernightSpan, "startDate" | "endDate" | "shift">,
+  preferredDate: string | undefined,
+  options: {
+    todayISO: string;
+    isDayReadOnly: (date: string) => boolean;
+    pastUnconfirmedMenu?: ShiftCardContextMenuOptions;
+  }
+): string {
+  const isInteractable = (date: string) =>
+    isPlanningOvernightShiftDayInteractable(
+      date,
+      options.todayISO,
+      options.isDayReadOnly
+    );
+
+  if (preferredDate && isInteractable(preferredDate)) {
+    return preferredDate;
+  }
+  if (isInteractable(span.endDate)) return span.endDate;
+  if (isInteractable(span.startDate)) return span.startDate;
+  if (
+    options.pastUnconfirmedMenu &&
+    canOpenPastUnconfirmedShiftContextMenu(
+      span.shift.confirmationStatus,
+      span.shift.requestedAt,
+      options.pastUnconfirmedMenu
+    )
+  ) {
+    return span.shift.shift_date;
+  }
+  return span.startDate;
+}
+
+export function cellShowsOnlyOvernightShiftSegments(
+  segments: readonly PlanningShiftDisplaySegment[],
+  shiftId: string
+): boolean {
+  if (segments.length === 0) return false;
+  return segments.every(
+    (segment) => segment.part !== "full" && segment.shift.id === shiftId
+  );
 }

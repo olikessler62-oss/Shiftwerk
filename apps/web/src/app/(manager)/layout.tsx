@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
-import { AppShell } from "@/components/dashboard/app-shell";
+import { AppShell } from "@/components/areacalendar/app-shell";
 import { LocaleProvider } from "@/i18n/locale-provider";
 import { getServerLocale } from "@/i18n/server";
 import { getDatabase } from "@/lib/db";
 import { OrgFeaturesProvider } from "@/lib/org-features-provider";
 import { SimpleCalendarDisplayProvider } from "@/lib/simple-calendar-display-context";
 import { ShiftConfirmationSimulationProvider } from "@/lib/shift-confirmation-simulation-context";
-import { PlanningAppSidebarSlotProvider } from "@/components/planning/planning-app-sidebar-slot";
+import { DashboardAppSidebarSlotProvider } from "@/components/dashboard/dashboard-app-sidebar-slot";
 import { loadManagerOrganization } from "@/lib/manager";
 import { isSuperadminDeveloperEmail } from "@/lib/superadmin-access";
 
@@ -38,7 +38,7 @@ export default async function ManagerLayout({
       <OrgFeaturesProvider organization={organization}>
         <SimpleCalendarDisplayProvider>
           <ShiftConfirmationSimulationProvider>
-            <PlanningAppSidebarSlotProvider>
+            <DashboardAppSidebarSlotProvider>
               <AppShell
                 orgName={organization.name || orgName || undefined}
                 userName={profile.full_name}
@@ -47,7 +47,7 @@ export default async function ManagerLayout({
               >
                 {children}
               </AppShell>
-            </PlanningAppSidebarSlotProvider>
+            </DashboardAppSidebarSlotProvider>
           </ShiftConfirmationSimulationProvider>
         </SimpleCalendarDisplayProvider>
       </OrgFeaturesProvider>

@@ -10,7 +10,7 @@ import {
   resolveStaffingHeaderDisplay,
   type StaffingHeaderDisplay,
 } from "@/lib/tag-area-header-staffing-display";
-import { StaffingFillGauge } from "@/components/dashboard/staffing-fill-gauge";
+import { StaffingFillGauge } from "@/components/areacalendar/staffing-fill-gauge";
 import { useTranslations } from "@/i18n/locale-provider";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -51,7 +51,7 @@ export function TagAreaHeaderStaffingOverlay({
 
   const formatQualLine = useCallback(
     (name: string, assigned: number, required: number) =>
-      t("dashboard.bulkShiftStaffingTooltipLine", {
+      t("areaCalendar.bulkShiftStaffingTooltipLine", {
         name,
         assigned,
         required,

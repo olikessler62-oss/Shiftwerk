@@ -13,7 +13,8 @@ export function shiftConfirmationShowsOverlay(
     status === "proposed" ||
     status === "requested" ||
     status === "pending" ||
-    status === "rejected"
+    status === "rejected" ||
+    status === "canceled"
   );
 }
 
@@ -29,6 +30,8 @@ export function shiftConfirmationBadgeSymbol(
       return "⏱";
     case "rejected":
       return "✕";
+    case "canceled":
+      return "⊘";
     default:
       return "";
   }
@@ -46,6 +49,8 @@ export function shiftConfirmationBadgeSymbolClass(
       return "text-[#c294d0] drop-shadow-[0_0_3px_rgba(194,148,208,0.95)]";
     case "rejected":
       return "text-fuchsia-500";
+    case "canceled":
+      return "text-orange-400";
     default:
       return "text-white";
   }
@@ -73,6 +78,12 @@ export const SHIFT_CONFIRMATION_PROPOSED_TAB_LABEL_CLASS = "text-neutral-950";
 
 export const SHIFT_CONFIRMATION_REQUESTED_TAB_LABEL_CLASS = "text-[#7A5A10]";
 
+export const SHIFT_CONFIRMATION_CONFIRMED_TAB_LABEL_CLASS = "text-green-600";
+
+export const SHIFT_CONFIRMATION_CANCELED_TAB_LABEL_CLASS = "text-orange-700";
+
+export const SHIFT_CONFIRMATION_CANCELED_TOOLTIP_TEXT_CLASS = "text-orange-800";
+
 export function shiftConfirmationTooltipStatusTextClass(
   status: ShiftConfirmationStatus | undefined
 ): string {
@@ -87,6 +98,8 @@ export function shiftConfirmationTooltipStatusTextClass(
       return SHIFT_CONFIRMATION_PROPOSED_TOOLTIP_TEXT_CLASS;
     case "requested":
       return SHIFT_CONFIRMATION_REQUESTED_TOOLTIP_TEXT_CLASS;
+    case "canceled":
+      return SHIFT_CONFIRMATION_CANCELED_TOOLTIP_TEXT_CLASS;
     default:
       return "";
   }

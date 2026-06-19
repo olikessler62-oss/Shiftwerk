@@ -15,20 +15,25 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { IconButton } from "@/components/ui";
 import { AppShellBrandHeader } from "@/components/brand/app-shell-brand-header";
-import { PlanningAppSidebarSlotMount } from "@/components/planning/planning-app-sidebar-slot";
+import { DashboardAppSidebarSlotMount } from "@/components/dashboard/dashboard-app-sidebar-slot";
 import { cn } from "@/lib/cn";
 import { useTranslations } from "@/i18n/locale-provider";
 import { SidebarNav } from "./sidebar-nav";
 import { SettingsModalsAppShellFallback } from "@/components/settings/settings-modals-app-shell-fallback";
+import { OverviewModalsAppShellFallback } from "@/components/overview/overview-modals-app-shell-fallback";
 import { SuperadminModalProvider } from "@/components/settings/superadmin-modal-context";
-import { AppShellModalLockBridge } from "@/components/dashboard/app-shell-modal-lock-bridge";
+import { AppShellModalLockBridge } from "@/components/areacalendar/app-shell-modal-lock-bridge";
 import {
   AppShellMainNavPendingBridge,
   AppShellMainNavPendingProvider,
 } from "@/lib/app-shell-main-nav-pending";
 import {
   APP_SHELL_CONTENT_OFFSET_CLASS,
+  APP_SHELL_CONTENT_COLUMN_CLASS,
+  APP_SHELL_MAIN_CLASS,
+  APP_SHELL_ROOT_CLASS,
   APP_SHELL_SIDEBAR_CLASS,
+  APP_SHELL_SIDEBAR_SLOT_CLASS,
 } from "@/lib/app-shell-layout";
 import {
   AppShellControlsGuard,
@@ -104,8 +109,8 @@ export function AppShell({
 }: AppShellProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const showAppSidebarSlot =
-    pathname.startsWith("/dashboard") || pathname.startsWith("/planer");
+  const showAppSidebarSlot = pathname.startsWith("/dashboard");
+  const isAreaCalendar = pathname.startsWith("/bereich-kalender");
   const menuButtonRef = useRef<HTMLDivElement>(null);
   const menuPanelRef = useRef<HTMLDivElement>(null);
 
@@ -148,6 +153,7 @@ export function AppShell({
             open={open}
             setOpen={setOpen}
             showAppSidebarSlot={showAppSidebarSlot}
+            brandHeaderAlignContentStart={isAreaCalendar}
             menuButtonRef={menuButtonRef}
             menuPanelRef={menuPanelRef}
             superadminEnabled={superadminEnabled}
@@ -166,6 +172,7 @@ function AppShellLayout({
   open,
   setOpen,
   showAppSidebarSlot,
+  brandHeaderAlignContentStart,
   menuButtonRef,
   menuPanelRef,
   superadminEnabled,
@@ -176,6 +183,7 @@ function AppShellLayout({
   open: boolean;
   setOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
   showAppSidebarSlot: boolean;
+  brandHeaderAlignContentStart: boolean;
   menuButtonRef: RefObject<HTMLDivElement | null>;
   menuPanelRef: RefObject<HTMLDivElement | null>;
   superadminEnabled: boolean;
@@ -226,7 +234,7 @@ function AppShellLayout({
     <>
       <div
         className={cn(
-          "flex h-dvh min-h-0 flex-col overflow-hidden md:flex-row",
+          APP_SHELL_ROOT_CLASS,
           shellWaitCursor && "cursor-wait [&_*]:cursor-wait"
         )}
       >
@@ -238,6 +246,7 @@ function AppShellLayout({
         >
           <AppShellBrandHeader
             orgName={orgName}
+            alignContentStart={brandHeaderAlignContentStart}
             trailing={
               <div ref={menuButtonRef} className="relative shrink-0">
                 <IconButton
@@ -282,19 +291,20 @@ function AppShellLayout({
           {showAppSidebarSlot ? (
             <div
               className={cn(
-                "flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-3",
+                APP_SHELL_SIDEBAR_SLOT_CLASS,
                 APP_SHELL_CONTENT_OFFSET_CLASS
               )}
             >
-              <PlanningAppSidebarSlotMount />
+              <DashboardAppSidebarSlotMount />
             </div>
           ) : null}
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6">
+        <div className={APP_SHELL_CONTENT_COLUMN_CLASS}>
+          <main className={APP_SHELL_MAIN_CLASS}>
             {children}
             <SettingsModalsAppShellFallback />
+            <OverviewModalsAppShellFallback />
           </main>
         </div>
       </div>

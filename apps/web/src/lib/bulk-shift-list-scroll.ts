@@ -47,17 +47,18 @@ export function scrollBulkShiftRowIntoView(
   const headerHeight = thead?.getBoundingClientRect().height ?? 0;
   const containerRect = container.getBoundingClientRect();
   const rowRect = rowEl.getBoundingClientRect();
-  const relativeTop = rowRect.top - containerRect.top + container.scrollTop;
+  const padding = 4;
+  const minVisibleTop = containerRect.top + headerHeight + padding;
+  const maxVisibleBottom = containerRect.bottom - padding;
 
-  const nextScrollTop = computeBulkShiftListScrollTop({
-    containerClientHeight: container.clientHeight,
-    headerHeight,
-    rowRelativeTop: relativeTop,
-    rowHeight: rowRect.height,
-  });
+  if (rowRect.top < minVisibleTop) {
+    container.scrollTop += rowRect.top - minVisibleTop;
+    return;
+  }
 
-  if (nextScrollTop === null) return;
-  container.scrollTop = nextScrollTop;
+  if (rowRect.bottom > maxVisibleBottom) {
+    container.scrollTop += rowRect.bottom - maxVisibleBottom;
+  }
 }
 
 export function resolveBulkShiftRowIdForShiftFocus(
@@ -70,12 +71,22 @@ export function resolveBulkShiftRowIdForShiftFocus(
 
 export function scheduleScrollBulkShiftRowIntoView(
   containerRef: RefObject<HTMLElement | null>,
-  rowId: string
+  rowId: string,
+  onComplete?: () => void
 ) {
-  if (!rowId || typeof window === "undefined") return;
+  if (!rowId || typeof window === "undefined") {
+    onComplete?.();
+    return;
+  }
 
   const selector = `[${BULK_SHIFT_ROW_ID_ATTR}="${escapeRowId(rowId)}"]`;
   let done = false;
+
+  const finish = () => {
+    if (done) return;
+    done = true;
+    onComplete?.();
+  };
 
   const tryScroll = () => {
     if (done) return;
@@ -85,14 +96,16 @@ export function scheduleScrollBulkShiftRowIntoView(
     if (!container || !rowEl) return;
 
     scrollBulkShiftRowIntoView(container, rowEl);
-    done = true;
+    finish();
   };
 
   requestAnimationFrame(() => {
     requestAnimationFrame(tryScroll);
   });
 
-  for (const delay of [50, 150, 300]) {
+  for (const delay of [50, 150, 300, 500]) {
     window.setTimeout(tryScroll, delay);
   }
+
+  window.setTimeout(finish, 550);
 }

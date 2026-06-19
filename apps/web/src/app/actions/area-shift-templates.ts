@@ -208,7 +208,7 @@ export async function copyAreaShiftTemplatesFromArea(input: {
       sortOrder += 1;
     }
 
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     const templates = await db.listAreaShiftTemplatesWithBreaksForArea(
       input.targetAreaId,
       input.locationId
@@ -307,7 +307,7 @@ export async function createAreaShiftTemplate(input: {
 
     await areaCheck.db.replaceAreaShiftTemplateBreaks(created.id, input.breaks);
 
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     const templates = await areaCheck.db.listAreaShiftTemplatesWithBreaksForArea(
       input.locationAreaId,
       input.locationId
@@ -375,7 +375,7 @@ export async function updateAreaShiftTemplate(input: {
     );
     await areaCheck.db.replaceAreaShiftTemplateBreaks(input.id, input.breaks);
 
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     const templates = await areaCheck.db.listAreaShiftTemplatesWithBreaksForArea(
       input.locationAreaId,
       input.locationId
@@ -409,7 +409,7 @@ export async function deleteAreaShiftTemplate(input: {
       input.locationId
     );
 
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     const templates = await areaCheck.db.listAreaShiftTemplatesWithBreaksForArea(
       input.locationAreaId,
       input.locationId

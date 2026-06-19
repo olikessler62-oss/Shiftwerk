@@ -1,7 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { toProfileAvailabilitySaveError } from "@schichtwerk/database";
+import {
+  DEFAULT_COUNTRY_CODE,
+  resolveOrganizationTimeZone,
+  toProfileAvailabilitySaveError,
+  wouldDeletingAvailabilitySlotConflictWithFutureShifts,
+} from "@schichtwerk/database";
 import type { ProfileRecurringAvailability } from "@schichtwerk/types";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
@@ -9,6 +14,10 @@ import { requireManager } from "@/lib/manager";
 export type ProfileAvailabilityActionResult =
   | { ok: true; availability?: ProfileRecurringAvailability[] }
   | { ok: false; error: string };
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export async function fetchProfileRecurringAvailability(
   profileId: string
@@ -51,8 +60,8 @@ export async function createProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
-    revalidatePath("/planer");
     revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
     return { ok: true, availability };
   } catch (e) {
     return { ok: false, error: toProfileAvailabilitySaveError(e) };
@@ -83,8 +92,8 @@ export async function updateProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
-    revalidatePath("/planer");
     revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
     return { ok: true, availability };
   } catch (e) {
     return { ok: false, error: toProfileAvailabilitySaveError(e) };
@@ -112,8 +121,8 @@ export async function reorderProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
-    revalidatePath("/planer");
     revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
     return { ok: true, availability };
   } catch (e) {
     return {
@@ -133,18 +142,57 @@ export async function deleteProfileRecurringAvailability(input: {
   try {
     const { organizationId } = await requireManager();
     const db = await getDatabase();
+    const profile = await db.getProfileById(input.profileId);
+    if (!profile || profile.organization_id !== organizationId) {
+      return { ok: false, error: "Profil nicht gefunden" };
+    }
+
+    const availability = await db.listProfileRecurringAvailability(
+      organizationId,
+      input.profileId
+    );
+    const slotToDelete = availability.find((entry) => entry.id === input.availabilityId);
+    if (!slotToDelete) {
+      return { ok: false, error: "Verfügbarkeit nicht gefunden" };
+    }
+
+    const organization = await db.getOrganization(organizationId);
+    const countryCode =
+      organization?.country_code ??
+      (await db.getOrganizationCountryCode(organizationId)) ??
+      DEFAULT_COUNTRY_CODE;
+    const timeZone = resolveOrganizationTimeZone(organization);
+    const futureShifts = await db.listShiftsForEmployeeFromDate(
+      input.profileId,
+      todayISO()
+    );
+    const remainingAvailability = availability.filter(
+      (entry) => entry.id !== input.availabilityId
+    );
+    const conflictCheck = wouldDeletingAvailabilitySlotConflictWithFutureShifts({
+      slotToDelete,
+      remainingAvailability,
+      futureShifts,
+      countryCode,
+      timeZone,
+      todayISO: todayISO(),
+    });
+    if (!conflictCheck.ok) {
+      return { ok: false, error: conflictCheck.error };
+    }
+
     await db.deleteProfileRecurringAvailability(
       organizationId,
       input.profileId,
       input.availabilityId
     );
-    const availability = await db.listProfileRecurringAvailability(
+    const nextAvailability = await db.listProfileRecurringAvailability(
       organizationId,
       input.profileId
     );
-    revalidatePath("/planer");
     revalidatePath("/dashboard");
-    return { ok: true, availability };
+    revalidatePath("/bereich-kalender");
+    return { ok: true, availability: nextAvailability };
   } catch (e) {
     return {
       ok: false,

@@ -4,11 +4,47 @@ import { useEffect } from "react";
 
 export const SETTINGS_LIST_ITEM_ID_ATTR = "data-settings-list-item-id";
 
+export type SettingsListScrollMode = "nearest" | "top";
+
 export function settingsListItemAttrs(id: string) {
   return { [SETTINGS_LIST_ITEM_ID_ATTR]: id };
 }
 
-export function scrollSettingsListItemIntoView(itemId: string) {
+function findOverflowScrollParent(element: Element): HTMLElement | null {
+  let parent = element.parentElement;
+  while (parent) {
+    const { overflowY } = getComputedStyle(parent);
+    if (overflowY === "auto" || overflowY === "scroll") {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+  return null;
+}
+
+function scrollSettingsListRowToTop(row: Element) {
+  const scrollContainer = findOverflowScrollParent(row);
+  if (!scrollContainer) {
+    row.scrollIntoView({ block: "start", behavior: "smooth" });
+    return;
+  }
+
+  const thead = scrollContainer.querySelector("thead");
+  const headerHeight = thead?.getBoundingClientRect().height ?? 0;
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const rowRect = row.getBoundingClientRect();
+  const delta = rowRect.top - containerRect.top - headerHeight;
+
+  scrollContainer.scrollTo({
+    top: scrollContainer.scrollTop + delta,
+    behavior: "smooth",
+  });
+}
+
+export function scrollSettingsListItemIntoView(
+  itemId: string,
+  mode: SettingsListScrollMode = "nearest"
+) {
   if (!itemId || typeof document === "undefined") return;
 
   requestAnimationFrame(() => {
@@ -20,7 +56,12 @@ export function scrollSettingsListItemIntoView(itemId: string) {
       const row = document.querySelector(
         `[${SETTINGS_LIST_ITEM_ID_ATTR}="${escaped}"]`
       );
-      row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (!row) return;
+      if (mode === "top") {
+        scrollSettingsListRowToTop(row);
+        return;
+      }
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
   });
 }
@@ -29,14 +70,15 @@ export function scrollSettingsListItemIntoView(itemId: string) {
 export function useScrollToSettingsListItem(
   items: readonly { id: string }[],
   itemId: string | null,
-  onScrolled?: () => void
+  onScrolled?: () => void,
+  mode: SettingsListScrollMode = "nearest"
 ) {
   useEffect(() => {
     if (!itemId) return;
     if (!items.some((item) => item.id === itemId)) return;
-    scrollSettingsListItemIntoView(itemId);
+    scrollSettingsListItemIntoView(itemId, mode);
     onScrolled?.();
-  }, [items, itemId, onScrolled]);
+  }, [items, itemId, mode, onScrolled]);
 }
 
 export function applyCreatedListSelection(

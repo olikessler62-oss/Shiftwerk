@@ -1,13 +1,13 @@
-import { TagAreaHeaderStaffingOverlay } from "@/components/dashboard/tag-area-header-staffing-overlay";
+import { TagAreaHeaderStaffingOverlay } from "@/components/areacalendar/tag-area-header-staffing-overlay";
 import {
   DaytimesHeaderImage,
   DAYTIMES_HEADER_IMAGE_HEIGHT_PX,
-} from "@/components/dashboard/daytimes-header-image";
+} from "@/components/areacalendar/daytimes-header-image";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 
-export { DAYTIMES_HEADER_IMAGE_SRC, DAYTIMES_HEADER_IMAGE_HEIGHT_PX } from "@/components/dashboard/daytimes-header-image";
+export { DAYTIMES_HEADER_IMAGE_SRC, DAYTIMES_HEADER_IMAGE_HEIGHT_PX } from "@/components/areacalendar/daytimes-header-image";
 
 type Props = {
   showDaytimesGradient: boolean;

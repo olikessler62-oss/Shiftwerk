@@ -13,10 +13,12 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useSuperadminModal } from "@/components/settings/superadmin-modal-context";
 import { useAppShellWaitCursorActive } from "@/lib/app-shell-modal-lock";
 import type { SettingsModalQueryFlag } from "@/lib/settings-modal-navigation";
+import type { OverviewModalQueryFlag } from "@/lib/overview-modal-navigation";
 
 export type MainNavPendingTarget =
   | { kind: "page"; pathname: string }
   | { kind: "settings-modal"; flag: SettingsModalQueryFlag }
+  | { kind: "overview-modal"; flag: OverviewModalQueryFlag }
   | { kind: "superadmin" };
 
 type MainNavPendingContextValue = {
@@ -102,7 +104,17 @@ export function AppShellMainNavPendingBridge() {
     if (
       pendingTarget.kind === "settings-modal" &&
       searchParams.get(pendingTarget.flag) === "1" &&
-      (pathname === "/dashboard" || pathname === "/planer")
+      (pathname === "/bereich-kalender" || pathname === "/dashboard")
+    ) {
+      const frameId = window.requestAnimationFrame(() => {
+        clearMainNavPending();
+      });
+      return () => window.cancelAnimationFrame(frameId);
+    }
+
+    if (
+      pendingTarget.kind === "overview-modal" &&
+      searchParams.get(pendingTarget.flag) === "1"
     ) {
       const frameId = window.requestAnimationFrame(() => {
         clearMainNavPending();

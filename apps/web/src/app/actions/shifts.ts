@@ -3,17 +3,22 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { buildShiftTimestamps, shiftTimeFromTimestamp } from "@/lib/dates";
 import {
-  dashboardShiftsCacheTag,
+  areaCalendarShiftsCacheTag,
   weekStartsForShiftCacheInvalidation,
-} from "@/lib/cached-dashboard-shifts";
+} from "@/lib/cached-areacalendar-shifts";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 import { resolveSimulatedProposedAssignOptions } from "@/lib/shift-confirmation-assign-mode";
 import { isPastShiftDate } from "@/lib/planning-readonly";
+import {
+  canDeleteShift,
+  shiftDeleteBlockedActionError,
+} from "@/lib/shift-deletion-policy";
 import { shiftsOverlapIso } from "@/lib/shift-overlap";
 import {
   DEFAULT_COUNTRY_CODE,
   resolveConfirmationAssignPatch,
+  resolveEffectiveConfirmationStatus,
   resolveOrganizationTimeZone,
   validateProfileForShiftConfirmationAssign,
   validateRestPeriodForCountry,
@@ -28,7 +33,7 @@ import {
   type ShiftUndoSnapshot,
 } from "@/lib/shift-assign-undo-store";
 import {
-  areDashboardShiftTimesComplete,
+  areAreaCalendarShiftTimesComplete,
 } from "@/lib/available-employees-for-shift";
 import {
   loadShiftAssignValidationContext,
@@ -54,6 +59,8 @@ type AssignShiftWithTimesInput = {
   existingShiftId?: string;
   /** Superadmin-Simulation: Zuweisungen als proposed speichern. */
   simulatedProposedOnAssign?: boolean;
+  /** Superadmin: App-Registrierungs-Gate umgehen. */
+  relaxAppRegistrationGate?: boolean;
 };
 
 function buildAssignSnapshotSource(
@@ -202,7 +209,7 @@ async function persistShiftWithTimes(
 ): Promise<void> {
   const db = await getDatabase();
 
-  if (!areDashboardShiftTimesComplete(input.startTime, input.endTime)) {
+  if (!areAreaCalendarShiftTimesComplete(input.startTime, input.endTime)) {
     throw new Error("Ungültige Schichtzeiten.");
   }
 
@@ -347,8 +354,8 @@ function revalidateShiftPaths(scope?: {
   locationId: string;
   shiftDates: string[];
 }) {
-  revalidatePath("/planer");
   revalidatePath("/dashboard");
+  revalidatePath("/bereich-kalender");
 
   if (!scope?.locationId) return;
 
@@ -356,7 +363,7 @@ function revalidateShiftPaths(scope?: {
   for (const shiftDate of scope.shiftDates) {
     for (const weekStart of weekStartsForShiftCacheInvalidation(shiftDate)) {
       tags.add(
-        dashboardShiftsCacheTag(
+        areaCalendarShiftsCacheTag(
           scope.organizationId,
           scope.locationId,
           weekStart
@@ -402,6 +409,7 @@ export async function assignShiftWithTimes(
     const assignMode = resolveSimulatedProposedAssignOptions({
       organizationEnabled: organization.shift_confirmation_enabled,
       simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
       managerEmail: profile.email,
     });
     const context = await validateAssignContext(
@@ -495,12 +503,14 @@ export async function assignShiftBatch(input: {
   deleteShiftIds?: string[];
   withoutServiceHours?: boolean;
   simulatedProposedOnAssign?: boolean;
+  relaxAppRegistrationGate?: boolean;
 }): Promise<AssignShiftBatchResult> {
   try {
     const { organizationId, userId, organization, profile } = await requireManager();
     const assignMode = resolveSimulatedProposedAssignOptions({
       organizationEnabled: organization.shift_confirmation_enabled,
       simulatedProposedOnAssign: input.simulatedProposedOnAssign,
+      relaxAppRegistrationGate: input.relaxAppRegistrationGate,
       managerEmail: profile.email,
     });
     const timeZone = resolveOrganizationTimeZone(organization);
@@ -564,7 +574,7 @@ export async function assignShiftBatch(input: {
       .filter(
         ({ row }) =>
           row.employeeId &&
-          areDashboardShiftTimesComplete(row.startTime, row.endTime)
+          areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)
       );
     const batchPeerCountByEmployee = new Map<string, number>();
     for (const { row } of completeBatchRows) {
@@ -578,7 +588,7 @@ export async function assignShiftBatch(input: {
       const row = input.rows[rowIndex];
       if (
         !row.employeeId ||
-        !areDashboardShiftTimesComplete(row.startTime, row.endTime)
+        !areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)
       ) {
         continue;
       }
@@ -738,6 +748,15 @@ export async function assignShiftBatch(input: {
     for (const shiftId of deleteShiftIds) {
       const snapshot = await db.getShiftRecordById(shiftId, organizationId);
       if (!snapshot) continue;
+      const blockReason = resolveShiftDeletionBlockReason(snapshot);
+      if (blockReason) {
+        results.push({
+          rowIndex: -1,
+          ok: false,
+          error: blockReason,
+        });
+        continue;
+      }
       undoBatch.replacements.push(toUndoSnapshot(snapshot));
       await db.deleteShift(shiftId, organizationId, userId);
       undoBatch.deletedIds.push(shiftId);
@@ -849,6 +868,33 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
   }
 }
 
+function resolveShiftDeletionBlockReason(shift: {
+  shift_date: string;
+  confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
+  requested_at?: string | null;
+}): string | null {
+  if (
+    canDeleteShift({
+      shiftDate: shift.shift_date,
+      confirmationStatus: shift.confirmation_status,
+      requestedAt: shift.requested_at ?? null,
+      isPastShiftDate,
+    })
+  ) {
+    return null;
+  }
+
+  if (isPastShiftDate(shift.shift_date)) {
+    return "Vergangene Schichten können nicht mehr entfernt werden.";
+  }
+
+  const status = resolveEffectiveConfirmationStatus(
+    shift.confirmation_status,
+    shift.requested_at ?? null
+  );
+  return shiftDeleteBlockedActionError(status ?? "confirmed");
+}
+
 export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
   try {
     const { organizationId, userId } = await requireManager();
@@ -858,8 +904,9 @@ export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
     if (!shift) {
       return { ok: false, error: "Schicht nicht gefunden" };
     }
-    if (isPastShiftDate(shift.shift_date)) {
-      return { ok: false, error: "Vergangene Schichten können nicht mehr entfernt werden." };
+    const blockReason = resolveShiftDeletionBlockReason(shift);
+    if (blockReason) {
+      return { ok: false, error: blockReason };
     }
 
     await db.deleteShift(shiftId, organizationId, userId);
@@ -879,6 +926,76 @@ export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Unbekannter Fehler",
+    };
+  }
+}
+
+export async function removeShiftsAsManager(shiftIds: string[]): Promise<
+  | {
+      ok: true;
+      deletedCount: number;
+      failedCount: number;
+      errors: string[];
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const uniqueShiftIds = [...new Set(shiftIds.filter(Boolean))];
+    if (!uniqueShiftIds.length) {
+      return { ok: false, error: "Keine Schichten ausgewählt." };
+    }
+
+    const { organizationId, userId } = await requireManager();
+    const db = await getDatabase();
+    let deletedCount = 0;
+    const errors: string[] = [];
+    const revalidateByLocation = new Map<string | null, Set<string>>();
+
+    for (const shiftId of uniqueShiftIds) {
+      const shift = await db.getShiftRecordById(shiftId, organizationId);
+      if (!shift) {
+        errors.push("Schicht nicht gefunden");
+        continue;
+      }
+      const blockReason = resolveShiftDeletionBlockReason(shift);
+      if (blockReason) {
+        errors.push(blockReason);
+        continue;
+      }
+
+      await db.deleteShift(shiftId, organizationId, userId);
+      deletedCount += 1;
+      const dates = revalidateByLocation.get(shift.location_id) ?? new Set<string>();
+      dates.add(shift.shift_date);
+      revalidateByLocation.set(shift.location_id, dates);
+    }
+
+    for (const [locationId, shiftDates] of revalidateByLocation) {
+      if (locationId) {
+        revalidateShiftPaths({
+          organizationId,
+          locationId,
+          shiftDates: [...shiftDates],
+        });
+      } else {
+        revalidateShiftPaths();
+      }
+    }
+
+    if (deletedCount === 0) {
+      return { ok: false, error: errors[0] ?? "Löschen fehlgeschlagen." };
+    }
+
+    return {
+      ok: true,
+      deletedCount,
+      failedCount: errors.length,
+      errors,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Löschen fehlgeschlagen.",
     };
   }
 }

@@ -30,7 +30,8 @@ export type ShiftConfirmationStatus =
   | "requested"
   | "confirmed"
   | "rejected"
-  | "pending";
+  | "pending"
+  | "canceled";
 
 export type ConfirmationRequestScope =
   | "single_shift"
@@ -387,6 +388,18 @@ export interface SwapRequest {
   status: SwapRequestStatus;
   message: string | null;
   reviewed_by: string | null;
+}
+
+export interface SwapRequestWithShiftContext extends SwapRequest {
+  shift_date: string;
+  starts_at: string;
+  ends_at: string;
+  location_id: string | null;
+  location_area_id: string | null;
+  assignee_name: string;
+  requester_name: string;
+  target_name: string | null;
+  shift_template_name: string | null;
 }
 
 export interface DashboardStats {

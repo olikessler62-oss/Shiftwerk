@@ -32,7 +32,7 @@ export function isCalendarAreaRowHeightDate(
 }
 
 /**
- * Expandierter Bereich darf auf 50 px minimiert werden, wenn:
+ * Expandierter Bereich darf auf 68 px minimiert werden, wenn:
  * - ab heute bis Wochenende (sichtbare `weekDates`) weder Servicezeit noch Schichten, und
  * - in vergangenen Tagen dieser Woche keine Schichten (auch ohne Servicezeit).
  *

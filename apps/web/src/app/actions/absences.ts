@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import {
   absenceRangeForShiftConflict,
   absenceRequestToRange,
+  absenceDeleteShiftConflictRangeFromRequest,
   findOverlappingAbsence,
   validateAbsenceDateOrder,
   validateOpenEndedSickOnly,
+  wouldDeletingAbsenceConflictWithFutureShifts,
   type AbsenceRange,
 } from "@schichtwerk/database";
 import type { AbsenceRequest, AbsenceType, RequestStatus } from "@schichtwerk/types";
@@ -278,6 +280,27 @@ export async function saveAbsenceBatch(
     }
 
     for (const id of batch.deletes) {
+      const absence = allAbsences.find((entry) => entry.id === id);
+      if (!absence) continue;
+
+      const conflictRange = absenceDeleteShiftConflictRangeFromRequest(
+        absence,
+        todayISO()
+      );
+      if (conflictRange) {
+        const shiftCount = await db.countShiftsConflictingWithAbsenceRanges(
+          organizationId,
+          [conflictRange]
+        );
+        const conflictCheck = wouldDeletingAbsenceConflictWithFutureShifts({
+          absence,
+          shiftCount,
+        });
+        if (!conflictCheck.ok) return conflictCheck;
+      }
+    }
+
+    for (const id of batch.deletes) {
       await db.deleteAbsenceRequest(id, organizationId);
     }
 
@@ -325,8 +348,8 @@ export async function saveAbsenceBatch(
       lastCreatedId = createdId;
     }
 
-    revalidatePath("/planer");
     revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
     return { ok: true, id: lastCreatedId };
   } catch (e) {
     return {
@@ -398,8 +421,8 @@ export async function reviewAbsenceRequest(
       reported_by: absence.reported_by,
     });
 
-    revalidatePath("/planer");
     revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
     return { ok: true };
   } catch (e) {
     return {
@@ -443,8 +466,8 @@ export async function closeOpenAbsence(
       reported_by: absence.reported_by,
     });
 
-    revalidatePath("/planer");
     revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
     return { ok: true };
   } catch (e) {
     return {

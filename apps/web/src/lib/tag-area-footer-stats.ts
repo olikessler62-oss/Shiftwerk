@@ -14,7 +14,7 @@ export type EmployeeShiftCompensationRef = {
   surcharges: EffectiveProfileCompensationSurcharge[];
 };
 
-export type DashboardShiftCompensationByKey = Record<
+export type AreaCalendarShiftCompensationByKey = Record<
   string,
   EmployeeShiftCompensationRef | undefined
 >;
@@ -57,7 +57,7 @@ export function shiftCompensationKey(
 export function computeTagAreaDayFooterStatsForDate(
   calendarDate: string,
   shifts: readonly TagAreaShiftRef[],
-  compensationByKey: DashboardShiftCompensationByKey,
+  compensationByKey: AreaCalendarShiftCompensationByKey,
   defaultCurrency = DEFAULT_ORGANIZATION_CURRENCY
 ): TagAreaDayFooterStats {
   let totalHours = 0;
@@ -131,7 +131,7 @@ function formatTagAreaFooterHoursLabel(
   stats: TagAreaDayFooterStats,
   translate: (key: string, params?: Record<string, string>) => string
 ): string {
-  return translate("dashboard.tagAreaFooterTotalHours", {
+  return translate("areaCalendar.tagAreaFooterTotalHours", {
     hours: formatDurationHours(stats.totalHours),
   });
 }
@@ -147,21 +147,21 @@ function formatTagAreaFooterCostTooltip(
 
   if (stats.surchargeCost > 0) {
     lines.push(
-      translate("dashboard.tagAreaFooterTotalAmount", {
+      translate("areaCalendar.tagAreaFooterTotalAmount", {
         amount: formatTagAreaFooterMoney(stats.totalCost, locale),
       })
     );
   }
 
   lines.push(
-    translate("dashboard.tagAreaFooterCompensation", {
+    translate("areaCalendar.tagAreaFooterCompensation", {
       amount: formatTagAreaFooterMoney(stats.baseCost, locale),
     })
   );
 
   if (stats.surchargeCost > 0) {
     lines.push(
-      translate("dashboard.tagAreaFooterSurcharges", {
+      translate("areaCalendar.tagAreaFooterSurcharges", {
         amount: formatTagAreaFooterMoney(stats.surchargeCost, locale),
       })
     );
@@ -184,7 +184,7 @@ export function formatTagAreaFooterLabels(
   const hoursLine = formatTagAreaFooterHoursLabel(stats, translate);
   const costLine = formatTagAreaFooterCostTooltip(stats, translate, locale);
   return {
-    line: translate("dashboard.tagAreaFooterShortLine", {
+    line: translate("areaCalendar.tagAreaFooterShortLine", {
       hours: formatDurationHours(stats.totalHours),
       cost: formatTagAreaFooterMoney(stats.totalCost, locale),
     }),

@@ -28,7 +28,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Schema } from "./schema";
 import type {
   AuthSignUpResult,
-  DashboardShiftRow,
+  AreaCalendarShiftRow,
   EmployeeShiftRecord,
   InviteUserResult,
   SchichtwerkDatabase,
@@ -91,6 +91,17 @@ import {
   type RequestedShiftForPendingJob,
   type ShiftConfirmationPendingJobResult,
 } from "./shift-confirmation-pending";
+import {
+  buildManagerShiftCanceledNotification,
+  canCancelShiftByConfirmationStatus,
+  isShiftDateInPast,
+  SHIFT_CANCEL_NOT_OWNER_ERROR,
+  SHIFT_CANCEL_PAST_ERROR,
+  shiftCancelBlockedActionError,
+} from "./shift-cancellation";
+import { assertCanConfirmPastShiftAsManager } from "./shift-past-cleanup";
+import { buildSuperadminConfirmationStatusPatch } from "./superadmin-shift-confirmation";
+import type { SuperadminShiftRecord } from "./superadmin-shifts";
 import { elapsedMinutesBetween } from "./business-minutes";
 import { resolveOrganizationTimeZone } from "./organization-timezone";
 import {
@@ -135,6 +146,11 @@ function mapProfile(row: ProfileRow): Profile {
     role: roleRel?.permission_level ?? "basic",
     role_name: roleRel?.name ?? "",
   };
+}
+
+function relation<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
 function mapConfirmationWeekRow(
@@ -794,6 +810,30 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         ...(row.email_fallback_mode !== undefined
           ? { email_fallback_mode: row.email_fallback_mode }
           : {}),
+      })
+      .eq("id", id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async updateProfileSuperadminSimulationSettings(
+    id: string,
+    organizationId: string,
+    row: {
+      is_active: boolean;
+      schedulable: boolean;
+      app_registered_at: string | null;
+      email_fallback_mode: boolean;
+    }
+  ) {
+    const schedulable = row.is_active ? row.schedulable : false;
+    const { error } = await this.client
+      .from(T.profiles)
+      .update({
+        is_active: row.is_active,
+        schedulable,
+        app_registered_at: row.app_registered_at,
+        email_fallback_mode: row.email_fallback_mode,
       })
       .eq("id", id)
       .eq("organization_id", organizationId);
@@ -2481,7 +2521,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []) as Location[];
   }
 
-  async listLocationsForDashboard(
+  async listLocationsForAreaCalendar(
     organizationId: string,
     from: string,
     to: string
@@ -2561,7 +2601,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []) as LocationArea[];
   }
 
-  async listLocationAreasForDashboard(
+  async listLocationAreasForAreaCalendar(
     locationId: string,
     from: string,
     to: string
@@ -3333,7 +3373,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []) as Shift[];
   }
 
-  async listDashboardShifts(
+  async listAreaCalendarShifts(
     organizationId: string,
     from: string,
     to: string,
@@ -3343,14 +3383,14 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data } = await this.client
       .from(T.shifts)
       .select(
-        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, confirmation_status, requested_at, pending_since, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
+        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, confirmation_status, confirmation_status_updated_at, requested_at, pending_since, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
       )
       .eq("organization_id", organizationId)
       .eq("location_id", locationId)
       .gte("shift_date", clampedFrom)
       .lte("shift_date", to)
       .order("shift_date");
-    return (data ?? []) as unknown as DashboardShiftRow[];
+    return (data ?? []) as unknown as AreaCalendarShiftRow[];
   }
 
   async getShiftById(id: string, organizationId: string) {
@@ -3389,6 +3429,20 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       )
       .eq("employee_id", employeeId)
       .in("shift_date", uniqueDates)
+      .order("starts_at");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as EmployeeShiftRecord[];
+  }
+
+  async listShiftsForEmployeeFromDate(employeeId: string, fromDate: string) {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at"
+      )
+      .eq("employee_id", employeeId)
+      .gte("shift_date", fromDate)
+      .order("shift_date")
       .order("starts_at");
     if (error) throw new Error(error.message);
     return (data ?? []) as EmployeeShiftRecord[];
@@ -3669,6 +3723,106 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     );
     if (error) throw new Error(error.message);
     return Number(data ?? 0);
+  }
+
+  async listOrganizationSwapRequests(
+    organizationId: string,
+    options?: {
+      statuses?: import("@schichtwerk/types").RequestStatus[];
+      locationId?: string;
+      from?: string;
+      to?: string;
+    }
+  ): Promise<import("@schichtwerk/types").SwapRequestWithShiftContext[]> {
+    let query = this.client
+      .from(T.swapRequests)
+      .select(
+        "id, organization_id, requester_id, shift_id, target_employee_id, status, message, reviewed_by, shifts!inner(shift_date, starts_at, ends_at, location_id, location_area_id, profiles!employee_id(full_name), area_shift_templates(name)), requester:profiles!requester_id(full_name), target:profiles!target_employee_id(full_name)"
+      )
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false });
+
+    if (options?.statuses?.length) {
+      query = query.in("status", options.statuses);
+    }
+    if (options?.locationId) {
+      query = query.eq("shifts.location_id", options.locationId);
+    }
+    if (options?.from) {
+      query = query.gte("shifts.shift_date", options.from);
+    }
+    if (options?.to) {
+      query = query.lte("shifts.shift_date", options.to);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((row) => {
+      const shift = relation(row.shifts) as {
+        shift_date: string;
+        starts_at: string;
+        ends_at: string;
+        location_id: string | null;
+        location_area_id: string | null;
+        profiles: { full_name: string } | { full_name: string }[] | null;
+        area_shift_templates: { name: string } | { name: string }[] | null;
+      };
+      const assigneeProfile = relation(shift.profiles);
+      const template = relation(shift.area_shift_templates);
+      const requesterProfile = relation(row.requester) as { full_name: string } | null;
+      const targetProfile = relation(row.target) as { full_name: string } | null;
+
+      return {
+        id: row.id as string,
+        organization_id: row.organization_id as string,
+        requester_id: row.requester_id as string,
+        shift_id: row.shift_id as string,
+        target_employee_id: (row.target_employee_id as string | null) ?? null,
+        status: row.status as import("@schichtwerk/types").SwapRequestStatus,
+        message: (row.message as string | null) ?? null,
+        reviewed_by: (row.reviewed_by as string | null) ?? null,
+        shift_date: shift.shift_date,
+        starts_at: shift.starts_at,
+        ends_at: shift.ends_at,
+        location_id: shift.location_id,
+        location_area_id: shift.location_area_id,
+        assignee_name: assigneeProfile?.full_name ?? "—",
+        requester_name: requesterProfile?.full_name ?? "—",
+        target_name: targetProfile?.full_name ?? null,
+        shift_template_name: template?.name ?? null,
+      };
+    });
+  }
+
+  async listShiftCancelActors(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<Map<string, "employee" | "manager">> {
+    const result = new Map<string, "employee" | "manager">();
+    if (!shiftIds.length) return result;
+
+    const { data, error } = await this.client
+      .from(T.shiftConfirmationEvents)
+      .select("shift_id, payload, created_at")
+      .eq("organization_id", organizationId)
+      .eq("to_status", "canceled")
+      .in("shift_id", shiftIds)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    for (const row of data ?? []) {
+      const shiftId = row.shift_id as string;
+      if (result.has(shiftId)) continue;
+      const payload = row.payload as { canceled_by?: string } | null;
+      const canceledBy = payload?.canceled_by;
+      if (canceledBy === "employee" || canceledBy === "manager") {
+        result.set(shiftId, canceledBy);
+      }
+    }
+
+    return result;
   }
 
   async listProposedShiftsForConfirmationSend(
@@ -4470,6 +4624,289 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }
 
     return { updatedCount: updatedShiftIds.length, updatedShifts };
+  }
+
+  async cancelShift(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+    actorRole: "manager" | "employee";
+    employeeName?: string;
+  }): Promise<{
+    locationId: string | null;
+    shiftDate: string;
+    employeeId: string;
+  }> {
+    const shift = await this.getShiftRecordById(input.shiftId, input.organizationId);
+    if (!shift) {
+      throw new Error("Schicht nicht gefunden.");
+    }
+
+    if (isShiftDateInPast(shift.shift_date)) {
+      throw new Error(SHIFT_CANCEL_PAST_ERROR);
+    }
+
+    const storedStatus = shift.confirmation_status ?? "confirmed";
+    if (!canCancelShiftByConfirmationStatus(storedStatus, shift.requested_at)) {
+      throw new Error(shiftCancelBlockedActionError(storedStatus));
+    }
+
+    if (input.actorRole === "employee" && shift.employee_id !== input.actorId) {
+      throw new Error(SHIFT_CANCEL_NOT_OWNER_ERROR);
+    }
+
+    if (input.actorRole === "manager") {
+      await this.deleteShift(input.shiftId, input.organizationId, input.actorId);
+      return {
+        locationId: shift.location_id,
+        shiftDate: shift.shift_date,
+        employeeId: shift.employee_id,
+      };
+    }
+
+    const employeeProfile =
+      input.employeeName != null
+        ? null
+        : await this.getProfileById(shift.employee_id);
+    const employeeName =
+      input.employeeName ??
+      employeeProfile?.full_name ??
+      "Mitarbeiter";
+
+    const now = new Date().toISOString();
+
+    const { data: updated, error: updateError } = await this.client
+      .from(T.shifts)
+      .update({
+        confirmation_status: "canceled",
+        confirmation_status_updated_at: now,
+        requested_at: null,
+        pending_since: null,
+        pending_reminder_sent_at: null,
+      })
+      .eq("id", input.shiftId)
+      .eq("organization_id", input.organizationId)
+      .eq("confirmation_status", storedStatus)
+      .select("id")
+      .maybeSingle();
+
+    if (updateError) throw new Error(updateError.message);
+    if (!updated) {
+      throw new Error("Schicht konnte nicht abgesagt werden.");
+    }
+
+    const { error: eventError } = await this.client
+      .from(T.shiftConfirmationEvents)
+      .insert({
+        organization_id: input.organizationId,
+        shift_id: input.shiftId,
+        actor_id: input.actorId,
+        from_status: storedStatus,
+        to_status: "canceled",
+        payload: {
+          canceled_by: input.actorRole,
+          source: "mobile_cancel",
+        },
+      });
+    if (eventError) throw new Error(eventError.message);
+
+    const notification = buildManagerShiftCanceledNotification({
+      employeeName,
+      canceledBy: "employee",
+      shiftDate: shift.shift_date,
+      shiftId: input.shiftId,
+      employeeId: shift.employee_id,
+    });
+
+    const managers = await this.listOrganizationProfiles(input.organizationId);
+    const managerRecipientIds = managers
+      .filter((profile) => profile.role === "admin" || profile.role === "manager")
+      .map((profile) => profile.id);
+
+    if (managerRecipientIds.length > 0) {
+      const { error: managerError } = await this.client
+        .from(T.managerNotifications)
+        .insert(
+          managerRecipientIds.map((recipientId) => ({
+            organization_id: input.organizationId,
+            recipient_profile_id: recipientId,
+            type: notification.type,
+            title: notification.title,
+            body: notification.body,
+            payload: notification.payload,
+          }))
+        );
+      if (managerError) throw new Error(managerError.message);
+    }
+
+    return {
+      locationId: shift.location_id,
+      shiftDate: shift.shift_date,
+      employeeId: shift.employee_id,
+    };
+  }
+
+  async confirmPastShiftAsManager(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+  }): Promise<{
+    locationId: string | null;
+    shiftDate: string;
+  }> {
+    const shift = await this.getShiftRecordById(input.shiftId, input.organizationId);
+    if (!shift) {
+      throw new Error("Schicht nicht gefunden.");
+    }
+
+    assertCanConfirmPastShiftAsManager({
+      shiftDate: shift.shift_date,
+      confirmationStatus: shift.confirmation_status,
+      requestedAt: shift.requested_at ?? null,
+    });
+
+    const storedStatus = shift.confirmation_status ?? "confirmed";
+    const now = new Date().toISOString();
+
+    const { data: updated, error: updateError } = await this.client
+      .from(T.shifts)
+      .update({
+        confirmation_status: "confirmed",
+        confirmation_status_updated_at: now,
+        requested_at: null,
+        pending_since: null,
+        pending_reminder_sent_at: null,
+      })
+      .eq("id", input.shiftId)
+      .eq("organization_id", input.organizationId)
+      .eq("confirmation_status", storedStatus)
+      .select("id")
+      .maybeSingle();
+
+    if (updateError) throw new Error(updateError.message);
+    if (!updated) {
+      throw new Error("Schicht konnte nicht bestätigt werden.");
+    }
+
+    const { error: eventError } = await this.client
+      .from(T.shiftConfirmationEvents)
+      .insert({
+        organization_id: input.organizationId,
+        shift_id: input.shiftId,
+        actor_id: input.actorId,
+        from_status: storedStatus,
+        to_status: "confirmed",
+        payload: {
+          source: "manager_past_confirm",
+        },
+      });
+    if (eventError) throw new Error(eventError.message);
+
+    return {
+      locationId: shift.location_id,
+      shiftDate: shift.shift_date,
+    };
+  }
+
+  async listOrganizationShiftsForSuperadmin(
+    organizationId: string
+  ): Promise<SuperadminShiftRecord[]> {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        `id, shift_date, starts_at, ends_at, confirmation_status, requested_at,
+        employee_id, location_id, location_area_id,
+        profiles!employee_id(full_name),
+        locations(name),
+        location_areas(name),
+        area_shift_templates(name)`
+      )
+      .eq("organization_id", organizationId)
+      .order("shift_date", { ascending: false })
+      .order("starts_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((row) => {
+      const profile = row.profiles as { full_name?: string } | null;
+      const location = row.locations as { name?: string } | null;
+      const area = row.location_areas as { name?: string } | null;
+      const template = row.area_shift_templates as { name?: string } | null;
+
+      return {
+        id: row.id as string,
+        shift_date: row.shift_date as string,
+        starts_at: row.starts_at as string,
+        ends_at: row.ends_at as string,
+        confirmation_status: row.confirmation_status as import("@schichtwerk/types").ShiftConfirmationStatus,
+        requested_at: (row.requested_at as string | null) ?? null,
+        employee_id: row.employee_id as string,
+        employee_name: profile?.full_name ?? "—",
+        location_id: (row.location_id as string | null) ?? null,
+        location_name: location?.name ?? null,
+        location_area_id: (row.location_area_id as string | null) ?? null,
+        area_name: area?.name ?? null,
+        template_name: template?.name ?? null,
+      };
+    });
+  }
+
+  async updateShiftConfirmationStatusAsSuperadmin(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+    confirmationStatus: import("@schichtwerk/types").ShiftConfirmationStatus;
+  }): Promise<{ locationId: string | null; shiftDate: string }> {
+    const shift = await this.getShiftRecordById(input.shiftId, input.organizationId);
+    if (!shift) {
+      throw new Error("Schicht nicht gefunden.");
+    }
+
+    const storedStatus = shift.confirmation_status ?? "confirmed";
+    if (storedStatus === input.confirmationStatus) {
+      return {
+        locationId: shift.location_id,
+        shiftDate: shift.shift_date,
+      };
+    }
+
+    const now = new Date().toISOString();
+    const patch = buildSuperadminConfirmationStatusPatch(
+      input.confirmationStatus,
+      now
+    );
+
+    const { data: updated, error: updateError } = await this.client
+      .from(T.shifts)
+      .update(patch)
+      .eq("id", input.shiftId)
+      .eq("organization_id", input.organizationId)
+      .select("id")
+      .maybeSingle();
+
+    if (updateError) throw new Error(updateError.message);
+    if (!updated) {
+      throw new Error("Schichtstatus konnte nicht gespeichert werden.");
+    }
+
+    const { error: eventError } = await this.client
+      .from(T.shiftConfirmationEvents)
+      .insert({
+        organization_id: input.organizationId,
+        shift_id: input.shiftId,
+        actor_id: input.actorId,
+        from_status: storedStatus,
+        to_status: input.confirmationStatus,
+        payload: {
+          source: "superadmin_simulation",
+        },
+      });
+    if (eventError) throw new Error(eventError.message);
+
+    return {
+      locationId: shift.location_id,
+      shiftDate: shift.shift_date,
+    };
   }
 
   async getManagerProfile(userId: string) {

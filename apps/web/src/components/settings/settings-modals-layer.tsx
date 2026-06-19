@@ -18,7 +18,6 @@ import { CompensationSurchargeTypesModal } from "@/components/settings/compensat
 import { LocationsModal } from "@/components/settings/locations-modal";
 import { RolesModal } from "@/components/settings/roles-modal";
 import { AbsencesModal } from "@/components/settings/absences-modal";
-import { OrganizationCompensationSettingsModal } from "@/components/settings/organization-compensation-settings-modal";
 import { ProfilesModal } from "@/components/settings/profiles-modal";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useOrgFeatures } from "@/lib/org-features-provider";
@@ -66,7 +65,6 @@ export function SettingsModalsLayer({ data }: Props) {
     COMPENSATION_SURCHARGES_UI_ENABLED &&
     searchParams.get("sonderzuschlaege") === "1";
   const showAbsences = searchParams.get("abwesenheiten") === "1";
-  const showCompensationSettings = searchParams.get("arbeitsentgelt") === "1";
 
   const clearMainNavPending = useClearMainNavPendingOptional();
   const anyModalOpen =
@@ -75,8 +73,7 @@ export function SettingsModalsLayer({ data }: Props) {
     showRoles ||
     showQualifications ||
     showSurcharges ||
-    showAbsences ||
-    showCompensationSettings;
+    showAbsences;
 
   useEffect(() => {
     if (anyModalOpen) {
@@ -129,11 +126,6 @@ export function SettingsModalsLayer({ data }: Props) {
         <AbsencesModal
           profiles={data.profiles}
           onClose={() => onClose("abwesenheiten")}
-        />
-      ) : null}
-      {showCompensationSettings ? (
-        <OrganizationCompensationSettingsModal
-          onClose={() => onClose("arbeitsentgelt")}
         />
       ) : null}
     </>

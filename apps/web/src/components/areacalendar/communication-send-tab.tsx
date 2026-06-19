@@ -54,7 +54,8 @@ export function CommunicationSendTab({
   const intlLocale = toIntlLocale(locale);
   const router = useRouter();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
-  const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
+  const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
+    useSimulatedProposedOnAssignRequest();
   const [pending, startTransition] = useTransition();
   const [loading, setLoading] = useState(true);
   const [shifts, setShifts] = useState<ConfirmationSendShiftRow[]>([]);
@@ -89,6 +90,7 @@ export function CommunicationSendTab({
         weekStart,
         locationId: locationId ?? undefined,
         simulatedProposedOnAssign,
+        relaxAppRegistrationGate,
       });
       if (cancelled) return;
       if (!result.ok) {
@@ -106,7 +108,7 @@ export function CommunicationSendTab({
     return () => {
       cancelled = true;
     };
-  }, [weekStart, locationId, simulatedProposedOnAssign]);
+  }, [relaxAppRegistrationGate, weekStart, locationId, simulatedProposedOnAssign]);
 
   useEffect(() => {
     onBusyChange?.(loading || pending);
@@ -148,6 +150,7 @@ export function CommunicationSendTab({
         shiftIds,
         locationId: locationId ?? undefined,
         simulatedProposedOnAssign,
+        relaxAppRegistrationGate,
       });
       if (!result.ok) {
         setErrorMessage(result.error);

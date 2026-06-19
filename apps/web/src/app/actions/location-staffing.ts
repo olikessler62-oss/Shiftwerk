@@ -329,7 +329,7 @@ export async function copyLocationStaffingFromArea(input: {
       ),
     ]);
 
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     return { ok: true, staffing, serviceHours, qualifications };
   } catch (e) {
     return {
@@ -423,7 +423,7 @@ export async function saveServiceHourStaffing(input: {
       ),
     ]);
     try {
-      revalidatePath("/planer");
+      revalidatePath("/dashboard");
     } catch {
       /* Cache-Revalidierung darf Speichern nicht fehlschlagen lassen */
     }
@@ -454,7 +454,7 @@ export async function deleteServiceHourStaffing(input: {
       input.locationId
     );
 
-    revalidatePath("/planer");
+    revalidatePath("/dashboard");
     const staffing = await hourCheck.db.listLocationAreaStaffingForArea(
       hourCheck.hour.location_area_id,
       input.locationId

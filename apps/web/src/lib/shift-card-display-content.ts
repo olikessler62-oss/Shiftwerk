@@ -2,8 +2,8 @@ import { formatTimeRange } from "@/lib/planning-utils";
 import { shortenShiftTypeDisplayName } from "@/lib/profile-availability-label";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import { staffingQualificationIdsForAssignment } from "@/lib/bulk-shift-qualification";
-import type { DashboardAssignmentPreset } from "@/lib/dashboard-assignment-presets";
-import { resolveShiftTemplateNameForAssignment } from "@/lib/dashboard-assignment-presets";
+import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
+import { resolveShiftTemplateNameForAssignment } from "@/lib/areacalendar-assignment-presets";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 
@@ -16,7 +16,7 @@ export type ShiftCardDisplayInput = {
 };
 
 export type ShiftCardTooltipFormatOptions = {
-  assignmentPresets?: readonly DashboardAssignmentPreset[];
+  assignmentPresets?: readonly AreaCalendarAssignmentPreset[];
   formatShiftTooltipLine?: (name: string) => string;
   formatJobTooltipLine?: (jobs: string) => string;
 };
@@ -32,7 +32,7 @@ export function formatShiftCardTooltipJobLine(names: string): string {
 export type ShiftCardTooltipData = {
   employeeName?: string;
   shiftTemplateName?: string | null;
-  /** Schichtname ohne passende Vorlage (Dashboard). */
+  /** Schichtname ohne passende Vorlage (Bereich-Kalender). */
   shiftNameWithoutTemplate?: string | null;
   timeLabel?: string;
   jobsLabel?: string;
@@ -131,7 +131,7 @@ export function resolveJobLabelsForShiftAssignment(
   endTime: string,
   staffingRules: readonly LocationAreaStaffing[],
   serviceHours: readonly AreaServiceHourRef[],
-  assignmentPresets: readonly DashboardAssignmentPreset[],
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[],
   profileQualificationIds: Record<string, string[]>,
   qualificationNameById: ReadonlyMap<string, string>,
   qualificationSortOrder: ReadonlyMap<string, number>

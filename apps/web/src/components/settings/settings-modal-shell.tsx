@@ -142,8 +142,11 @@ export function settingsResponsiveTableWrapClass(className?: string) {
   return cn("-mx-1 min-w-0 overflow-x-auto px-1 sm:mx-0 sm:px-0", className);
 }
 
-/** Backdrop für Dashboard-Modals (fixed, nicht verschachtelt). */
-export function dashboardModalBackdropClass(className?: string) {
+/** z-index for portaled combobox/listbox panels above fixed modals (110–113). */
+export const MODAL_DROPDOWN_Z_INDEX = 120;
+
+/** Backdrop für Bereich-Kalender-Modals (fixed, nicht verschachtelt). */
+export function areaCalendarModalBackdropClass(className?: string) {
   return cn(
     "fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-2 sm:p-4",
     "max-sm:items-stretch max-sm:justify-stretch max-sm:p-0",
@@ -151,8 +154,8 @@ export function dashboardModalBackdropClass(className?: string) {
   );
 }
 
-/** Dialog für Dashboard-Modals. */
-export function dashboardModalDialogClass(
+/** Dialog für Bereich-Kalender-Modals. */
+export function areaCalendarModalDialogClass(
   size: SubModalSize = "2xl",
   className?: string
 ) {
@@ -166,8 +169,8 @@ export function dashboardModalDialogClass(
   );
 }
 
-/** Alertdialog-Overlay über Dashboard-Modals (fixed, nicht im Dialog-Container). */
-export function dashboardNestedModalOverlayClass(className?: string) {
+/** Alertdialog-Overlay über Bereich-Kalender-Modals (fixed, nicht im Dialog-Container). */
+export function areaCalendarNestedModalOverlayClass(className?: string) {
   return cn(
     "fixed inset-0 z-[112] flex items-center justify-center bg-black/30 p-2 sm:p-4",
     "max-sm:items-stretch max-sm:justify-stretch max-sm:p-0",
@@ -175,7 +178,7 @@ export function dashboardNestedModalOverlayClass(className?: string) {
   );
 }
 
-export function dashboardAlertDialogClass(className?: string) {
+export function areaCalendarAlertDialogClass(className?: string) {
   return cn(
     settingsConfirmDialogClass(),
     "z-[113] flex max-h-[min(85dvh,36rem)] w-full flex-col",

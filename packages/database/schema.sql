@@ -16,7 +16,8 @@ create type public.shift_confirmation_status as enum (
   'requested',
   'confirmed',
   'rejected',
-  'pending'
+  'pending',
+  'canceled'
 );
 
 -- Organizations

@@ -1,6 +1,6 @@
-import type { DashboardShiftAssignEmployee } from "@/app/actions/dashboard-shift-assign";
+import type { AreaCalendarShiftAssignEmployee } from "@/app/actions/areacalendar-shift-assign";
 import {
-  areDashboardShiftTimesComplete,
+  areAreaCalendarShiftTimesComplete,
   filterBulkShiftAssignEmployeesForRow,
   filterBulkShiftAssignEmployeesWithoutTimeWindow,
   pickEmployeeLongestWithoutShift,
@@ -21,8 +21,8 @@ import {
   filterAssignmentPresetsMatchingTimes,
   prefillBulkRowWithEarliestAssignmentPreset,
   resolvePresetShiftTemplateForDemandTimes,
-  type DashboardAssignmentPreset,
-} from "@/lib/dashboard-assignment-presets";
+  type AreaCalendarAssignmentPreset,
+} from "@/lib/areacalendar-assignment-presets";
 import type { StaffingQualificationOption } from "@/lib/bulk-shift-qualification";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
@@ -30,7 +30,7 @@ import {
   staffingQualificationIdsForServiceHour,
 } from "@schichtwerk/database";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
-import type { DashboardAssignmentTimeWindow } from "@/lib/shift-overlap";
+import type { AreaCalendarAssignmentTimeWindow } from "@/lib/shift-overlap";
 
 export type ProfileShiftPreferenceEntry = {
   weekday: number;
@@ -69,18 +69,18 @@ export type BuildPrefilledBulkRowInput = {
   prefill: BulkShiftColumnPrefs["prefill"];
   staffingEntries: readonly TagAreaHeaderStaffingEntry[];
   serviceHours: readonly AreaServiceHourRef[];
-  assignmentPresets: readonly DashboardAssignmentPreset[];
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[];
   staffingRules: readonly LocationAreaStaffing[];
   areaId: string;
   weekday: number;
   dateISO: string;
   countryCode: string;
   timeZone: string;
-  employees: readonly DashboardShiftAssignEmployee[];
+  employees: readonly AreaCalendarShiftAssignEmployee[];
   profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
   profileShiftPreferences: Readonly<Record<string, ProfileShiftPreferenceEntry[]>>;
   areaQualifications: readonly StaffingQualificationOption[];
-  areaExistingAssignments: readonly DashboardAssignmentTimeWindow[];
+  areaExistingAssignments: readonly AreaCalendarAssignmentTimeWindow[];
   locationDayAssignments: readonly LocationDayAssignmentRef[];
   emptyEmployeeId: string;
   createEmptyRow: () => BulkPrefillRow;
@@ -100,13 +100,13 @@ function timeFieldValue(time: string): string {
 function otherAreaAssignmentsForBulkRow(
   locationDayAssignments: readonly LocationDayAssignmentRef[],
   areaId: string
-): DashboardAssignmentTimeWindow[] {
+): AreaCalendarAssignmentTimeWindow[] {
   return locationDayAssignments
     .filter(
       (assignment) =>
         assignment.locationAreaId !== areaId &&
         assignment.locationAreaId != null &&
-        areDashboardShiftTimesComplete(assignment.startTime, assignment.endTime)
+        areAreaCalendarShiftTimesComplete(assignment.startTime, assignment.endTime)
     )
     .map((assignment) => ({
       employeeId: assignment.employeeId,
@@ -116,15 +116,15 @@ function otherAreaAssignmentsForBulkRow(
 }
 
 function buildAreaAssignmentsForRow(
-  areaExistingAssignments: readonly DashboardAssignmentTimeWindow[],
+  areaExistingAssignments: readonly AreaCalendarAssignmentTimeWindow[],
   rows: readonly BulkPrefillRow[],
   excludeRowId: string,
   emptyEmployeeId: string
-): DashboardAssignmentTimeWindow[] {
+): AreaCalendarAssignmentTimeWindow[] {
   const fromRows = rows.flatMap((row) => {
     if (row.id === excludeRowId) return [];
     if (row.employeeId === emptyEmployeeId || !row.employeeId) return [];
-    if (!areDashboardShiftTimesComplete(row.startTime, row.endTime)) return [];
+    if (!areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)) return [];
     return [
       {
         employeeId: row.employeeId,
@@ -147,7 +147,7 @@ function matchingEmployeesForPrefillRow(
     | "demandServiceHourId"
   >,
   options: {
-    employees: readonly DashboardShiftAssignEmployee[];
+    employees: readonly AreaCalendarShiftAssignEmployee[];
     weekday: number;
     dateISO: string;
     areaId: string;
@@ -156,30 +156,30 @@ function matchingEmployeesForPrefillRow(
     staffingRules: readonly LocationAreaStaffing[];
     areaQualifications: readonly StaffingQualificationOption[];
     profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
-    areaExistingAssignments: readonly DashboardAssignmentTimeWindow[];
+    areaExistingAssignments: readonly AreaCalendarAssignmentTimeWindow[];
     locationDayAssignments: readonly LocationDayAssignmentRef[];
     allRows: readonly BulkPrefillRow[];
     emptyEmployeeId: string;
     withoutServiceHours?: boolean;
   }
-): DashboardShiftAssignEmployee[] {
+): AreaCalendarShiftAssignEmployee[] {
   const windowStart =
-    row.requestedStartTime && areDashboardShiftTimesComplete(row.requestedStartTime, row.requestedEndTime ?? "")
+    row.requestedStartTime && areAreaCalendarShiftTimesComplete(row.requestedStartTime, row.requestedEndTime ?? "")
       ? row.requestedStartTime
       : row.startTime;
   const windowEnd =
-    row.requestedEndTime && areDashboardShiftTimesComplete(row.requestedStartTime ?? "", row.requestedEndTime)
+    row.requestedEndTime && areAreaCalendarShiftTimesComplete(row.requestedStartTime ?? "", row.requestedEndTime)
       ? row.requestedEndTime
       : row.endTime;
 
-  if (options.withoutServiceHours && !areDashboardShiftTimesComplete(windowStart, windowEnd)) {
+  if (options.withoutServiceHours && !areAreaCalendarShiftTimesComplete(windowStart, windowEnd)) {
     return filterBulkShiftAssignEmployeesWithoutTimeWindow(
       options.employees,
       options.weekday
     );
   }
 
-  if (!areDashboardShiftTimesComplete(windowStart, windowEnd)) return [];
+  if (!areAreaCalendarShiftTimesComplete(windowStart, windowEnd)) return [];
 
   const areaQualificationIds = new Set(
     options.areaQualifications.map((option) => option.id)
@@ -254,12 +254,12 @@ function employeeWishScore(
 }
 
 export function pickEmployeeForBulkPrefill(
-  candidates: readonly DashboardShiftAssignEmployee[],
+  candidates: readonly AreaCalendarShiftAssignEmployee[],
   demandStart: string,
   demandEnd: string,
   areaId: string,
   preferences: Readonly<Record<string, ProfileShiftPreferenceEntry[]>>
-): DashboardShiftAssignEmployee | null {
+): AreaCalendarShiftAssignEmployee | null {
   if (!candidates.length) return null;
 
   const ranked = [...candidates].sort((a, b) => {
@@ -293,7 +293,7 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
 
     if (
       input.prefill.employee &&
-      areDashboardShiftTimesComplete(row.startTime, row.endTime)
+      areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)
     ) {
       const picked = pickEmployeeForBulkPrefill(
         matchingEmployeesForPrefillRow(row, {
@@ -369,7 +369,7 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
   if (shouldSetDemandTimes) {
     const startTime = demand?.startTime ?? "00:00";
     const endTime = demand?.endTime ?? "00:00";
-    const demandTimesComplete = areDashboardShiftTimesComplete(startTime, endTime);
+    const demandTimesComplete = areAreaCalendarShiftTimesComplete(startTime, endTime);
 
     row.startTime = demandTimesComplete ? startTime : "00:00";
     row.endTime = demandTimesComplete ? endTime : "00:00";
@@ -392,7 +392,7 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
   if (input.prefill.template && shouldSetDemandTimes) {
     const startTime = row.startTime;
     const endTime = row.endTime;
-    const demandTimesComplete = areDashboardShiftTimesComplete(startTime, endTime);
+    const demandTimesComplete = areAreaCalendarShiftTimesComplete(startTime, endTime);
 
     if (demandTimesComplete) {
       const matchedPresetId = resolvePresetShiftTemplateForDemandTimes(
@@ -436,7 +436,7 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
 
   if (
     input.prefill.employee &&
-    areDashboardShiftTimesComplete(row.startTime, row.endTime)
+    areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)
   ) {
     let eligible = matchingEmployeesForPrefillRow(row, {
       employees: input.employees,

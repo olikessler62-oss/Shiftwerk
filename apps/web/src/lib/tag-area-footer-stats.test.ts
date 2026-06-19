@@ -127,10 +127,10 @@ describe("tag-area-footer-stats", () => {
         currency: "EUR",
       },
       (key, params) => {
-        if (key === "dashboard.tagAreaFooterShortLine") {
+        if (key === "areaCalendar.tagAreaFooterShortLine") {
           return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
         }
-        if (key === "dashboard.tagAreaFooterTotalHours") {
+        if (key === "areaCalendar.tagAreaFooterTotalHours") {
           return `Gesamte Stunden: ${params?.hours ?? ""}`;
         }
         return `Gesamte Kosten: ${params?.amount ?? ""} ${params?.currency ?? ""}`;
@@ -151,19 +151,19 @@ describe("tag-area-footer-stats", () => {
         currency: "EUR",
       },
       (key, params) => {
-        if (key === "dashboard.tagAreaFooterShortLine") {
+        if (key === "areaCalendar.tagAreaFooterShortLine") {
           return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
         }
-        if (key === "dashboard.tagAreaFooterTotalHours") {
+        if (key === "areaCalendar.tagAreaFooterTotalHours") {
           return `Gesamte Stunden: ${params?.hours ?? ""}`;
         }
-        if (key === "dashboard.tagAreaFooterTotalAmount") {
+        if (key === "areaCalendar.tagAreaFooterTotalAmount") {
           return `Gesamtbetrag: ${params?.amount ?? ""} €`;
         }
-        if (key === "dashboard.tagAreaFooterCompensation") {
+        if (key === "areaCalendar.tagAreaFooterCompensation") {
           return `Entgelt: ${params?.amount ?? ""} €`;
         }
-        if (key === "dashboard.tagAreaFooterSurcharges") {
+        if (key === "areaCalendar.tagAreaFooterSurcharges") {
           return `Zuschläge: ${params?.amount ?? ""} €`;
         }
         return key;
@@ -186,19 +186,19 @@ describe("tag-area-footer-stats", () => {
         currency: "EUR",
       },
       (key, params) => {
-        if (key === "dashboard.tagAreaFooterShortLine") {
+        if (key === "areaCalendar.tagAreaFooterShortLine") {
           return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
         }
-        if (key === "dashboard.tagAreaFooterTotalHours") {
+        if (key === "areaCalendar.tagAreaFooterTotalHours") {
           return `Gesamte Stunden: ${params?.hours ?? ""}`;
         }
-        if (key === "dashboard.tagAreaFooterTotalAmount") {
+        if (key === "areaCalendar.tagAreaFooterTotalAmount") {
           return `Gesamtbetrag: ${params?.amount ?? ""} €`;
         }
-        if (key === "dashboard.tagAreaFooterCompensation") {
+        if (key === "areaCalendar.tagAreaFooterCompensation") {
           return `Entgelt: ${params?.amount ?? ""} €`;
         }
-        if (key === "dashboard.tagAreaFooterSurcharges") {
+        if (key === "areaCalendar.tagAreaFooterSurcharges") {
           return `Zuschläge: ${params?.amount ?? ""} €`;
         }
         return key;
@@ -221,10 +221,10 @@ describe("tag-area-footer-stats", () => {
         currency: "EUR",
       },
       (key, params) => {
-        if (key === "dashboard.tagAreaFooterShortLine") {
+        if (key === "areaCalendar.tagAreaFooterShortLine") {
           return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
         }
-        if (key === "dashboard.tagAreaFooterTotalHours") {
+        if (key === "areaCalendar.tagAreaFooterTotalHours") {
           return `Gesamte Stunden: ${params?.hours ?? ""}`;
         }
         return key;

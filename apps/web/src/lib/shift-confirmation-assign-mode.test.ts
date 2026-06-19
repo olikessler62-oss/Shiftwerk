@@ -71,6 +71,17 @@ describe("resolveSimulatedProposedAssignOptions", () => {
           shiftConfirmationEnabled: true,
           relaxAppRegistrationGate: false,
         });
+        expect(
+          resolveSimulatedProposedAssignOptions({
+            organizationEnabled: true,
+            simulatedProposedOnAssign: false,
+            relaxAppRegistrationGate: true,
+            managerEmail: "dev@example.com",
+          })
+        ).toEqual({
+          shiftConfirmationEnabled: true,
+          relaxAppRegistrationGate: true,
+        });
       }
     );
   });

@@ -1,7 +1,7 @@
 import {
   AREA_CHECKBOX_SIZE_PX,
 } from "@/components/ui/checkbox";
-import { AREA_CHECKBOX_TEXT_GAP_PX } from "@/components/dashboard/calendar-corner-checkbox";
+import { AREA_CHECKBOX_TEXT_GAP_PX } from "@/components/areacalendar/calendar-corner-checkbox";
 
 export const AREA_COLUMN_MIN_WIDTH_PX = 50;
 export const AREA_COLUMN_MAX_WIDTH_PX = 200;

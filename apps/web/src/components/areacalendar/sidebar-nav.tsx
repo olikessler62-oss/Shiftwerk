@@ -11,6 +11,10 @@ import {
   buildSettingsModalUrl as buildSettingsModalUrlFromLib,
   type SettingsModalQueryFlag,
 } from "@/lib/settings-modal-navigation";
+import {
+  buildOverviewModalUrl as buildOverviewModalUrlFromLib,
+  type OverviewModalQueryFlag,
+} from "@/lib/overview-modal-navigation";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useOrgFeatures } from "@/lib/org-features-provider";
 import { useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
@@ -20,7 +24,26 @@ const NAV_LINKS_AFTER_PLANNING = [
   { href: "/berichte", labelKey: "nav.reports" },
 ] as const;
 
+const OVERVIEW_LINKS = [
+  {
+    kind: "modal" as const,
+    flag: "uebersichtAbwesenheiten" as const,
+    labelKey: "nav.overviewAbsences",
+  },
+  {
+    kind: "page" as const,
+    href: "/uebersicht/entgelt-zuschlaege",
+    labelKey: "nav.overviewCompensation",
+  },
+  {
+    kind: "modal" as const,
+    flag: "uebersichtVerfuegbarkeiten" as const,
+    labelKey: "nav.overviewAvailabilities",
+  },
+] as const;
+
 const PLANNING_SECTION_ID = "planung";
+const OVERVIEW_SECTION_ID = "uebersicht";
 const SETTINGS_SECTION_ID = "einstellungen";
 
 const navItemClass = (active: boolean) =>
@@ -55,7 +78,14 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const searchParams = useSearchParams();
   const t = useTranslations();
   const features = useOrgFeatures();
-  const dashboardActive = pathname === "/dashboard";
+  const areaCalendarActive = pathname === "/bereich-kalender";
+  const overviewActive =
+    pathname.startsWith("/uebersicht") ||
+    searchParams.get("uebersichtAbwesenheiten") === "1" ||
+    searchParams.get("uebersichtVerfuegbarkeiten") === "1";
+  const overviewAbsencesOpen = searchParams.get("uebersichtAbwesenheiten") === "1";
+  const overviewAvailabilitiesOpen =
+    searchParams.get("uebersichtVerfuegbarkeiten") === "1";
   const standorteOpen = searchParams.get("standorte") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
   const rollenOpen = searchParams.get("rollen") === "1";
@@ -72,15 +102,22 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     sonderzuschlaegeOpen ||
     abwesenheitenOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    [PLANNING_SECTION_ID]: dashboardActive,
+    [PLANNING_SECTION_ID]: areaCalendarActive,
+    [OVERVIEW_SECTION_ID]: overviewActive,
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
 
   useEffect(() => {
-    if (dashboardActive) {
+    if (areaCalendarActive) {
       setExpanded((prev) => ({ ...prev, [PLANNING_SECTION_ID]: true }));
     }
-  }, [dashboardActive]);
+  }, [areaCalendarActive]);
+
+  useEffect(() => {
+    if (overviewActive) {
+      setExpanded((prev) => ({ ...prev, [OVERVIEW_SECTION_ID]: true }));
+    }
+  }, [overviewActive]);
 
   useEffect(() => {
     if (settingsModalOpen) {
@@ -89,6 +126,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   }, [settingsModalOpen]);
 
   const planningExpanded = expanded[PLANNING_SECTION_ID] ?? false;
+  const overviewExpanded = expanded[OVERVIEW_SECTION_ID] ?? false;
   const settingsExpanded = expanded[SETTINGS_SECTION_ID] ?? false;
 
   function toggleSection(id: string) {
@@ -97,6 +135,10 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
 
   function buildSettingsModalUrl(flag: SettingsModalQueryFlag) {
     return buildSettingsModalUrlFromLib(pathname, searchParams, flag);
+  }
+
+  function buildOverviewModalUrl(flag: OverviewModalQueryFlag) {
+    return buildOverviewModalUrlFromLib(pathname, searchParams, flag);
   }
 
   const settingsLinks = [
@@ -151,12 +193,23 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     onNavigate?.();
   }
 
+  function handleOverviewNav(flag: OverviewModalQueryFlag) {
+    beginMainNavPending({ kind: "overview-modal", flag });
+    onNavigate?.();
+  }
+
+  function isOverviewModalLinkOpen(flag: OverviewModalQueryFlag): boolean {
+    if (flag === "uebersichtAbwesenheiten") return overviewAbsencesOpen;
+    if (flag === "uebersichtVerfuegbarkeiten") return overviewAvailabilitiesOpen;
+    return searchParams.get(flag) === "1";
+  }
+
   return (
     <nav className="flex flex-col gap-0.5 p-2">
       <Link
-        href="/planer"
-        onClick={() => handlePageNav("/planer")}
-        className={navItemClass(pathname === "/planer")}
+        href="/dashboard"
+        onClick={() => handlePageNav("/dashboard")}
+        className={navItemClass(pathname === "/dashboard")}
       >
         {t("nav.dashboard")}
       </Link>
@@ -164,13 +217,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
       <div>
         <div
           className={cn(
-            navItemClass(dashboardActive || planningExpanded),
+            navItemClass(areaCalendarActive || planningExpanded),
             "flex items-center justify-between gap-1 pr-1"
           )}
         >
           <Link
-            href="/dashboard"
-            onClick={() => handlePageNav("/dashboard")}
+            href="/bereich-kalender"
+            onClick={() => handlePageNav("/bereich-kalender")}
             className="min-w-0 flex-1"
           >
             {t("nav.planning")}
@@ -232,6 +285,58 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           {t(item.labelKey)}
         </Link>
       ))}
+
+      <div>
+        <button
+          type="button"
+          onClick={() => toggleSection(OVERVIEW_SECTION_ID)}
+          aria-expanded={overviewExpanded}
+          className={cn(
+            navItemClass(overviewExpanded || overviewActive),
+            "flex items-center justify-between"
+          )}
+        >
+          <span>{t("nav.overview")}</span>
+          <Chevron open={overviewExpanded} />
+        </button>
+
+        <div
+          className={cn(
+            "grid transition-[grid-template-rows] duration-200 ease-out",
+            overviewExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          )}
+        >
+          <div className="overflow-hidden">
+            {OVERVIEW_LINKS.map((item, index) =>
+              item.kind === "modal" ? (
+                <Link
+                  key={item.flag}
+                  href={buildOverviewModalUrl(item.flag)}
+                  onClick={() => handleOverviewNav(item.flag)}
+                  className={cn(
+                    subLinkClass(isOverviewModalLinkOpen(item.flag)),
+                    index === 0 && "mt-0.5"
+                  )}
+                >
+                  {t(item.labelKey)}
+                </Link>
+              ) : (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => handlePageNav(item.href)}
+                  className={cn(
+                    subLinkClass(pathname === item.href),
+                    index === 0 && "mt-0.5"
+                  )}
+                >
+                  {t(item.labelKey)}
+                </Link>
+              )
+            )}
+          </div>
+        </div>
+      </div>
 
       <div>
         <button

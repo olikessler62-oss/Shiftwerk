@@ -1,10 +1,10 @@
 import {
   shiftTemplateLabelForDemandTimes,
-  type DashboardAssignmentPreset,
-} from "@/lib/dashboard-assignment-presets";
+  type AreaCalendarAssignmentPreset,
+} from "@/lib/areacalendar-assignment-presets";
 import {
   availabilityRangeContainedInWindow,
-  dashboardTimeKey,
+  areaCalendarTimeKey,
 } from "@/lib/available-employees-for-shift";
 import { personalbedarfDemandTimesForEntry } from "@/lib/bulk-shift-staffing";
 import {
@@ -112,9 +112,9 @@ function demandWindowAssignmentScore(
     demand.endTime
   );
   const exactMatch =
-    dashboardTimeKey(assignment.startTime) ===
-      dashboardTimeKey(demand.startTime) &&
-    dashboardTimeKey(assignment.endTime) === dashboardTimeKey(demand.endTime);
+    areaCalendarTimeKey(assignment.startTime) ===
+      areaCalendarTimeKey(demand.startTime) &&
+    areaCalendarTimeKey(assignment.endTime) === areaCalendarTimeKey(demand.endTime);
 
   return (exactMatch ? 2_000_000 : 0) + (fits ? 1_000_000 : 0) + overlapMin;
 }
@@ -220,7 +220,7 @@ export function staffingAssignmentsForPlanningAreaDay(
 export function buildDemandWindowsForAreaDay(
   baseEntries: readonly TagAreaHeaderStaffingEntry[],
   serviceHours: readonly AreaServiceHourRef[],
-  assignmentPresets: readonly DashboardAssignmentPreset[],
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[],
   staffingRules: readonly LocationAreaStaffing[],
   areaId: string
 ): DemandWindowRef[] {
@@ -350,7 +350,7 @@ export function computeBulkStaffingHeaderEntries(input: {
   dateISO: string;
   serviceHours: readonly AreaServiceHourRef[];
   assignments: readonly StaffingAssignmentRef[];
-  assignmentPresets: readonly DashboardAssignmentPreset[];
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[];
   qualifications: readonly Qualification[];
   profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
   formatTimeLabel: (weekdayLabel: string, startTime: string, endTime: string) => string;

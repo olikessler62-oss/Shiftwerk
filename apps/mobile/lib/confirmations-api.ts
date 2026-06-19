@@ -25,3 +25,12 @@ export async function submitConfirmationResponses(
     }
   );
 }
+
+export async function cancelConfirmationShift(
+  shiftId: string
+): Promise<{ ok: true }> {
+  return fetchMobileApi<{ ok: true }>("/api/mobile/confirmations/cancel", {
+    method: "POST",
+    body: JSON.stringify({ shiftId }),
+  });
+}

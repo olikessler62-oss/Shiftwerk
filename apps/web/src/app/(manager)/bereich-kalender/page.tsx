@@ -6,20 +6,21 @@ import {
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
 import { loadManagerOrganization } from "@/lib/manager";
-import { resolveSelectedLocationId } from "@/lib/resolve-dashboard-location";
-import { findAreaShiftTemplateByTimes } from "@/lib/dashboard-assignment-presets";
-import { DashboardView } from "@/components/dashboard/dashboard-view";
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-calendar";
+import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
+import { findAreaShiftTemplateByTimes } from "@/lib/areacalendar-assignment-presets";
+import { AreaCalendarView } from "@/components/areacalendar/areacalendar-view";
+import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-calendar";
 import { resolveOrganizationTimeZone, resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
-import { getCachedDashboardShifts } from "@/lib/cached-dashboard-shifts";
+import { getCachedAreaCalendarShifts } from "@/lib/cached-areacalendar-shifts";
+import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
-export default async function DashboardPage({
+export default async function BereichKalenderPage({
   searchParams,
 }: {
   searchParams: Promise<{
@@ -55,7 +56,7 @@ export default async function DashboardPage({
     : [];
   const timeZone = resolveOrganizationTimeZone(organization);
 
-  const weekStart = redirectIfPlanningWeekClamped("/dashboard", week, {
+  const weekStart = redirectIfPlanningWeekClamped("/bereich-kalender", week, {
     week,
     location: locationParam,
     area: areaParam,
@@ -81,7 +82,7 @@ export default async function DashboardPage({
     db.listCompensationSurchargeTypes(orgId),
     db.listRoles(orgId),
     db.listOrganizationProfiles(orgId),
-    db.listLocationsForDashboard(orgId, from, to),
+    db.listLocationsForAreaCalendar(orgId, from, to),
     db.listProfileQualificationIdsByOrganization(orgId),
     db.listOrganizationAbsences(orgId, { statuses: ["approved"] }),
   ]);
@@ -98,10 +99,10 @@ export default async function DashboardPage({
   const [areas, staffingRules, serviceHours, shiftRows, areaShiftTemplates] =
     selectedLocationId
     ? await Promise.all([
-        db.listLocationAreasForDashboard(selectedLocationId, from, to),
+        db.listLocationAreasForAreaCalendar(selectedLocationId, from, to),
         db.listLocationAreaStaffing(selectedLocationId),
         db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),
-        getCachedDashboardShifts(
+        getCachedAreaCalendarShifts(
           orgId,
           selectedLocationId,
           weekStart,
@@ -114,7 +115,7 @@ export default async function DashboardPage({
       ])
     : [[], [], [], [], []];
 
-  const cards: DashboardShiftCard[] = [];
+  const cards: AreaCalendarShiftCard[] = [];
   for (const s of shiftRows) {
     const template = relation(s.area_shift_templates);
     const profile = relation(s.profiles);
@@ -150,14 +151,38 @@ export default async function DashboardPage({
         s.confirmation_status,
         s.requested_at
       ),
+      requestedAt: s.requested_at ?? null,
+      confirmationStatusUpdatedAt: s.confirmation_status_updated_at ?? null,
     });
   }
 
   const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
 
+  const canceledShiftIds = cards
+    .filter((shift) => shift.confirmationStatus === "canceled")
+    .map((shift) => shift.id);
+
+  const [swapRequestRows, cancelActorEntries] =
+    selectedLocationId && organization.shift_confirmation_enabled
+      ? await Promise.all([
+          db.listOrganizationSwapRequests(orgId, {
+            statuses: ["pending"],
+            locationId: selectedLocationId,
+            from,
+            to,
+          }),
+          db.listShiftCancelActors(orgId, canceledShiftIds),
+        ])
+      : [[], new Map<string, "employee" | "manager">()];
+
+  const communicationSwapRequests = mapSwapRequestsToCommunicationRows(
+    swapRequestRows,
+    timeZone
+  );
+
   return (
     <Suspense fallback={<div className="-m-6 p-6 text-sm text-muted">Laden…</div>}>
-      <DashboardView
+      <AreaCalendarView
         weekStart={weekStart}
         dates={dates}
         selectedLocationId={selectedLocationId}
@@ -175,6 +200,8 @@ export default async function DashboardPage({
         profileQualificationIds={profileQualificationIds}
         locations={locations}
         absences={absences}
+        communicationSwapRequests={communicationSwapRequests}
+        communicationCancelActors={Object.fromEntries(cancelActorEntries)}
         managerNotifications={managerNotifications}
       />
     </Suspense>

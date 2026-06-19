@@ -1,5 +1,5 @@
 import { parseServiceHourTimeToMinutes } from "@schichtwerk/database";
-import { resolvePresetIdFromTimes } from "@/lib/dashboard-assignment-presets";
+import { resolvePresetIdFromTimes } from "@/lib/areacalendar-assignment-presets";
 import { capStaffingWindowDuration } from "@/lib/staffing-window-limits";
 import type {
   AreaShiftTemplateWithBreaks,

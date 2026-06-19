@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { DashboardShiftCard } from "@/components/dashboard/dashboard-shift-card-view";
+import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { Button, CloseIcon, IconButton } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -11,14 +11,14 @@ import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 type PanelTab = "pending" | "rejected" | "proposed";
 
 type Props = {
-  shifts: DashboardShiftCard[];
+  shifts: AreaCalendarShiftCard[];
   initialTab?: PanelTab;
   onClose: () => void;
-  onReassign: (shift: DashboardShiftCard) => void;
+  onReassign: (shift: AreaCalendarShiftCard) => void;
   onSendConfirmation?: () => void;
 };
 
-function tabForStatus(status: DashboardShiftCard["confirmationStatus"]): PanelTab | null {
+function tabForStatus(status: AreaCalendarShiftCard["confirmationStatus"]): PanelTab | null {
   if (status === "pending" || status === "rejected" || status === "proposed") {
     return status;
   }
@@ -36,9 +36,9 @@ export function OpenConfirmationsPanel({
   const [activeTab, setActiveTab] = useState<PanelTab>(initialTab);
 
   const grouped = useMemo(() => {
-    const pending: DashboardShiftCard[] = [];
-    const rejected: DashboardShiftCard[] = [];
-    const proposed: DashboardShiftCard[] = [];
+    const pending: AreaCalendarShiftCard[] = [];
+    const rejected: AreaCalendarShiftCard[] = [];
+    const proposed: AreaCalendarShiftCard[] = [];
 
     for (const shift of shifts) {
       const tab = tabForStatus(shift.confirmationStatus);
@@ -47,7 +47,7 @@ export function OpenConfirmationsPanel({
       else if (tab === "proposed") proposed.push(shift);
     }
 
-    const byDateThenName = (a: DashboardShiftCard, b: DashboardShiftCard) => {
+    const byDateThenName = (a: AreaCalendarShiftCard, b: AreaCalendarShiftCard) => {
       const dateDiff = a.shift_date.localeCompare(b.shift_date);
       if (dateDiff !== 0) return dateDiff;
       return a.employeeName.localeCompare(b.employeeName, "de");
