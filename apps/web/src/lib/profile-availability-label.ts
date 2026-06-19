@@ -1,6 +1,7 @@
 import {
   isOvernightAvailability,
   sortProfileRecurringAvailabilityBySchedule,
+  sortProfileShiftPreferencesBySchedule,
 } from "@schichtwerk/database";
 import {
   weekdayAbbrevFromIndex,
@@ -131,8 +132,16 @@ export function formatProfileAvailabilitySummaryLabels(
 
 export function formatProfileShiftPreferenceSummaryLabel(
   item: ProfileShiftPreference,
-  locale: "de" | "en" = "de"
+  locale: "de" | "en" = "de",
+  emptyTimeLabel = "—"
 ): string {
+  if (
+    item.weekday == null ||
+    item.start_time == null ||
+    item.end_time == null
+  ) {
+    return emptyTimeLabel;
+  }
   const day = `${weekdayAbbrev(item.weekday, locale)}:`;
   return `${day} ${formatAvailabilityTimeRange(item.start_time, item.end_time, locale)}`;
 }
@@ -141,7 +150,7 @@ export function formatProfileShiftPreferenceSummaryLabels(
   items: readonly ProfileShiftPreference[],
   locale: "de" | "en" = "de"
 ): string[] {
-  return sortProfileRecurringAvailabilityBySchedule(items).map((item) =>
+  return sortProfileShiftPreferencesBySchedule(items).map((item) =>
     formatProfileShiftPreferenceSummaryLabel(item, locale)
   );
 }

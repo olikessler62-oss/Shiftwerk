@@ -40,8 +40,11 @@ export const de = {
     reports: "Berichte",
     overview: "Übersicht",
     overviewAbsences: "Abwesenheiten",
-    overviewCompensation: "Entgelt/Zuschläge",
+    overviewCompensation: "Entgelt",
+    overviewSurcharges: "Zuschläge",
     overviewAvailabilities: "Verfügbarkeiten",
+    overviewPreferences: "Wünsche",
+    overviewQualifications: "Mitarbeitertätigkeiten",
     settings: "Einstellungen",
     shiftTypes: "Schichtarten",
     qualifications: "Tätigkeiten",
@@ -121,6 +124,9 @@ export const de = {
       "Übersicht über Arbeitsentgelt und Zuschläge.",
     availabilitiesDescription:
       "Übersicht über Verfügbarkeiten des Personals.",
+    preferencesDescription: "Übersicht über Wünsche des Personals.",
+    qualificationsDescription:
+      "Übersicht über zugewiesene Tätigkeiten des Personals.",
     absences: {
       title: "Abwesenheiten",
       listTitle: "Aktuelle und geplante Abwesenheiten",
@@ -150,6 +156,54 @@ export const de = {
       jumpToEmployee: "Mitarbeiter wählen …",
       jumpToEmployeeFilter: "Mitarbeiter suchen …",
       jumpToEmployeeEmpty: "Kein passender Mitarbeiter in der Liste.",
+    },
+    preferences: {
+      title: "Wünsche",
+      listTitle: "Wünsche des Personals",
+      emptyList: "Keine Wünsche hinterlegt.",
+      inlineEditHint:
+        "Zeile wählen — Anlegen, Bearbeiten und Löschen gelten für den zugehörigen Mitarbeiter.",
+      selectEmployeeHint:
+        "Mitarbeiter in der Combobox wählen oder Zeile auswählen — Doppelklick zum Bearbeiten.",
+      selectedEmployeeHint: "Bearbeitung für: {name}",
+      emptyEditHint:
+        "Mitarbeiter in der Combobox wählen, dann „Neu“ — oder zuerst eine Zeile auswählen.",
+    },
+    compensation: {
+      title: "Entgelt",
+      listTitle: "Stundensätze des Personals",
+      emptyList: "Keine Stundensätze hinterlegt.",
+      inlineEditHint:
+        "Zeile wählen — Anlegen, Bearbeiten und Löschen gelten für den zugehörigen Mitarbeiter.",
+      selectEmployeeHint:
+        "Mitarbeiter in der Combobox wählen oder Zeile auswählen — Doppelklick zum Bearbeiten.",
+      selectedEmployeeHint: "Bearbeitung für: {name}",
+      emptyEditHint:
+        "Mitarbeiter in der Combobox wählen, dann „Neu“ — oder zuerst eine Zeile auswählen.",
+    },
+    surcharges: {
+      title: "Zuschläge",
+      listTitle: "Zuschläge des Personals",
+      emptyList: "Keine Zuschläge hinterlegt.",
+      inlineEditHint:
+        "Zeile wählen — Anlegen, Bearbeiten und Löschen gelten für den zugehörigen Mitarbeiter.",
+      selectEmployeeHint:
+        "Mitarbeiter in der Combobox wählen oder Zeile auswählen — Doppelklick zum Bearbeiten.",
+      selectedEmployeeHint: "Bearbeitung für: {name}",
+      emptyEditHint:
+        "Mitarbeiter in der Combobox wählen, dann „Neu“ — oder zuerst eine Zeile auswählen.",
+    },
+    qualifications: {
+      title: "Mitarbeitertätigkeiten",
+      listTitle: "Tätigkeiten des Personals",
+      emptyList: "Keine Tätigkeiten zugewiesen.",
+      inlineEditHint:
+        "Zeile wählen — Anlegen, Bearbeiten und Löschen gelten für den zugehörigen Mitarbeiter.",
+      selectEmployeeHint:
+        "Mitarbeiter in der Combobox wählen oder Zeile auswählen — Doppelklick zum Bearbeiten.",
+      selectedEmployeeHint: "Bearbeitung für: {name}",
+      emptyEditHint:
+        "Mitarbeiter in der Combobox wählen, dann „Neu“ — oder zuerst eine Zeile auswählen.",
     },
   },
   superadmin: {
@@ -361,14 +415,14 @@ export const de = {
     panelAvailability: "Verfügbarkeiten",
     panelAvailabilityOf: "Verfügbarkeiten von {name}",
     panelAvailabilityOfPrefix: "Verfügbarkeiten:",
-    panelShiftPreferences: "Wunschzeiten",
-    panelShiftPreferencesOf: "Wunschzeiten von {name}",
-    panelShiftPreferencesOfPrefix: "Wunschzeiten:",
+    panelShiftPreferences: "Wünsche",
+    panelShiftPreferencesOf: "Wünsche von {name}",
+    panelShiftPreferencesOfPrefix: "Wünsche:",
     panelAbsences: "Abwesenheiten",
     panelAbsencesOf: "Abwesenheiten von {name}",
     panelAbsencesOfPrefix: "Abwesenheiten:",
     actionAbsencesHint: "Urlaub, Krankheit und Sonstiges verwalten",
-    actionAbsencesConfigured: "Abwesenheiten erfasst",
+    actionAbsencesConfigured: "Urlaub, Krankheit und Sonstiges",
     panelDetails: "Details",
     panelSelected: "Profil",
     openQualificationsOf: "Tätigkeiten von {name}",
@@ -387,31 +441,40 @@ export const de = {
     actionQualificationsHint: "Tätigkeiten zuweisen und verwalten",
     actionAvailabilityHint: "Wiederkehrende Verfügbarkeiten festlegen",
     actionAvailabilityConfigured: "zu bestimmten Zeiten verfügbar",
-    actionShiftPreferencesHint: "Bevorzugte Zeiten",
-    actionShiftPreferencesConfigured: "zu bestimmten Zeiten",
+    actionShiftPreferencesHint: "Zeiten, Standorte, Bereiche",
+    actionShiftPreferencesConfigured: "für Planung hinterlegt",
     actionCompensationHint: "Stundensatz und Verlauf bearbeiten",
     actionCompensationCurrent: "aktuell: {rate}",
     actionSurchargesHint: "Zuschläge zuweisen",
     actionSurchargesUnavailable: "Demnächst verfügbar",
     actionInviteHint: "Per E-Mail zur App einladen",
     emptyAvailability: "Keine Verfügbarkeiten hinterlegt.",
-    emptyShiftPreferences: "Keine Wunschzeiten hinterlegt.",
+    emptyShiftPreferences: "Keine Wünsche hinterlegt.",
     shiftPreferencePanelIntro:
-      "Wunschzeiten helfen bei der Planung, bevorzugt passende Schichten zuzuweisen. Sie ersetzen nicht die Verfügbarkeit und müssen innerhalb dieser liegen.",
+      "Wünsche helfen bei der Planung, bevorzugt passende Schichten zuzuweisen. Sie ersetzen nicht die Verfügbarkeit. Zeitwünsche müssen innerhalb der Verfügbarkeit liegen.",
     shiftPreferenceFormIntro:
-      "Die Wunschzeit muss vollständig innerhalb einer Verfügbarkeit am gewählten Wochentag liegen.",
-    shiftPreferenceCreateTitle: "Wunschzeit anlegen",
-    shiftPreferenceEditTitle: "Wunschzeit ändern",
+      "Mindestens eine Dimension wählen. Zeitwünsche müssen vollständig innerhalb einer Verfügbarkeit am gewählten Wochentag liegen.",
+    shiftPreferenceCreateTitle: "Wunsch anlegen",
+    shiftPreferenceEditTitle: "Wunsch ändern",
     shiftPreferenceSelectWeekdays: "Bitte mindestens einen Wochentag auswählen.",
+    shiftPreferenceSelectDimension: "Bitte mindestens eine Dimension angeben.",
     shiftPreferenceSaveFailed: "Speichern fehlgeschlagen",
     shiftPreferenceTooltipNoAvailability: "Keine Verfügbarkeiten",
     shiftPreferencesNeedAdjustment:
-      "Es existieren Wunschzeiten, die nicht mehr mit den Verfügbarkeiten übereinstimmen. Bitte passen Sie die Wunschzeiten an.",
-    shiftPreferenceLocation: "Wunsch-Standort",
-    shiftPreferenceArea: "Wunsch-Bereich",
-    shiftPreferenceJob: "Wunsch-Tätigkeit",
+      "Es existieren Zeitwünsche, die nicht mehr mit den Verfügbarkeiten übereinstimmen. Bitte passen Sie die Wünsche an.",
+    shiftPreferenceLocation: "Standort",
+    shiftPreferenceArea: "Bereich",
+    shiftPreferenceJob: "Tätigkeit",
     shiftPreferenceNone: "Keine Angabe",
     shiftPreferenceSelectLocationFirst: "Bitte zuerst einen Standort wählen",
+    shiftPreferenceDimensionTime: "Zeit",
+    shiftPreferenceDimensionLocation: "Standort",
+    shiftPreferenceDimensionArea: "Bereich",
+    shiftPreferenceDimensionJob: "Tätigkeit",
+    shiftPreferenceAnyDay: "Jeder Tag",
+    shiftPreferenceNoTime: "—",
+    shiftPreferenceWishNotFulfilled:
+      "Kein passender Wunsch erfüllt — dennoch zugewiesen.",
     availabilityCreateTitle: "Verfügbarkeit anlegen",
     availabilityEditTitle: "Verfügbarkeit ändern",
     availabilityBulkEdit: "Mehrfach ändern",

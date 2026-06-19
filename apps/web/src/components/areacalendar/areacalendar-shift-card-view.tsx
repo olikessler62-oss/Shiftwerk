@@ -28,7 +28,11 @@ import {
 } from "@/lib/calendar-interaction-ui";
 import { shiftConfirmationShowsOverlay } from "@/lib/shift-confirmation-display";
 import { isPastShiftDate } from "@/lib/planning-readonly";
-import { planningShiftCardShowsPointerCursor } from "@/lib/shift-card-context-menu-actions";
+import {
+  handleShiftCardContextMenuPointerEvent,
+  planningShiftCardShowsPointerCursor,
+  resolveShiftCardContextMenuStatus,
+} from "@/lib/shift-card-context-menu-actions";
 
 export type AreaCalendarShiftCard = {
   id: string;
@@ -231,9 +235,14 @@ export function AreaCalendarShiftCardView({
             onContextMenu={
               onContextMenu
                 ? (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onContextMenu(event);
+                    handleShiftCardContextMenuPointerEvent(
+                      event,
+                      resolveShiftCardContextMenuStatus(
+                        shift.confirmationStatus,
+                        shift.requestedAt
+                      ) !== "confirmed",
+                      () => onContextMenu(event)
+                    );
                   }
                 : undefined
             }

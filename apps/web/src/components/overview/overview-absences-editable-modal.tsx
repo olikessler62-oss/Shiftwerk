@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { AbsenceRange } from "@schichtwerk/database";
 import type { AbsenceRequest, AbsenceType, Profile, RequestStatus } from "@schichtwerk/types";
@@ -25,18 +25,17 @@ import {
   SettingsIconActionButton,
   SettingsListRowCheckbox,
   SettingsListRowDeleteButton,
+  SettingsOverviewListRowActions,
   SettingsPrimaryActionButton,
   applyCreatedListSelection,
+  areaCalendarModalBackdropClass,
+  shouldIgnoreSettingsListRowActivation,
   settingsConfirmDialogClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
   settingsListItemAttrs,
-  settingsListRowCheckboxCellClass,
-  settingsListRowCheckboxHeaderClass,
-  settingsListRowDeleteCellClass,
-  settingsListRowDeleteHeaderClass,
-  settingsModalBackdropClass,
+  settingsOverviewListRowActionsHeaderClass,
   settingsModalBodyPaddingClass,
   settingsModalDialogClass,
   settingsModalFooterClass,
@@ -65,14 +64,17 @@ import {
   buildOverviewAbsenceDisplayRows,
   buildOverviewAbsenceEmployeeJumpOptions,
   countOverviewAbsenceEmployees,
+  firstOverviewAbsenceRowIdForEmployee,
 } from "@/lib/overview-absences-display";
 import { resolveShiftGuardActionError } from "@/lib/shift-guard-action-error";
 import { useScrollToSettingsListItem } from "@/lib/settings-list-scroll";
+import { useOverviewModalListScroll } from "@/lib/use-overview-modal-initial-scroll";
 import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 import { OverviewAvailabilitiesEmployeeJumpCombobox } from "./overview-availabilities-employee-jump-combobox";
 
 type Props = {
   onClose: () => void;
+  initialEmployeeId?: string | null;
 };
 
 type FormMode =
@@ -104,7 +106,10 @@ function formatEndDateLabel(
   return dateFormatter.format(new Date(`${row.endDate}T12:00:00`));
 }
 
-export function OverviewAbsencesEditableModal({ onClose }: Props) {
+export function OverviewAbsencesEditableModal({
+  onClose,
+  initialEmployeeId = null,
+}: Props) {
   const router = useRouter();
   const t = useTranslations();
   const { locale } = useLocale();
@@ -120,6 +125,10 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
   const [closeSickOpen, setCloseSickOpen] = useState(false);
   const [closeSickDate, setCloseSickDate] = useState(todayISO());
   const [scrollToItemId, setScrollToItemId] = useState<string | null>(null);
+  const [jumpSelectedEmployeeId, setJumpSelectedEmployeeId] = useState(
+    initialEmployeeId ?? ""
+  );
+  const modalRootRef = useRef<HTMLDivElement>(null);
 
   const dateFormatter = useMemo(
     () =>
@@ -144,15 +153,6 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
 
     setProfiles(result.profiles);
     setAbsences(result.absences);
-    setSelectedAbsenceId((current) => {
-      const rows = buildOverviewAbsenceDisplayRows({
-        absences: result.absences,
-        profiles: result.profiles,
-        todayISO: todayISO(),
-      });
-      if (current && rows.some((row) => row.id === current)) return current;
-      return rows[0]?.id ?? null;
-    });
     setLoading(false);
   }, []);
 
@@ -166,15 +166,6 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
       document.body.style.overflow = "";
     };
   }, []);
-
-  useEffect(() => {
-    if (!loading) return;
-    const previousCursor = document.body.style.cursor;
-    document.body.style.cursor = "wait";
-    return () => {
-      document.body.style.cursor = previousCursor;
-    };
-  }, [loading]);
 
   const anySubModalOpen =
     !!formMode || confirmRemove || confirmBulkRemove || closeSickOpen;
@@ -224,17 +215,60 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
 
   const employeeCount = useMemo(() => countOverviewAbsenceEmployees(rows), [rows]);
   const employeeJumpOptions = useMemo(
-    () => buildOverviewAbsenceEmployeeJumpOptions(rows),
-    [rows]
+    () => buildOverviewAbsenceEmployeeJumpOptions(profiles, rows),
+    [profiles, rows]
   );
   const enableScroll = employeeCount >= 10;
 
+  const resolveFirstRowIdForEmployee = useCallback(
+    (employeeId: string) => firstOverviewAbsenceRowIdForEmployee(rows, employeeId),
+    [rows]
+  );
+
+  const handleEmployeePosition = useCallback(
+    (employeeId: string, firstRowId: string | null) => {
+      setJumpSelectedEmployeeId(employeeId);
+      setSelectedAbsenceId(firstRowId);
+      setConfirmRemove(false);
+      setConfirmBulkRemove(false);
+      setCloseSickOpen(false);
+      setFormMode(null);
+      setErrorMessage(null);
+    },
+    []
+  );
+
+  const { contentReady, waitingForContent, jumpToEmployee } = useOverviewModalListScroll({
+    initialEmployeeId,
+    loading,
+    rows,
+    resolveFirstRowId: resolveFirstRowIdForEmployee,
+    onEmployeePosition: handleEmployeePosition,
+  });
+
+  useEffect(() => {
+    if (!waitingForContent) return;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = "wait";
+    return () => {
+      document.body.style.cursor = previousCursor;
+    };
+  }, [waitingForContent]);
+
   useScrollToSettingsListItem(rows, scrollToItemId, () => setScrollToItemId(null), "top");
+
+  useEffect(() => {
+    if (!selectedAbsenceId) return;
+    if (rows.some((row) => row.id === selectedAbsenceId)) return;
+    setSelectedAbsenceId(null);
+  }, [rows, selectedAbsenceId]);
 
   const selectedAbsence = selectedAbsenceId
     ? (absencesById.get(selectedAbsenceId) ?? null)
     : null;
-  const selectedEmployeeId = selectedAbsence?.employee_id ?? null;
+  const tableSelectedEmployeeId = selectedAbsence?.employee_id ?? null;
+  const createEmployeeId =
+    jumpSelectedEmployeeId || tableSelectedEmployeeId || null;
 
   const existingRanges = useMemo((): AbsenceRange[] => {
     return absenceRangesFromRequests(
@@ -254,37 +288,62 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
   }
 
   function handleFormSaved(createdId?: string) {
-    applyCreatedListSelection(createdId, setSelectedAbsenceId, setScrollToItemId);
-    void loadData();
-    refreshList();
-    setFormMode(null);
+    const profileId = createEmployeeId;
+    setErrorMessage(null);
+    startTransition(async () => {
+      const result = await fetchOverviewAbsences();
+      if (!result.ok) {
+        setErrorMessage(result.error);
+        return;
+      }
+      setProfiles(result.profiles);
+      setAbsences(result.absences);
+      if (profileId) {
+        setJumpSelectedEmployeeId(profileId);
+        const displayRows = buildOverviewAbsenceDisplayRows({
+          absences: result.absences,
+          profiles: result.profiles,
+          todayISO: todayISO(),
+        });
+        const firstRowId =
+          firstOverviewAbsenceRowIdForEmployee(displayRows, profileId) ??
+          (createdId && displayRows.some((row) => row.id === createdId)
+            ? createdId
+            : null);
+        if (firstRowId) {
+          applyCreatedListSelection(firstRowId, setSelectedAbsenceId, setScrollToItemId);
+        } else {
+          setSelectedAbsenceId(null);
+        }
+      } else if (createdId) {
+        setSelectedAbsenceId(createdId);
+        setScrollToItemId(createdId);
+      }
+      setFormMode(null);
+      refreshList();
+    });
   }
 
   function handleRemove() {
     if (!selectedAbsence) return;
+    const profileId = selectedAbsence.employee_id;
+    const deletedId = selectedAbsence.id;
     setErrorMessage(null);
     startTransition(async () => {
-      const result = await deleteAbsence(selectedAbsence.id);
+      const result = await deleteAbsence(deletedId);
       if (!result.ok) {
         setErrorMessage(resolveShiftGuardActionError(result.error, t));
         return;
       }
-      setAbsences((current) => {
-        const remaining = current.filter((entry) => entry.id !== selectedAbsence.id);
-        const nextRows = buildOverviewAbsenceDisplayRows({
-          absences: remaining,
-          profiles,
-          todayISO: todayISO(),
-        });
-        setSelectedAbsenceId((selected) =>
-          selected === selectedAbsence.id
-            ? (nextRows[0]?.id ?? null)
-            : selected && nextRows.some((row) => row.id === selected)
-              ? selected
-              : (nextRows[0]?.id ?? null)
-        );
-        return remaining;
+      const remaining = absences.filter((entry) => entry.id !== deletedId);
+      const displayRows = buildOverviewAbsenceDisplayRows({
+        absences: remaining,
+        profiles,
+        todayISO: todayISO(),
       });
+      setAbsences(remaining);
+      setJumpSelectedEmployeeId(profileId);
+      setSelectedAbsenceId(firstOverviewAbsenceRowIdForEmployee(displayRows, profileId));
       setConfirmRemove(false);
       refreshList();
     });
@@ -303,23 +362,32 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
           bulkSelection.clear();
           setConfirmBulkRemove(false);
           setAbsences(nextAbsences);
-          void loadData();
           refreshList();
           return;
         }
         nextAbsences = nextAbsences.filter((entry) => entry.id !== id);
       }
-      const nextRows = buildOverviewAbsenceDisplayRows({
+      const displayRows = buildOverviewAbsenceDisplayRows({
         absences: nextAbsences,
         profiles,
         todayISO: todayISO(),
       });
       setAbsences(nextAbsences);
       setSelectedAbsenceId((current) =>
-        current && nextRows.some((row) => row.id === current)
-          ? current
-          : (nextRows[0]?.id ?? null)
+        current && displayRows.some((row) => row.id === current) ? current : null
       );
+      const bulkDeletedProfileIds = new Set(
+        ids
+          .map((id) => absences.find((entry) => entry.id === id)?.employee_id)
+          .filter((id): id is string => !!id)
+      );
+      for (const employeeId of bulkDeletedProfileIds) {
+        const hasVisibleRows = displayRows.some((row) => row.employeeId === employeeId);
+        if (!hasVisibleRows) {
+          setJumpSelectedEmployeeId(employeeId);
+          break;
+        }
+      }
       bulkSelection.clear();
       setConfirmBulkRemove(false);
       refreshList();
@@ -363,14 +431,8 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
     });
   }
 
-  function handleJumpToEmployee(_employeeId: string, firstRowId: string) {
-    setSelectedAbsenceId(firstRowId);
-    setScrollToItemId(firstRowId);
-    setConfirmRemove(false);
-    setConfirmBulkRemove(false);
-    setCloseSickOpen(false);
-    setFormMode(null);
-    setErrorMessage(null);
+  function handleJumpToEmployee(employeeId: string, firstRowId: string | null) {
+    jumpToEmployee(employeeId, firstRowId);
   }
 
   function typeLabel(type: AbsenceType): string {
@@ -399,18 +461,23 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
 
   return (
     <div
-      className={cn(settingsModalBackdropClass(), (loading || pending) && "cursor-wait")}
+      className={cn(
+        areaCalendarModalBackdropClass(),
+        (waitingForContent || pending) && "cursor-wait"
+      )}
       role="presentation"
-      aria-busy={loading || pending}
+      aria-busy={waitingForContent || pending}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !loading && !anySubModalOpen) {
-          onClose();
-        }
+        if (waitingForContent || anySubModalOpen) return;
+        if (modalRootRef.current?.contains(event.target as Node)) return;
+        onClose();
       }}
     >
       {!loading ? (
         <div
-          className={settingsModalRootClass("4xl")}
+          ref={modalRootRef}
+          className={cn(settingsModalRootClass("4xl"), !contentReady && "invisible pointer-events-none")}
+          aria-hidden={!contentReady}
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div
@@ -463,7 +530,8 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
                   <OverviewAvailabilitiesEmployeeJumpCombobox
                     options={employeeJumpOptions}
                     onJump={handleJumpToEmployee}
-                    disabled={pending}
+                    selectedEmployeeId={jumpSelectedEmployeeId}
+                    disabled={pending || waitingForContent}
                     className="w-56 shrink-0"
                   />
                 </div>
@@ -504,11 +572,7 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
                               {t("settings.absences.status")}
                             </th>
                             <th
-                              className={settingsListRowCheckboxHeaderClass()}
-                              aria-hidden
-                            />
-                            <th
-                              className={settingsListRowDeleteHeaderClass()}
+                              className={settingsOverviewListRowActionsHeaderClass()}
                               aria-hidden
                             />
                           </tr>
@@ -520,8 +584,12 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
                               <tr
                                 key={row.id}
                                 {...settingsListItemAttrs(row.id)}
-                                onClick={() => {
+                                onClick={(event) => {
+                                  if (shouldIgnoreSettingsListRowActivation(event)) {
+                                    return;
+                                  }
                                   setSelectedAbsenceId(row.id);
+                                  setJumpSelectedEmployeeId(row.employeeId);
                                   setConfirmRemove(false);
                                   setConfirmBulkRemove(false);
                                   setCloseSickOpen(false);
@@ -534,6 +602,7 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
                                   const absence = absencesById.get(row.id);
                                   if (!absence || !canEditAbsence(absence)) return;
                                   setSelectedAbsenceId(row.id);
+                                  setJumpSelectedEmployeeId(row.employeeId);
                                   setFormMode({ type: "edit", absence });
                                   setConfirmRemove(false);
                                   setConfirmBulkRemove(false);
@@ -585,31 +654,32 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
                                 <td className={settingsDataCellClass(isSelected)}>
                                   {statusLabel(row.status)}
                                 </td>
-                                <td
-                                  className={settingsListRowCheckboxCellClass(isSelected)}
-                                >
-                                  <SettingsListRowCheckbox
-                                    checked={bulkSelection.isChecked(row.id)}
-                                    disabled={pending}
-                                    ariaLabel={t("common.selectRow")}
-                                    onChange={() => bulkSelection.toggle(row.id)}
-                                  />
-                                </td>
-                                <td
-                                  className={settingsListRowDeleteCellClass(isSelected)}
-                                >
-                                  <SettingsListRowDeleteButton
-                                    label={t("profiles.delete")}
-                                    disabled={pending}
-                                    onClick={() => {
-                                      setSelectedAbsenceId(row.id);
-                                      setFormMode(null);
-                                      setConfirmBulkRemove(false);
-                                      setCloseSickOpen(false);
-                                      setConfirmRemove(true);
-                                    }}
-                                  />
-                                </td>
+                                <SettingsOverviewListRowActions
+                                  isSelected={isSelected}
+                                  checkbox={
+                                    <SettingsListRowCheckbox
+                                      checked={bulkSelection.isChecked(row.id)}
+                                      disabled={pending}
+                                      ariaLabel={t("common.selectRow")}
+                                      className="mx-0"
+                                      onChange={() => bulkSelection.toggle(row.id)}
+                                    />
+                                  }
+                                  deleteButton={
+                                    <SettingsListRowDeleteButton
+                                      label={t("profiles.delete")}
+                                      disabled={pending}
+                                      onClick={() => {
+                                        setSelectedAbsenceId(row.id);
+                                        setJumpSelectedEmployeeId(row.employeeId);
+                                        setFormMode(null);
+                                        setConfirmBulkRemove(false);
+                                        setCloseSickOpen(false);
+                                        setConfirmRemove(true);
+                                      }}
+                                    />
+                                  }
+                                />
                               </tr>
                             );
                           })}
@@ -624,7 +694,7 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
                     <SettingsPrimaryActionButton
                       label={t("profiles.new")}
                       icon={<PlusIcon />}
-                      disabled={pending || !selectedEmployeeId}
+                      disabled={pending || !createEmployeeId}
                       onClick={() => {
                         setFormMode({ type: "create" });
                         setConfirmRemove(false);
@@ -692,11 +762,11 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
                 />
               </div>
 
-              {selectedAbsence ? (
+              {createEmployeeId ? (
                 <p className="mt-3 text-xs text-muted">
                   {t("overview.absences.selectedEmployeeHint", {
                     name:
-                      profiles.find((profile) => profile.id === selectedEmployeeId)
+                      profiles.find((profile) => profile.id === createEmployeeId)
                         ?.full_name ?? "—",
                   })}
                 </p>
@@ -715,10 +785,10 @@ export function OverviewAbsencesEditableModal({ onClose }: Props) {
             </div>
           </div>
 
-          {formMode?.type === "create" && selectedEmployeeId ? (
+          {formMode?.type === "create" && createEmployeeId ? (
             <AbsenceFormModal
               mode="create"
-              initialDraft={emptyAbsenceDraft(selectedEmployeeId)}
+              initialDraft={emptyAbsenceDraft(createEmployeeId)}
               profiles={profiles}
               existingRanges={existingRanges}
               lockEmployeeId

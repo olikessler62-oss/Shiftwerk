@@ -79,4 +79,10 @@ Migration Phase 1: `migrations/20250706_shifts_hot_retention_phase1.sql` (Index 
 - Manuell/SQL: `scripts/archive-shifts.sql`, `scripts/purge-shifts-archive.sql`
 - Cron (Service-Role): `npm run retention:shifts --workspace=@schichtwerk/web` (täglich 03:00/04:00 UTC empfohlen)
 
+**Abwesenheiten — Aufbewahrung:**
+
+- Löschung: Enddatum älter als 12 Kalendermonate (`end_date` gesetzt, offene Krankmeldungen ohne Enddatum bleiben)
+- Migration: `migrations/20260618_absence_retention_purge.sql`
+- Cron (Service-Role): `npm run retention:absences --workspace=@schichtwerk/web` (täglich empfohlen, z. B. nach `retention:shifts`)
+
 ```

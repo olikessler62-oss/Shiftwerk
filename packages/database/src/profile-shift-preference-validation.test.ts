@@ -46,17 +46,25 @@ describe("profile shift preference duplicate validation", () => {
     ).toBe(true);
   });
 
-  it("rejects duplicate for different id", () => {
+  it("finds duplicate placement-only wish", () => {
+    const placementOnly = [
+      {
+        id: "c",
+        weekday: null,
+        start_time: null,
+        end_time: null,
+        location_id: null,
+        location_area_id: "area-1",
+        qualification_id: null,
+      },
+    ];
     expect(
-      validateNoDuplicateProfileShiftPreference(
-        existing,
-        {
-          weekday: 0,
-          start_time: "08:00",
-          end_time: "12:00",
-        },
-        "b"
-      ).ok
-    ).toBe(false);
+      findProfileShiftPreferenceDuplicate(placementOnly, {
+        weekday: null,
+        start_time: null,
+        end_time: null,
+        location_area_id: "area-1",
+      })?.id
+    ).toBe("c");
   });
 });

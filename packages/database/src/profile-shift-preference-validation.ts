@@ -1,61 +1,60 @@
-export type ShiftPreferenceComparable = {
+import {
+  shiftPreferenceHasTimeDimension,
+  type ShiftPreferenceDimensionInput,
+} from "./profile-shift-preference-dimensions";
+
+export type ShiftPreferenceComparable = ShiftPreferenceDimensionInput & {
   id: string;
-  weekday: number;
-  start_time: string;
-  end_time: string;
-  location_id?: string | null;
-  location_area_id?: string | null;
-  qualification_id?: string | null;
 };
 
 export const PROFILE_SHIFT_PREFERENCE_DUPLICATE_ERROR =
-  "Für diesen Wochentag existiert bereits eine Wunschzeit mit demselben Zeitfenster.";
+  "Für diesen Wunsch existiert bereits ein identischer Eintrag.";
 
-export function shiftPreferenceTimeKey(time: string): string {
+export function shiftPreferenceTimeKey(time: string | null | undefined): string {
+  if (!time) return "";
   return time.trim().slice(0, 5);
+}
+
+function shiftPreferencePlacementKey(input: ShiftPreferenceDimensionInput): string {
+  return [
+    input.location_id ?? "",
+    input.location_area_id ?? "",
+    input.qualification_id ?? "",
+  ].join("|");
 }
 
 export function findProfileShiftPreferenceDuplicate(
   existing: readonly ShiftPreferenceComparable[],
-  input: {
-    weekday: number;
-    start_time: string;
-    end_time: string;
-    location_id?: string | null;
-    location_area_id?: string | null;
-    qualification_id?: string | null;
-  },
+  input: ShiftPreferenceDimensionInput,
   excludeId?: string
 ): ShiftPreferenceComparable | undefined {
-  const start = shiftPreferenceTimeKey(input.start_time);
-  const end = shiftPreferenceTimeKey(input.end_time);
-  const locationId = input.location_id ?? null;
-  const areaId = input.location_area_id ?? null;
-  const qualificationId = input.qualification_id ?? null;
+  const inputHasTime = shiftPreferenceHasTimeDimension(input);
+  const inputPlacementKey = shiftPreferencePlacementKey(input);
 
   return existing.find((item) => {
     if (excludeId && item.id === excludeId) return false;
-    return (
-      item.weekday === input.weekday &&
-      shiftPreferenceTimeKey(item.start_time) === start &&
-      shiftPreferenceTimeKey(item.end_time) === end &&
-      (item.location_id ?? null) === locationId &&
-      (item.location_area_id ?? null) === areaId &&
-      (item.qualification_id ?? null) === qualificationId
-    );
+
+    const itemHasTime = shiftPreferenceHasTimeDimension(item);
+    if (inputHasTime !== itemHasTime) return false;
+
+    if (inputHasTime) {
+      return (
+        item.weekday === input.weekday &&
+        shiftPreferenceTimeKey(item.start_time) ===
+          shiftPreferenceTimeKey(input.start_time) &&
+        shiftPreferenceTimeKey(item.end_time) ===
+          shiftPreferenceTimeKey(input.end_time) &&
+        shiftPreferencePlacementKey(item) === inputPlacementKey
+      );
+    }
+
+    return shiftPreferencePlacementKey(item) === inputPlacementKey;
   });
 }
 
 export function validateNoDuplicateProfileShiftPreference(
   existing: readonly ShiftPreferenceComparable[],
-  input: {
-    weekday: number;
-    start_time: string;
-    end_time: string;
-    location_id?: string | null;
-    location_area_id?: string | null;
-    qualification_id?: string | null;
-  },
+  input: ShiftPreferenceDimensionInput,
   excludeId?: string
 ): { ok: true } | { ok: false; error: string } {
   const duplicate = findProfileShiftPreferenceDuplicate(existing, input, excludeId);

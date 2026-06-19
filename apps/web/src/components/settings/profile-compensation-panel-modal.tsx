@@ -17,6 +17,7 @@ import {
   formatAmountLabel,
   formatDateLabel,
   sortProfileHourlyRatesByValidFrom,
+  sortProfileHourlyRatesByValidFromDesc,
 } from "@/lib/profile-hourly-rate-display";
 import { ProfileHourlyRateFormModal } from "./profile-hourly-rate-form-modal";
 import {
@@ -158,7 +159,7 @@ export function ProfileCompensationPanelModal({
     [rates, selectedRateId]
   );
   const sortedRates = useMemo(
-    () => sortProfileHourlyRatesByValidFrom(rates),
+    () => sortProfileHourlyRatesByValidFromDesc(rates),
     [rates]
   );
   const rateIds = useMemo(
@@ -419,7 +420,7 @@ export function ProfileCompensationPanelModal({
               <tbody>
                 {sortedRates.map((rate, index) => {
                   const isSelected = rate.id === selectedRateId;
-                  const isCurrent = index === sortedRates.length - 1;
+                  const isCurrent = index === 0;
                   return (
                     <tr
                       key={rate.id}

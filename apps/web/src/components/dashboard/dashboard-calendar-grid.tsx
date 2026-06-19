@@ -9,7 +9,7 @@ import { DashboardDayColumnWidthReporter } from "@/components/dashboard/dashboar
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { isPastCalendarDate } from "@/lib/dates";
 import { isPastShiftDate } from "@/lib/planning-readonly";
-import { canOpenPastUnconfirmedShiftContextMenu } from "@/lib/shift-card-context-menu-actions";
+import { canOpenShiftCardContextMenu } from "@/lib/shift-card-context-menu-actions";
 import { cn } from "@/lib/cn";
 import {
   CALENDAR_DAY_HEADER_ACTIVE_CLASS,
@@ -580,6 +580,18 @@ export function DashboardCalendarGrid({
                       pending={pending}
                       selectedShiftId={selectedShiftId}
                       onShiftClick={onShiftClick}
+                      onShiftContextMenu={
+                        !isPastDay
+                          ? (shiftId, event) =>
+                              onShiftContextMenu(
+                                emp.id,
+                                date,
+                                shiftId,
+                                event.clientX,
+                                event.clientY
+                              )
+                          : undefined
+                      }
                       onEmptyAreaClick={openNewShiftInCell}
                       emptyAreaDisabled={!canOpenNewShiftInCell}
                       emptyAreaLabel={emptyAreaLabel}
@@ -604,9 +616,8 @@ export function DashboardCalendarGrid({
                                 (entry) => entry.shift.id === shiftId
                               );
                               if (
-                                isPastDay &&
                                 segment &&
-                                !canOpenPastUnconfirmedShiftContextMenu(
+                                !canOpenShiftCardContextMenu(
                                   segment.shift.confirmationStatus,
                                   segment.shift.requestedAt,
                                   {

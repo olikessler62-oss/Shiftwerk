@@ -12,7 +12,10 @@ describe("communicationTabActions", () => {
       "delete",
     ]);
     expect(communicationTabActions("swaps")).toEqual([]);
-    expect(communicationTabActions("proposed")).toEqual(["delete"]);
+    expect(communicationTabActions("proposed")).toEqual([
+      "requestConfirmation",
+      "delete",
+    ]);
     expect(communicationTabActions("requested")).toEqual(["cancel"]);
     expect(communicationTabActions("rejected")).toEqual(["reassign", "delete"]);
     expect(communicationTabActions("pending")).toEqual([

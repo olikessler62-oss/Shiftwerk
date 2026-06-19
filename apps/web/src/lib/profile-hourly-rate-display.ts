@@ -12,6 +12,12 @@ export function sortProfileHourlyRatesByValidFrom(
   return [...rates].sort((a, b) => a.valid_from.localeCompare(b.valid_from));
 }
 
+export function sortProfileHourlyRatesByValidFromDesc(
+  rates: ProfileHourlyRate[]
+): ProfileHourlyRate[] {
+  return [...rates].sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+}
+
 export function resolveHourlyRateEditBounds(
   rates: ProfileHourlyRate[],
   editingRateId: string

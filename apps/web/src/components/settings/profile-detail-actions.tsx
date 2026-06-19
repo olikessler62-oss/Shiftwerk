@@ -11,6 +11,7 @@ import type {
   Profile,
   ProfileRecurringAvailability,
   ProfileShiftPreference,
+  AbsenceRequest,
 } from "@schichtwerk/types";
 import type { ProfileCompensationCacheEntry } from "./profile-compensation-panel-modal";
 import { formatHourlyRateLabel } from "@/lib/profile-hourly-rate-display";
@@ -41,6 +42,8 @@ type Props = {
   profileAvailability?: ProfileRecurringAvailability[];
   /** Geladen: [] = keine Wunschzeiten; undefined = noch nicht geladen */
   profileShiftPreferences?: ProfileShiftPreference[];
+  /** Geladen: [] = keine Abwesenheiten; undefined = noch nicht geladen */
+  profileAbsences?: AbsenceRequest[];
   /** Geladen: currentRate null = kein aktueller Stundensatz; undefined = noch nicht geladen */
   profileCompensation?: ProfileCompensationCacheEntry;
   disabled?: boolean;
@@ -346,6 +349,7 @@ export function ProfileDetailActions({
   profileQualifications,
   profileAvailability,
   profileShiftPreferences,
+  profileAbsences,
   profileCompensation,
   disabled = false,
   onOpen,
@@ -381,6 +385,14 @@ export function ProfileDetailActions({
       </span>
     ) : (
       t("profiles.actionShiftPreferencesHint")
+    );
+  const absencesHint =
+    (profileAbsences?.length ?? 0) > 0 ? (
+      <span className="block truncate text-xs text-primary">
+        {t("profiles.actionAbsencesConfigured")}
+      </span>
+    ) : (
+      t("profiles.actionAbsencesHint")
     );
   const currentHourlyRate = profileCompensation?.currentRate ?? null;
   const currentSurcharges = profileCompensation?.currentSurcharges ?? [];
@@ -445,7 +457,7 @@ export function ProfileDetailActions({
         <SettingsActionRow
           icon={<AbsencesIcon />}
           label={t("profiles.panelAbsences")}
-          hint={t("profiles.actionAbsencesHint")}
+          hint={absencesHint}
           disabled={profileActionsDisabled}
           onClick={() => onOpen("absences")}
         />

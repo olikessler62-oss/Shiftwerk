@@ -3,7 +3,7 @@
 import { cn } from "@/lib/cn";
 import {
   COMMUNICATION_HUB_CATEGORY_ORDER,
-  communicationHubCategoryLabelClass,
+  communicationHubCategoryPanelClass,
   type CommunicationHubCategory,
   type CommunicationHubCounts,
 } from "@/lib/communication-hub";
@@ -25,7 +25,7 @@ export function CommunicationCategoryTabs({
 }: Props) {
   return (
     <div
-      className="flex flex-wrap gap-1 border-b border-border"
+      className="flex flex-wrap gap-1.5 border-b border-border"
       role="tablist"
       aria-label="Schicht-Stati"
     >
@@ -43,19 +43,29 @@ export function CommunicationCategoryTabs({
             disabled={disabled}
             onClick={() => onSelect(category)}
             className={cn(
-              "flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition-colors",
-              communicationHubCategoryLabelClass(category),
+              "relative -mb-px flex items-center gap-2 rounded-t-lg border px-3 py-2.5 text-sm font-semibold transition-colors",
               selected
-                ? "border-current bg-subtle/60"
-                : "border-transparent hover:border-border hover:bg-subtle/40",
-              !hasItems && !selected && "opacity-45"
+                ? cn(
+                    communicationHubCategoryPanelClass(category),
+                    "z-10 border-b-surface shadow-sm ring-1 ring-inset ring-black/5"
+                  )
+                : cn(
+                    "border-transparent bg-transparent text-muted",
+                    "hover:border-border/70 hover:bg-subtle/60 hover:text-foreground",
+                    hasItems && "text-foreground/75",
+                    !hasItems && "opacity-45"
+                  )
             )}
           >
             <span className="whitespace-nowrap">{labelFor(category)}</span>
             <span
               className={cn(
-                "inline-flex min-w-[1.5rem] shrink-0 items-center justify-center tabular-nums leading-none",
-                hasItems ? "text-lg font-bold" : "text-sm font-medium opacity-70"
+                "inline-flex min-w-[1.5rem] shrink-0 items-center justify-center rounded-full px-1 tabular-nums leading-none",
+                selected
+                  ? "bg-black/10 text-[1.05rem] font-bold"
+                  : hasItems
+                    ? "text-base font-semibold"
+                    : "text-sm font-medium opacity-70"
               )}
               aria-label={`${count}`}
             >

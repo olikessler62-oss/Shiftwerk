@@ -26,6 +26,11 @@ import type { LocationAreaStaffing } from "@schichtwerk/types";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { cn } from "@/lib/cn";
 import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
+import {
+  canOpenShiftCardContextMenu,
+  handleShiftCardContextMenuPointerEvent,
+} from "@/lib/shift-card-context-menu-actions";
+import { isPastShiftDate } from "@/lib/planning-readonly";
 import { useTranslations } from "@/i18n/locale-provider";
 import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
 
@@ -363,9 +368,15 @@ export function AreaCalendarShiftCardsList({
     if (!onShiftContextMenu) return;
     const shift = shifts.find((entry) => entry.id === shiftId);
     if (!shift) return;
-    event.preventDefault();
-    event.stopPropagation();
-    onShiftContextMenu(shift, event);
+    handleShiftCardContextMenuPointerEvent(
+      event,
+      canOpenShiftCardContextMenu(
+        shift.confirmationStatus,
+        shift.requestedAt,
+        { shiftDate: shift.shift_date, isPastShiftDate }
+      ),
+      () => onShiftContextMenu(shift, event)
+    );
   }
 
   return (

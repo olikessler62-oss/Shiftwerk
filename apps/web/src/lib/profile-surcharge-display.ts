@@ -98,3 +98,9 @@ export function formatSurchargeAmountFieldLabel(
       return t("surcharges.amount");
   }
 }
+
+export function sortProfileCompensationSurchargesByValidFromDesc(
+  entries: ProfileCompensationSurcharge[]
+): ProfileCompensationSurcharge[] {
+  return [...entries].sort((a, b) => b.valid_from.localeCompare(a.valid_from));
+}

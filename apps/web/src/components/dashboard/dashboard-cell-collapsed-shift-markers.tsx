@@ -16,7 +16,11 @@ import { COLLAPSED_PAST_DAY_SHIFT_COLOR } from "@/lib/shift-card-cell-layout";
 import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
 import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
 import { isPastShiftDate } from "@/lib/planning-readonly";
-import { planningShiftCardShowsPointerCursor } from "@/lib/shift-card-context-menu-actions";
+import {
+  canOpenShiftCardContextMenu,
+  handleShiftCardContextMenuPointerEvent,
+  planningShiftCardShowsPointerCursor,
+} from "@/lib/shift-card-context-menu-actions";
 
 const COLLAPSED_MARKER_GAP_PX = 3;
 
@@ -31,6 +35,8 @@ type Props = {
   pending: boolean;
   selectedShiftId: string | null;
   onShiftClick: (shiftId: string) => void;
+  /** Rechtsklick auf eingeklappte Schichtmarkierung. */
+  onShiftContextMenu?: (shiftId: string, event: React.MouseEvent) => void;
   /** Linksklick auf freien Zellbereich neben Schichtkarten — neue Schicht. */
   onEmptyAreaClick?: () => void;
   emptyAreaDisabled?: boolean;
@@ -47,6 +53,7 @@ export function DashboardCellCollapsedShiftMarkers({
   pending,
   selectedShiftId,
   onShiftClick,
+  onShiftContextMenu,
   onEmptyAreaClick,
   emptyAreaDisabled = false,
   emptyAreaLabel,
@@ -130,6 +137,21 @@ export function DashboardCellCollapsedShiftMarkers({
             type="button"
             disabled={pending}
             onClick={() => onShiftClick(shift.id)}
+            onContextMenu={
+              onShiftContextMenu
+                ? (event) => {
+                    handleShiftCardContextMenuPointerEvent(
+                      event,
+                      canOpenShiftCardContextMenu(
+                        shift.confirmationStatus,
+                        shift.requestedAt,
+                        { shiftDate: shift.shift_date, isPastShiftDate }
+                      ),
+                      () => onShiftContextMenu(shift.id, event)
+                    );
+                  }
+                : undefined
+            }
             className={cn(
               "shrink-0 border-0 p-0 shadow-sm transition disabled:opacity-50",
               showsPointerCursor

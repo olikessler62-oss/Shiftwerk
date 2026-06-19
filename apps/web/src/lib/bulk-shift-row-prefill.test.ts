@@ -186,4 +186,18 @@ describe("buildPrefilledBulkRow", () => {
 
     expect(row.employeeId).toBe("emp-2");
   });
+
+  it("uses presetEmployeeId from dashboard context instead of auto-pick", () => {
+    const row = buildPrefilledBulkRow({
+      ...createBaseInput({
+        template: true,
+        qualification: true,
+        employee: true,
+      }),
+      presetEmployeeId: "emp-1",
+    });
+
+    expect(row.employeeId).toBe("emp-1");
+    expect(row.employeeManuallySelected).toBe(true);
+  });
 });

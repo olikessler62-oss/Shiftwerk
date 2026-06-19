@@ -3,6 +3,7 @@ import type { ProfileHourlyRate } from "@schichtwerk/types";
 import {
   resolveHourlyRateEditBounds,
   sortProfileHourlyRatesByValidFrom,
+  sortProfileHourlyRatesByValidFromDesc,
 } from "@/lib/profile-hourly-rate-display";
 
 function rate(
@@ -32,6 +33,17 @@ describe("sortProfileHourlyRatesByValidFrom", () => {
       rate("b", "2026-06-01", "2026-11-30"),
     ]);
     expect(sorted.map((entry) => entry.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("sortProfileHourlyRatesByValidFromDesc", () => {
+  it("sorts descending by valid_from", () => {
+    const sorted = sortProfileHourlyRatesByValidFromDesc([
+      rate("a", "2026-01-01", "2026-05-31"),
+      rate("c", "2026-12-01", null),
+      rate("b", "2026-06-01", "2026-11-30"),
+    ]);
+    expect(sorted.map((entry) => entry.id)).toEqual(["c", "b", "a"]);
   });
 });
 

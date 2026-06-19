@@ -151,6 +151,15 @@ export {
   validateNoDuplicateProfileShiftPreference,
 } from "./profile-shift-preference-validation";
 export {
+  compareProfileShiftPreferencesBySchedule,
+  PROFILE_SHIFT_PREFERENCE_INCOMPLETE_TIME_ERROR,
+  PROFILE_SHIFT_PREFERENCE_NO_DIMENSION_ERROR,
+  shiftPreferenceHasPlacementDimension,
+  shiftPreferenceHasTimeDimension,
+  sortProfileShiftPreferencesBySchedule,
+  validateShiftPreferenceDimensions,
+} from "./profile-shift-preference-dimensions";
+export {
   requiredStaffForAreaOnDate,
   weekdayIndexFromDate,
   STAFFING_HOLIDAY_WEEKDAY,
@@ -297,6 +306,12 @@ export {
   shiftHotCutoffISO,
   shiftPurgeCutoffISO,
 } from "./shift-retention";
+export {
+  ABSENCE_RETENTION_MONTHS,
+  ABSENCE_PURGE_BATCH_SIZE,
+  absencePurgeCutoffISO,
+  isAbsenceEligibleForPurge,
+} from "./absence-retention";
 export {
   buildShiftConfirmationSnapshot,
   isShiftConfirmationSnapshotStale,

@@ -169,6 +169,11 @@ export function AreaCalendarView({
     menuRef: employeeListContextMenuRef,
     openMenu: openEmployeeListContextMenu,
     openAvailabilities: openEmployeeAvailabilities,
+    openAbsences: openEmployeeAbsences,
+    openPreferences: openEmployeePreferences,
+    openCompensation: openEmployeeCompensation,
+    openSurcharges: openEmployeeSurcharges,
+    openQualifications: openEmployeeQualifications,
   } = usePlanningEmployeeListContextMenu();
 
   useAppShellModalLockActive(communicationOpen);
@@ -293,6 +298,11 @@ export function AreaCalendarView({
             state={employeeListContextMenu}
             menuRef={employeeListContextMenuRef}
             onOpenAvailabilities={openEmployeeAvailabilities}
+            onOpenAbsences={openEmployeeAbsences}
+            onOpenPreferences={openEmployeePreferences}
+            onOpenCompensation={openEmployeeCompensation}
+            onOpenSurcharges={openEmployeeSurcharges}
+            onOpenQualifications={openEmployeeQualifications}
           />
         ) : null}
       </section>

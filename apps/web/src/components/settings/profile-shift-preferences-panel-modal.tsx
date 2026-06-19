@@ -12,7 +12,7 @@ import {
   fetchProfileShiftPreferences,
   fetchProfileShiftPreferenceFormOptions,
 } from "@/app/actions/profile-shift-preferences";
-import { sortProfileRecurringAvailabilityBySchedule } from "@schichtwerk/database";
+import { sortProfileShiftPreferencesBySchedule } from "@schichtwerk/database";
 import {
   formatAvailabilityTimeRange,
   formatProfileShiftPreferenceSummaryLabel,
@@ -109,7 +109,7 @@ export function ProfileShiftPreferencesPanelModal({
 
   const applyList = useCallback(
     (list: ProfileShiftPreference[]) => {
-      const sorted = sortProfileRecurringAvailabilityBySchedule(list);
+      const sorted = sortProfileShiftPreferencesBySchedule(list);
       setProfilePreferences(sorted);
       onCacheUpdate(profile.id, sorted);
       setSelectedPreferenceId((current) => {
@@ -121,7 +121,7 @@ export function ProfileShiftPreferencesPanelModal({
   );
 
   const sortedPreferences = useMemo(
-    () => sortProfileRecurringAvailabilityBySchedule(profilePreferences),
+    () => sortProfileShiftPreferencesBySchedule(profilePreferences),
     [profilePreferences]
   );
   const preferenceIds = useMemo(
@@ -158,7 +158,7 @@ export function ProfileShiftPreferencesPanelModal({
 
   useEffect(() => {
     if (cachedPreferences !== undefined) {
-      const sorted = sortProfileRecurringAvailabilityBySchedule(cachedPreferences);
+      const sorted = sortProfileShiftPreferencesBySchedule(cachedPreferences);
       setProfilePreferences(sorted);
       setSelectedPreferenceId((current) => {
         if (current && sorted.some((item) => item.id === current)) return current;
@@ -416,18 +416,22 @@ export function ProfileShiftPreferencesPanelModal({
                             className: "whitespace-nowrap font-medium",
                           })}
                         >
-                          {weekdayLabel(item.weekday, localeKey, "long")}
+                          {item.weekday != null
+                            ? weekdayLabel(item.weekday, localeKey, "long")
+                            : t("profiles.shiftPreferenceAnyDay")}
                         </td>
                         <td
                           className={settingsDataCellClass(isSelected, {
                             className: "whitespace-nowrap tabular-nums",
                           })}
                         >
-                          {formatAvailabilityTimeRange(
-                            item.start_time,
-                            item.end_time,
-                            localeKey
-                          )}
+                          {item.start_time != null && item.end_time != null
+                            ? formatAvailabilityTimeRange(
+                                item.start_time,
+                                item.end_time,
+                                localeKey
+                              )
+                            : t("profiles.shiftPreferenceNoTime")}
                         </td>
                         <td
                           className={settingsDataCellClass(isSelected, {

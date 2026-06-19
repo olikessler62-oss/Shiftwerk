@@ -12,7 +12,7 @@ const CATEGORY_ACTIONS: Record<
 > = {
   conflicts: ["reassign", "cancel", "delete"],
   swaps: [],
-  proposed: ["delete"],
+  proposed: ["requestConfirmation", "delete"],
   requested: ["cancel"],
   rejected: ["reassign", "delete"],
   pending: ["cancel", "requestConfirmation"],

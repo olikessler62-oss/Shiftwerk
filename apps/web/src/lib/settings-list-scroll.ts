@@ -6,6 +6,8 @@ export const SETTINGS_LIST_ITEM_ID_ATTR = "data-settings-list-item-id";
 
 export type SettingsListScrollMode = "nearest" | "top";
 
+export type SettingsListScrollBehavior = "smooth" | "instant";
+
 export function settingsListItemAttrs(id: string) {
   return { [SETTINGS_LIST_ITEM_ID_ATTR]: id };
 }
@@ -22,10 +24,16 @@ function findOverflowScrollParent(element: Element): HTMLElement | null {
   return null;
 }
 
-function scrollSettingsListRowToTop(row: Element) {
+function scrollSettingsListRowToTop(
+  row: Element,
+  behavior: SettingsListScrollBehavior = "smooth"
+) {
   const scrollContainer = findOverflowScrollParent(row);
   if (!scrollContainer) {
-    row.scrollIntoView({ block: "start", behavior: "smooth" });
+    row.scrollIntoView({
+      block: "start",
+      behavior: behavior === "instant" ? "auto" : "smooth",
+    });
     return;
   }
 
@@ -37,32 +45,43 @@ function scrollSettingsListRowToTop(row: Element) {
 
   scrollContainer.scrollTo({
     top: scrollContainer.scrollTop + delta,
-    behavior: "smooth",
+    behavior: behavior === "instant" ? "auto" : "smooth",
   });
 }
 
 export function scrollSettingsListItemIntoView(
   itemId: string,
-  mode: SettingsListScrollMode = "nearest"
+  mode: SettingsListScrollMode = "nearest",
+  behavior: SettingsListScrollBehavior = "smooth"
 ) {
   if (!itemId || typeof document === "undefined") return;
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const escaped =
-        typeof CSS !== "undefined" && "escape" in CSS
-          ? CSS.escape(itemId)
-          : itemId.replace(/"/g, '\\"');
-      const row = document.querySelector(
-        `[${SETTINGS_LIST_ITEM_ID_ATTR}="${escaped}"]`
-      );
-      if (!row) return;
-      if (mode === "top") {
-        scrollSettingsListRowToTop(row);
-        return;
-      }
-      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const run = () => {
+    const escaped =
+      typeof CSS !== "undefined" && "escape" in CSS
+        ? CSS.escape(itemId)
+        : itemId.replace(/"/g, '\\"');
+    const row = document.querySelector(
+      `[${SETTINGS_LIST_ITEM_ID_ATTR}="${escaped}"]`
+    );
+    if (!row) return;
+    if (mode === "top") {
+      scrollSettingsListRowToTop(row, behavior);
+      return;
+    }
+    row.scrollIntoView({
+      block: "nearest",
+      behavior: behavior === "instant" ? "auto" : "smooth",
     });
+  };
+
+  if (behavior === "instant") {
+    run();
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(run);
   });
 }
 

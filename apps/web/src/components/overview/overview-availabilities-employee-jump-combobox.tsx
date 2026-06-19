@@ -13,6 +13,7 @@ import { CheckIcon, ChevronDownIcon } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { MODAL_DROPDOWN_Z_INDEX } from "@/components/settings/settings-modal-shell";
+import { OVERVIEW_EMPLOYEE_JUMP_COMBOBOX_LIST_SCROLL_CLASS } from "@/components/settings/settings-list-ui";
 import type { OverviewEmployeeJumpOption } from "@/lib/overview-employee-jump";
 import { useComboboxCloseOnPointerDistance } from "@/lib/use-combobox-close";
 
@@ -29,12 +30,14 @@ function EmployeeColorSwatch({ hex }: { hex: string | null }) {
   );
 }
 
-/** Dropdown list height for ~10 employee rows (py-2 + text-sm). */
-const EMPLOYEE_JUMP_COMBOBOX_VISIBLE_ROWS = 10;
-const EMPLOYEE_JUMP_COMBOBOX_ROW_HEIGHT_REM = 2.5;
+/** Ab dieser Anzahl Mitarbeiter wird die Dropdown-Liste gescrollt (max. 10 sichtbare Zeilen). */
+const EMPLOYEE_JUMP_COMBOBOX_SCROLL_THRESHOLD = 10;
 
-function dropdownMaxHeightClass(visibleRows: number): string {
-  return `max-h-[calc(${EMPLOYEE_JUMP_COMBOBOX_ROW_HEIGHT_REM}rem*${visibleRows}+0.5rem)]`;
+function employeeJumpComboboxListClass(employeeCount: number): string {
+  if (employeeCount < EMPLOYEE_JUMP_COMBOBOX_SCROLL_THRESHOLD) {
+    return "py-1";
+  }
+  return cn("py-1", OVERVIEW_EMPLOYEE_JUMP_COMBOBOX_LIST_SCROLL_CLASS);
 }
 
 function normalizeFilterQuery(value: string): string {
@@ -92,11 +95,6 @@ export function OverviewAvailabilitiesEmployeeJumpCombobox({
   const filteredOptions = useMemo(
     () => options.filter((option) => optionMatchesFilter(option, normalizedFilter)),
     [normalizedFilter, options]
-  );
-
-  const visibleRows = Math.min(
-    EMPLOYEE_JUMP_COMBOBOX_VISIBLE_ROWS,
-    Math.max(filteredOptions.length, 1)
   );
 
   useEffect(() => {
@@ -166,10 +164,7 @@ export function OverviewAvailabilitiesEmployeeJumpCombobox({
               id={listboxId}
               role="listbox"
               aria-label={placeholder}
-              className={cn(
-                "overflow-y-auto py-1",
-                dropdownMaxHeightClass(visibleRows)
-              )}
+              className={employeeJumpComboboxListClass(options.length)}
             >
               {filteredOptions.length === 0 ? (
                 <li className="px-3 py-2 text-sm text-muted">
@@ -184,7 +179,7 @@ export function OverviewAvailabilitiesEmployeeJumpCombobox({
                   >
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-subtle"
+                      className="flex h-9 w-full items-center gap-2 px-3 text-left text-sm hover:bg-subtle"
                       onClick={() => {
                         setSelectedEmployeeId(option.employeeId);
                         onJump(option.employeeId, option.firstRowId);

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canOpenPastUnconfirmedShiftContextMenu,
+  canOpenShiftCardContextMenu,
+  handleShiftCardContextMenuPointerEvent,
   isPastConfirmedPlanningShift,
   isPastUnconfirmedShift,
   planningShiftCardShowsPointerCursor,
@@ -10,15 +12,79 @@ import {
 
 const isPastShiftDate = (date: string) => date < "2026-06-17";
 
+describe("handleShiftCardContextMenuPointerEvent", () => {
+  it("always suppresses the native context menu", () => {
+    let prevented = false;
+    let stopped = false;
+    let opened = false;
+    handleShiftCardContextMenuPointerEvent(
+      {
+        preventDefault: () => {
+          prevented = true;
+        },
+        stopPropagation: () => {
+          stopped = true;
+        },
+      },
+      false,
+      () => {
+        opened = true;
+      }
+    );
+    expect(prevented).toBe(true);
+    expect(stopped).toBe(true);
+    expect(opened).toBe(false);
+  });
+});
+
+describe("canOpenShiftCardContextMenu", () => {
+  it("blocks confirmed shifts and allows other statuses with actions", () => {
+    expect(canOpenShiftCardContextMenu("confirmed")).toBe(false);
+    expect(canOpenShiftCardContextMenu("proposed")).toBe(true);
+    expect(canOpenShiftCardContextMenu("pending")).toBe(true);
+  });
+
+  it("allows past unconfirmed cleanup menu", () => {
+    const options = { shiftDate: "2026-06-10", isPastShiftDate };
+    expect(canOpenShiftCardContextMenu("pending", null, options)).toBe(true);
+    expect(canOpenShiftCardContextMenu("confirmed", null, options)).toBe(false);
+  });
+
+  it("allows edit-only menus when includeEdit is set", () => {
+    expect(
+      canOpenShiftCardContextMenu("proposed", null, {
+        shiftDate: "2026-06-20",
+        isPastShiftDate,
+        includeEdit: true,
+        showsEdit: true,
+      })
+    ).toBe(true);
+    expect(
+      canOpenShiftCardContextMenu("confirmed", null, {
+        shiftDate: "2026-06-20",
+        isPastShiftDate,
+        includeEdit: true,
+        showsEdit: true,
+      })
+    ).toBe(false);
+  });
+});
+
 describe("shiftCardContextMenuActions", () => {
-  it("maps each status to the expected context menu actions", () => {
-    expect(shiftCardContextMenuActions("proposed")).toEqual(["delete"]);
+  it("maps each status to the Schicht-Stati tab actions", () => {
+    expect(shiftCardContextMenuActions("proposed")).toEqual([
+      "requestConfirmation",
+      "delete",
+    ]);
     expect(shiftCardContextMenuActions("requested")).toEqual(["cancel"]);
-    expect(shiftCardContextMenuActions("confirmed")).toEqual(["cancel"]);
-    expect(shiftCardContextMenuActions("rejected")).toEqual(["reassign"]);
+    expect(shiftCardContextMenuActions("confirmed")).toEqual([]);
+    expect(shiftCardContextMenuActions("rejected")).toEqual([
+      "reassign",
+      "delete",
+    ]);
     expect(shiftCardContextMenuActions("pending")).toEqual([
       "cancel",
-      "resendConfirmation",
+      "requestConfirmation",
     ]);
     expect(shiftCardContextMenuActions("canceled")).toEqual([
       "reassign",
@@ -34,9 +100,7 @@ describe("shiftCardContextMenuActions", () => {
     expect(shiftCardContextMenuActions("requested", null, options)).toEqual([
       "setConfirmed",
     ]);
-    expect(shiftCardContextMenuActions("confirmed", null, options)).toEqual([
-      "cancel",
-    ]);
+    expect(shiftCardContextMenuActions("confirmed", null, options)).toEqual([]);
   });
 });
 

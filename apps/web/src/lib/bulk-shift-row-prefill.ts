@@ -3,7 +3,6 @@ import {
   areAreaCalendarShiftTimesComplete,
   filterBulkShiftAssignEmployeesForRow,
   filterBulkShiftAssignEmployeesWithoutTimeWindow,
-  pickEmployeeLongestWithoutShift,
 } from "@/lib/available-employees-for-shift";
 import type { BulkShiftColumnPrefs } from "@/lib/bulk-shift-column-prefs";
 import {
@@ -16,7 +15,10 @@ import {
   personalbedarfTimesForServiceHour,
   resolveStaffingEntryForBulkPrefill,
 } from "@/lib/bulk-shift-staffing";
-import { shiftClockRangesOverlapMinutes } from "@/lib/bulk-staffing-header";
+import {
+  pickEmployeeForBulkPrefill,
+  type ProfileShiftPreferenceMatchEntry,
+} from "@/lib/profile-shift-preference-matching";
 import {
   filterAssignmentPresetsMatchingTimes,
   prefillBulkRowWithEarliestAssignmentPreset,
@@ -32,15 +34,7 @@ import {
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 import type { AreaCalendarAssignmentTimeWindow } from "@/lib/shift-overlap";
 
-export type ProfileShiftPreferenceEntry = {
-  weekday: number;
-  start_time: string;
-  end_time: string;
-  location_id: string | null;
-  location_area_id: string | null;
-  qualification_id: string | null;
-  priority: number;
-};
+export type ProfileShiftPreferenceEntry = ProfileShiftPreferenceMatchEntry;
 
 export type BulkPrefillRow = {
   id: string;
@@ -89,9 +83,30 @@ export type BuildPrefilledBulkRowInput = {
     serviceHourId: string;
     qualificationId: string;
   };
+  /** Standort für Wunsch-Matching (optional, aus Bereich ableitbar). */
+  locationId?: string | null;
   /** Keine Servicezeit — nur Verfügbarkeit, keine Personalbedarf-Filter. */
   withoutServiceHours?: boolean;
+  /** Voreingestellter Mitarbeiter (z. B. Dashboard-Zellenzeile). */
+  presetEmployeeId?: string;
 };
+
+function buildWishMatchContext(
+  input: Pick<
+    BuildPrefilledBulkRowInput,
+    "weekday" | "areaId" | "locationId"
+  >,
+  row: Pick<BulkPrefillRow, "startTime" | "endTime" | "qualificationId">
+) {
+  return {
+    weekday: input.weekday,
+    demandStart: row.startTime,
+    demandEnd: row.endTime,
+    areaId: input.areaId,
+    locationId: input.locationId ?? null,
+    qualificationId: row.qualificationId || null,
+  };
+}
 
 function timeFieldValue(time: string): string {
   return time.slice(0, 5);
@@ -228,57 +243,25 @@ function matchingEmployeesForPrefillRow(
   );
 }
 
-function employeeWishScore(
-  employeeId: string,
-  demandStart: string,
-  demandEnd: string,
-  areaId: string,
-  preferences: Readonly<Record<string, ProfileShiftPreferenceEntry[]>>
-): number {
-  const wishes = preferences[employeeId] ?? [];
-  let best = 0;
-  for (const wish of wishes) {
-    const areaMatch =
-      !wish.location_area_id || wish.location_area_id === areaId;
-    if (!areaMatch) continue;
-    const overlap = shiftClockRangesOverlapMinutes(
-      demandStart,
-      demandEnd,
-      timeFieldValue(wish.start_time),
-      timeFieldValue(wish.end_time)
-    );
-    if (overlap <= 0) continue;
-    best = Math.max(best, overlap * 100 + wish.priority);
+export { pickEmployeeForBulkPrefill } from "@/lib/profile-shift-preference-matching";
+
+function applyPresetEmployeeToBulkRow(
+  row: BulkPrefillRow,
+  input: Pick<
+    BuildPrefilledBulkRowInput,
+    "presetEmployeeId" | "emptyEmployeeId" | "prefill"
+  >
+): boolean {
+  if (
+    !input.presetEmployeeId ||
+    input.presetEmployeeId === input.emptyEmployeeId ||
+    !input.prefill.employee
+  ) {
+    return false;
   }
-  return best;
-}
-
-export function pickEmployeeForBulkPrefill(
-  candidates: readonly AreaCalendarShiftAssignEmployee[],
-  demandStart: string,
-  demandEnd: string,
-  areaId: string,
-  preferences: Readonly<Record<string, ProfileShiftPreferenceEntry[]>>
-): AreaCalendarShiftAssignEmployee | null {
-  if (!candidates.length) return null;
-
-  const ranked = [...candidates].sort((a, b) => {
-    const wishDiff =
-      employeeWishScore(b.id, demandStart, demandEnd, areaId, preferences) -
-      employeeWishScore(a.id, demandStart, demandEnd, areaId, preferences);
-    if (wishDiff !== 0) return wishDiff;
-
-    if (!a.last_shift_date && !b.last_shift_date) {
-      return a.full_name.localeCompare(b.full_name, "de");
-    }
-    if (!a.last_shift_date) return -1;
-    if (!b.last_shift_date) return 1;
-    const byDate = a.last_shift_date.localeCompare(b.last_shift_date);
-    if (byDate !== 0) return byDate;
-    return a.full_name.localeCompare(b.full_name, "de");
-  });
-
-  return ranked[0] ?? pickEmployeeLongestWithoutShift(candidates);
+  row.employeeId = input.presetEmployeeId;
+  row.employeeManuallySelected = true;
+  return true;
 }
 
 export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPrefillRow {
@@ -295,30 +278,32 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
       input.prefill.employee &&
       areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)
     ) {
-      const picked = pickEmployeeForBulkPrefill(
-        matchingEmployeesForPrefillRow(row, {
-          employees: input.employees,
-          weekday: input.weekday,
-          dateISO: input.dateISO,
-          areaId: input.areaId,
-          countryCode: input.countryCode,
-          timeZone: input.timeZone,
-          staffingRules: input.staffingRules,
-          areaQualifications: input.areaQualifications,
-          profileQualificationIds: input.profileQualificationIds,
-          areaExistingAssignments: input.areaExistingAssignments,
-          locationDayAssignments: input.locationDayAssignments,
-          allRows: input.existingRows,
-          emptyEmployeeId: input.emptyEmployeeId,
-          withoutServiceHours: true,
-        }),
-        row.startTime,
-        row.endTime,
-        input.areaId,
-        input.profileShiftPreferences
-      );
-      if (picked) {
-        row.employeeId = picked.id;
+      if (
+        !applyPresetEmployeeToBulkRow(row, input)
+      ) {
+        const { employee: picked } = pickEmployeeForBulkPrefill(
+          matchingEmployeesForPrefillRow(row, {
+            employees: input.employees,
+            weekday: input.weekday,
+            dateISO: input.dateISO,
+            areaId: input.areaId,
+            countryCode: input.countryCode,
+            timeZone: input.timeZone,
+            staffingRules: input.staffingRules,
+            areaQualifications: input.areaQualifications,
+            profileQualificationIds: input.profileQualificationIds,
+            areaExistingAssignments: input.areaExistingAssignments,
+            locationDayAssignments: input.locationDayAssignments,
+            allRows: input.existingRows,
+            emptyEmployeeId: input.emptyEmployeeId,
+            withoutServiceHours: true,
+          }),
+          buildWishMatchContext(input, row),
+          input.profileShiftPreferences
+        );
+        if (picked) {
+          row.employeeId = picked.id;
+        }
       }
     }
 
@@ -460,15 +445,15 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
         input.profileQualificationIds
       );
     }
-    const picked = pickEmployeeForBulkPrefill(
-      eligible,
-      row.startTime,
-      row.endTime,
-      input.areaId,
-      input.profileShiftPreferences
-    );
-    if (picked) {
-      row.employeeId = picked.id;
+    if (!applyPresetEmployeeToBulkRow(row, input)) {
+      const { employee: picked } = pickEmployeeForBulkPrefill(
+        eligible,
+        buildWishMatchContext(input, row),
+        input.profileShiftPreferences
+      );
+      if (picked) {
+        row.employeeId = picked.id;
+      }
     }
   }
 

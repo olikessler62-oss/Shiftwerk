@@ -17,6 +17,7 @@ import {
   SettingsIconActionButton,
   SettingsListRowCheckbox,
   SettingsListRowDeleteButton,
+  SettingsOverviewListRowActions,
   SettingsPrimaryActionButton,
   applyCreatedListSelection,
   shouldIgnoreSettingsListRowActivation,
@@ -24,10 +25,7 @@ import {
   settingsDataRowClass,
   settingsIndicatorCellClass,
   settingsListItemAttrs,
-  settingsListRowCheckboxCellClass,
-  settingsListRowCheckboxHeaderClass,
-  settingsListRowDeleteCellClass,
-  settingsListRowDeleteHeaderClass,
+  settingsOverviewListRowActionsHeaderClass,
   areaCalendarModalBackdropClass,
   settingsModalBodyPaddingClass,
   settingsModalDialogClass,
@@ -56,6 +54,7 @@ import {
   firstOverviewAvailabilityRowIdForEmployee,
 } from "@/lib/overview-availabilities-display";
 import { useScrollToSettingsListItem } from "@/lib/settings-list-scroll";
+import { useOverviewModalListScroll } from "@/lib/use-overview-modal-initial-scroll";
 import { OverviewAvailabilitiesEmployeeJumpCombobox } from "./overview-availabilities-employee-jump-combobox";
 import {
   formatAvailabilityTimeRange,
@@ -102,7 +101,6 @@ export function OverviewAvailabilitiesEditableModal({
   const [jumpSelectedEmployeeId, setJumpSelectedEmployeeId] = useState(
     initialEmployeeId ?? ""
   );
-  const initialJumpDoneRef = useRef(false);
   const modalRootRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
@@ -131,15 +129,6 @@ export function OverviewAvailabilitiesEditableModal({
       document.body.style.overflow = "";
     };
   }, []);
-
-  useEffect(() => {
-    if (!loading) return;
-    const previousCursor = document.body.style.cursor;
-    document.body.style.cursor = "wait";
-    return () => {
-      document.body.style.cursor = previousCursor;
-    };
-  }, [loading]);
 
   const anySubModalOpen = !!formMode || confirmRemove || confirmBulkRemove;
 
@@ -192,6 +181,41 @@ export function OverviewAvailabilitiesEditableModal({
   );
   const enableScroll = employeeCount >= 10;
 
+  const resolveFirstRowIdForEmployee = useCallback(
+    (employeeId: string) =>
+      firstOverviewAvailabilityRowIdForEmployee(rows, employeeId),
+    [rows]
+  );
+
+  const handleEmployeePosition = useCallback(
+    (employeeId: string, firstRowId: string | null) => {
+      setJumpSelectedEmployeeId(employeeId);
+      setSelectedAvailabilityId(firstRowId);
+      setConfirmRemove(false);
+      setConfirmBulkRemove(false);
+      setFormMode(null);
+      setErrorMessage(null);
+    },
+    []
+  );
+
+  const { contentReady, waitingForContent, jumpToEmployee } = useOverviewModalListScroll({
+    initialEmployeeId,
+    loading,
+    rows,
+    resolveFirstRowId: resolveFirstRowIdForEmployee,
+    onEmployeePosition: handleEmployeePosition,
+  });
+
+  useEffect(() => {
+    if (!waitingForContent) return;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = "wait";
+    return () => {
+      document.body.style.cursor = previousCursor;
+    };
+  }, [waitingForContent]);
+
   useScrollToSettingsListItem(rows, scrollToItemId, () => setScrollToItemId(null), "top");
 
   useEffect(() => {
@@ -199,26 +223,6 @@ export function OverviewAvailabilitiesEditableModal({
     if (rows.some((row) => row.id === selectedAvailabilityId)) return;
     setSelectedAvailabilityId(null);
   }, [rows, selectedAvailabilityId]);
-
-  useEffect(() => {
-    if (loading || !initialEmployeeId || initialJumpDoneRef.current) return;
-    initialJumpDoneRef.current = true;
-    setJumpSelectedEmployeeId(initialEmployeeId);
-    const firstRowId = firstOverviewAvailabilityRowIdForEmployee(
-      rows,
-      initialEmployeeId
-    );
-    if (firstRowId) {
-      setSelectedAvailabilityId(firstRowId);
-      setScrollToItemId(firstRowId);
-    } else {
-      setSelectedAvailabilityId(null);
-    }
-    setConfirmRemove(false);
-    setConfirmBulkRemove(false);
-    setFormMode(null);
-    setErrorMessage(null);
-  }, [initialEmployeeId, loading, rows]);
 
   const selectedAvailability = selectedAvailabilityId
     ? (availabilityById.get(selectedAvailabilityId) ?? null)
@@ -371,17 +375,7 @@ export function OverviewAvailabilitiesEditableModal({
   }
 
   function handleJumpToEmployee(employeeId: string, firstRowId: string | null) {
-    setJumpSelectedEmployeeId(employeeId);
-    if (firstRowId) {
-      setSelectedAvailabilityId(firstRowId);
-      setScrollToItemId(firstRowId);
-    } else {
-      setSelectedAvailabilityId(null);
-    }
-    setConfirmRemove(false);
-    setConfirmBulkRemove(false);
-    setFormMode(null);
-    setErrorMessage(null);
+    jumpToEmployee(employeeId, firstRowId);
   }
 
   function dayLabel(row: (typeof rows)[number]): string {
@@ -398,11 +392,14 @@ export function OverviewAvailabilitiesEditableModal({
 
   return (
     <div
-      className={cn(areaCalendarModalBackdropClass(), (loading || pending) && "cursor-wait")}
+      className={cn(
+        areaCalendarModalBackdropClass(),
+        (waitingForContent || pending) && "cursor-wait"
+      )}
       role="presentation"
-      aria-busy={loading || pending}
+      aria-busy={waitingForContent || pending}
       onMouseDown={(event) => {
-        if (loading || anySubModalOpen) return;
+        if (waitingForContent || anySubModalOpen) return;
         if (modalRootRef.current?.contains(event.target as Node)) return;
         onClose();
       }}
@@ -410,7 +407,8 @@ export function OverviewAvailabilitiesEditableModal({
       {!loading ? (
         <div
           ref={modalRootRef}
-          className={settingsModalRootClass("4xl")}
+          className={cn(settingsModalRootClass("4xl"), !contentReady && "invisible pointer-events-none")}
+          aria-hidden={!contentReady}
           onMouseDown={(event) => event.stopPropagation()}
         >
           <div
@@ -464,7 +462,7 @@ export function OverviewAvailabilitiesEditableModal({
                     options={employeeJumpOptions}
                     onJump={handleJumpToEmployee}
                     selectedEmployeeId={jumpSelectedEmployeeId}
-                    disabled={pending}
+                    disabled={pending || waitingForContent}
                     className="w-56 shrink-0"
                   />
                 </div>
@@ -499,11 +497,7 @@ export function OverviewAvailabilitiesEditableModal({
                               {t("overview.availabilities.time")}
                             </th>
                             <th
-                              className={settingsListRowCheckboxHeaderClass()}
-                              aria-hidden
-                            />
-                            <th
-                              className={settingsListRowDeleteHeaderClass()}
+                              className={settingsOverviewListRowActionsHeaderClass()}
                               aria-hidden
                             />
                           </tr>
@@ -577,31 +571,31 @@ export function OverviewAvailabilitiesEditableModal({
                                     localeKey
                                   )}
                                 </td>
-                                <td
-                                  className={settingsListRowCheckboxCellClass(isSelected)}
-                                >
-                                  <SettingsListRowCheckbox
-                                    checked={bulkSelection.isChecked(row.id)}
-                                    disabled={pending}
-                                    ariaLabel={t("common.selectRow")}
-                                    onChange={() => bulkSelection.toggle(row.id)}
-                                  />
-                                </td>
-                                <td
-                                  className={settingsListRowDeleteCellClass(isSelected)}
-                                >
-                                  <SettingsListRowDeleteButton
-                                    label={t("profiles.delete")}
-                                    disabled={pending}
-                                    onClick={() => {
-                                      setSelectedAvailabilityId(row.id);
-                                      setJumpSelectedEmployeeId(row.employeeId);
-                                      setFormMode(null);
-                                      setConfirmBulkRemove(false);
-                                      setConfirmRemove(true);
-                                    }}
-                                  />
-                                </td>
+                                <SettingsOverviewListRowActions
+                                  isSelected={isSelected}
+                                  checkbox={
+                                    <SettingsListRowCheckbox
+                                      checked={bulkSelection.isChecked(row.id)}
+                                      disabled={pending}
+                                      ariaLabel={t("common.selectRow")}
+                                      className="mx-0"
+                                      onChange={() => bulkSelection.toggle(row.id)}
+                                    />
+                                  }
+                                  deleteButton={
+                                    <SettingsListRowDeleteButton
+                                      label={t("profiles.delete")}
+                                      disabled={pending}
+                                      onClick={() => {
+                                        setSelectedAvailabilityId(row.id);
+                                        setJumpSelectedEmployeeId(row.employeeId);
+                                        setFormMode(null);
+                                        setConfirmBulkRemove(false);
+                                        setConfirmRemove(true);
+                                      }}
+                                    />
+                                  }
+                                />
                               </tr>
                             );
                           })}

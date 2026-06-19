@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { fetchProfileAbsences } from "@/app/actions/absences";
 import { fetchProfileRecurringAvailability } from "@/app/actions/profile-availability";
 import { fetchProfileShiftPreferences } from "@/app/actions/profile-shift-preferences";
 import { fetchProfileHourlyRates } from "@/app/actions/profile-hourly-rates";
 import { fetchProfileQualifications } from "@/app/actions/profile-qualifications";
-import { deleteProfile, reorderProfiles } from "@/app/actions/profiles";
+import { deleteProfile } from "@/app/actions/profiles";
 import type {
+  AbsenceRequest,
   Profile,
   ProfileRecurringAvailability,
   ProfileShiftPreference,
@@ -27,7 +29,9 @@ import { ProfileInvitePanelModal } from "./profile-invite-panel-modal";
 import { ProfileDetailActions } from "./profile-detail-actions";
 import { ProfileQualificationsPanelModal } from "./profile-qualifications-panel-modal";
 import {
-  SETTINGS_PROFILES_LIST_SCROLL_CLASS,
+  SETTINGS_PROFILES_LIST_COMPACT_CLASS,
+  SETTINGS_PROFILES_LIST_SCROLL_FROM_ELEVEN_CLASS,
+  SETTINGS_PROFILES_LIST_SCROLL_THRESHOLD,
   SETTINGS_PROFILES_MASTER_DETAIL_MIN_HEIGHT_CLASS,
   SETTINGS_MODAL_MAX_WIDTH,
   SETTINGS_MODAL_TITLE_CLASS,
@@ -40,7 +44,6 @@ import {
   SettingsEmptyState,
   SettingsIconActionButton,
   SettingsPrimaryActionButton,
-  SettingsReorderButtons,
   SettingsListRowDeleteButton,
   settingsListItemAttrs,
   useScrollToSettingsListItem,
@@ -64,7 +67,7 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { useSettingsListReorder } from "@/lib/settings-list-reorder";
+import { sortProfilesByFirstName } from "@/lib/profile-display-sort";
 import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 
 type Props = {
@@ -112,7 +115,7 @@ function resolveInitialProfileId(
   preferredId: string | null | undefined
 ): string | null {
   if (preferredId && profiles.some((p) => p.id === preferredId)) return preferredId;
-  return profiles[0]?.id ?? null;
+  return sortProfilesByFirstName(profiles)[0]?.id ?? null;
 }
 
 function isProfileDetailCached(
@@ -120,13 +123,15 @@ function isProfileDetailCached(
   qualificationsCache: Record<string, Qualification[]>,
   availabilityCache: Record<string, ProfileRecurringAvailability[]>,
   shiftPreferencesCache: Record<string, ProfileShiftPreference[]>,
-  compensationCache: Record<string, ProfileCompensationCacheEntry>
+  compensationCache: Record<string, ProfileCompensationCacheEntry>,
+  absencesCache: Record<string, AbsenceRequest[]>
 ): boolean {
   return (
     profileId in qualificationsCache &&
     profileId in availabilityCache &&
     profileId in shiftPreferencesCache &&
-    profileId in compensationCache
+    profileId in compensationCache &&
+    profileId in absencesCache
   );
 }
 
@@ -137,7 +142,8 @@ function isProfilesModalReady(
   qualificationsCache: Record<string, Qualification[]>,
   availabilityCache: Record<string, ProfileRecurringAvailability[]>,
   shiftPreferencesCache: Record<string, ProfileShiftPreference[]>,
-  compensationCache: Record<string, ProfileCompensationCacheEntry>
+  compensationCache: Record<string, ProfileCompensationCacheEntry>,
+  absencesCache: Record<string, AbsenceRequest[]>
 ): boolean {
   if (profiles.length === 0) return true;
   if (!selectedProfileId) return true;
@@ -147,7 +153,8 @@ function isProfilesModalReady(
       qualificationsCache,
       availabilityCache,
       shiftPreferencesCache,
-      compensationCache
+      compensationCache,
+      absencesCache
     )
   ) {
     return false;
@@ -161,12 +168,12 @@ function ColumnShell({
   title,
   children,
   actions,
-  listScrollClassName = SETTINGS_PROFILES_LIST_SCROLL_CLASS,
+  enableListScroll = false,
 }: {
   title: string;
   children: React.ReactNode;
   actions?: React.ReactNode;
-  listScrollClassName?: string;
+  enableListScroll?: boolean;
 }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
@@ -175,12 +182,24 @@ function ColumnShell({
           <span className="block truncate">{title}</span>
         </Tooltip>
       </h3>
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 bg-background px-2 py-2">
+      <div
+        className={cn(
+          "relative flex flex-col",
+          enableListScroll && "min-h-0 flex-1"
+        )}
+      >
+        <div
+          className={cn(
+            "bg-background px-2 py-2",
+            enableListScroll && "flex min-h-0 flex-1 flex-col"
+          )}
+        >
           <div
             className={cn(
-              "min-h-0 overflow-auto rounded-md border border-border bg-surface",
-              listScrollClassName
+              "rounded-md border border-border bg-surface",
+              enableListScroll
+                ? SETTINGS_PROFILES_LIST_SCROLL_FROM_ELEVEN_CLASS
+                : SETTINGS_PROFILES_LIST_COMPACT_CLASS
             )}
           >
             {children}
@@ -222,26 +241,20 @@ export function ProfilesModal({
   const [compensationCache, setCompensationCache] = useState<
     Record<string, ProfileCompensationCacheEntry>
   >({});
+  const [absencesCache, setAbsencesCache] = useState<
+    Record<string, AbsenceRequest[]>
+  >({});
   const [scrollToProfileId, setScrollToProfileId] = useState<string | null>(null);
   const [pendingEditProfileId, setPendingEditProfileId] = useState<string | null>(
     null
   );
 
-  const {
-    sortedList: sortedProfiles,
-    canMoveUp: canMoveProfileUp,
-    canMoveDown: canMoveProfileDown,
-    handleMove: handleMoveProfile,
-  } = useSettingsListReorder({
-    list: profileList,
-    setList: setProfileList,
-    selectedId: selectedProfileId,
-    pending,
-    startTransition,
-    reorder: reorderProfiles,
-    onError: setErrorMessage,
-    onSuccess: () => router.refresh(),
-  });
+  const sortedProfiles = useMemo(
+    () => sortProfilesByFirstName(profileList),
+    [profileList]
+  );
+  const enableProfileListScroll =
+    sortedProfiles.length >= SETTINGS_PROFILES_LIST_SCROLL_THRESHOLD;
 
   const selectedProfile =
     sortedProfiles.find((p) => p.id === selectedProfileId) ?? null;
@@ -255,7 +268,8 @@ export function ProfilesModal({
       qualificationsCache,
       availabilityCache,
       shiftPreferencesCache,
-      compensationCache
+      compensationCache,
+      absencesCache
     );
   const displayedPanelReady =
     !!displayedProfileId &&
@@ -264,7 +278,8 @@ export function ProfilesModal({
       qualificationsCache,
       availabilityCache,
       shiftPreferencesCache,
-      compensationCache
+      compensationCache,
+      absencesCache
     );
   const modalReady = isProfilesModalReady(
     profileList,
@@ -273,7 +288,8 @@ export function ProfilesModal({
     qualificationsCache,
     availabilityCache,
     shiftPreferencesCache,
-    compensationCache
+    compensationCache,
+    absencesCache
   );
   const deferInitialRender = !hasInitiallyShown && !modalReady;
   const profileDetailSwitching =
@@ -329,7 +345,8 @@ export function ProfilesModal({
     const availReady = profileId in availabilityCache;
     const shiftPrefReady = profileId in shiftPreferencesCache;
     const compReady = profileId in compensationCache;
-    if (qualReady && availReady && shiftPrefReady && compReady) return;
+    const absencesReady = profileId in absencesCache;
+    if (qualReady && availReady && shiftPrefReady && compReady && absencesReady) return;
 
     let cancelled = false;
 
@@ -346,7 +363,10 @@ export function ProfilesModal({
       compReady
         ? Promise.resolve(null)
         : fetchProfileHourlyRates(profileId),
-    ]).then(([qualResult, availResult, shiftPrefResult, compResult]) => {
+      absencesReady
+        ? Promise.resolve(null)
+        : fetchProfileAbsences(profileId),
+    ]).then(([qualResult, availResult, shiftPrefResult, compResult, absencesResult]) => {
       if (cancelled) return;
       setQualificationsCache((prev) => {
         if (profileId in prev) return prev;
@@ -391,6 +411,12 @@ export function ProfilesModal({
           },
         };
       });
+      setAbsencesCache((prev) => {
+        if (profileId in prev) return prev;
+        const list =
+          absencesResult?.ok === true ? (absencesResult.absences ?? []) : [];
+        return { ...prev, [profileId]: list };
+      });
       setDisplayedProfileId(profileId);
     });
 
@@ -403,6 +429,7 @@ export function ProfilesModal({
     availabilityCache,
     shiftPreferencesCache,
     compensationCache,
+    absencesCache,
   ]);
 
   useEffect(() => {
@@ -463,7 +490,8 @@ export function ProfilesModal({
         qualificationsCache,
         availabilityCache,
         shiftPreferencesCache,
-        compensationCache
+        compensationCache,
+        absencesCache
       )
     ) {
       setDisplayedProfileId(id);
@@ -488,7 +516,8 @@ export function ProfilesModal({
       qualificationsCache,
       availabilityCache,
       shiftPreferencesCache,
-      compensationCache
+      compensationCache,
+      absencesCache
     );
 
     if (profile.id !== selectedProfileId) {
@@ -610,6 +639,7 @@ export function ProfilesModal({
           >
             <ColumnShell
               title={t("profiles.panelProfiles")}
+              enableListScroll={enableProfileListScroll}
               actions={
                 <SettingsActionBar
                   primary={
@@ -626,32 +656,15 @@ export function ProfilesModal({
                     />
                   }
                   secondary={
-                    <>
-                      <SettingsIconActionButton
-                        label={t("profiles.edit")}
-                        icon={<PencilIcon />}
-                        disabled={pending || !selectedProfile}
-                        onClick={() => {
-                          if (!selectedProfile) return;
-                          openEditProfile(selectedProfile);
-                        }}
-                      />
-                      <SettingsReorderButtons
-                        moveUpLabel={t("common.moveUp")}
-                        moveDownLabel={t("common.moveDown")}
-                        disabled={pending}
-                        canMoveUp={canMoveProfileUp}
-                        canMoveDown={canMoveProfileDown}
-                        onMoveUp={() => {
-                          setErrorMessage(null);
-                          handleMoveProfile(-1);
-                        }}
-                        onMoveDown={() => {
-                          setErrorMessage(null);
-                          handleMoveProfile(1);
-                        }}
-                      />
-                    </>
+                    <SettingsIconActionButton
+                      label={t("profiles.edit")}
+                      icon={<PencilIcon />}
+                      disabled={pending || !selectedProfile}
+                      onClick={() => {
+                        if (!selectedProfile) return;
+                        openEditProfile(selectedProfile);
+                      }}
+                    />
                   }
                 />
               }
@@ -701,7 +714,7 @@ export function ProfilesModal({
                             window.getSelection()?.removeAllRanges();
                             requestEditProfile(item);
                           }}
-                          className={settingsDataRowClass(isSelected)}
+                          className={cn(settingsDataRowClass(isSelected), "h-9")}
                         >
                           <td className={settingsIndicatorCellClass(isSelected)} aria-hidden />
                           <td className={settingsDataCellClass(isSelected, { align: "center" })}>
@@ -810,6 +823,7 @@ export function ProfilesModal({
                     profileShiftPreferences={
                       shiftPreferencesCache[displayedProfile.id]
                     }
+                    profileAbsences={absencesCache[displayedProfile.id]}
                     profileCompensation={compensationCache[displayedProfile.id]}
                     disabled={pending || profileDetailSwitching}
                     onOpen={setDetailPanel}
@@ -921,6 +935,9 @@ export function ProfilesModal({
             profile={selectedProfile}
             profiles={profileList}
             onClose={() => setDetailPanel(null)}
+            onCacheUpdate={(profileId, absences) => {
+              setAbsencesCache((prev) => ({ ...prev, [profileId]: absences }));
+            }}
           />
         )}
         {detailPanel === "compensation" && selectedProfile && (

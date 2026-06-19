@@ -24,23 +24,48 @@ const NAV_LINKS_AFTER_PLANNING = [
   { href: "/berichte", labelKey: "nav.reports" },
 ] as const;
 
-const OVERVIEW_LINKS = [
-  {
-    kind: "modal" as const,
-    flag: "uebersichtAbwesenheiten" as const,
-    labelKey: "nav.overviewAbsences",
-  },
-  {
-    kind: "page" as const,
-    href: "/uebersicht/entgelt-zuschlaege",
-    labelKey: "nav.overviewCompensation",
-  },
-  {
-    kind: "modal" as const,
-    flag: "uebersichtVerfuegbarkeiten" as const,
-    labelKey: "nav.overviewAvailabilities",
-  },
-] as const;
+function buildOverviewLinks(includeQualifications: boolean) {
+  return [
+    {
+      kind: "modal" as const,
+      flag: "uebersichtAbwesenheiten" as const,
+      labelKey: "nav.overviewAbsences",
+    },
+    {
+      kind: "modal" as const,
+      flag: "uebersichtEntgelt" as const,
+      labelKey: "nav.overviewCompensation",
+    },
+    ...(COMPENSATION_SURCHARGES_UI_ENABLED
+      ? [
+          {
+            kind: "modal" as const,
+            flag: "uebersichtZuschlaege" as const,
+            labelKey: "nav.overviewSurcharges" as const,
+          },
+        ]
+      : []),
+    {
+      kind: "modal" as const,
+      flag: "uebersichtVerfuegbarkeiten" as const,
+      labelKey: "nav.overviewAvailabilities",
+    },
+    {
+      kind: "modal" as const,
+      flag: "uebersichtWuensche" as const,
+      labelKey: "nav.overviewPreferences",
+    },
+    ...(includeQualifications
+      ? [
+          {
+            kind: "modal" as const,
+            flag: "uebersichtTaetigkeiten" as const,
+            labelKey: "nav.overviewQualifications" as const,
+          },
+        ]
+      : []),
+  ] as const;
+}
 
 const PLANNING_SECTION_ID = "planung";
 const OVERVIEW_SECTION_ID = "uebersicht";
@@ -82,10 +107,19 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const overviewActive =
     pathname.startsWith("/uebersicht") ||
     searchParams.get("uebersichtAbwesenheiten") === "1" ||
-    searchParams.get("uebersichtVerfuegbarkeiten") === "1";
+    searchParams.get("uebersichtVerfuegbarkeiten") === "1" ||
+    searchParams.get("uebersichtWuensche") === "1" ||
+    searchParams.get("uebersichtEntgelt") === "1" ||
+    searchParams.get("uebersichtZuschlaege") === "1" ||
+    searchParams.get("uebersichtTaetigkeiten") === "1";
   const overviewAbsencesOpen = searchParams.get("uebersichtAbwesenheiten") === "1";
   const overviewAvailabilitiesOpen =
     searchParams.get("uebersichtVerfuegbarkeiten") === "1";
+  const overviewPreferencesOpen = searchParams.get("uebersichtWuensche") === "1";
+  const overviewCompensationOpen = searchParams.get("uebersichtEntgelt") === "1";
+  const overviewSurchargesOpen = searchParams.get("uebersichtZuschlaege") === "1";
+  const overviewQualificationsOpen = searchParams.get("uebersichtTaetigkeiten") === "1";
+  const overviewLinks = buildOverviewLinks(features.qualifications);
   const standorteOpen = searchParams.get("standorte") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
   const rollenOpen = searchParams.get("rollen") === "1";
@@ -201,6 +235,10 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   function isOverviewModalLinkOpen(flag: OverviewModalQueryFlag): boolean {
     if (flag === "uebersichtAbwesenheiten") return overviewAbsencesOpen;
     if (flag === "uebersichtVerfuegbarkeiten") return overviewAvailabilitiesOpen;
+    if (flag === "uebersichtWuensche") return overviewPreferencesOpen;
+    if (flag === "uebersichtEntgelt") return overviewCompensationOpen;
+    if (flag === "uebersichtZuschlaege") return overviewSurchargesOpen;
+    if (flag === "uebersichtTaetigkeiten") return overviewQualificationsOpen;
     return searchParams.get(flag) === "1";
   }
 
@@ -307,8 +345,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           )}
         >
           <div className="overflow-hidden">
-            {OVERVIEW_LINKS.map((item, index) =>
-              item.kind === "modal" ? (
+            {overviewLinks.map((item, index) => (
                 <Link
                   key={item.flag}
                   href={buildOverviewModalUrl(item.flag)}
@@ -320,20 +357,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
                 >
                   {t(item.labelKey)}
                 </Link>
-              ) : (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => handlePageNav(item.href)}
-                  className={cn(
-                    subLinkClass(pathname === item.href),
-                    index === 0 && "mt-0.5"
-                  )}
-                >
-                  {t(item.labelKey)}
-                </Link>
-              )
-            )}
+              ))}
           </div>
         </div>
       </div>

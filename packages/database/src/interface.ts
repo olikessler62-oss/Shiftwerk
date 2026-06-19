@@ -287,6 +287,9 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     date: string
   ): Promise<ProfileHourlyRateSummary[]>;
+  listAllOrganizationProfileHourlyRates(
+    organizationId: string
+  ): Promise<ProfileHourlyRate[]>;
   setProfileHourlyRate(
     organizationId: string,
     profileId: string,
@@ -350,6 +353,9 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     profileId: string,
     limit?: number
+  ): Promise<ProfileCompensationSurcharge[]>;
+  listAllOrganizationProfileCompensationSurcharges(
+    organizationId: string
   ): Promise<ProfileCompensationSurcharge[]>;
   listEffectiveProfileCompensationSurchargesForDate(
     organizationId: string,
@@ -444,13 +450,16 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     weekday: number
   ): Promise<ProfileShiftPreference[]>;
+  listAllOrganizationShiftPreferences(
+    organizationId: string
+  ): Promise<ProfileShiftPreference[]>;
   insertProfileShiftPreference(
     organizationId: string,
     profileId: string,
     input: {
-      weekday: number;
-      start_time: string;
-      end_time: string;
+      weekday?: number | null;
+      start_time?: string | null;
+      end_time?: string | null;
       location_id?: string | null;
       location_area_id?: string | null;
       qualification_id?: string | null;
@@ -462,9 +471,9 @@ export interface SchichtwerkDatabase {
     profileId: string,
     preferenceId: string,
     input: {
-      weekday: number;
-      start_time: string;
-      end_time: string;
+      weekday?: number | null;
+      start_time?: string | null;
+      end_time?: string | null;
       location_id?: string | null;
       location_area_id?: string | null;
       qualification_id?: string | null;
@@ -899,6 +908,11 @@ export interface SchichtwerkDatabase {
   ): Promise<void>;
 
   deleteAbsenceRequest(id: string, organizationId: string): Promise<void>;
+
+  purgeExpiredAbsenceRequestsBatch(
+    purgeCutoffISO: string,
+    batchSize?: number
+  ): Promise<number>;
 
   countShiftsConflictingWithAbsenceRanges(
     organizationId: string,

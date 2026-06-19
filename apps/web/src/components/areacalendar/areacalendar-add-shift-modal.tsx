@@ -38,6 +38,7 @@ import {
   profileAvailabilityWeekdayFromAreaCalendarDate,
 } from "@/lib/available-employees-for-shift";
 import { pickEmployeeForBulkPrefill } from "@/lib/bulk-shift-row-prefill";
+import { isEmployeeWishFulfilled } from "@/lib/profile-shift-preference-matching";
 import type { AreaCalendarAssignmentTimeWindow } from "@/lib/shift-overlap";
 import { DEFAULT_ORGANIZATION_TIME_ZONE } from "@/lib/dates";
 import {
@@ -324,6 +325,8 @@ export type AreaCalendarBulkShiftDialogState = {
   focusShiftId?: string;
   /** Tag ohne Servicezeit — Bedarfsliste ausblenden, keine Servicezeit-Validierung. */
   withoutServiceHours?: boolean;
+  /** Dashboard: Mitarbeiter der angeklickten Zeilen-Zelle für neue Zeilen. */
+  presetEmployeeId?: string;
 };
 
 function EmployeeColorSwatch({ hex }: { hex: string | null }) {
@@ -1054,11 +1057,16 @@ export function AreaCalendarAddShiftModal({
       return;
     }
 
-    const preferred = pickEmployeeForBulkPrefill(
+    const { employee: preferred } = pickEmployeeForBulkPrefill(
       matchingEmployees,
-      startTime,
-      endTime,
-      dialog.areaId ?? "",
+      {
+        weekday,
+        demandStart: startTime,
+        demandEnd: endTime,
+        areaId: dialog.areaId ?? "",
+        locationId,
+        qualificationId: null,
+      },
       profileShiftPreferences
     );
     setEmployeeId(preferred?.id ?? EMPTY_EMPLOYEE_ID);
@@ -1069,7 +1077,9 @@ export function AreaCalendarAddShiftModal({
     employeeManuallySelected,
     startTime,
     endTime,
+    weekday,
     dialog.areaId,
+    locationId,
     profileShiftPreferences,
   ]);
 
@@ -1211,6 +1221,33 @@ export function AreaCalendarAddShiftModal({
     t,
   ]);
 
+  const wishFulfilled = useMemo(() => {
+    if (!employeeId || employeeId === EMPTY_EMPLOYEE_ID || !timesComplete) {
+      return true;
+    }
+    return isEmployeeWishFulfilled(
+      employeeId,
+      {
+        weekday,
+        demandStart: startTime,
+        demandEnd: endTime,
+        areaId: dialog.areaId ?? "",
+        locationId,
+        qualificationId: null,
+      },
+      profileShiftPreferences
+    );
+  }, [
+    employeeId,
+    timesComplete,
+    weekday,
+    startTime,
+    endTime,
+    dialog.areaId,
+    locationId,
+    profileShiftPreferences,
+  ]);
+
   const selectedEmployee = useMemo(
     () =>
       employeeId === EMPTY_EMPLOYEE_ID
@@ -1323,6 +1360,11 @@ export function AreaCalendarAddShiftModal({
               onApplyAvailability={handleApplyAvailability}
               weekdayLabelStyle="long"
             />
+            {!wishFulfilled ? (
+              <p className="mt-1 text-xs text-muted">
+                {t("profiles.shiftPreferenceWishNotFulfilled")}
+              </p>
+            ) : null}
           </div>
         </div>
 

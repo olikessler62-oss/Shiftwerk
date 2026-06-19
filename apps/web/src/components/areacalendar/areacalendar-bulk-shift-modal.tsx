@@ -87,6 +87,7 @@ import {
 } from "@/lib/bulk-shift-column-prefs";
 import { sortBulkShiftRowsByColumn } from "@/lib/bulk-shift-row-sort";
 import { buildPrefilledBulkRow, pickEmployeeForBulkPrefill } from "@/lib/bulk-shift-row-prefill";
+import { isEmployeeWishFulfilled } from "@/lib/profile-shift-preference-matching";
 import {
   insertBulkShiftRowInList,
   isBulkShiftEmployeeSortActive,
@@ -877,6 +878,7 @@ type BulkShiftRowEditorProps = {
   row: BulkRow;
   weekday: number;
   areaId: string;
+  locationId: string;
   employees: AreaCalendarShiftAssignEmployee[];
   assignmentPresets: AreaCalendarAssignmentPreset[];
   areaQualifications: StaffingQualificationOption[];
@@ -940,6 +942,7 @@ function BulkShiftRowEditor({
   row,
   weekday,
   areaId,
+  locationId,
   employees,
   assignmentPresets,
   areaQualifications,
@@ -1182,11 +1185,16 @@ function BulkShiftRowEditor({
 
     let nextEmployeeId = row.employeeId;
     if (!row.employeeManuallySelected && columnPrefill.employee) {
-      const preferred = pickEmployeeForBulkPrefill(
+      const { employee: preferred } = pickEmployeeForBulkPrefill(
         matchingEmployees,
-        requestWindow.startTime,
-        requestWindow.endTime,
-        areaId,
+        {
+          weekday,
+          demandStart: requestWindow.startTime,
+          demandEnd: requestWindow.endTime,
+          areaId,
+          locationId,
+          qualificationId: row.qualificationId || null,
+        },
         profileShiftPreferences
       );
       nextEmployeeId = preferred?.id ?? AREA_CALENDAR_EMPTY_EMPLOYEE_ID;
@@ -1276,6 +1284,37 @@ function BulkShiftRowEditor({
         : employees.find((e) => e.id === row.employeeId) ?? null,
     [row.employeeId, employees]
   );
+
+  const wishFulfilled = useMemo(() => {
+    if (
+      row.employeeId === AREA_CALENDAR_EMPTY_EMPLOYEE_ID ||
+      !requestTimesComplete
+    ) {
+      return true;
+    }
+    return isEmployeeWishFulfilled(
+      row.employeeId,
+      {
+        weekday,
+        demandStart: requestWindow.startTime,
+        demandEnd: requestWindow.endTime,
+        areaId,
+        locationId,
+        qualificationId: row.qualificationId || null,
+      },
+      profileShiftPreferences
+    );
+  }, [
+    row.employeeId,
+    row.qualificationId,
+    requestTimesComplete,
+    requestWindow.startTime,
+    requestWindow.endTime,
+    weekday,
+    areaId,
+    locationId,
+    profileShiftPreferences,
+  ]);
 
   const dayAvailabilities = useMemo(() => {
     if (!selectedEmployee) return [];
@@ -1425,7 +1464,12 @@ function BulkShiftRowEditor({
           onChange={(event) => handleTimeFieldChange("endTime", event.target.value)}
         />
       </td>
-      <td className={BULK_SHIFT_TABLE_CELL_CLASS}>
+      <td
+        className={BULK_SHIFT_TABLE_CELL_CLASS}
+        title={
+          !wishFulfilled ? t("profiles.shiftPreferenceWishNotFulfilled") : undefined
+        }
+      >
         <AreaCalendarShiftEmployeeCombobox
           value={row.employeeId}
           onChange={(employeeId) => {
@@ -1873,6 +1917,7 @@ export function AreaCalendarBulkShiftModal({
           row={row}
           weekday={weekday}
           areaId={dialog.areaId}
+          locationId={locationId}
           employees={employees}
           assignmentPresets={assignmentPresets}
           areaQualifications={areaQualifications}
@@ -1904,6 +1949,7 @@ export function AreaCalendarBulkShiftModal({
       rowsById,
       weekday,
       dialog.areaId,
+      locationId,
       dialog.date,
       employees,
       assignmentPresets,
@@ -1950,6 +1996,7 @@ export function AreaCalendarBulkShiftModal({
           assignmentPresets,
           staffingRules,
           areaId: dialog.areaId,
+          locationId,
           weekday,
           dateISO: dialog.date,
           countryCode,
@@ -1968,6 +2015,7 @@ export function AreaCalendarBulkShiftModal({
           createEmptyRow,
           targetDemand,
           withoutServiceHours,
+          presetEmployeeId: dialog.presetEmployeeId,
         });
 
       const previewRow = buildRowForExisting(rows);
@@ -2467,7 +2515,9 @@ export function AreaCalendarBulkShiftModal({
         >
           <div className="min-w-0 flex-1">
             <h3 id="areacalendar-bulk-shift-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("areaCalendar.bulkShiftTitle")}
+              {dialog.focusShiftId
+                ? t("areaCalendar.editShift")
+                : t("areaCalendar.bulkShiftTitle")}
             </h3>
             <p className="mt-0.5 font-semibold text-[#0f766e]">
               <span className="text-base">

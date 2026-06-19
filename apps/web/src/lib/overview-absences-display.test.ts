@@ -6,6 +6,7 @@ import {
   buildOverviewAbsenceEmployeeJumpOptions,
   countOverviewAbsenceEmployees,
   filterOverviewAbsences,
+  firstOverviewAbsenceRowIdForEmployee,
 } from "./overview-absences-display";
 
 function absence(
@@ -55,6 +56,20 @@ const profiles: Profile[] = [
     created_at: "",
     updated_at: "",
   },
+  {
+    id: "emp-c",
+    organization_id: "org-1",
+    full_name: "Carl Cramer",
+    email: "carl@example.com",
+    role: "basic",
+    color: "#0000ff",
+    active: true,
+    schedulable: true,
+    app_registered: false,
+    email_fallback: false,
+    created_at: "",
+    updated_at: "",
+  },
 ];
 
 describe("overview absences display", () => {
@@ -92,7 +107,7 @@ describe("overview absences display", () => {
     expect(countOverviewAbsenceEmployees(rows)).toBe(2);
   });
 
-  it("builds one jump option per grouped employee", () => {
+  it("builds one jump option per profile including employees without absences", () => {
     const rows = buildOverviewAbsenceDisplayRows({
       absences: [
         absence({ id: "b-2", employee_id: "emp-b", start_date: "2026-06-15", end_date: "2026-06-16" }),
@@ -105,14 +120,29 @@ describe("overview absences display", () => {
     });
 
     expect(
-      buildOverviewAbsenceEmployeeJumpOptions(rows).map((option) => [
+      buildOverviewAbsenceEmployeeJumpOptions(profiles, rows).map((option) => [
         option.employeeName,
         option.firstRowId,
       ])
     ).toEqual([
-      ["Anna Albers", "a-1"],
       ["Bea Braun", "b-1"],
+      ["Anna Albers", "a-1"],
+      ["Carl Cramer", null],
     ]);
+  });
+
+  it("finds first visible row id for an employee", () => {
+    const rows = buildOverviewAbsenceDisplayRows({
+      absences: [
+        absence({ id: "a-1", employee_id: "emp-a", start_date: "2026-06-11", end_date: "2026-06-11" }),
+        absence({ id: "a-2", employee_id: "emp-a", start_date: "2026-06-20", end_date: "2026-06-22" }),
+      ],
+      profiles,
+      todayISO: "2026-06-10",
+    });
+
+    expect(firstOverviewAbsenceRowIdForEmployee(rows, "emp-a")).toBe("a-1");
+    expect(firstOverviewAbsenceRowIdForEmployee(rows, "emp-c")).toBeNull();
   });
 
   it("detects open-ended absences as current or future", () => {

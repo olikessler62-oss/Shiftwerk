@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   shiftWindowFitsAvailabilitySlot,
   toProfileAvailabilitySaveError,
+  validateShiftPreferenceDimensions,
 } from "@schichtwerk/database";
 import type {
   Location,
@@ -31,6 +32,12 @@ type ShiftPreferencePlacementInput = {
   location_id?: string | null;
   location_area_id?: string | null;
   qualification_id?: string | null;
+};
+
+type ShiftPreferenceSaveInput = ShiftPreferencePlacementInput & {
+  weekday?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
 };
 
 const PREFERENCE_OUTSIDE_AVAILABILITY_ERROR =
@@ -122,6 +129,28 @@ async function resolveShiftPreferencePlacement(
   };
 }
 
+function buildPreferencePayload(
+  input: ShiftPreferenceSaveInput,
+  placement: Awaited<ReturnType<typeof resolveShiftPreferencePlacement>>
+) {
+  const dimensions = validateShiftPreferenceDimensions({
+    weekday: input.weekday,
+    start_time: input.start_time,
+    end_time: input.end_time,
+    ...placement,
+  });
+  if (!dimensions.ok) {
+    throw new Error(dimensions.error);
+  }
+
+  return {
+    weekday: dimensions.hasTime ? input.weekday! : null,
+    start_time: dimensions.hasTime ? input.start_time! : null,
+    end_time: dimensions.hasTime ? input.end_time! : null,
+    ...placement,
+  };
+}
+
 export async function fetchProfileShiftPreferenceFormOptions(
   profileId: string
 ): Promise<ProfileShiftPreferenceFormOptionsResult> {
@@ -180,16 +209,28 @@ export async function fetchProfileShiftPreferences(
 
 export async function createProfileShiftPreference(input: {
   profileId: string;
-  weekday: number;
-  start_time: string;
-  end_time: string;
+  weekday?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
   location_id?: string | null;
   location_area_id?: string | null;
   qualification_id?: string | null;
 }): Promise<ProfileShiftPreferenceActionResult> {
+  if (input.weekday != null) {
+    return createProfileShiftPreferences({
+      profileId: input.profileId,
+      weekdays: [input.weekday],
+      start_time: input.start_time,
+      end_time: input.end_time,
+      location_id: input.location_id,
+      location_area_id: input.location_area_id,
+      qualification_id: input.qualification_id,
+    });
+  }
+
   return createProfileShiftPreferences({
     profileId: input.profileId,
-    weekdays: [input.weekday],
+    weekdays: [],
     start_time: input.start_time,
     end_time: input.end_time,
     location_id: input.location_id,
@@ -201,8 +242,8 @@ export async function createProfileShiftPreference(input: {
 export async function createProfileShiftPreferences(input: {
   profileId: string;
   weekdays: number[];
-  start_time: string;
-  end_time: string;
+  start_time?: string | null;
+  end_time?: string | null;
   location_id?: string | null;
   location_area_id?: string | null;
   qualification_id?: string | null;
@@ -221,23 +262,45 @@ export async function createProfileShiftPreferences(input: {
       input
     );
 
-    const weekdaysToSave = [...new Set(input.weekdays)].sort((a, b) => a - b);
-    if (weekdaysToSave.length === 0) {
-      return { ok: false, error: "Bitte mindestens einen Wochentag auswählen." };
+    const dimensions = validateShiftPreferenceDimensions({
+      weekday: input.weekdays.length > 0 ? input.weekdays[0] : null,
+      start_time: input.start_time,
+      end_time: input.end_time,
+      ...placement,
+    });
+    if (!dimensions.ok) {
+      return { ok: false, error: dimensions.error };
     }
 
-    for (const weekday of weekdaysToSave) {
-      await assertPreferenceWithinAvailability(
-        organizationId,
-        input.profileId,
-        weekday,
-        input.start_time,
-        input.end_time
-      );
+    if (dimensions.hasTime) {
+      const weekdaysToSave = [...new Set(input.weekdays)].sort((a, b) => a - b);
+      if (weekdaysToSave.length === 0) {
+        return {
+          ok: false,
+          error: "Bitte mindestens einen Wochentag auswählen.",
+        };
+      }
+
+      for (const weekday of weekdaysToSave) {
+        await assertPreferenceWithinAvailability(
+          organizationId,
+          input.profileId,
+          weekday,
+          input.start_time!,
+          input.end_time!
+        );
+        await db.insertProfileShiftPreference(organizationId, input.profileId, {
+          weekday,
+          start_time: input.start_time,
+          end_time: input.end_time,
+          ...placement,
+        });
+      }
+    } else {
       await db.insertProfileShiftPreference(organizationId, input.profileId, {
-        weekday,
-        start_time: input.start_time,
-        end_time: input.end_time,
+        weekday: null,
+        start_time: null,
+        end_time: null,
         ...placement,
       });
     }
@@ -257,9 +320,9 @@ export async function createProfileShiftPreferences(input: {
 export async function updateProfileShiftPreference(input: {
   profileId: string;
   preferenceId: string;
-  weekday: number;
-  start_time: string;
-  end_time: string;
+  weekday?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
   location_id?: string | null;
   location_area_id?: string | null;
   qualification_id?: string | null;
@@ -271,24 +334,24 @@ export async function updateProfileShiftPreference(input: {
       input.profileId,
       input
     );
-    await assertPreferenceWithinAvailability(
-      organizationId,
-      input.profileId,
-      input.weekday,
-      input.start_time,
-      input.end_time
-    );
+    const payload = buildPreferencePayload(input, placement);
+
+    if (payload.weekday != null && payload.start_time && payload.end_time) {
+      await assertPreferenceWithinAvailability(
+        organizationId,
+        input.profileId,
+        payload.weekday,
+        payload.start_time,
+        payload.end_time
+      );
+    }
+
     const db = await getDatabase();
     await db.updateProfileShiftPreference(
       organizationId,
       input.profileId,
       input.preferenceId,
-      {
-        weekday: input.weekday,
-        start_time: input.start_time,
-        end_time: input.end_time,
-        ...placement,
-      }
+      payload
     );
     const preferences = await db.listProfileShiftPreferences(
       organizationId,

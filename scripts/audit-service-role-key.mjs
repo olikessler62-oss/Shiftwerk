@@ -19,6 +19,7 @@ const ALLOWLIST = new Set([
   "apps/web/src/lib/db.ts",
   "apps/web/scripts/seed-test-employees.ts",
   "apps/web/scripts/run-shift-retention.ts",
+  "apps/web/scripts/run-absence-retention.ts",
   ".env.example",
   "README.md",
   "packages/database/README.md",

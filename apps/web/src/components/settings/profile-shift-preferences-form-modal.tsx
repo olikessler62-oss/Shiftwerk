@@ -50,6 +50,40 @@ import {
   buildShiftPreferencePlacementLookups,
   resolveShiftPreferenceLocationId,
 } from "@/lib/profile-shift-preference-display";
+import { profileShiftPreferenceHasTimeDimension } from "@/lib/profile-shift-preference-availability";
+
+type PreferenceDimension = "time" | "location" | "area" | "job";
+
+const dimensionChipClass = (active: boolean, disabled: boolean) =>
+  cn(
+    "rounded border px-2 py-0.5 text-xs font-medium transition-colors",
+    active
+      ? "border-primary bg-primary/10 text-primary"
+      : "border-border/80 bg-surface text-muted hover:bg-subtle hover:text-foreground",
+    disabled && "cursor-not-allowed opacity-50"
+  );
+
+function initialDimensionEnabled(
+  preference: ProfileShiftPreference | undefined,
+  dimension: PreferenceDimension
+): boolean {
+  if (!preference) return dimension === "time";
+  switch (dimension) {
+    case "time":
+      return profileShiftPreferenceHasTimeDimension(preference);
+    case "location":
+      return (
+        preference.location_id != null ||
+        preference.location_area_id != null
+      );
+    case "area":
+      return preference.location_area_id != null;
+    case "job":
+      return preference.qualification_id != null;
+    default:
+      return false;
+  }
+}
 
 function defaultCreateWeekdays(
   availability: readonly ProfileRecurringAvailability[]
@@ -124,7 +158,7 @@ export function ProfileShiftPreferencesFormModal({
         disabled.add(weekday);
       }
     }
-    if (mode === "edit" && currentPreference) {
+    if (mode === "edit" && currentPreference?.weekday != null) {
       disabled.delete(currentPreference.weekday);
     }
     return disabled;
@@ -136,13 +170,27 @@ export function ProfileShiftPreferencesFormModal({
   const [selectedWeekdays, setSelectedWeekdays] = useState<Set<number>>(() =>
     mode === "create"
       ? defaultCreateWeekdays(profileAvailability)
-      : new Set([currentPreference?.weekday ?? 0])
+      : new Set(
+          currentPreference?.weekday != null ? [currentPreference.weekday] : []
+        )
   );
   const [startTime, setStartTime] = useState(
-    () => currentPreference?.start_time.slice(0, 5) ?? "08:00"
+    () => currentPreference?.start_time?.slice(0, 5) ?? "08:00"
   );
   const [endTime, setEndTime] = useState(
-    () => currentPreference?.end_time.slice(0, 5) ?? "12:00"
+    () => currentPreference?.end_time?.slice(0, 5) ?? "12:00"
+  );
+  const [timeEnabled, setTimeEnabled] = useState(() =>
+    initialDimensionEnabled(currentPreference, "time")
+  );
+  const [locationEnabled, setLocationEnabled] = useState(() =>
+    initialDimensionEnabled(currentPreference, "location")
+  );
+  const [areaEnabled, setAreaEnabled] = useState(() =>
+    initialDimensionEnabled(currentPreference, "area")
+  );
+  const [jobEnabled, setJobEnabled] = useState(() =>
+    initialDimensionEnabled(currentPreference, "job")
   );
   const [formOptions, setFormOptions] = useState<FormOptions | null>(
     formOptionsProp ?? null
@@ -273,28 +321,79 @@ export function ProfileShiftPreferencesFormModal({
     });
   }
 
-  async function performSave(timeCheck: ParsedAvailabilityTimeRange) {
+  function toggleDimension(dimension: PreferenceDimension) {
+    setError(null);
+    switch (dimension) {
+      case "time":
+        setTimeEnabled((current) => !current);
+        break;
+      case "location":
+        setLocationEnabled((current) => {
+          if (current) setLocationId(null);
+          return !current;
+        });
+        break;
+      case "area":
+        setAreaEnabled((current) => {
+          if (current) {
+            setAreaId(null);
+            return false;
+          }
+          setLocationEnabled(true);
+          return true;
+        });
+        break;
+      case "job":
+        setJobEnabled((current) => {
+          if (current) setQualificationId(null);
+          return !current;
+        });
+        break;
+      default:
+        break;
+    }
+  }
+
+  function hasFilledDimension(): boolean {
+    const hasTime =
+      timeEnabled &&
+      (mode === "edit"
+        ? weekday != null
+        : selectedWeekdays.size > 0) &&
+      startTime.trim() !== "" &&
+      endTime.trim() !== "";
+    const hasLocation = locationEnabled && locationId != null;
+    const hasArea = areaEnabled && areaId != null;
+    const hasJob = jobEnabled && qualificationId != null;
+    return hasTime || hasLocation || hasArea || hasJob;
+  }
+
+  async function performSave(timeCheck: ParsedAvailabilityTimeRange | null) {
     if (savingRef.current) return;
 
-    const savedStart = timeCheck.start_time.slice(0, 5);
-    const savedEnd = timeCheck.end_time.slice(0, 5);
+    if (!hasFilledDimension()) {
+      setError(t("profiles.shiftPreferenceSelectDimension"));
+      return;
+    }
+
+    const savedStart = timeCheck?.start_time.slice(0, 5) ?? null;
+    const savedEnd = timeCheck?.end_time.slice(0, 5) ?? null;
+    const placement = {
+      location_id: locationEnabled ? locationId : null,
+      location_area_id: areaEnabled ? areaId : null,
+      qualification_id: jobEnabled ? qualificationId : null,
+    };
 
     savingRef.current = true;
     setSaving(true);
     try {
-      const placement = {
-        location_id: locationId,
-        location_area_id: areaId,
-        qualification_id: qualificationId,
-      };
-
       if (mode === "edit" && currentPreference) {
         const result = await updateProfileShiftPreference({
           profileId,
           preferenceId: currentPreference.id,
-          weekday,
-          start_time: savedStart,
-          end_time: savedEnd,
+          weekday: timeEnabled ? weekday : null,
+          start_time: timeEnabled ? savedStart : null,
+          end_time: timeEnabled ? savedEnd : null,
           ...placement,
         });
         if (!result.ok) {
@@ -307,17 +406,47 @@ export function ProfileShiftPreferencesFormModal({
         return;
       }
 
-      const weekdaysToSave = [...selectedWeekdays].sort((a, b) => a - b);
-      if (weekdaysToSave.length === 0) {
-        setError(t("profiles.shiftPreferenceSelectWeekdays"));
+      if (timeEnabled) {
+        const weekdaysToSave = [...selectedWeekdays].sort((a, b) => a - b);
+        if (weekdaysToSave.length === 0) {
+          setError(t("profiles.shiftPreferenceSelectWeekdays"));
+          return;
+        }
+
+        const result = await createProfileShiftPreferences({
+          profileId,
+          weekdays: weekdaysToSave,
+          start_time: savedStart,
+          end_time: savedEnd,
+          ...placement,
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+
+        const latestList = result.preferences ?? [];
+        const lastSelectedId =
+          latestList.find(
+            (item) =>
+              item.weekday != null &&
+              weekdaysToSave.includes(item.weekday) &&
+              item.start_time?.slice(0, 5) === savedStart &&
+              item.end_time?.slice(0, 5) === savedEnd
+          )?.id ??
+          latestList[0]?.id ??
+          "";
+
+        onSaved(latestList, lastSelectedId, true);
+        onClose();
         return;
       }
 
       const result = await createProfileShiftPreferences({
         profileId,
-        weekdays: weekdaysToSave,
-        start_time: savedStart,
-        end_time: savedEnd,
+        weekdays: [],
+        start_time: null,
+        end_time: null,
         ...placement,
       });
       if (!result.ok) {
@@ -326,17 +455,7 @@ export function ProfileShiftPreferencesFormModal({
       }
 
       const latestList = result.preferences ?? [];
-      const lastSelectedId =
-        latestList.find(
-          (item) =>
-            weekdaysToSave.includes(item.weekday) &&
-            item.start_time.slice(0, 5) === savedStart &&
-            item.end_time.slice(0, 5) === savedEnd
-        )?.id ??
-        latestList[0]?.id ??
-        "";
-
-      onSaved(latestList, lastSelectedId, true);
+      onSaved(latestList, latestList[0]?.id ?? "", true);
       onClose();
     } catch {
       setError(t("profiles.shiftPreferenceSaveFailed"));
@@ -349,6 +468,16 @@ export function ProfileShiftPreferencesFormModal({
   async function handleSubmit() {
     setError(null);
     setOvernightConfirmOpen(false);
+
+    if (!hasFilledDimension()) {
+      setError(t("profiles.shiftPreferenceSelectDimension"));
+      return;
+    }
+
+    if (!timeEnabled) {
+      await performSave(null);
+      return;
+    }
 
     const timeCheck = parseCurrentTimeRange();
     if (!timeCheck.ok) {
@@ -443,121 +572,167 @@ export function ProfileShiftPreferencesFormModal({
           <div className="space-y-3 px-4 py-2 sm:px-5 sm:py-3">
             {error && <Alert variant="error">{error}</Alert>}
 
-            <div>
-              <LabelMuted className="!mb-0.5 block text-center sm:text-left">
-                {t("profiles.columnWeekday")}
-              </LabelMuted>
-              <WeekdayChipPicker
-                weekdayCount={SERVICE_HOUR_WEEKDAY_COUNT}
-                selected={
-                  usesMultiDayPicker ? selectedWeekdays : new Set([weekday])
-                }
-                disabled={saving}
-                disabledWeekdays={disabledWeekdays}
-                getWeekdayTooltip={renderWeekdayAvailabilityTooltip}
-                showPresets={usesMultiDayPicker}
-                onToggle={handleWeekdayToggle}
-                onApplyPreset={applyAvailableWeekdayPreset}
-              />
-            </div>
+            <p className="text-center text-xs text-muted sm:text-left">
+              {t("profiles.shiftPreferenceFormIntro")}
+            </p>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <LabelMuted className="!mb-0.5">{t("profiles.availabilityFrom")}</LabelMuted>
-                <TimeInput
-                  value={startTime}
-                  disabled={saving || optionsLoading}
-                  onChange={(e) => {
-                    setStartTime(e.target.value);
-                    setError(null);
-                  }}
-                />
-              </div>
-              <div>
-                <LabelMuted className="!mb-0.5">{t("profiles.availabilityTo")}</LabelMuted>
-                <TimeInput
-                  value={endTime}
-                  disabled={saving || optionsLoading}
-                  onChange={(e) => {
-                    setEndTime(e.target.value);
-                    setError(null);
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2">
-              <div>
-                <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceLocation")}</LabelMuted>
-                <Select
-                  value={locationId ?? ""}
-                  disabled={saving || optionsLoading}
-                  onChange={(event) => {
-                    const nextLocationId = event.target.value || null;
-                    setLocationId(nextLocationId);
-                    if (
-                      areaId &&
-                      !formOptions?.areas.some(
-                        (area) =>
-                          area.id === areaId && area.location_id === nextLocationId
-                      )
-                    ) {
-                      setAreaId(null);
-                    }
-                    setError(null);
-                  }}
-                >
-                  <option value="">{t("profiles.shiftPreferenceNone")}</option>
-                  {(formOptions?.locations ?? []).map((location: Location) => (
-                    <option key={location.id} value={location.id}>
-                      {location.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceArea")}</LabelMuted>
-                <Select
-                  value={areaId ?? ""}
-                  disabled={saving || optionsLoading || !locationId}
-                  onChange={(event) => {
-                    setAreaId(event.target.value || null);
-                    setError(null);
-                  }}
-                >
-                  <option value="">
-                    {!locationId
-                      ? t("profiles.shiftPreferenceSelectLocationFirst")
-                      : t("profiles.shiftPreferenceNone")}
-                  </option>
-                  {areasForLocation.map((area) => (
-                    <option key={area.id} value={area.id}>
-                      {area.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceJob")}</LabelMuted>
-                <Select
-                  value={qualificationId ?? ""}
-                  disabled={saving || optionsLoading}
-                  onChange={(event) => {
-                    setQualificationId(event.target.value || null);
-                    setError(null);
-                  }}
-                >
-                  <option value="">{t("profiles.shiftPreferenceNone")}</option>
-                  {(formOptions?.qualifications ?? []).map(
-                    (qualification: Qualification) => (
-                      <option key={qualification.id} value={qualification.id}>
-                        {qualification.name}
-                      </option>
-                    )
+            <div className="flex flex-wrap justify-center gap-1.5 sm:justify-start">
+              {(
+                [
+                  ["time", "profiles.shiftPreferenceDimensionTime"],
+                  ["location", "profiles.shiftPreferenceDimensionLocation"],
+                  ["area", "profiles.shiftPreferenceDimensionArea"],
+                  ["job", "profiles.shiftPreferenceDimensionJob"],
+                ] as const
+              ).map(([dimension, labelKey]) => (
+                <button
+                  key={dimension}
+                  type="button"
+                  disabled={saving}
+                  className={dimensionChipClass(
+                    dimension === "time"
+                      ? timeEnabled
+                      : dimension === "location"
+                        ? locationEnabled
+                        : dimension === "area"
+                          ? areaEnabled
+                          : jobEnabled,
+                    saving
                   )}
-                </Select>
-              </div>
+                  onClick={() => toggleDimension(dimension)}
+                >
+                  {t(labelKey)}
+                </button>
+              ))}
             </div>
+
+            {timeEnabled ? (
+              <>
+                <div>
+                  <LabelMuted className="!mb-0.5 block text-center sm:text-left">
+                    {t("profiles.columnWeekday")}
+                  </LabelMuted>
+                  <WeekdayChipPicker
+                    weekdayCount={SERVICE_HOUR_WEEKDAY_COUNT}
+                    selected={
+                      usesMultiDayPicker ? selectedWeekdays : new Set([weekday])
+                    }
+                    disabled={saving}
+                    disabledWeekdays={disabledWeekdays}
+                    getWeekdayTooltip={renderWeekdayAvailabilityTooltip}
+                    showPresets={usesMultiDayPicker}
+                    onToggle={handleWeekdayToggle}
+                    onApplyPreset={applyAvailableWeekdayPreset}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <LabelMuted className="!mb-0.5">{t("profiles.availabilityFrom")}</LabelMuted>
+                    <TimeInput
+                      value={startTime}
+                      disabled={saving || optionsLoading}
+                      onChange={(e) => {
+                        setStartTime(e.target.value);
+                        setError(null);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <LabelMuted className="!mb-0.5">{t("profiles.availabilityTo")}</LabelMuted>
+                    <TimeInput
+                      value={endTime}
+                      disabled={saving || optionsLoading}
+                      onChange={(e) => {
+                        setEndTime(e.target.value);
+                        setError(null);
+                      }}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {locationEnabled || areaEnabled || jobEnabled ? (
+              <div className="grid grid-cols-1 gap-2">
+                {locationEnabled ? (
+                  <div>
+                    <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceLocation")}</LabelMuted>
+                    <Select
+                      value={locationId ?? ""}
+                      disabled={saving || optionsLoading}
+                      onChange={(event) => {
+                        const nextLocationId = event.target.value || null;
+                        setLocationId(nextLocationId);
+                        if (
+                          areaId &&
+                          !formOptions?.areas.some(
+                            (area) =>
+                              area.id === areaId && area.location_id === nextLocationId
+                          )
+                        ) {
+                          setAreaId(null);
+                        }
+                        setError(null);
+                      }}
+                    >
+                      <option value="">{t("profiles.shiftPreferenceNone")}</option>
+                      {(formOptions?.locations ?? []).map((location: Location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
+                {areaEnabled ? (
+                  <div>
+                    <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceArea")}</LabelMuted>
+                    <Select
+                      value={areaId ?? ""}
+                      disabled={saving || optionsLoading || !locationId}
+                      onChange={(event) => {
+                        setAreaId(event.target.value || null);
+                        setError(null);
+                      }}
+                    >
+                      <option value="">
+                        {!locationId
+                          ? t("profiles.shiftPreferenceSelectLocationFirst")
+                          : t("profiles.shiftPreferenceNone")}
+                      </option>
+                      {areasForLocation.map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {area.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
+                {jobEnabled ? (
+                  <div>
+                    <LabelMuted className="!mb-0.5">{t("profiles.shiftPreferenceJob")}</LabelMuted>
+                    <Select
+                      value={qualificationId ?? ""}
+                      disabled={saving || optionsLoading}
+                      onChange={(event) => {
+                        setQualificationId(event.target.value || null);
+                        setError(null);
+                      }}
+                    >
+                      <option value="">{t("profiles.shiftPreferenceNone")}</option>
+                      {(formOptions?.qualifications ?? []).map(
+                        (qualification: Qualification) => (
+                          <option key={qualification.id} value={qualification.id}>
+                            {qualification.name}
+                          </option>
+                        )
+                      )}
+                    </Select>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className={settingsModalFooterClass()}>

@@ -38,7 +38,11 @@ import {
 import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
 import { SHIFT_ABSENCE_CONFLICT_RING_CLASS } from "@/lib/shift-absence-conflict";
 import { isPastShiftDate } from "@/lib/planning-readonly";
-import { planningShiftCardShowsPointerCursor } from "@/lib/shift-card-context-menu-actions";
+import {
+  canOpenShiftCardContextMenu,
+  handleShiftCardContextMenuPointerEvent,
+  planningShiftCardShowsPointerCursor,
+} from "@/lib/shift-card-context-menu-actions";
 
 /** Unterhalb: nur Farbbalken ohne Text. */
 const MIN_WIDTH_FOR_TIME_PX = 40;
@@ -214,9 +218,15 @@ export function DashboardCellShiftRow({
                 onClick={() => onShiftClick(shift.id)}
                 onContextMenu={(event) => {
                   if (!onShiftContextMenu) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onShiftContextMenu(shift.id, event);
+                  handleShiftCardContextMenuPointerEvent(
+                    event,
+                    canOpenShiftCardContextMenu(
+                      shift.confirmationStatus,
+                      shift.requestedAt,
+                      { shiftDate: shift.shift_date, isPastShiftDate }
+                    ),
+                    () => onShiftContextMenu(shift.id, event)
+                  );
                 }}
                 className={cn(
                   "relative flex min-h-0 min-w-0 flex-1 overflow-hidden text-left text-black transition disabled:opacity-50",

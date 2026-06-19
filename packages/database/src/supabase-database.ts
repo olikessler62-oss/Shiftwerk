@@ -37,6 +37,7 @@ import type {
 import {
   clampShiftQueryFromDate,
 } from "./shift-retention";
+import { ABSENCE_PURGE_BATCH_SIZE } from "./absence-retention";
 import { normalizeIndustry } from "./industry";
 import { normalizePlanningMode } from "./org-planning-mode";
 import { validateProfileEmail } from "./profile-contact-validation";
@@ -65,6 +66,10 @@ import {
   findProfileShiftPreferenceDuplicate,
   validateNoDuplicateProfileShiftPreference,
 } from "./profile-shift-preference-validation";
+import {
+  sortProfileShiftPreferencesBySchedule,
+  validateShiftPreferenceDimensions,
+} from "./profile-shift-preference-dimensions";
 import {
   normalizeAreaShiftTemplatesWithBreaks,
   normalizeTime,
@@ -239,9 +244,9 @@ type ProfileShiftPreferenceRow = {
   id: string;
   organization_id: string;
   profile_id: string;
-  weekday: number;
-  start_time: string;
-  end_time: string;
+  weekday: number | null;
+  start_time: string | null;
+  end_time: string | null;
   location_id: string | null;
   location_area_id: string | null;
   qualification_id: string | null;
@@ -280,6 +285,43 @@ function validateShiftPreferenceTimes(start_time: string, end_time: string) {
     return { ok: false as const, error: "Ungültiges Zeitfenster" };
   }
   return { ok: true as const, start_time: start, end_time: end };
+}
+
+function normalizeShiftPreferenceInsertInput(input: {
+  weekday?: number | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  location_id?: string | null;
+  location_area_id?: string | null;
+  qualification_id?: string | null;
+  priority?: number;
+}) {
+  const dimensions = validateShiftPreferenceDimensions(input);
+  if (!dimensions.ok) throw new Error(dimensions.error);
+
+  let weekday: number | null = null;
+  let start_time: string | null = null;
+  let end_time: string | null = null;
+
+  if (dimensions.hasTime) {
+    const weekdayResult = parseAvailabilityWeekday(input.weekday!);
+    if (!weekdayResult.ok) throw new Error(weekdayResult.error);
+    const times = validateShiftPreferenceTimes(input.start_time!, input.end_time!);
+    if (!times.ok) throw new Error(times.error);
+    weekday = weekdayResult.weekday;
+    start_time = times.start_time;
+    end_time = times.end_time;
+  }
+
+  return {
+    weekday,
+    start_time,
+    end_time,
+    location_id: input.location_id ?? null,
+    location_area_id: input.location_area_id ?? null,
+    qualification_id: input.qualification_id ?? null,
+    priority: input.priority ?? 0,
+  };
 }
 
 function mapProfileHourlyRate(row: ProfileHourlyRateRow): ProfileHourlyRate {
@@ -1398,10 +1440,25 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .from(T.profileShiftPreferences)
       .select("*")
       .eq("organization_id", organizationId)
-      .eq("weekday", weekday)
+      .or(`weekday.eq.${weekday},weekday.is.null`)
       .order("profile_id")
       .order("priority", { ascending: false })
       .order("start_time");
+    if (error) throw new Error(error.message);
+
+    return (data ?? []).map((row) =>
+      mapProfileShiftPreference(row as ProfileShiftPreferenceRow)
+    );
+  }
+
+  async listAllOrganizationShiftPreferences(organizationId: string) {
+    const { data, error } = await this.client
+      .from(T.profileShiftPreferences)
+      .select("*")
+      .eq("organization_id", organizationId)
+      .order("profile_id")
+      .order("weekday", { ascending: true, nullsFirst: false })
+      .order("start_time", { ascending: true, nullsFirst: false });
     if (error) throw new Error(error.message);
 
     return (data ?? []).map((row) =>
@@ -1413,9 +1470,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     organizationId: string,
     profileId: string,
     input: {
-      weekday: number;
-      start_time: string;
-      end_time: string;
+      weekday?: number | null;
+      start_time?: string | null;
+      end_time?: string | null;
       location_id?: string | null;
       location_area_id?: string | null;
       qualification_id?: string | null;
@@ -1427,21 +1484,10 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error("Profil nicht gefunden");
     }
 
-    const weekdayResult = parseAvailabilityWeekday(input.weekday);
-    if (!weekdayResult.ok) throw new Error(weekdayResult.error);
-
-    const times = validateShiftPreferenceTimes(input.start_time, input.end_time);
-    if (!times.ok) throw new Error(times.error);
+    const normalized = normalizeShiftPreferenceInsertInput(input);
 
     const existing = await this.listProfileShiftPreferences(organizationId, profileId);
-    const duplicate = findProfileShiftPreferenceDuplicate(existing, {
-      weekday: weekdayResult.weekday,
-      start_time: times.start_time,
-      end_time: times.end_time,
-      location_id: input.location_id ?? null,
-      location_area_id: input.location_area_id ?? null,
-      qualification_id: input.qualification_id ?? null,
-    });
+    const duplicate = findProfileShiftPreferenceDuplicate(existing, normalized);
     if (duplicate) {
       return duplicate;
     }
@@ -1451,13 +1497,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .insert({
         organization_id: organizationId,
         profile_id: profileId,
-        weekday: weekdayResult.weekday,
-        start_time: times.start_time,
-        end_time: times.end_time,
-        location_id: input.location_id ?? null,
-        location_area_id: input.location_area_id ?? null,
-        qualification_id: input.qualification_id ?? null,
-        priority: input.priority ?? 0,
+        weekday: normalized.weekday,
+        start_time: normalized.start_time,
+        end_time: normalized.end_time,
+        location_id: normalized.location_id,
+        location_area_id: normalized.location_area_id,
+        qualification_id: normalized.qualification_id,
+        priority: normalized.priority,
       })
       .select("*")
       .single();
@@ -1472,9 +1518,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     profileId: string,
     preferenceId: string,
     input: {
-      weekday: number;
-      start_time: string;
-      end_time: string;
+      weekday?: number | null;
+      start_time?: string | null;
+      end_time?: string | null;
       location_id?: string | null;
       location_area_id?: string | null;
       qualification_id?: string | null;
@@ -1486,23 +1532,12 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error("Profil nicht gefunden");
     }
 
-    const weekdayResult = parseAvailabilityWeekday(input.weekday);
-    if (!weekdayResult.ok) throw new Error(weekdayResult.error);
-
-    const times = validateShiftPreferenceTimes(input.start_time, input.end_time);
-    if (!times.ok) throw new Error(times.error);
+    const normalized = normalizeShiftPreferenceInsertInput(input);
 
     const existing = await this.listProfileShiftPreferences(organizationId, profileId);
     const duplicateCheck = validateNoDuplicateProfileShiftPreference(
       existing,
-      {
-        weekday: weekdayResult.weekday,
-        start_time: times.start_time,
-        end_time: times.end_time,
-        location_id: input.location_id ?? null,
-        location_area_id: input.location_area_id ?? null,
-        qualification_id: input.qualification_id ?? null,
-      },
+      normalized,
       preferenceId
     );
     if (!duplicateCheck.ok) throw new Error(duplicateCheck.error);
@@ -1510,13 +1545,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.profileShiftPreferences)
       .update({
-        weekday: weekdayResult.weekday,
-        start_time: times.start_time,
-        end_time: times.end_time,
-        location_id: input.location_id ?? null,
-        location_area_id: input.location_area_id ?? null,
-        qualification_id: input.qualification_id ?? null,
-        priority: input.priority ?? 0,
+        weekday: normalized.weekday,
+        start_time: normalized.start_time,
+        end_time: normalized.end_time,
+        location_id: normalized.location_id,
+        location_area_id: normalized.location_area_id,
+        qualification_id: normalized.qualification_id,
+        priority: normalized.priority,
         updated_at: new Date().toISOString(),
       })
       .eq("id", preferenceId)
@@ -1728,6 +1763,19 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       });
     }
     return [...byProfile.values()];
+  }
+
+  async listAllOrganizationProfileHourlyRates(organizationId: string) {
+    const { data, error } = await this.client
+      .from(T.profileHourlyRates)
+      .select(PROFILE_HOURLY_RATE_SELECT)
+      .eq("organization_id", organizationId)
+      .order("profile_id")
+      .order("valid_from", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) =>
+      mapProfileHourlyRate(row as ProfileHourlyRateRow)
+    );
   }
 
   async setProfileHourlyRate(
@@ -2079,6 +2127,19 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("profile_id", profileId)
       .order("valid_from", { ascending: false })
       .limit(limit);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) =>
+      mapProfileCompensationSurcharge(row as ProfileCompensationSurchargeRow)
+    );
+  }
+
+  async listAllOrganizationProfileCompensationSurcharges(organizationId: string) {
+    const { data, error } = await this.client
+      .from(T.profileCompensationSurcharges)
+      .select(PROFILE_COMPENSATION_SURCHARGE_SELECT)
+      .eq("organization_id", organizationId)
+      .order("profile_id")
+      .order("valid_from", { ascending: false });
     if (error) throw new Error(error.message);
     return (data ?? []).map((row) =>
       mapProfileCompensationSurcharge(row as ProfileCompensationSurchargeRow)
@@ -3706,6 +3767,21 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("id", id)
       .eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
+  }
+
+  async purgeExpiredAbsenceRequestsBatch(
+    purgeCutoffISO: string,
+    batchSize = ABSENCE_PURGE_BATCH_SIZE
+  ) {
+    const { data, error } = await this.client.rpc(
+      "purge_expired_absence_requests_batch",
+      {
+        p_purge_cutoff: purgeCutoffISO,
+        p_batch_size: batchSize,
+      }
+    );
+    if (error) throw new Error(error.message);
+    return Number(data ?? 0);
   }
 
   async countShiftsConflictingWithAbsenceRanges(

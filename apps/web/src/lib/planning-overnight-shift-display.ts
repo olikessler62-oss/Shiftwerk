@@ -2,6 +2,7 @@ import { isPastCalendarDate, parseISODate, toISODate } from "@/lib/dates";
 import { parseClockTimeToMinutes } from "@/lib/shift-card-time-gradient";
 import {
   canOpenPastUnconfirmedShiftContextMenu,
+  resolveShiftCardContextMenuStatus,
   type ShiftCardContextMenuOptions,
 } from "@/lib/shift-card-context-menu-actions";
 import type { PlanningShift } from "@/lib/planning-shift-card";
@@ -256,6 +257,26 @@ export function canOpenPlanningOvernightShiftContextMenu(
   }
 ): boolean {
   if (
+    options.pastUnconfirmedMenu &&
+    canOpenPastUnconfirmedShiftContextMenu(
+      span.shift.confirmationStatus,
+      span.shift.requestedAt,
+      options.pastUnconfirmedMenu
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    resolveShiftCardContextMenuStatus(
+      span.shift.confirmationStatus,
+      span.shift.requestedAt
+    ) === "confirmed"
+  ) {
+    return false;
+  }
+
+  return (
     isPlanningOvernightShiftDayInteractable(
       span.startDate,
       options.todayISO,
@@ -266,16 +287,6 @@ export function canOpenPlanningOvernightShiftContextMenu(
       options.todayISO,
       options.isDayReadOnly
     )
-  ) {
-    return true;
-  }
-
-  if (!options.pastUnconfirmedMenu) return false;
-
-  return canOpenPastUnconfirmedShiftContextMenu(
-    span.shift.confirmationStatus,
-    span.shift.requestedAt,
-    options.pastUnconfirmedMenu
   );
 }
 

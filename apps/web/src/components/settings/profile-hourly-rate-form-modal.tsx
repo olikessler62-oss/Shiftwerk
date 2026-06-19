@@ -241,12 +241,12 @@ export function ProfileHourlyRateFormModal({
         <div className={cn("space-y-4", settingsModalBodyPaddingClass())}>
           {error && <Alert variant="error">{error}</Alert>}
 
-          <div className="grid max-w-full grid-cols-1 items-end gap-4 sm:grid-cols-[1fr_11rem]">
+          <div className="grid max-w-full grid-cols-1 gap-4 sm:grid-cols-[1fr_11rem]">
             <div>
               <LabelMuted>{t("profiles.currentHourlyRate")}</LabelMuted>
               <div
                 className={cn(
-                  "mt-1 flex w-full overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
+                  "flex w-full overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
                   pending && "opacity-50"
                 )}
               >

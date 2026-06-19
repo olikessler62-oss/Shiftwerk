@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "seed:employees": "tsx scripts/seed-test-employees.ts",
-    "retention:shifts": "tsx scripts/run-shift-retention.ts"
+    "retention:shifts": "tsx scripts/run-shift-retention.ts",
+    "retention:absences": "tsx scripts/run-absence-retention.ts"
   },
   "dependencies": {
     "@schichtwerk/api-client": "*",

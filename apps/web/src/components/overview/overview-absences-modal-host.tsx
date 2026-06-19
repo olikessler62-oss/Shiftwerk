@@ -6,11 +6,17 @@ import { OverviewAbsencesModal } from "./overview-absences-modal";
 
 type Props = {
   onClose: () => void;
+  initialEmployeeId?: string | null;
 };
 
-export function OverviewAbsencesModalHost({ onClose }: Props) {
+export function OverviewAbsencesModalHost({ onClose, initialEmployeeId }: Props) {
   if (OVERVIEW_ABSENCES_EDIT_ENABLED) {
-    return <OverviewAbsencesEditableModal onClose={onClose} />;
+    return (
+      <OverviewAbsencesEditableModal
+        onClose={onClose}
+        initialEmployeeId={initialEmployeeId}
+      />
+    );
   }
   return <OverviewAbsencesModal onClose={onClose} />;
 }

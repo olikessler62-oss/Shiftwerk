@@ -65,6 +65,10 @@ export const SETTINGS_LIST_SCROLL_COMPACT_CLASS =
 export const OVERVIEW_ABSENCES_LIST_SCROLL_CLASS =
   "max-h-[calc(1.75rem+17.5rem)] overflow-auto";
 
+/** Mitarbeiter-Combobox Übersicht Verfügbarkeiten/Abwesenheiten: Listenpadding + max. 10 Zeilen à h-9 (2.25rem) */
+export const OVERVIEW_EMPLOYEE_JUMP_COMBOBOX_LIST_SCROLL_CLASS =
+  "max-h-[calc(0.5rem+22.5rem)] overflow-y-auto";
+
 /** Tabellenkopf (~1.75rem) + max. 4 sichtbare Datenzeilen à ~1.75rem */
 export const SETTINGS_ABSENCES_LIST_SCROLL_CLASS =
   "max-h-[calc(1.75rem+7rem)] overflow-auto";
@@ -73,16 +77,33 @@ export const SETTINGS_ABSENCES_LIST_SCROLL_CLASS =
 export const BULK_SHIFT_LIST_SCROLL_CLASS =
   "max-h-[calc(2.5rem+18rem)] overflow-y-auto";
 
-/** Tabellenkopf (~1.75rem) + 8 Datenzeilen à ~1.75rem — Profile-Liste */
+/** Tabellenkopf (~1.75rem) + 8 Datenzeilen à ~1.75rem — Profile-Liste (fest) */
 export const SETTINGS_PROFILES_LIST_SCROLL_CLASS =
   "h-[calc(1.75rem+14rem)] min-h-[calc(1.75rem+14rem)] max-h-[calc(1.75rem+14rem)]";
 
+/** Profile master list: wächst mit dem Inhalt unterhalb der Scroll-Schwelle */
+export const SETTINGS_PROFILES_LIST_COMPACT_CLASS = "shrink-0";
+
+/** Ab 11 Mitarbeitern: Tabellenkopf (~2rem) + max. 10 sichtbare Zeilen à h-9 (2.25rem) */
+export const SETTINGS_PROFILES_LIST_SCROLL_THRESHOLD = 11;
+export const SETTINGS_PROFILES_LIST_SCROLL_FROM_ELEVEN_CLASS =
+  "min-h-0 max-h-[calc(2rem+22.5rem)] overflow-y-auto";
+
+/** @deprecated Use SETTINGS_PROFILES_LIST_SCROLL_FROM_ELEVEN_CLASS */
+export const SETTINGS_PROFILES_LIST_SCROLL_FROM_TEN_CLASS =
+  SETTINGS_PROFILES_LIST_SCROLL_FROM_ELEVEN_CLASS;
+/** @deprecated Use SETTINGS_PROFILES_LIST_SCROLL_FROM_ELEVEN_CLASS */
+export const SETTINGS_PROFILES_LIST_SCROLL_FROM_NINE_CLASS =
+  SETTINGS_PROFILES_LIST_SCROLL_FROM_ELEVEN_CLASS;
+export const SETTINGS_PROFILES_LIST_AUTO_SCROLL_CLASS =
+  SETTINGS_PROFILES_LIST_COMPACT_CLASS;
+
 /**
- * Profile master-detail: Spaltenkopf + Listenpadding + 8 Tabellenzeilen + Action-Bar.
+ * Profile master-detail: Spaltenkopf + Listenpadding + 10 Tabellenzeilen (h-9) + Action-Bar.
  * Verhindert Größenänderungen der Maske beim Profilwechsel.
  */
 export const SETTINGS_PROFILES_MASTER_DETAIL_MIN_HEIGHT_CLASS =
-  "min-h-[calc(2.75rem+1rem+1.75rem+14rem+2.75rem)]";
+  "min-h-[calc(2.75rem+1rem+2rem+22.5rem+2.75rem)]";
 
 /** Halbe Listenhöhe — Funktion / Verfügbarkeiten in der Profil-Spalte */
 export const SETTINGS_PROFILES_HALF_LIST_SCROLL_CLASS =
@@ -228,6 +249,47 @@ export function settingsListRowDeleteCellClass(
     settingsDataCellClass(isSelected, { align: "center" }),
     "w-8 px-0",
     className
+  );
+}
+
+/** Übersicht Verfügbarkeiten/Abwesenheiten: Checkbox + Papierkorb als eine Aktionsgruppe */
+export function settingsOverviewListRowActionsHeaderClass(className?: string) {
+  return cn(
+    settingsStickyColumnHeaderClass("center"),
+    "w-[3.125rem] px-0 py-1 pb-1",
+    className
+  );
+}
+
+export function settingsOverviewListRowActionsCellClass(
+  isSelected: boolean,
+  className?: string
+) {
+  return cn(
+    settingsDataCellClass(isSelected, { align: "center" }),
+    "w-[3.125rem] px-0",
+    className
+  );
+}
+
+export function SettingsOverviewListRowActions({
+  isSelected,
+  checkbox,
+  deleteButton,
+  className,
+}: {
+  isSelected: boolean;
+  checkbox: ReactNode;
+  deleteButton: ReactNode;
+  className?: string;
+}) {
+  return (
+    <td className={settingsOverviewListRowActionsCellClass(isSelected, className)}>
+      <div className="flex items-center justify-center -space-x-0.5">
+        {checkbox}
+        {deleteButton}
+      </div>
+    </td>
   );
 }
 

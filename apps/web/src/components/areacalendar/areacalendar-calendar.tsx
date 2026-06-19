@@ -37,10 +37,10 @@ import { NoServiceHoursShiftConfirmModal } from "@/components/areacalendar/no-se
 import { AreaCalendarShiftDeleteConfirmModal } from "@/components/areacalendar/areacalendar-shift-delete-confirm-modal";
 import { ShiftCancelConfirmModal } from "@/components/shifts/shift-cancel-confirm-modal";
 import { removeShift } from "@/app/actions/shifts";
-import { cancelShiftAsManager, confirmPastShiftAsManager, resendConfirmationRequestForSelectedShifts } from "@/app/actions/shift-confirmations";
+import { cancelShiftAsManager, confirmPastShiftAsManager, submitCommunicationConfirmationRequests } from "@/app/actions/shift-confirmations";
 import { translateActionError } from "@/lib/translate-action-error";
 import {
-  canOpenPastUnconfirmedShiftContextMenu,
+  canOpenShiftCardContextMenu,
   planningShiftCardShowsPointerCursor,
   shiftCardContextMenuActionLabelKey,
   shiftCardContextMenuActions,
@@ -490,7 +490,8 @@ export function AreaCalendar({
   const features = useOrgFeatures();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
-  const { simulatedProposedOnAssign } = useSimulatedProposedOnAssignRequest();
+  const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
+    useSimulatedProposedOnAssignRequest();
   const simplePlanning = !features.areas;
   const intlLocale = toIntlLocale(locale);
   const { simpleCalendarFirstShiftOnly } = useSimpleCalendarDisplay();
@@ -876,33 +877,38 @@ export function AreaCalendar({
   const bindShiftContextMenu = useCallback(
     (openContext: ShiftContextMenuOpenContext) =>
       (shift: AreaCalendarShiftCard, event: React.MouseEvent) => {
-        event.preventDefault();
-        event.stopPropagation();
-
         const menuOptions = {
           shiftDate: shift.shift_date,
           isPastShiftDate,
         };
-        if (
-          isPastShiftDate(openContext.date) &&
-          (!shiftConfirmationEnabled ||
-            !canOpenPastUnconfirmedShiftContextMenu(
-              shift.confirmationStatus,
-              shift.requestedAt,
-              menuOptions
-            ))
-        ) {
-          return;
-        }
-
-        setContextMenu(null);
-        skipShiftContextMenuCloseRef.current = true;
         const showEdit = resolveShiftContextMenuShowsEdit(
           shift,
           openContext,
           serviceHours,
           shiftConfirmationEnabled
         );
+        if (
+          !canOpenShiftCardContextMenu(
+            shift.confirmationStatus,
+            shift.requestedAt,
+            {
+              ...menuOptions,
+              includeEdit: true,
+              showsEdit: showEdit,
+              legacyDeleteFallback: !shiftConfirmationEnabled,
+            }
+          )
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        setContextMenu(null);
+        skipShiftContextMenuCloseRef.current = true;
         const menuHeight = shiftContextMenuHeightPx(
           shift,
           shiftConfirmationEnabled,
@@ -1316,7 +1322,7 @@ export function AreaCalendar({
     openBulkShiftDialogForAreaDay(areaId, date, { focusShiftId: shift.id });
   }, [shiftContextMenu, openBulkShiftDialogForAreaDay]);
 
-  const handleResendConfirmationMenuClick = useCallback(() => {
+  const handleRequestConfirmationMenuClick = useCallback(() => {
     if (!shiftContextMenu) return;
     const { shift } = shiftContextMenu;
     setShiftContextMenu(null);
@@ -1328,18 +1334,22 @@ export function AreaCalendar({
         );
         return;
       }
-      const result = await resendConfirmationRequestForSelectedShifts({
+      const result = await submitCommunicationConfirmationRequests({
         shiftIds: [shift.id],
         weekStart,
         locationId: locationId ?? undefined,
+        simulatedProposedOnAssign,
+        relaxAppRegistrationGate,
       });
       if (!result.ok) {
         setConfirmationSendError(translateActionError(result.error, t));
         return;
       }
-      if (result.failed.length > 0) {
+      if (result.sentCount === 0) {
         setConfirmationSendError(
-          translateActionError(result.failed[0]!.error, t)
+          result.errors[0]
+            ? translateActionError(result.errors[0], t)
+            : t("shiftConfirmation.send.failed")
         );
         return;
       }
@@ -1352,6 +1362,7 @@ export function AreaCalendar({
     router,
     blocksOutboundSend,
     simulatedProposedOnAssign,
+    relaxAppRegistrationGate,
     t,
   ]);
 
@@ -1382,8 +1393,8 @@ export function AreaCalendar({
         case "reassign":
           handleReassignShiftMenuClick();
           break;
-        case "resendConfirmation":
-          handleResendConfirmationMenuClick();
+        case "requestConfirmation":
+          handleRequestConfirmationMenuClick();
           break;
         case "setConfirmed":
           handleSetConfirmedMenuClick();
@@ -1394,7 +1405,7 @@ export function AreaCalendar({
       handleDeleteShiftMenuClick,
       handleCancelShiftMenuClick,
       handleReassignShiftMenuClick,
-      handleResendConfirmationMenuClick,
+      handleRequestConfirmationMenuClick,
       handleSetConfirmedMenuClick,
     ]
   );
@@ -2634,7 +2645,7 @@ export function AreaCalendar({
                           isPastShiftDate,
                         }))) ||
                     (action === "cancel" && cancelShiftPending) ||
-                    (action === "resendConfirmation" && sendConfirmationPending) ||
+                    (action === "requestConfirmation" && sendConfirmationPending) ||
                     (action === "setConfirmed" && confirmShiftPending)
                   }
                   onClick={() => handleShiftContextMenuAction(action)}

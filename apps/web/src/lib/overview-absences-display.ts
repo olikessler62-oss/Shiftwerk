@@ -96,21 +96,27 @@ export type OverviewAbsenceEmployeeJumpOption =
   import("@/lib/overview-employee-jump").OverviewEmployeeJumpOption;
 
 export function buildOverviewAbsenceEmployeeJumpOptions(
+  profiles: readonly Pick<Profile, "id" | "full_name" | "color">[],
   rows: readonly OverviewAbsenceDisplayRow[]
 ): OverviewAbsenceEmployeeJumpOption[] {
-  const options: OverviewAbsenceEmployeeJumpOption[] = [];
-  const seenEmployeeIds = new Set<string>();
-
+  const firstRowIdByEmployeeId = new Map<string, string>();
   for (const row of rows) {
-    if (!row.employeeId || seenEmployeeIds.has(row.employeeId)) continue;
-    seenEmployeeIds.add(row.employeeId);
-    options.push({
-      employeeId: row.employeeId,
-      employeeName: row.employeeName,
-      employeeColor: row.employeeColor,
-      firstRowId: row.id,
-    });
+    if (!firstRowIdByEmployeeId.has(row.employeeId)) {
+      firstRowIdByEmployeeId.set(row.employeeId, row.id);
+    }
   }
 
-  return options;
+  return profiles.map((profile) => ({
+    employeeId: profile.id,
+    employeeName: profile.full_name,
+    employeeColor: profile.color ?? null,
+    firstRowId: firstRowIdByEmployeeId.get(profile.id) ?? null,
+  }));
+}
+
+export function firstOverviewAbsenceRowIdForEmployee(
+  rows: readonly OverviewAbsenceDisplayRow[],
+  employeeId: string
+): string | null {
+  return rows.find((row) => row.employeeId === employeeId)?.id ?? null;
 }

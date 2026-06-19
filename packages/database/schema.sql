@@ -196,21 +196,33 @@ create index profile_recurring_availability_profile_sort_idx
 create index profile_recurring_availability_profile_weekday_idx
   on public.profile_recurring_availability (profile_id, weekday, start_time);
 
--- Wunsch-Einsatzzeiten pro Profil (Priorisierung im Bulk-Modal)
+-- Wünsche pro Profil (Priorisierung bei Schichtzuweisung; Zeit optional)
 create table public.profile_shift_preferences (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations (id) on delete cascade,
   profile_id uuid not null references public.profiles (id) on delete cascade,
-  weekday smallint not null check (weekday >= 0 and weekday <= 7),
-  start_time time not null,
-  end_time time not null,
+  weekday smallint check (weekday >= 0 and weekday <= 7),
+  start_time time,
+  end_time time,
   location_id uuid references public.locations (id) on delete set null,
   location_area_id uuid references public.location_areas (id) on delete set null,
   qualification_id uuid references public.qualifications (id) on delete set null,
   priority smallint not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint profile_shift_preferences_time_check check (start_time <> end_time)
+  constraint profile_shift_preferences_time_pair_check check (
+    (start_time is null and end_time is null)
+    or (start_time is not null and end_time is not null and start_time <> end_time)
+  ),
+  constraint profile_shift_preferences_weekday_time_check check (
+    (weekday is null) = (start_time is null and end_time is null)
+  ),
+  constraint profile_shift_preferences_dimension_check check (
+    (weekday is not null and start_time is not null and end_time is not null)
+    or location_id is not null
+    or location_area_id is not null
+    or qualification_id is not null
+  )
 );
 
 create index profile_shift_preferences_org_profile_weekday_idx
@@ -551,6 +563,36 @@ begin
 end;
 $$;
 
+create or replace function public.purge_expired_absence_requests_batch(
+  p_purge_cutoff date,
+  p_batch_size int default 1000
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_purged bigint;
+begin
+  with batch as (
+    select id
+    from public.absence_requests
+    where end_date is not null
+      and end_date < p_purge_cutoff
+    order by end_date
+    limit p_batch_size
+    for update skip locked
+  )
+  delete from public.absence_requests a
+  using batch b
+  where a.id = b.id;
+
+  get diagnostics v_purged = row_count;
+  return v_purged;
+end;
+$$;
+
 create or replace function public.log_shift_retention_run(
   p_job_type text,
   p_cutoff_date date,
@@ -582,11 +624,13 @@ $$;
 revoke all on function public.cancel_pending_swaps_before_shift_archive(date) from public;
 revoke all on function public.archive_shifts_batch(date, int) from public;
 revoke all on function public.purge_shifts_archive_batch(date, int) from public;
+revoke all on function public.purge_expired_absence_requests_batch(date, int) from public;
 revoke all on function public.log_shift_retention_run(text, date, bigint, bigint, int) from public;
 
 grant execute on function public.cancel_pending_swaps_before_shift_archive(date) to service_role;
 grant execute on function public.archive_shifts_batch(date, int) to service_role;
 grant execute on function public.purge_shifts_archive_batch(date, int) to service_role;
+grant execute on function public.purge_expired_absence_requests_batch(date, int) to service_role;
 grant execute on function public.log_shift_retention_run(text, date, bigint, bigint, int) to service_role;
 
 grant all on table private.shift_retention_runs to service_role;

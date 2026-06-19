@@ -1,28 +1,19 @@
 import { resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 
+import { communicationResponseTabForStatus } from "@/lib/communication-hub";
+import { communicationTabActions } from "@/lib/communication-tab-actions";
+
 export type ShiftCardContextMenuAction =
   | "delete"
   | "cancel"
   | "reassign"
-  | "resendConfirmation"
+  | "requestConfirmation"
   | "setConfirmed";
 
 export type ShiftCardContextMenuOptions = {
   shiftDate: string;
   isPastShiftDate: (shiftDate: string) => boolean;
-};
-
-const TAB_ACTIONS: Record<
-  ShiftConfirmationStatus,
-  readonly ShiftCardContextMenuAction[]
-> = {
-  proposed: ["delete"],
-  requested: ["cancel"],
-  confirmed: ["cancel"],
-  rejected: ["reassign"],
-  pending: ["cancel", "resendConfirmation"],
-  canceled: ["reassign", "delete"],
 };
 
 const PAST_UNCONFIRMED_ACTIONS: readonly ShiftCardContextMenuAction[] = [
@@ -88,6 +79,57 @@ export function planningShiftCardShowsPointerCursor(
   });
 }
 
+export type ShiftCardContextMenuOpenOptions = ShiftCardContextMenuOptions & {
+  /** Bereich-Kalender: „Bearbeiten“ als Menüpunkt mitzählen. */
+  includeEdit?: boolean;
+  /** Nur relevant wenn includeEdit — ob Bearbeiten angeboten wird. */
+  showsEdit?: boolean;
+  /** Ohne Schichtbestätigung: Löschen als Fallback-Menüpunkt. */
+  legacyDeleteFallback?: boolean;
+};
+
+export function handleShiftCardContextMenuPointerEvent(
+  event: { preventDefault(): void; stopPropagation(): void },
+  canOpen: boolean,
+  onOpen?: () => void
+): void {
+  event.preventDefault();
+  event.stopPropagation();
+  if (canOpen) onOpen?.();
+}
+
+export function canOpenShiftCardContextMenu(
+  confirmationStatus: ShiftConfirmationStatus | undefined | null,
+  requestedAt?: string | null,
+  options?: ShiftCardContextMenuOpenOptions
+): boolean {
+  if (
+    options &&
+    isPastUnconfirmedShift(confirmationStatus, requestedAt, options)
+  ) {
+    return true;
+  }
+
+  const status = resolveShiftCardContextMenuStatus(
+    confirmationStatus,
+    requestedAt
+  );
+  if (status === "confirmed") return false;
+
+  if (
+    shiftCardContextMenuActions(confirmationStatus, requestedAt, options)
+      .length > 0
+  ) {
+    return true;
+  }
+
+  if (options?.legacyDeleteFallback) return true;
+
+  if (options?.includeEdit && options.showsEdit) return true;
+
+  return false;
+}
+
 export function shiftCardContextMenuActions(
   confirmationStatus: ShiftConfirmationStatus | undefined | null,
   requestedAt?: string | null,
@@ -104,8 +146,12 @@ export function shiftCardContextMenuActions(
     confirmationStatus,
     requestedAt
   );
-  if (!status) return [];
-  return TAB_ACTIONS[status] ?? [];
+  if (!status || status === "confirmed") return [];
+
+  const tab = communicationResponseTabForStatus(status);
+  if (!tab) return [];
+
+  return communicationTabActions(tab) as readonly ShiftCardContextMenuAction[];
 }
 
 export function canOpenPastUnconfirmedShiftContextMenu(
@@ -126,8 +172,8 @@ export function shiftCardContextMenuActionLabelKey(
       return "shiftConfirmation.actions.cancelShiftManager";
     case "reassign":
       return "shiftConfirmation.panel.reassign";
-    case "resendConfirmation":
-      return "shiftConfirmation.actions.resendConfirmation";
+    case "requestConfirmation":
+      return "shiftConfirmation.actions.requestConfirmation";
     case "setConfirmed":
       return "shiftConfirmation.actions.setConfirmed";
   }

@@ -102,11 +102,9 @@ type Props = {
   timesComplete: boolean;
   canAssign: boolean;
   hasExistingShift: boolean;
-  showRemoveButton?: boolean;
   onAssign: (
     options?: { withoutServiceHours?: boolean }
   ) => Promise<DashboardShiftActionResult>;
-  onRemove: () => Promise<DashboardShiftActionResult>;
   onClose: () => void;
   /** Mitarbeiter aus Dashboard-Zelle (Kontextmenü / Klick) — bis Qualifikation geladen ist behalten. */
   presetEmployeeId?: string;
@@ -144,9 +142,7 @@ export function DashboardAssignShiftModal({
   timesComplete,
   canAssign,
   hasExistingShift,
-  showRemoveButton = true,
   onAssign,
-  onRemove,
   onClose,
   presetEmployeeId,
   presetEmployee,
@@ -488,20 +484,6 @@ export function DashboardAssignShiftModal({
     finishAssign,
   ]);
 
-  const handleRemoveClick = useCallback(() => {
-    if (saving || dayReadOnly) return;
-    void (async () => {
-      setSaving(true);
-      const result = await onRemove();
-      setSaving(false);
-      if (!result.ok) {
-        setMessagePrompt({ kind: "error", message: result.error });
-        return;
-      }
-      onClose();
-    })();
-  }, [saving, dayReadOnly, onRemove, onClose]);
-
   const busy = saving || loadingEmployees;
   const subtitle = simplePlanning
     ? `${dayHeader.weekday}, ${dayHeader.label}`
@@ -538,7 +520,9 @@ export function DashboardAssignShiftModal({
               id="planning-assign-shift-title"
               className={SETTINGS_MODAL_TITLE_CLASS}
             >
-              {t("areaCalendar.addShiftTitle")}
+              {hasExistingShift
+                ? t("areaCalendar.editShift")
+                : t("areaCalendar.addShiftTitle")}
             </h3>
             <p className="mt-0.5 text-sm text-muted">{subtitle}</p>
           </div>
@@ -677,16 +661,6 @@ export function DashboardAssignShiftModal({
           >
             {t("common.cancel")}
           </Button>
-          {hasExistingShift && !dayReadOnly && showRemoveButton ? (
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={busy}
-              onClick={handleRemoveClick}
-            >
-              {t("dashboard.assignRemove")}
-            </Button>
-          ) : null}
           {!dayReadOnly ? (
             <Button
               type="button"

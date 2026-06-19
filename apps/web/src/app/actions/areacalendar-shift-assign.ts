@@ -17,9 +17,9 @@ import {
 } from "@schichtwerk/database";
 
 export type ProfileShiftPreferenceEntry = {
-  weekday: number;
-  start_time: string;
-  end_time: string;
+  weekday: number | null;
+  start_time: string | null;
+  end_time: string | null;
   location_id: string | null;
   location_area_id: string | null;
   qualification_id: string | null;

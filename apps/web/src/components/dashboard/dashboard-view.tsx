@@ -11,7 +11,7 @@ import {
   useTransition,
 } from "react";
 import { assignShiftWithTimes, removeShift } from "@/app/actions/shifts";
-import { cancelShiftAsManager, confirmPastShiftAsManager, resendConfirmationRequestForSelectedShifts } from "@/app/actions/shift-confirmations";
+import { cancelShiftAsManager, confirmPastShiftAsManager, submitCommunicationConfirmationRequests } from "@/app/actions/shift-confirmations";
 import { isPastCalendarDate, toISODate, startOfWeek, parseISODate } from "@/lib/dates";
 import { usePlanningEmployeeListContextMenu } from "@/lib/use-planning-employee-list-context-menu";
 import { DashboardCalendarGrid } from "@/components/dashboard/dashboard-calendar-grid";
@@ -77,7 +77,7 @@ import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-con
 import { useAppShellModalLockActive, useAppShellWaitCursorActive, useIsAppShellLocked } from "@/lib/app-shell-modal-lock";
 import { translateActionError } from "@/lib/translate-action-error";
 import {
-  canOpenPastUnconfirmedShiftContextMenu,
+  canOpenShiftCardContextMenu,
   planningShiftCardShowsPointerCursor,
   shiftCardAllowsRemoveFromAssignDialog,
   shiftCardContextMenuActionLabelKey,
@@ -356,6 +356,11 @@ export function DashboardView({
     menuRef: employeeListContextMenuRef,
     openMenu: openEmployeeListContextMenu,
     openAvailabilities: openEmployeeAvailabilities,
+    openAbsences: openEmployeeAbsences,
+    openPreferences: openEmployeePreferences,
+    openCompensation: openEmployeeCompensation,
+    openSurcharges: openEmployeeSurcharges,
+    openQualifications: openEmployeeQualifications,
   } = usePlanningEmployeeListContextMenu();
   const [bulkShiftDialog, setBulkShiftDialog] =
     useState<AreaCalendarBulkShiftDialogState | null>(null);
@@ -1334,7 +1339,11 @@ export function DashboardView({
     (
       areaId: string,
       date: string,
-      options?: { focusShiftId?: string; withoutServiceHours?: boolean }
+      options?: {
+        focusShiftId?: string;
+        withoutServiceHours?: boolean;
+        presetEmployeeId?: string;
+      }
     ) => {
       setBulkShiftDialog({
         areaId,
@@ -1343,6 +1352,7 @@ export function DashboardView({
         withoutServiceHours:
           options?.withoutServiceHours ??
           !isAreaOpenOnDate(serviceHours, areaId, date),
+        presetEmployeeId: options?.presetEmployeeId,
       });
       setCellContextMenu(null);
     },
@@ -1357,6 +1367,19 @@ export function DashboardView({
       clientY: number,
       shiftId?: string
     ) => {
+      if (shiftId) {
+        const shift = shiftsById.get(shiftId);
+        if (
+          !shift ||
+          !canOpenShiftCardContextMenu(
+            shift.confirmationStatus,
+            shift.requestedAt,
+            { shiftDate: shift.shift_date, isPastShiftDate }
+          )
+        ) {
+          return;
+        }
+      }
       const actionCount =
         shiftId && shiftConfirmationEnabled
           ? Math.max(
@@ -1389,7 +1412,7 @@ export function DashboardView({
       cellContextMenuOpenedAtRef.current = performance.now();
       setCellContextMenu({ x, y, employeeId, date, shiftId });
     },
-    [shiftConfirmationEnabled, shiftsById, simplePlanning]
+    [shiftConfirmationEnabled, shiftsById, simplePlanning, isPastShiftDate]
   );
 
   const handleCellContextMenu = useCallback(
@@ -1420,8 +1443,7 @@ export function DashboardView({
       if (!shift) return;
       const menuOptions = { shiftDate: shift.shift_date, isPastShiftDate };
       if (
-        isPastShiftDate(shift.shift_date) &&
-        !canOpenPastUnconfirmedShiftContextMenu(
+        !canOpenShiftCardContextMenu(
           shift.confirmationStatus,
           shift.requestedAt,
           menuOptions
@@ -1431,7 +1453,7 @@ export function DashboardView({
       }
       openCellContextMenuAt(employeeId, date, clientX, clientY, shiftId);
     },
-    [openCellContextMenuAt, shiftsById]
+    [openCellContextMenuAt, shiftsById, isPastShiftDate]
   );
 
   const canOpenSingleAssignFromContext = useCallback(
@@ -1529,6 +1551,7 @@ export function DashboardView({
     setCellContextMenu(null);
     openBulkShiftDialogForAreaDay(selectedAreaId, date, {
       focusShiftId: uniqueShiftIds.length === 1 ? uniqueShiftIds[0] : undefined,
+      presetEmployeeId: employeeId,
     });
   }, [cellContextMenu, selectedAreaId, shiftsByCellDisplay, openBulkShiftDialogForAreaDay]);
 
@@ -1647,12 +1670,15 @@ export function DashboardView({
   const handleContextReassignShift = useCallback(() => {
     if (!cellContextMenu?.shiftId || !selectedAreaId) return;
     skipCellContextMenuCloseRef.current = true;
-    const { shiftId, date } = cellContextMenu;
+    const { shiftId, date, employeeId } = cellContextMenu;
     setCellContextMenu(null);
-    openBulkShiftDialogForAreaDay(selectedAreaId, date, { focusShiftId: shiftId });
+    openBulkShiftDialogForAreaDay(selectedAreaId, date, {
+      focusShiftId: shiftId,
+      presetEmployeeId: employeeId,
+    });
   }, [cellContextMenu, selectedAreaId, openBulkShiftDialogForAreaDay]);
 
-  const handleContextResendConfirmation = useCallback(() => {
+  const handleContextRequestConfirmation = useCallback(() => {
     if (!cellContextMenu?.shiftId || !selectedLocationId) return;
     const shiftId = cellContextMenu.shiftId;
     skipCellContextMenuCloseRef.current = true;
@@ -1665,18 +1691,22 @@ export function DashboardView({
         );
         return;
       }
-      const result = await resendConfirmationRequestForSelectedShifts({
+      const result = await submitCommunicationConfirmationRequests({
         shiftIds: [shiftId],
         weekStart,
         locationId: selectedLocationId,
+        simulatedProposedOnAssign,
+        relaxAppRegistrationGate,
       });
       if (!result.ok) {
         setConfirmationSendError(translateActionError(result.error, t));
         return;
       }
-      if (result.failed.length > 0) {
+      if (result.sentCount === 0) {
         setConfirmationSendError(
-          translateActionError(result.failed[0]!.error, t)
+          result.errors[0]
+            ? translateActionError(result.errors[0], t)
+            : t("shiftConfirmation.send.failed")
         );
         return;
       }
@@ -1690,6 +1720,7 @@ export function DashboardView({
     t,
     blocksOutboundSend,
     simulatedProposedOnAssign,
+    relaxAppRegistrationGate,
   ]);
 
   const handleContextSetConfirmed = useCallback(() => {
@@ -1720,8 +1751,8 @@ export function DashboardView({
         case "reassign":
           handleContextReassignShift();
           break;
-        case "resendConfirmation":
-          handleContextResendConfirmation();
+        case "requestConfirmation":
+          handleContextRequestConfirmation();
           break;
         case "setConfirmed":
           handleContextSetConfirmed();
@@ -1732,7 +1763,7 @@ export function DashboardView({
       handleContextRemoveShift,
       handleContextCancelShift,
       handleContextReassignShift,
-      handleContextResendConfirmation,
+      handleContextRequestConfirmation,
       handleContextSetConfirmed,
     ]
   );
@@ -1771,7 +1802,21 @@ export function DashboardView({
         const uniqueShiftIds = [
           ...new Set(cellSegments.map((segment) => segment.shift.id)),
         ];
-        return uniqueShiftIds.length === 1 ? uniqueShiftIds[0] : undefined;
+        const shiftId =
+          uniqueShiftIds.length === 1 ? uniqueShiftIds[0] : undefined;
+        if (!shiftId) return undefined;
+        const shift = shiftsById.get(shiftId);
+        if (
+          !shift ||
+          !shiftCardAllowsRemoveFromAssignDialog(
+            shift.confirmationStatus,
+            shift.requestedAt,
+            { shiftDate: shift.shift_date, isPastShiftDate }
+          )
+        ) {
+          return undefined;
+        }
+        return shiftId;
       })())
     : undefined;
 
@@ -1789,19 +1834,6 @@ export function DashboardView({
   const contextMenuShift = cellContextMenu?.shiftId
     ? shiftsById.get(cellContextMenu.shiftId)
     : undefined;
-
-  const pickerShowRemoveButton = useMemo(() => {
-    if (!picker?.shiftId) return false;
-    if (!shiftConfirmationEnabled) return true;
-    const shift = shiftsById.get(picker.shiftId);
-    return shiftCardAllowsRemoveFromAssignDialog(
-      shift?.confirmationStatus,
-      shift?.requestedAt,
-      shift
-        ? { shiftDate: shift.shift_date, isPastShiftDate }
-        : undefined
-    );
-  }, [picker, shiftsById, shiftConfirmationEnabled]);
 
   if (employees.length === 0) {
     return (
@@ -2085,7 +2117,7 @@ export function DashboardView({
                           })
                         ))) ||
                     (action === "cancel" && cancelShiftPending) ||
-                    (action === "resendConfirmation" && sendConfirmationPending) ||
+                    (action === "requestConfirmation" && sendConfirmationPending) ||
                     (action === "setConfirmed" && confirmShiftPending)
                   }
                   onClick={() => handleContextShiftAction(action)}
@@ -2114,6 +2146,11 @@ export function DashboardView({
             state={employeeListContextMenu}
             menuRef={employeeListContextMenuRef}
             onOpenAvailabilities={openEmployeeAvailabilities}
+            onOpenAbsences={openEmployeeAbsences}
+            onOpenPreferences={openEmployeePreferences}
+            onOpenCompensation={openEmployeeCompensation}
+            onOpenSurcharges={openEmployeeSurcharges}
+            onOpenQualifications={openEmployeeQualifications}
           />
         ) : null}
 
@@ -2148,7 +2185,6 @@ export function DashboardView({
             timesComplete={timesComplete}
             canAssign={canAssign}
             hasExistingShift={Boolean(picker.shiftId)}
-            showRemoveButton={pickerShowRemoveButton}
             presetEmployeeId={
               picker.shiftId ? undefined : picker.employeeId
             }
@@ -2165,12 +2201,6 @@ export function DashboardView({
               };
             })()}
             onAssign={handleAssign}
-            onRemove={async () => {
-              if (!picker.shiftId) {
-                return { ok: false, error: t("dashboard.readOnlyDay") };
-              }
-              return handleRemove(picker.shiftId);
-            }}
             onClose={() => {
               setPicker(null);
               setSelectedEmployeeId("");
@@ -2182,7 +2212,7 @@ export function DashboardView({
 
       {bulkShiftDialog && selectedLocationId && selectedAreaId && !simplePlanning ? (
         <AreaCalendarBulkShiftModal
-          key={`planning-bulk:${bulkShiftDialog.areaId}:${bulkShiftDialog.date}:${bulkShiftDialog.focusShiftId ?? ""}:${bulkShiftDialog.withoutServiceHours ? "nosh" : "sh"}`}
+          key={`planning-bulk:${bulkShiftDialog.areaId}:${bulkShiftDialog.date}:${bulkShiftDialog.focusShiftId ?? ""}:${bulkShiftDialog.presetEmployeeId ?? ""}:${bulkShiftDialog.withoutServiceHours ? "nosh" : "sh"}`}
           dialog={bulkShiftDialog}
           locationId={selectedLocationId}
           locationName={selectedLocationName}

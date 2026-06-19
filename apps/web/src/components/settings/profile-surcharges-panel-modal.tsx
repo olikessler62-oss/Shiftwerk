@@ -20,6 +20,7 @@ import {
   formatSurchargeTriggerLabel,
   resolveProfileSurchargeAmount,
   resolveProfileSurchargeUnit,
+  sortProfileCompensationSurchargesByValidFromDesc,
 } from "@/lib/profile-surcharge-display";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
@@ -157,10 +158,16 @@ export function ProfileSurchargesPanelModal({
     [onCacheUpdate, profile.id, syncLocalCompensation]
   );
 
+  const sortedSurchargeEntries = useMemo(
+    () => sortProfileCompensationSurchargesByValidFromDesc(surchargeEntries),
+    [surchargeEntries]
+  );
+
   const selectedSurcharge = useMemo(
     () =>
-      surchargeEntries.find((entry) => entry.id === selectedSurchargeId) ?? null,
-    [surchargeEntries, selectedSurchargeId]
+      sortedSurchargeEntries.find((entry) => entry.id === selectedSurchargeId) ??
+      null,
+    [sortedSurchargeEntries, selectedSurchargeId]
   );
   const selectedSurchargeMutable =
     !!selectedSurcharge &&
@@ -176,19 +183,19 @@ export function ProfileSurchargesPanelModal({
     COMPENSATION_SURCHARGES_UI_ENABLED && selectedSurchargeMutable;
 
   const surchargeEntryIds = useMemo(
-    () => surchargeEntries.map((entry) => entry.id),
-    [surchargeEntries]
+    () => sortedSurchargeEntries.map((entry) => entry.id),
+    [sortedSurchargeEntries]
   );
   const mutableSurchargeIds = useMemo(() => {
     if (!COMPENSATION_SURCHARGES_UI_ENABLED || !serverToday) {
       return new Set<string>();
     }
     return new Set(
-      surchargeEntries
+      sortedSurchargeEntries
         .filter((entry) => isMutableHourlyRate(entry.valid_from, serverToday))
         .map((entry) => entry.id)
     );
-  }, [serverToday, surchargeEntries]);
+  }, [serverToday, sortedSurchargeEntries]);
   const bulkSelection = useSettingsListBulkSelection(surchargeEntryIds, {
     selectableIds: mutableSurchargeIds,
   });
@@ -205,7 +212,7 @@ export function ProfileSurchargesPanelModal({
     [currentRate, currentSurcharges, rates, serverToday, surchargeEntries]
   );
 
-  useScrollToSettingsListItem(surchargeEntries, scrollToSurchargeId, () =>
+  useScrollToSettingsListItem(sortedSurchargeEntries, scrollToSurchargeId, () =>
     setScrollToSurchargeId(null)
   );
 
@@ -471,7 +478,7 @@ export function ProfileSurchargesPanelModal({
                 </tr>
               </thead>
               <tbody>
-                {surchargeEntries.map((entry) => {
+                {sortedSurchargeEntries.map((entry) => {
                   const isSelected = entry.id === selectedSurchargeId;
                   const resolvedAmount = resolveProfileSurchargeAmount(entry);
                   const entryMutable =
