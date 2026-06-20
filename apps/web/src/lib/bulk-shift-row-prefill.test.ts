@@ -200,4 +200,51 @@ describe("buildPrefilledBulkRow", () => {
     expect(row.employeeId).toBe("emp-1");
     expect(row.employeeManuallySelected).toBe(true);
   });
+
+  it("does not duplicate the first demand slot when adding another row", () => {
+    const existingRow = {
+      id: "row-existing",
+      employeeId: "emp-1",
+      qualificationId: "qual-1",
+      shiftTypeId: "preset-1",
+      startTime: "08:00",
+      endTime: "12:00",
+      requestedStartTime: "08:00",
+      requestedEndTime: "12:00",
+      demandServiceHourId: "hour-1",
+      employeeManuallySelected: true,
+      shiftTypeManuallySelected: true,
+      qualificationManuallySelected: true,
+    };
+
+    const row = buildPrefilledBulkRow({
+      ...createBaseInput({
+        template: true,
+        qualification: true,
+        employee: true,
+      }),
+      existingRows: [existingRow],
+      staffingEntries: [
+        {
+          serviceHourId: "hour-1",
+          label: "08–12",
+          required: 1,
+          assigned: 0,
+          timeLabel: "08:00–12:00",
+          qualifications: [
+            {
+              qualificationId: "qual-1",
+              name: "Kellner",
+              required: 1,
+              assigned: 0,
+            },
+          ],
+        },
+      ],
+      presetEmployeeId: "emp-1",
+    });
+
+    expect(row.demandServiceHourId).toBeUndefined();
+    expect(row.employeeId).toBe(EMPTY_EMPLOYEE_ID);
+  });
 });

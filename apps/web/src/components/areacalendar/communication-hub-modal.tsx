@@ -13,6 +13,7 @@ import {
   type CommunicationOpenOptions,
   type CommunicationSwapRequestRow,
 } from "@/lib/communication-hub";
+import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
 import { CommunicationResponsesTab } from "./communication-responses-tab";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
@@ -33,6 +34,9 @@ type Props = {
   absences?: AbsenceRequest[];
   swapRequests?: CommunicationSwapRequestRow[];
   cancelActors?: ReadonlyMap<string, "employee" | "manager">;
+  todayISO?: string;
+  weeklyHoursByEmployeeId?: ReadonlyMap<string, number | null | undefined>;
+  weeklyHoursCheckShifts?: readonly ShiftForWeeklyHoursConflict[];
   shiftConfirmationEnabled: boolean;
   initialOptions?: CommunicationOpenOptions;
   onClose: () => void;
@@ -51,6 +55,9 @@ export function CommunicationHubModal({
   absences = [],
   swapRequests = [],
   cancelActors,
+  todayISO,
+  weeklyHoursByEmployeeId,
+  weeklyHoursCheckShifts,
   shiftConfirmationEnabled,
   initialOptions,
   onClose,
@@ -65,8 +72,18 @@ export function CommunicationHubModal({
       absences,
       swapRequests,
       cancelActors,
+      todayISO,
+      weeklyHoursByEmployeeId,
+      weeklyHoursCheckShifts,
     }),
-    [absences, swapRequests, cancelActors]
+    [
+      absences,
+      swapRequests,
+      cancelActors,
+      todayISO,
+      weeklyHoursByEmployeeId,
+      weeklyHoursCheckShifts,
+    ]
   );
   const initialCategory = useMemo(() => {
     const requested = resolveCommunicationOpenCategory(initialOptions);
@@ -146,7 +163,7 @@ export function CommunicationHubModal({
             </div>
           ) : (
             <CommunicationResponsesTab
-              key={`responses-${initialCategory}`}
+              key={`responses-${initialCategory}-${initialOptions?.preselectedShiftIds?.join(",") ?? ""}`}
               weekStart={weekStart}
               locationId={locationId}
               areas={areas}
@@ -154,7 +171,11 @@ export function CommunicationHubModal({
               absences={absences}
               swapRequests={swapRequests}
               cancelActors={cancelActors}
+              todayISO={todayISO}
+              weeklyHoursByEmployeeId={weeklyHoursByEmployeeId}
+              weeklyHoursCheckShifts={weeklyHoursCheckShifts}
               initialCategory={initialCategory}
+              initialPreselectedShiftIds={initialOptions?.preselectedShiftIds}
               onClose={onClose}
               onReassign={(shift) => {
                 onClose();

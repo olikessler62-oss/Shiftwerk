@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import {
@@ -10,7 +10,7 @@ import {
 import { removeShiftsAsManager } from "@/app/actions/shifts";
 import { AreaCalendarShiftDeleteConfirmModal } from "@/components/areacalendar/areacalendar-shift-delete-confirm-modal";
 import { CommunicationCategoryTabs } from "@/components/areacalendar/communication-category-tabs";
-import { Alert, Button } from "@/components/ui";
+import { Alert, Button, Tooltip } from "@/components/ui";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
@@ -22,6 +22,7 @@ import {
   defaultSelectedResponseShiftIds,
   groupCommunicationHubData,
   groupCommunicationShiftsByArea,
+  shouldShowGroupedEmployeeName,
   type CommunicationHubCategory,
   type CommunicationSwapRequestRow,
 } from "@/lib/communication-hub";
@@ -35,8 +36,12 @@ import {
   shiftConfirmationStatusLabelKey,
   shiftConfirmationTooltipStatusTextClass,
 } from "@/lib/shift-confirmation-display";
-import { absenceTypeLabelKey } from "@/lib/shift-absence-conflict";
 import { translateShiftCancelError } from "@/lib/shift-cancellation-policy";
+import {
+  shiftHubConflictShortLabel,
+  shiftHubConflictTooltip,
+} from "@/lib/shift-hub-conflict";
+import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
 import { translateActionError } from "@/lib/translate-action-error";
 import type { AbsenceRequest, ShiftConfirmationStatus } from "@schichtwerk/types";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
@@ -55,7 +60,11 @@ type Props = {
   absences?: AbsenceRequest[];
   swapRequests?: CommunicationSwapRequestRow[];
   cancelActors?: ReadonlyMap<string, "employee" | "manager">;
+  todayISO?: string;
+  weeklyHoursByEmployeeId?: ReadonlyMap<string, number | null | undefined>;
+  weeklyHoursCheckShifts?: readonly ShiftForWeeklyHoursConflict[];
   initialCategory?: CommunicationHubCategory;
+  initialPreselectedShiftIds?: readonly string[];
   onClose: () => void;
   onReassign: (shift: AreaCalendarShiftCard) => void;
   onBusyChange?: (busy: boolean) => void;
@@ -157,7 +166,11 @@ export function CommunicationResponsesTab({
   absences = [],
   swapRequests = [],
   cancelActors,
+  todayISO,
+  weeklyHoursByEmployeeId,
+  weeklyHoursCheckShifts,
   initialCategory = "conflicts",
+  initialPreselectedShiftIds,
   onClose,
   onReassign,
   onBusyChange,
@@ -177,8 +190,18 @@ export function CommunicationResponsesTab({
       absences,
       swapRequests,
       cancelActors,
+      todayISO,
+      weeklyHoursByEmployeeId,
+      weeklyHoursCheckShifts,
     }),
-    [absences, swapRequests, cancelActors]
+    [
+      absences,
+      swapRequests,
+      cancelActors,
+      todayISO,
+      weeklyHoursByEmployeeId,
+      weeklyHoursCheckShifts,
+    ]
   );
   const grouped = useMemo(
     () => groupCommunicationHubData(shifts, hubOptions),
@@ -188,7 +211,12 @@ export function CommunicationResponsesTab({
   const [activeCategory, setActiveCategory] =
     useState<CommunicationHubCategory>(initialCategory);
   const [selected, setSelected] = useState<Set<string>>(() =>
-    defaultSelectedResponseShiftIds(initialCategory, shifts, hubOptions)
+    defaultSelectedResponseShiftIds(
+      initialCategory,
+      shifts,
+      hubOptions,
+      initialPreselectedShiftIds
+    )
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -234,7 +262,12 @@ export function CommunicationResponsesTab({
     const unknownAreaLabel = t("shiftConfirmation.communication.areaUnknown");
     const items: Array<
       | { kind: "area"; key: string; areaName: string }
-      | { kind: "shift"; key: string; shift: AreaCalendarShiftCard }
+      | {
+          kind: "shift";
+          key: string;
+          shift: AreaCalendarShiftCard;
+          showEmployeeName: boolean;
+        }
     > = [];
 
     for (const group of areaGroups) {
@@ -247,13 +280,36 @@ export function CommunicationResponsesTab({
           unknownAreaLabel
         ),
       });
+      let lastEmployeeNameKey: string | null = null;
       for (const shift of group.shifts) {
-        items.push({ kind: "shift", key: shift.id, shift });
+        const groupedName = shouldShowGroupedEmployeeName(
+          shift.employeeName,
+          lastEmployeeNameKey
+        );
+        lastEmployeeNameKey = groupedName.nameKey;
+        items.push({
+          kind: "shift",
+          key: shift.id,
+          shift,
+          showEmployeeName: groupedName.show,
+        });
       }
     }
 
     return items;
   }, [areaGroups, areaNameById, t]);
+
+  const swapListItems = useMemo(() => {
+    let lastAssigneeNameKey: string | null = null;
+    return visibleSwaps.map((swap) => {
+      const groupedName = shouldShowGroupedEmployeeName(
+        swap.assigneeName,
+        lastAssigneeNameKey
+      );
+      lastAssigneeNameKey = groupedName.nameKey;
+      return { swap, showAssigneeName: groupedName.show };
+    });
+  }, [visibleSwaps]);
 
   const listRowCount =
     activeCategory === "swaps" ? visibleSwaps.length : listItems.length;
@@ -266,8 +322,15 @@ export function CommunicationResponsesTab({
 
   useEffect(() => {
     setActiveCategory(initialCategory);
-    setSelected(defaultSelectedResponseShiftIds(initialCategory, shifts, hubOptions));
-  }, [initialCategory, shifts, hubOptions]);
+    setSelected(
+      defaultSelectedResponseShiftIds(
+        initialCategory,
+        shifts,
+        hubOptions,
+        initialPreselectedShiftIds
+      )
+    );
+  }, [initialCategory, shifts, hubOptions, initialPreselectedShiftIds]);
 
   useEffect(() => {
     setSelected(defaultSelectedResponseShiftIds(activeCategory, shifts, hubOptions));
@@ -513,7 +576,7 @@ export function CommunicationResponsesTab({
                   : undefined
               }
             >
-              {visibleSwaps.map((swap) => {
+              {swapListItems.map(({ swap, showAssigneeName }) => {
                 const { weekday, label } = formatDayHeader(
                   swap.shiftDate,
                   intlLocale,
@@ -525,7 +588,7 @@ export function CommunicationResponsesTab({
                       {swap.requesterName}
                     </span>
                     <span className={cn(CELL_CLASS, "text-muted")}>
-                      {swap.assigneeName}
+                      {showAssigneeName ? swap.assigneeName : null}
                     </span>
                     <span className={cn(CELL_CLASS, "text-muted")}>
                       {weekday}, {label}
@@ -618,10 +681,18 @@ export function CommunicationResponsesTab({
                     ? shift.shiftName.trim()
                     : t("shiftConfirmation.send.noTemplate");
                   const status = shift.confirmationStatus;
-                  const conflict = grouped.conflictDetailsByShiftId.get(shift.id);
+                  const conflicts =
+                    grouped.conflictDetailsByShiftId.get(shift.id) ?? [];
+                  const conflictLabels = conflicts.map((conflict) =>
+                    shiftHubConflictShortLabel(conflict, t)
+                  );
+                  const conflictTooltip =
+                    activeCategory === "conflicts" && conflicts.length > 0
+                      ? shiftHubConflictTooltip(conflicts, t)
+                      : null;
 
-                  return (
-                    <li key={item.key} className={cn(rowGridClass, "px-3")}>
+                  const row = (
+                    <li className={cn(rowGridClass, "px-3")}>
                       {showSelection ? (
                         <label className={CHECKBOX_LABEL_CLASS}>
                           <input
@@ -638,7 +709,7 @@ export function CommunicationResponsesTab({
                         </label>
                       ) : null}
                       <span className={cn(CELL_CLASS, "font-medium text-foreground")}>
-                        {shift.employeeName}
+                        {item.showEmployeeName ? shift.employeeName : null}
                       </span>
                       <span className={cn(CELL_CLASS, "text-muted")}>
                         {weekday}, {label}
@@ -668,12 +739,22 @@ export function CommunicationResponsesTab({
                       </span>
                       {showConflictColumn ? (
                         <span className={cn(CELL_CLASS, "font-medium text-rose-700")}>
-                          {conflict
-                            ? t(absenceTypeLabelKey(conflict.absenceType))
+                          {conflictLabels.length > 0
+                            ? conflictLabels.join(" · ")
                             : "—"}
                         </span>
                       ) : null}
                     </li>
+                  );
+
+                  if (!conflictTooltip) {
+                    return <Fragment key={item.key}>{row}</Fragment>;
+                  }
+
+                  return (
+                    <Tooltip key={item.key} content={conflictTooltip}>
+                      {row}
+                    </Tooltip>
                   );
                 })()
               )

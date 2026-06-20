@@ -188,6 +188,8 @@ export function AreaCalendarAreaRowOvernightOverlay({
       assignmentPresets,
       formatShiftTooltipLine: (name: string) =>
         t("common.shiftCardTooltipShift", { name }),
+      formatDeploymentTimeTooltipLine: () =>
+        t("common.shiftCardTooltipDeploymentTimeLabel"),
       formatJobTooltipLine: (names: string) =>
         t("common.shiftCardTooltipJob", { names }),
     };

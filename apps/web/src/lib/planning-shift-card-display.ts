@@ -71,6 +71,7 @@ function buildPlanningTooltipData(
     confirmationStatusLine?: string;
     confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;
+    isPastShift?: boolean;
   },
   templateName?: string | null,
   timeLabel?: string
@@ -82,6 +83,7 @@ function buildPlanningTooltipData(
     jobsLabel: options?.jobsLabel?.trim() || undefined,
     confirmationStatusLine: options?.confirmationStatusLine,
     confirmationStatus: options?.confirmationStatus,
+    isPastShift: options?.isPastShift,
   };
 }
 
@@ -128,7 +130,9 @@ export function buildPlanningShiftSegmentCardContent(
     confirmationStatusLine?: string;
     confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;
+    isPastShift?: boolean;
     formatTemplateTooltipLine?: (templateName: string) => string;
+    formatDeploymentTimeTooltipLine?: () => string;
     formatJobTooltipLine?: (jobs: string) => string;
     formatStatusTooltipLine?: (status: string) => string;
   }
@@ -153,6 +157,7 @@ export function buildPlanningShiftSegmentCardContent(
     tooltip,
     tooltipBody: formatShiftCardTooltipPlainText(tooltip, {
       formatShiftLine: options?.formatTemplateTooltipLine,
+      formatDeploymentTimeLine: options?.formatDeploymentTimeTooltipLine,
       formatJobLine: options?.formatJobTooltipLine,
       formatStatusLine: options?.formatStatusTooltipLine,
     }),
@@ -167,7 +172,9 @@ export function buildPlanningExpandedShiftCardContent(
     confirmationStatusLine?: string;
     confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;
+    isPastShift?: boolean;
     formatTemplateTooltipLine?: (templateName: string) => string;
+    formatDeploymentTimeTooltipLine?: () => string;
     formatJobTooltipLine?: (jobs: string) => string;
     formatStatusTooltipLine?: (status: string) => string;
   }
@@ -183,6 +190,7 @@ export function buildPlanningExpandedShiftCardContent(
     tooltip,
     tooltipBody: formatShiftCardTooltipPlainText(tooltip, {
       formatShiftLine: options?.formatTemplateTooltipLine,
+      formatDeploymentTimeLine: options?.formatDeploymentTimeTooltipLine,
       formatJobLine: options?.formatJobTooltipLine,
       formatStatusLine: options?.formatStatusTooltipLine,
     }),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   formatStaffingEntriesTooltipContent,
   formatStaffingEntryTooltipContent,
@@ -18,6 +18,8 @@ type Props = {
   entries: TagAreaHeaderStaffingEntry[];
   /** Eingeklappter Kalendertag — Bedarf nur als „!“ (Tooltip mit Volltext). */
   dayCollapsed?: boolean;
+  /** Bedarfs-Cluster für seitliche Servicezeiten-Hit-Zonen (links/rechts). */
+  interactiveClusterRef?: RefObject<HTMLElement | null>;
 };
 
 const EMPTY_DISPLAY: StaffingHeaderDisplay = { mode: "empty" };
@@ -42,6 +44,7 @@ function StaffingTooltipContent({
 export function TagAreaHeaderStaffingOverlay({
   entries,
   dayCollapsed = false,
+  interactiveClusterRef,
 }: Props) {
   const t = useTranslations();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,26 +161,49 @@ export function TagAreaHeaderStaffingOverlay({
   const showIndicator =
     dayCollapsed || display.mode === "indicator" || contentOverflows;
 
+  const assignInteractiveClusterRef = useCallback(
+    (node: HTMLElement | null) => {
+      if (interactiveClusterRef) {
+        interactiveClusterRef.current = node;
+      }
+    },
+    [interactiveClusterRef]
+  );
+
+  const setGaugeClusterRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      contentRef.current = node;
+      assignInteractiveClusterRef(node);
+    },
+    [assignInteractiveClusterRef]
+  );
+
   if (entries.length === 0) return null;
 
   return (
     <div
       ref={containerRef}
-      className="flex h-full w-full min-w-0 items-center justify-center overflow-hidden px-0.5"
+      className="pointer-events-none flex h-full w-full min-w-0 items-center justify-center overflow-hidden px-0.5"
     >
       {showIndicator ? (
-        <Tooltip content={allEntriesTooltip}>
-          <span className="shrink-0 text-base font-bold leading-none text-neutral-600">
-            !
-          </span>
-        </Tooltip>
+        <span ref={assignInteractiveClusterRef} className="pointer-events-auto shrink-0">
+          <Tooltip content={allEntriesTooltip} className="shrink-0">
+            <span className="shrink-0 cursor-default text-base font-bold leading-none text-neutral-600">
+              !
+            </span>
+          </Tooltip>
+        </span>
       ) : display.mode === "gauges" ? (
         <div
-          ref={contentRef}
-          className="flex min-w-0 max-w-full items-end justify-center gap-1 overflow-hidden"
+          ref={setGaugeClusterRef}
+          className="pointer-events-none flex min-w-0 max-w-full shrink items-end justify-center gap-1 overflow-hidden"
         >
           {display.segments.map((segment) => (
-            <Tooltip key={segment.serviceHourId} content={entryTooltip(segment.serviceHourId)}>
+            <Tooltip
+              key={segment.serviceHourId}
+              content={entryTooltip(segment.serviceHourId)}
+              className="pointer-events-auto shrink-0"
+            >
               <StaffingFillGauge
                 assigned={segment.assigned}
                 required={segment.required}

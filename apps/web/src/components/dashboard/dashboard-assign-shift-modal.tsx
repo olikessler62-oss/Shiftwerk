@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchAreaCalendarShiftAssignEmployees } from "@/app/actions/areacalendar-shift-assign";
 import {
+  ADD_SHIFT_AVAILABILITY_NOTICE_CLASS,
+  ADD_SHIFT_MODAL_MAX_WIDTH_CLASS,
   AreaCalendarQualificationCombobox,
   AreaCalendarShiftEmployeeCombobox,
   AreaCalendarShiftTypeCombobox,
@@ -18,6 +20,7 @@ import {
 import {
   Alert,
   Button,
+  Checkbox,
   CloseIcon,
   IconButton,
   LabelMuted,
@@ -40,6 +43,13 @@ import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment
 import { formatDayHeader } from "@/lib/planning-utils";
 import { findServiceHourIdForShift } from "@/lib/location-staffing-client";
 import { validateAreaCalendarShiftServiceHours } from "@/lib/service-hours-shift-validation";
+import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
+import {
+  evaluateShiftAssignAvailabilityConflict,
+  isShiftAssignAvailabilityConflictError,
+  useShiftAssignAvailabilityNotice,
+} from "@/lib/shift-assign-availability-notice";
+import { isShiftAssignWeeklyHoursExceededError } from "@/lib/shift-assign-blocking-errors";
 import { staffingQualificationIdsForServiceHour } from "@schichtwerk/database";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing, Qualification } from "@schichtwerk/types";
@@ -53,6 +63,7 @@ type MessagePrompt = {
   kind: "error" | "info";
   message: string;
   closeAssignModalOnDismiss?: boolean;
+  blocking?: boolean;
 };
 
 export type DashboardAssignPresetEmployee = Pick<
@@ -102,8 +113,12 @@ type Props = {
   timesComplete: boolean;
   canAssign: boolean;
   hasExistingShift: boolean;
+  weekDates: readonly string[];
   onAssign: (
-    options?: { withoutServiceHours?: boolean }
+    options?: {
+      withoutServiceHours?: boolean;
+      assignToRemainingWeekDays?: boolean;
+    }
   ) => Promise<DashboardShiftActionResult>;
   onClose: () => void;
   /** Mitarbeiter aus Dashboard-Zelle (Kontextmenü / Klick) — bis Qualifikation geladen ist behalten. */
@@ -142,6 +157,7 @@ export function DashboardAssignShiftModal({
   timesComplete,
   canAssign,
   hasExistingShift,
+  weekDates,
   onAssign,
   onClose,
   presetEmployeeId,
@@ -155,7 +171,13 @@ export function DashboardAssignShiftModal({
   const [messagePrompt, setMessagePrompt] = useState<MessagePrompt | null>(null);
   const [outsideServiceHoursConfirm, setOutsideServiceHoursConfirm] =
     useState(false);
+  const [assignRestOfWeekDays, setAssignRestOfWeekDays] = useState(false);
   const skipQualificationSyncRef = useRef(false);
+
+  const showAssignRestOfWeekDaysOption =
+    !simplePlanning &&
+    !hasExistingShift &&
+    hasRemainingAssignableWeekDates(date, weekDates);
 
   const weekday = profileAvailabilityWeekdayFromAreaCalendarDate(date);
   const dayHeader = formatDayHeader(date, intlLocale);
@@ -298,6 +320,26 @@ export function DashboardAssignShiftModal({
     ]
   );
 
+  const availabilityNotice = useShiftAssignAvailabilityNotice({
+    weekday,
+    startTime,
+    endTime,
+    employeeId: selectedEmployeeId,
+    employees,
+    loadingEmployees,
+    assignmentPresets,
+    shiftTypeId: selectedPresetId,
+    timesComplete,
+  });
+
+  const showAvailabilityConflictFeedback = useCallback(
+    (message: string) => {
+      availabilityNotice.runAvailabilityCheck();
+      setMessagePrompt({ kind: "error", message });
+    },
+    [availabilityNotice]
+  );
+
   const matchingEmployeeIdsKey = useMemo(
     () => matchingEmployees.map((employee) => employee.id).join("\0"),
     [matchingEmployees]
@@ -397,8 +439,23 @@ export function DashboardAssignShiftModal({
   const handleEmployeeChange = useCallback(
     (nextId: string) => {
       onEmployeeChange(nextId);
+      availabilityNotice.notifyEmployeeChange(nextId);
     },
-    [onEmployeeChange]
+    [onEmployeeChange, availabilityNotice]
+  );
+
+  const handlePresetChange = useCallback(
+    (presetId: string) => {
+      const preset = assignmentPresets.find((item) => item.id === presetId);
+      onPresetChange(presetId);
+      if (preset) {
+        availabilityNotice.notifyShiftTemplateChange(
+          preset.start_time.slice(0, 5),
+          preset.end_time.slice(0, 5)
+        );
+      }
+    },
+    [assignmentPresets, onPresetChange, availabilityNotice]
   );
 
   const handleQualificationChange = useCallback(
@@ -412,10 +469,11 @@ export function DashboardAssignShiftModal({
 
   const handleApplyAvailability = useCallback(
     (entry: { start_time: string; end_time: string }) => {
+      availabilityNotice.beforeTimeInputChange();
       onStartTimeChange(entry.start_time.slice(0, 5));
       onEndTimeChange(entry.end_time.slice(0, 5));
     },
-    [onStartTimeChange, onEndTimeChange]
+    [onStartTimeChange, onEndTimeChange, availabilityNotice]
   );
 
   const dismissMessagePrompt = useCallback(() => {
@@ -428,13 +486,32 @@ export function DashboardAssignShiftModal({
   }, [onClose]);
 
   const finishAssign = useCallback(
-    async (options?: { withoutServiceHours?: boolean }) => {
+    async (options?: {
+      withoutServiceHours?: boolean;
+      assignToRemainingWeekDays?: boolean;
+    }) => {
       setSaving(true);
-      const result = await onAssign(options);
+      const result = await onAssign({
+        ...options,
+        assignToRemainingWeekDays:
+          options?.assignToRemainingWeekDays ?? assignRestOfWeekDays,
+      });
       setSaving(false);
 
       if (!result.ok) {
-        setMessagePrompt({ kind: "error", message: result.error });
+        if (
+          isShiftAssignAvailabilityConflictError(result.error) ||
+          result.error === t("shiftAssign.shiftOutsideAvailability") ||
+          result.error === t("shiftAssign.noWeekdayAvailability") ||
+          result.error === t("areaCalendar.shiftOutsideEmployeeAvailability")
+        ) {
+          availabilityNotice.runAvailabilityCheck();
+        }
+        setMessagePrompt({
+          kind: "error",
+          message: result.error,
+          blocking: isShiftAssignWeeklyHoursExceededError(result.error),
+        });
         return;
       }
 
@@ -449,11 +526,26 @@ export function DashboardAssignShiftModal({
 
       onClose();
     },
-    [onAssign, onClose]
+    [assignRestOfWeekDays, onAssign, onClose, availabilityNotice, t]
   );
 
   const handleOk = useCallback(() => {
     if (!selectedEmployeeId || !timesComplete || dayReadOnly || saving) return;
+
+    if (
+      evaluateShiftAssignAvailabilityConflict({
+        employeeId: selectedEmployeeId,
+        employees,
+        weekday,
+        startTime,
+        endTime,
+      })
+    ) {
+      showAvailabilityConflictFeedback(
+        t("areaCalendar.shiftOutsideEmployeeAvailability")
+      );
+      return;
+    }
 
     if (!simplePlanning && areaId) {
       const serviceHoursCheck = validateAreaCalendarShiftServiceHours(
@@ -482,6 +574,10 @@ export function DashboardAssignShiftModal({
     startTime,
     endTime,
     finishAssign,
+    employees,
+    weekday,
+    showAvailabilityConflictFeedback,
+    t,
   ]);
 
   const busy = saving || loadingEmployees;
@@ -509,7 +605,8 @@ export function DashboardAssignShiftModal({
         aria-modal="true"
         aria-labelledby="planning-assign-shift-title"
         className={cn(
-          "relative z-[111] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          "relative z-[111] flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          ADD_SHIFT_MODAL_MAX_WIDTH_CLASS,
           MODAL_SCROLLBAR_CLASS
         )}
         onMouseDown={(event) => event.stopPropagation()}
@@ -556,7 +653,7 @@ export function DashboardAssignShiftModal({
                 presets={assignmentPresets}
                 placeholder={t("areaCalendar.selectShiftTemplate")}
                 disabled={dayReadOnly || assignmentPresets.length === 0 || busy}
-                onChange={onPresetChange}
+                onChange={handlePresetChange}
               />
             </div>
           ) : null}
@@ -568,7 +665,10 @@ export function DashboardAssignShiftModal({
                 className="mt-1"
                 value={startTime}
                 disabled={dayReadOnly || busy}
-                onChange={(event) => onStartTimeChange(event.target.value)}
+                onChange={(event) => {
+                  availabilityNotice.beforeTimeInputChange();
+                  onStartTimeChange(event.target.value);
+                }}
               />
             </div>
             <div>
@@ -577,7 +677,10 @@ export function DashboardAssignShiftModal({
                 className="mt-1"
                 value={endTime}
                 disabled={dayReadOnly || busy}
-                onChange={(event) => onEndTimeChange(event.target.value)}
+                onChange={(event) => {
+                  availabilityNotice.beforeTimeInputChange();
+                  onEndTimeChange(event.target.value);
+                }}
               />
             </div>
           </div>
@@ -623,6 +726,11 @@ export function DashboardAssignShiftModal({
               onApplyAvailability={handleApplyAvailability}
               weekdayLabelStyle="long"
             />
+            {availabilityNotice.visible ? (
+              <p className={ADD_SHIFT_AVAILABILITY_NOTICE_CLASS}>
+                {t("areaCalendar.shiftOutsideEmployeeAvailability")}
+              </p>
+            ) : null}
           </div>
 
           {!simplePlanning &&
@@ -652,30 +760,47 @@ export function DashboardAssignShiftModal({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-4">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={onClose}
-          >
-            {t("common.cancel")}
-          </Button>
-          {!dayReadOnly ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
+          {showAssignRestOfWeekDaysOption ? (
+            <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
+              <Checkbox
+                checked={assignRestOfWeekDays}
+                disabled={busy || dayReadOnly}
+                onChange={(event) =>
+                  setAssignRestOfWeekDays(event.target.checked)
+                }
+                className="mt-0.5 shrink-0"
+              />
+              <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
+            </label>
+          ) : (
+            <span />
+          )}
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Button
               type="button"
-              disabled={
-                busy ||
-                !canAssign ||
-                !timesComplete ||
-                !selectedEmployeeId ||
-                loadingEmployees
-              }
-              onClick={handleOk}
+              variant="outline"
+              disabled={busy}
+              onClick={onClose}
             >
-              {t("common.ok")}
+              {t("common.cancel")}
             </Button>
-          ) : null}
+            {!dayReadOnly ? (
+              <Button
+                type="button"
+                disabled={
+                  busy ||
+                  !canAssign ||
+                  !timesComplete ||
+                  !selectedEmployeeId ||
+                  loadingEmployees
+                }
+                onClick={handleOk}
+              >
+                {t("common.ok")}
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -684,7 +809,11 @@ export function DashboardAssignShiftModal({
           className={areaCalendarNestedModalOverlayClass()}
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !busy) {
+            if (
+              event.target === event.currentTarget &&
+              !busy &&
+              !messagePrompt.blocking
+            ) {
               dismissMessagePrompt();
             }
           }}

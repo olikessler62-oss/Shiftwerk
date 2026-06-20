@@ -1,16 +1,22 @@
 import type { ReactNode, Ref } from "react";
+import {
+  PLANNING_SHIFT_CARD_JOB_FONT_PX,
+  PLANNING_SHIFT_CARD_TEMPLATE_FONT_COMPACT_PX,
+  PLANNING_SHIFT_CARD_TEMPLATE_FONT_TWO_LINE_PX,
+  PLANNING_SHIFT_CARD_TEXT_PADDING_LEFT_PX,
+  PLANNING_SHIFT_CARD_TIME_FONT_PX,
+  PLANNING_SHIFT_CARD_TIME_ONLY_FONT_PX,
+} from "@/lib/dashboard-shift-card-inline-status";
 
 /** Uhrzeit in der Schichtkarte (kompakt und mehrzeilig). */
-export const PLANNING_SHIFT_CARD_TIME_FONT_PX = 9;
-/** Nur-Uhrzeit ohne Vorlage, nicht kompakt. */
-export const PLANNING_SHIFT_CARD_TIME_ONLY_FONT_PX = 10;
-/** Schichtvorlage kompakt — größer als die Uhrzeit. */
-export const PLANNING_SHIFT_CARD_TEMPLATE_FONT_COMPACT_PX = 11;
-/** Schichtvorlage mehrzeilig — leicht reduziert für Job-Zeile. */
-export const PLANNING_SHIFT_CARD_TEMPLATE_FONT_TWO_LINE_PX = 11;
-export const PLANNING_SHIFT_CARD_JOB_FONT_PX = 9;
-/** Abstand Textblock links neben dem Mitarbeiterfarb-Div. */
-export const PLANNING_SHIFT_CARD_TEXT_PADDING_LEFT_PX = 3;
+export {
+  PLANNING_SHIFT_CARD_JOB_FONT_PX,
+  PLANNING_SHIFT_CARD_TEMPLATE_FONT_COMPACT_PX,
+  PLANNING_SHIFT_CARD_TEMPLATE_FONT_TWO_LINE_PX,
+  PLANNING_SHIFT_CARD_TEXT_PADDING_LEFT_PX,
+  PLANNING_SHIFT_CARD_TIME_FONT_PX,
+  PLANNING_SHIFT_CARD_TIME_ONLY_FONT_PX,
+} from "@/lib/dashboard-shift-card-inline-status";
 
 type Props = {
   templateName: string | null;
@@ -28,36 +34,39 @@ export function DashboardExpandedShiftCardText({
   const templateFontPx = compact
     ? PLANNING_SHIFT_CARD_TEMPLATE_FONT_COMPACT_PX
     : PLANNING_SHIFT_CARD_TEMPLATE_FONT_TWO_LINE_PX;
-  const timeFontPx = templateName
-    ? PLANNING_SHIFT_CARD_TIME_FONT_PX
-    : compact
-      ? PLANNING_SHIFT_CARD_TIME_FONT_PX
-      : PLANNING_SHIFT_CARD_TIME_ONLY_FONT_PX;
+  const timeIsPrimary = !templateName;
+  const timeFontPx = timeIsPrimary
+    ? templateFontPx
+    : PLANNING_SHIFT_CARD_TIME_FONT_PX;
 
   return (
-    <div className="flex w-full min-w-0 flex-col items-start justify-center gap-px text-left leading-none">
-      {templateName ? (
+    <div className="relative w-full min-w-0">
+      <div className="flex w-full min-w-0 flex-col items-start justify-center gap-px text-left leading-none">
+        {templateName ? (
+          <div
+            className="w-full min-w-0 truncate font-bold leading-none"
+            style={{ fontSize: templateFontPx }}
+          >
+            {templateName}
+          </div>
+        ) : null}
         <div
-          className="w-full min-w-0 truncate font-bold leading-none"
-          style={{ fontSize: templateFontPx }}
+          className={`w-full min-w-0 truncate tabular-nums leading-none ${
+            timeIsPrimary ? "font-bold" : "font-normal"
+          }`}
+          style={{ fontSize: timeFontPx }}
         >
-          {templateName}
+          {timeLabel}
         </div>
-      ) : null}
-      <div
-        className="w-full min-w-0 truncate font-normal tabular-nums leading-none"
-        style={{ fontSize: timeFontPx }}
-      >
-        {timeLabel}
+        {jobsLine ? (
+          <div
+            className="w-full min-w-0 truncate font-normal leading-none"
+            style={{ fontSize: PLANNING_SHIFT_CARD_JOB_FONT_PX }}
+          >
+            {jobsLine}
+          </div>
+        ) : null}
       </div>
-      {jobsLine ? (
-        <div
-          className="w-full min-w-0 truncate font-normal leading-none"
-          style={{ fontSize: PLANNING_SHIFT_CARD_JOB_FONT_PX }}
-        >
-          {jobsLine}
-        </div>
-      ) : null}
     </div>
   );
 }

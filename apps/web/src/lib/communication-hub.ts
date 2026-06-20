@@ -1,5 +1,6 @@
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { AbsenceRequest } from "@schichtwerk/types";
+import { splitEmployeeDisplayName } from "@/lib/shift-card-display-content";
 
 import {
   SHIFT_CONFIRMATION_CANCELED_TAB_LABEL_CLASS,
@@ -10,8 +11,18 @@ import {
 } from "@/lib/shift-confirmation-display";
 import {
   collectShiftAbsenceConflicts,
-  type ShiftAbsenceConflict,
 } from "@/lib/shift-absence-conflict";
+import {
+  appendShiftHubConflict,
+  type ShiftAbsenceHubConflict,
+  type ShiftHubConflict,
+} from "@/lib/shift-hub-conflict";
+import {
+  collectWeeklyHoursConflictsForEmployees,
+  type ShiftForWeeklyHoursConflict,
+} from "@schichtwerk/database";
+import { isPastShiftDate } from "@/lib/planning-readonly";
+import { isConfirmedShiftCard } from "@/lib/shift-card-context-menu-actions";
 
 export type CommunicationResponseTab =
   | "pending"
@@ -49,6 +60,8 @@ export type CommunicationOpenOptions = {
   category?: CommunicationHubCategory;
   /** @deprecated Nutze category. */
   responseTab?: CommunicationResponseTab;
+  /** Vorauswahl beim Öffnen über Schichtkarten-Linksklick. */
+  preselectedShiftIds?: readonly string[];
 };
 
 export type CommunicationSwapRequestRow = {
@@ -149,17 +162,81 @@ export type CommunicationGroupedShifts = {
 
 export type CommunicationHubGroupedData = CommunicationGroupedShifts & {
   conflicts: AreaCalendarShiftCard[];
-  conflictDetailsByShiftId: Map<string, ShiftAbsenceConflict>;
+  conflictDetailsByShiftId: Map<string, ShiftHubConflict[]>;
   swaps: CommunicationSwapRequestRow[];
 };
 
-function sortShiftsByDateThenName(
+export function normalizeEmployeeDisplayNameKey(name: string): string {
+  return name.trim().toLocaleLowerCase("de-DE");
+}
+
+export function shouldShowGroupedEmployeeName(
+  employeeName: string,
+  previousEmployeeNameKey: string | null
+): { show: boolean; nameKey: string } {
+  const nameKey = normalizeEmployeeDisplayNameKey(employeeName);
+  return {
+    show: nameKey !== previousEmployeeNameKey,
+    nameKey,
+  };
+}
+
+function compareShiftStartTimes(a: string, b: string): number {
+  return a.slice(0, 5).localeCompare(b.slice(0, 5));
+}
+
+/** Schicht-Stati: Vorname → voller Name → Datum → Startzeit. */
+export function sortCommunicationHubShifts(
   a: AreaCalendarShiftCard,
   b: AreaCalendarShiftCard
 ): number {
+  const aFirstName = splitEmployeeDisplayName(a.employeeName).firstName;
+  const bFirstName = splitEmployeeDisplayName(b.employeeName).firstName;
+  const firstNameDiff = aFirstName.localeCompare(bFirstName, "de", {
+    sensitivity: "base",
+  });
+  if (firstNameDiff !== 0) return firstNameDiff;
+
+  const fullNameDiff = a.employeeName.localeCompare(b.employeeName, "de", {
+    sensitivity: "base",
+  });
+  if (fullNameDiff !== 0) return fullNameDiff;
+
   const dateDiff = a.shift_date.localeCompare(b.shift_date);
   if (dateDiff !== 0) return dateDiff;
-  return a.employeeName.localeCompare(b.employeeName, "de");
+
+  return compareShiftStartTimes(a.startTime, b.startTime);
+}
+
+function sortSwapsForCommunicationHub(
+  a: CommunicationSwapRequestRow,
+  b: CommunicationSwapRequestRow
+): number {
+  const aFirstName = splitEmployeeDisplayName(a.assigneeName).firstName;
+  const bFirstName = splitEmployeeDisplayName(b.assigneeName).firstName;
+  const firstNameDiff = aFirstName.localeCompare(bFirstName, "de", {
+    sensitivity: "base",
+  });
+  if (firstNameDiff !== 0) return firstNameDiff;
+
+  const fullNameDiff = a.assigneeName.localeCompare(b.assigneeName, "de", {
+    sensitivity: "base",
+  });
+  if (fullNameDiff !== 0) return fullNameDiff;
+
+  const dateDiff = a.shiftDate.localeCompare(b.shiftDate);
+  if (dateDiff !== 0) return dateDiff;
+
+  return compareShiftStartTimes(a.startTime, b.startTime);
+}
+
+function resolveShiftCancelActor(
+  shift: AreaCalendarShiftCard,
+  cancelActors?: ReadonlyMap<string, "employee" | "manager">
+): "employee" | "manager" | undefined {
+  return (
+    shift.displayState?.openCancellation?.cancelledBy ?? cancelActors?.get(shift.id)
+  );
 }
 
 export function groupCommunicationResponseShifts(
@@ -183,19 +260,25 @@ export function groupCommunicationResponseShifts(
     else if (tab === "proposed") proposed.push(shift);
     else if (tab === "requested") requested.push(shift);
     else if (tab === "canceled") {
-      const actor = cancelActors?.get(shift.id);
+      const actor = resolveShiftCancelActor(shift, cancelActors);
       if (actor === "manager") continue;
       canceled.push(shift);
     }
   }
 
-  pending.sort(sortShiftsByDateThenName);
-  rejected.sort(sortShiftsByDateThenName);
-  proposed.sort(sortShiftsByDateThenName);
-  requested.sort(sortShiftsByDateThenName);
-  canceled.sort(sortShiftsByDateThenName);
+  pending.sort(sortCommunicationHubShifts);
+  rejected.sort(sortCommunicationHubShifts);
+  proposed.sort(sortCommunicationHubShifts);
+  requested.sort(sortCommunicationHubShifts);
+  canceled.sort(sortCommunicationHubShifts);
 
   return { pending, rejected, proposed, requested, canceled };
+}
+
+function communicationHubEligibleShifts(
+  shifts: readonly AreaCalendarShiftCard[]
+): AreaCalendarShiftCard[] {
+  return shifts.filter((shift) => !isPastShiftDate(shift.shift_date));
 }
 
 export function groupCommunicationHubData(
@@ -204,22 +287,31 @@ export function groupCommunicationHubData(
     absences?: readonly AbsenceRequest[];
     swapRequests?: readonly CommunicationSwapRequestRow[];
     cancelActors?: ReadonlyMap<string, "employee" | "manager">;
+    todayISO?: string;
+    weeklyHoursByEmployeeId?: ReadonlyMap<string, number | null | undefined>;
+    weeklyHoursCheckShifts?: readonly ShiftForWeeklyHoursConflict[];
   }
 ): CommunicationHubGroupedData {
-  const grouped = groupCommunicationResponseShifts(shifts, options);
+  const visibleShifts = communicationHubEligibleShifts(shifts);
+  const grouped = groupCommunicationResponseShifts(visibleShifts, options);
   const absences = options?.absences ?? [];
   const swapRequests = [...(options?.swapRequests ?? [])].filter(
-    (row) => row.status === "pending"
+    (row) => row.status === "pending" && !isPastShiftDate(row.shiftDate)
   );
 
-  swapRequests.sort((a, b) => {
-    const dateDiff = a.shiftDate.localeCompare(b.shiftDate);
-    if (dateDiff !== 0) return dateDiff;
-    return a.requesterName.localeCompare(b.requesterName, "de");
-  });
+  swapRequests.sort(sortSwapsForCommunicationHub);
+
+  const conflictEligibleShifts = visibleShifts.filter(
+    (shift) =>
+      !isConfirmedShiftCard(
+        shift.confirmationStatus,
+        shift.requestedAt,
+        shift.displayState
+      )
+  );
 
   const conflictRecords = collectShiftAbsenceConflicts(
-    shifts.map((shift) => ({
+    conflictEligibleShifts.map((shift) => ({
       id: shift.id,
       employeeId: shift.employeeId,
       shift_date: shift.shift_date,
@@ -227,13 +319,42 @@ export function groupCommunicationHubData(
     absences
   );
 
-  const conflictDetailsByShiftId = new Map(
-    conflictRecords.map((record) => [record.shiftId, record])
-  );
+  const conflictDetailsByShiftId = new Map<string, ShiftHubConflict[]>();
+  for (const record of conflictRecords) {
+    appendShiftHubConflict(conflictDetailsByShiftId, {
+      kind: "absence",
+      shiftId: record.shiftId,
+      employeeId: record.employeeId,
+      shiftDate: record.shiftDate,
+      absenceType: record.absenceType,
+      absenceId: record.absenceId,
+    } satisfies ShiftAbsenceHubConflict);
+  }
 
-  const conflicts = shifts
+  if (
+    options?.todayISO &&
+    options.weeklyHoursByEmployeeId &&
+    options.weeklyHoursCheckShifts?.length
+  ) {
+    const weeklyHoursConflicts = collectWeeklyHoursConflictsForEmployees({
+      fromDateISO: options.todayISO,
+      shifts: options.weeklyHoursCheckShifts,
+      weeklyHoursByEmployeeId: options.weeklyHoursByEmployeeId,
+      visibleShiftIds: new Set(visibleShifts.map((shift) => shift.id)),
+      includeProposed: false,
+    });
+
+    for (const conflict of weeklyHoursConflicts) {
+      appendShiftHubConflict(conflictDetailsByShiftId, {
+        kind: "weeklyHours",
+        ...conflict,
+      });
+    }
+  }
+
+  const conflicts = visibleShifts
     .filter((shift) => conflictDetailsByShiftId.has(shift.id))
-    .sort(sortShiftsByDateThenName);
+    .sort(sortCommunicationHubShifts);
 
   return {
     ...grouped,
@@ -300,8 +421,18 @@ export function resolveDefaultCommunicationResponseTab(
 export function defaultSelectedResponseShiftIds(
   category: CommunicationHubCategory,
   shifts: readonly AreaCalendarShiftCard[],
-  options?: Parameters<typeof groupCommunicationHubData>[1]
+  options?: Parameters<typeof groupCommunicationHubData>[1],
+  preselectedShiftIds?: readonly string[]
 ): Set<string> {
+  if (preselectedShiftIds?.length) {
+    const eligibleIds = new Set(
+      shifts
+        .filter((shift) => !isPastShiftDate(shift.shift_date))
+        .map((shift) => shift.id)
+    );
+    return new Set(preselectedShiftIds.filter((id) => eligibleIds.has(id)));
+  }
+
   const grouped = groupCommunicationHubData(shifts, options);
 
   if (category === "conflicts") {
@@ -355,6 +486,7 @@ export function groupCommunicationShiftsByArea(
   for (const area of areas) {
     const areaShifts = byAreaId.get(area.id);
     if (!areaShifts?.length) continue;
+    areaShifts.sort(sortCommunicationHubShifts);
     groups.push({ areaId: area.id, shifts: areaShifts });
     byAreaId.delete(area.id);
   }
@@ -367,6 +499,7 @@ export function groupCommunicationShiftsByArea(
 
   for (const [areaId, areaShifts] of remaining) {
     if (areaShifts.length > 0) {
+      areaShifts.sort(sortCommunicationHubShifts);
       groups.push({ areaId, shifts: areaShifts });
     }
   }

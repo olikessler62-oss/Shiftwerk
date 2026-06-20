@@ -13,10 +13,11 @@ import {
   buildShiftCardDisplayContent,
   resolveJobLabelsForEmployee,
   formatShiftCardTooltipPlainText,
+  shiftCardTimeLabelIsPrimary,
   type ShiftCardDisplayContent,
   type ShiftCardDensity,
 } from "@/lib/shift-card-display-content";
-import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import type { ShiftCardDisplayState, ShiftConfirmationStatus } from "@schichtwerk/types";
 import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui";
 import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
@@ -25,13 +26,15 @@ import { cn } from "@/lib/cn";
 import {
   buildEmployeeShiftHighlightBoxShadow,
   employeeShiftHighlightOverlayStyle,
+  preventPointerTextSelection,
+  SHIFT_CARD_INTERACTIVE_CLASS,
 } from "@/lib/calendar-interaction-ui";
 import { shiftConfirmationShowsOverlay } from "@/lib/shift-confirmation-display";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
+  canOpenShiftCardContextMenu,
   handleShiftCardContextMenuPointerEvent,
   planningShiftCardShowsPointerCursor,
-  resolveShiftCardContextMenuStatus,
 } from "@/lib/shift-card-context-menu-actions";
 
 export type AreaCalendarShiftCard = {
@@ -47,10 +50,12 @@ export type AreaCalendarShiftCard = {
   employeeName: string;
   employeeColor: string | null;
   confirmationStatus?: ShiftConfirmationStatus;
-  /** Gesetzt, wenn mindestens einmal Bestätigung angefordert wurde. */
+  /** Gesetzt, wenn mindestens einmal Bestätigung angefragt wurde. */
   requestedAt?: string | null;
   /** Zeitpunkt des letzten Statuswechsels (für Tab „Bestätigt“). */
   confirmationStatusUpdatedAt?: string | null;
+  /** Abgeleiteter Anzeige-Status aus lifecycle + shift_requests. */
+  displayState?: ShiftCardDisplayState;
 };
 
 const DASHBOARD_SHIFT_CARD_CLASS =
@@ -93,6 +98,8 @@ function ShiftCardTextRows({
     return null;
   }
 
+  const emphasizeTime = shiftCardTimeLabelIsPrimary(display);
+
   if (density === "compact") {
     return (
       <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]">
@@ -102,7 +109,11 @@ function ShiftCardTextRows({
             {display.lastName}
           </span>
         ) : null}
-        <span className="shrink-0 whitespace-nowrap leading-none tabular-nums">
+        <span
+          className={`shrink-0 whitespace-nowrap leading-none tabular-nums ${
+            emphasizeTime ? "font-bold" : ""
+          }`}
+        >
           {display.line1Secondary}
         </span>
       </div>
@@ -121,7 +132,11 @@ function ShiftCardTextRows({
         {display.shiftLabel ? (
           <span className="shrink-0">{display.shiftLabel}</span>
         ) : (
-          <span className="shrink-0 whitespace-nowrap tabular-nums">
+          <span
+            className={`shrink-0 whitespace-nowrap tabular-nums ${
+              emphasizeTime ? "font-bold" : ""
+            }`}
+          >
             {display.timeLabel}
           </span>
         )}
@@ -160,13 +175,19 @@ export function AreaCalendarShiftCardView({
     confirmationStatus &&
     shiftConfirmationShowsOverlay(confirmationStatus);
 
+  const isPastShift = isPastShiftDate(cellDateISO ?? shift.shift_date);
+
   const tooltipData = confirmationStatusLabel
     ? {
         ...display.tooltip,
         confirmationStatusLine: confirmationStatusLabel,
         confirmationStatus: shift.confirmationStatus,
+        isPastShift,
       }
-    : display.tooltip;
+    : {
+        ...display.tooltip,
+        isPastShift,
+      };
   const tooltipPlainText = confirmationStatusLabel
     ? formatShiftCardTooltipPlainText(tooltipData, {
         formatStatusLine: (status) =>
@@ -232,15 +253,26 @@ export function AreaCalendarShiftCardView({
               event.stopPropagation();
               onClick?.();
             }}
+            onMouseDown={
+              showsPointerCursor && onClick
+                ? preventPointerTextSelection
+                : undefined
+            }
             onContextMenu={
               onContextMenu
                 ? (event) => {
                     handleShiftCardContextMenuPointerEvent(
                       event,
-                      resolveShiftCardContextMenuStatus(
+                      canOpenShiftCardContextMenu(
                         shift.confirmationStatus,
-                        shift.requestedAt
-                      ) !== "confirmed",
+                        shift.requestedAt,
+                        {
+                          shiftDate: shift.shift_date,
+                          cellDate: cellDateISO ?? shift.shift_date,
+                          isPastShiftDate,
+                          displayState: shift.displayState,
+                        }
+                      ),
                       () => onContextMenu(event)
                     );
                   }
@@ -260,6 +292,7 @@ export function AreaCalendarShiftCardView({
             className={cn(
               DASHBOARD_SHIFT_CARD_CLASS,
               "h-full",
+              SHIFT_CARD_INTERACTIVE_CLASS,
               widthPx === undefined && "w-full",
               showsPointerCursor ? "cursor-pointer" : onClick && "!cursor-default"
             )}

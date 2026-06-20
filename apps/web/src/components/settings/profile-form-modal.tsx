@@ -6,6 +6,7 @@ import {
   getProfileColorLabel,
   orderProfileColorsForDisplay,
   PROFILE_COLOR_PALETTE,
+  validateProfileFullNameUniqueness,
   type ProfileColorOption,
 } from "@schichtwerk/database";
 import { cn } from "@/lib/cn";
@@ -216,6 +217,14 @@ export function ProfileFormModal({
     setError(null);
     if (!fullName.trim()) {
       setError(t("profiles.enterName"));
+      return;
+    }
+    const nameCheck = validateProfileFullNameUniqueness(allProfiles, {
+      full_name: fullName.trim(),
+      excludeId: profile?.id,
+    });
+    if (!nameCheck.ok) {
+      setError(t("profiles.duplicateFullName"));
       return;
     }
     if (!color) {

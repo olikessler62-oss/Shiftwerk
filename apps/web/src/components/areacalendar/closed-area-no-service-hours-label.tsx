@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { measureStaffingHeaderCountText } from "@/lib/tag-area-header-staffing-display";
+import { PLANNING_CELL_INFO_LABEL_PANEL_CLASS } from "@/lib/planning-calendar-layout";
 import { cn } from "@/lib/cn";
 
 /** Gleicher Zellen-Innenabstand wie im Dashboard (`PLANNING_CELL_PADDING_PX`). */
@@ -10,8 +11,10 @@ const NO_SERVICE_LABEL_SAFETY_PX = 4;
 const NO_SERVICE_LABEL_FONT =
   '400 12px Inter, ui-sans-serif, system-ui, sans-serif';
 
-const NO_SERVICE_HOURS_CELL_PANEL_CLASS =
-  "flex min-h-0 flex-1 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500";
+const NO_SERVICE_HOURS_CELL_PANEL_CLASS = cn(
+  "flex min-h-0 flex-1 items-center justify-center",
+  PLANNING_CELL_INFO_LABEL_PANEL_CLASS
+);
 
 function measureNoServiceHoursLabelText(text: string): number {
   if (typeof document === "undefined") return text.length * 6.5;
@@ -36,6 +39,7 @@ export function ClosedAreaNoServiceHoursLabel({ label, className }: Props) {
     if (!container) return;
 
     function updateFits() {
+      if (!container) return;
       const { clientWidth, clientHeight } = container;
       if (clientWidth <= 0 || clientHeight <= 0) {
         setFits(false);

@@ -127,6 +127,13 @@ export function formatTagAreaFooterMoney(
   }).format(amount);
 }
 
+function formatTagAreaFooterMoneyWithCurrency(
+  amount: number,
+  locale: "de" | "en"
+): string {
+  return `${formatTagAreaFooterMoney(amount, locale)} €`;
+}
+
 function formatTagAreaFooterHoursLabel(
   stats: TagAreaDayFooterStats,
   translate: (key: string, params?: Record<string, string>) => string
@@ -136,44 +143,49 @@ function formatTagAreaFooterHoursLabel(
   });
 }
 
-function formatTagAreaFooterCostTooltip(
+export type TagAreaFooterCostTooltipPart = {
+  label: string;
+  amount: string;
+};
+
+export function formatTagAreaFooterCostTooltipParts(
   stats: TagAreaDayFooterStats,
   translate: (key: string, params?: Record<string, string>) => string,
   locale: "de" | "en"
-): string {
-  if (!stats.hasCompensation) return "";
+): TagAreaFooterCostTooltipPart[] {
+  if (!stats.hasCompensation) return [];
 
-  const lines: string[] = [];
-
-  if (stats.surchargeCost > 0) {
-    lines.push(
-      translate("areaCalendar.tagAreaFooterTotalAmount", {
-        amount: formatTagAreaFooterMoney(stats.totalCost, locale),
-      })
-    );
-  }
-
-  lines.push(
-    translate("areaCalendar.tagAreaFooterCompensation", {
-      amount: formatTagAreaFooterMoney(stats.baseCost, locale),
-    })
-  );
+  const parts: TagAreaFooterCostTooltipPart[] = [];
 
   if (stats.surchargeCost > 0) {
-    lines.push(
-      translate("areaCalendar.tagAreaFooterSurcharges", {
-        amount: formatTagAreaFooterMoney(stats.surchargeCost, locale),
-      })
-    );
+    parts.push({
+      label: translate("areaCalendar.tagAreaFooterTotalAmountLabel"),
+      amount: formatTagAreaFooterMoneyWithCurrency(stats.totalCost, locale),
+    });
   }
 
-  return lines.join("\n");
+  parts.push({
+    label: translate("areaCalendar.tagAreaFooterCompensationLabel"),
+    amount: formatTagAreaFooterMoneyWithCurrency(stats.baseCost, locale),
+  });
+
+  if (stats.surchargeCost > 0) {
+    parts.push({
+      label: translate("areaCalendar.tagAreaFooterSurchargesLabel"),
+      amount: formatTagAreaFooterMoneyWithCurrency(stats.surchargeCost, locale),
+    });
+  }
+
+  return parts;
 }
 
 export type TagAreaFooterLabels = {
   line: string;
   hoursLine: string;
   costLine: string;
+  shortLinePrefix: string;
+  shortLineCostAmount: string;
+  costTooltipParts: TagAreaFooterCostTooltipPart[];
 };
 
 export function formatTagAreaFooterLabels(
@@ -182,14 +194,31 @@ export function formatTagAreaFooterLabels(
   locale: "de" | "en"
 ): TagAreaFooterLabels {
   const hoursLine = formatTagAreaFooterHoursLabel(stats, translate);
-  const costLine = formatTagAreaFooterCostTooltip(stats, translate, locale);
+  const costTooltipParts = formatTagAreaFooterCostTooltipParts(
+    stats,
+    translate,
+    locale
+  );
+  const costLine = costTooltipParts
+    .map((part) => `${part.label} ${part.amount}`)
+    .join("\n");
+  const formattedCost = formatTagAreaFooterMoney(stats.totalCost, locale);
+  const shortLinePrefix = translate("areaCalendar.tagAreaFooterShortLineHoursPart", {
+    hours: formatDurationHours(stats.totalHours),
+  });
+  const shortLineCostAmount = translate("areaCalendar.tagAreaFooterShortLineCostPart", {
+    cost: formattedCost,
+  });
   return {
     line: translate("areaCalendar.tagAreaFooterShortLine", {
       hours: formatDurationHours(stats.totalHours),
-      cost: formatTagAreaFooterMoney(stats.totalCost, locale),
+      cost: formattedCost,
     }),
     hoursLine,
     costLine,
+    shortLinePrefix,
+    shortLineCostAmount,
+    costTooltipParts,
   };
 }
 

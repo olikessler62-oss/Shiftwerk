@@ -8,6 +8,7 @@ describe("buildSuperadminConfirmationStatusPatch", () => {
     expect(buildSuperadminConfirmationStatusPatch("proposed", now)).toEqual({
       confirmation_status: "proposed",
       confirmation_status_updated_at: now,
+      lifecycle_status: "planned",
       requested_at: null,
       pending_since: null,
       pending_reminder_sent_at: null,

@@ -15,32 +15,45 @@ function normalizeProfileAvailabilityWeekday(weekday: number | string): number {
   return Number.isInteger(value) ? value : -1;
 }
 
-export function wouldDeletingAvailabilitySlotConflictWithFutureShifts(input: {
-  slotToDelete: ProfileRecurringAvailability;
-  remainingAvailability: readonly ProfileRecurringAvailability[];
+/** Nur heutige (noch nicht beendete) und künftige Schichten zählen für Verfügbarkeitsänderungen. */
+export function isShiftRelevantForAvailabilityChange(
+  shift: Pick<EmployeeShiftRecord, "shift_date" | "ends_at">,
+  todayISO: string,
+  now: Date = new Date()
+): boolean {
+  if (shift.shift_date < todayISO) return false;
+  if (shift.shift_date > todayISO) return true;
+  return new Date(shift.ends_at).getTime() > now.getTime();
+}
+
+export function wouldChangingAvailabilitySlotConflictWithActiveShifts(input: {
+  slotBeforeChange: ProfileRecurringAvailability;
+  availabilityAfterChange: readonly ProfileRecurringAvailability[];
   futureShifts: readonly EmployeeShiftRecord[];
   countryCode: string;
   timeZone: string;
   todayISO: string;
+  now?: Date;
 }): { ok: true } | { ok: false; error: string } {
   const {
-    slotToDelete,
-    remainingAvailability,
+    slotBeforeChange,
+    availabilityAfterChange,
     futureShifts,
     countryCode,
     timeZone,
     todayISO,
+    now = new Date(),
   } = input;
 
-  const deleteWeekday = normalizeProfileAvailabilityWeekday(slotToDelete.weekday);
-  if (deleteWeekday < 0) return { ok: true };
+  const slotWeekday = normalizeProfileAvailabilityWeekday(slotBeforeChange.weekday);
+  if (slotWeekday < 0) return { ok: true };
 
   for (const shift of futureShifts) {
-    if (shift.shift_date < todayISO) continue;
-    if (shift.employee_id !== slotToDelete.profile_id) continue;
+    if (!isShiftRelevantForAvailabilityChange(shift, todayISO, now)) continue;
+    if (shift.employee_id !== slotBeforeChange.profile_id) continue;
 
     const shiftWeekday = serviceWeekdayForShiftDate(countryCode, shift.shift_date);
-    if (shiftWeekday !== deleteWeekday) continue;
+    if (shiftWeekday !== slotWeekday) continue;
 
     const startTime = shiftTimeFromTimestamp(shift.starts_at, timeZone);
     const endTime = shiftTimeFromTimestamp(shift.ends_at, timeZone);
@@ -49,8 +62,8 @@ export function wouldDeletingAvailabilitySlotConflictWithFutureShifts(input: {
       !shiftWindowFitsAvailabilitySlot(
         startTime,
         endTime,
-        slotToDelete.start_time,
-        slotToDelete.end_time
+        slotBeforeChange.start_time,
+        slotBeforeChange.end_time
       )
     ) {
       continue;
@@ -58,8 +71,8 @@ export function wouldDeletingAvailabilitySlotConflictWithFutureShifts(input: {
 
     if (
       !employeeMatchesShiftAvailability(
-        slotToDelete.profile_id,
-        remainingAvailability,
+        slotBeforeChange.profile_id,
+        availabilityAfterChange,
         shiftWeekday,
         startTime,
         endTime
@@ -70,4 +83,24 @@ export function wouldDeletingAvailabilitySlotConflictWithFutureShifts(input: {
   }
 
   return { ok: true };
+}
+
+export function wouldDeletingAvailabilitySlotConflictWithFutureShifts(input: {
+  slotToDelete: ProfileRecurringAvailability;
+  remainingAvailability: readonly ProfileRecurringAvailability[];
+  futureShifts: readonly EmployeeShiftRecord[];
+  countryCode: string;
+  timeZone: string;
+  todayISO: string;
+  now?: Date;
+}): { ok: true } | { ok: false; error: string } {
+  return wouldChangingAvailabilitySlotConflictWithActiveShifts({
+    slotBeforeChange: input.slotToDelete,
+    availabilityAfterChange: input.remainingAvailability,
+    futureShifts: input.futureShifts,
+    countryCode: input.countryCode,
+    timeZone: input.timeZone,
+    todayISO: input.todayISO,
+    now: input.now,
+  });
 }

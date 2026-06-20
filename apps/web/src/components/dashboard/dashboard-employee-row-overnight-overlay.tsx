@@ -58,6 +58,7 @@ type Props = {
     event: React.MouseEvent
   ) => void;
   highlightedEmployeeId?: string | null;
+  shiftConfirmationEnabled?: boolean;
 };
 
 const COLLAPSED_MARKER_HEIGHT_PX = Math.max(
@@ -84,6 +85,7 @@ export function DashboardEmployeeRowOvernightOverlay({
   onShiftClick,
   onShiftContextMenu,
   highlightedEmployeeId = null,
+  shiftConfirmationEnabled = true,
 }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const trackingColumnTransitionRef = useRef(false);
@@ -275,8 +277,9 @@ export function DashboardEmployeeRowOvernightOverlay({
 
       transitionRafId = requestAnimationFrame(tick);
 
-      const handleTransitionEnd = (event: TransitionEvent) => {
+      const handleTransitionEnd = (event: Event) => {
         if (event.target !== calendarGrid) return;
+        if (!(event instanceof TransitionEvent)) return;
         if (
           event.propertyName === "grid-template-columns" ||
           event.propertyName === "min-width"
@@ -399,6 +402,7 @@ export function DashboardEmployeeRowOvernightOverlay({
                 highlightedEmployeeId !== null &&
                 highlightedEmployeeId === employeeId
               }
+              shiftConfirmationEnabled={shiftConfirmationEnabled}
             />
           </div>
         );

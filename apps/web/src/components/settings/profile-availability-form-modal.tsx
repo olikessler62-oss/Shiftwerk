@@ -5,6 +5,12 @@ import {
   createProfileRecurringAvailability,
   updateProfileRecurringAvailability,
 } from "@/app/actions/profile-availability";
+import { resolveProfileAvailabilityActionError } from "@/lib/profile-availability-action-error";
+import {
+  isAvailabilityExceedsTargetError,
+  isLegalWeeklyHoursLimitError,
+  parseAvailabilityExceedsTargetError,
+} from "@/lib/profile-weekly-hours-blocking-errors";
 import { parseAvailabilityTimeRange } from "@schichtwerk/database";
 import type { ProfileRecurringAvailability } from "@schichtwerk/types";
 import {
@@ -44,6 +50,7 @@ type FormMode = "create" | "edit" | "bulk-edit";
 type Props = {
   mode: FormMode;
   profileId: string;
+  weeklyHoursTarget?: number | null;
   currentAvailability?: ProfileRecurringAvailability;
   existingAvailability?: ProfileRecurringAvailability[];
   onClose: () => void;
@@ -73,6 +80,13 @@ export function ProfileAvailabilityFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [overnightConfirmOpen, setOvernightConfirmOpen] = useState(false);
+  const [blockingAlertMessage, setBlockingAlertMessage] = useState<string | null>(
+    null
+  );
+  const [targetExceedConfirmMessage, setTargetExceedConfirmMessage] = useState<
+    string | null
+  >(null);
+  const [pendingAllowTargetExceed, setPendingAllowTargetExceed] = useState(false);
 
   const referenceEntry = useMemo(() => {
     if (mode !== "bulk-edit" || !currentAvailability) return null;
@@ -141,7 +155,29 @@ export function ProfileAvailabilityFormModal({
     });
   }
 
-  async function performSave(timeCheck: ParsedAvailabilityTimeRange) {
+  function resolveSaveError(rawError: string): boolean {
+    const message = resolveProfileAvailabilityActionError(rawError, t);
+    if (isLegalWeeklyHoursLimitError(rawError)) {
+      setBlockingAlertMessage(message);
+      return true;
+    }
+    if (isAvailabilityExceedsTargetError(rawError)) {
+      const parsed = parseAvailabilityExceedsTargetError(rawError);
+      setTargetExceedConfirmMessage(
+        parsed
+          ? t("profiles.availabilityExceedsTargetConfirm", parsed)
+          : message
+      );
+      return true;
+    }
+    setError(message);
+    return false;
+  }
+
+  async function performSave(
+    timeCheck: ParsedAvailabilityTimeRange,
+    allowAvailabilityExceedsTarget = false
+  ) {
     const savedStart = timeCheck.start_time.slice(0, 5);
     const savedEnd = timeCheck.end_time.slice(0, 5);
 
@@ -154,9 +190,14 @@ export function ProfileAvailabilityFormModal({
           weekday,
           start_time: savedStart,
           end_time: savedEnd,
+          allowAvailabilityExceedsTarget,
         });
         if (!result.ok) {
-          setError(result.error);
+          if (result.requiresConfirmation && !allowAvailabilityExceedsTarget) {
+            resolveSaveError(result.error);
+            return;
+          }
+          resolveSaveError(result.error);
           return;
         }
         const list = result.availability ?? [];
@@ -199,12 +240,26 @@ export function ProfileAvailabilityFormModal({
             weekday: saveWeekday,
             start_time: savedStart,
             end_time: savedEnd,
+            allowAvailabilityExceedsTarget,
           });
           if (!result.ok) {
+            if (result.requiresConfirmation && !allowAvailabilityExceedsTarget) {
+              resolveSaveError(result.error);
+              return;
+            }
+            const message = resolveProfileAvailabilityActionError(result.error, t);
+            if (isLegalWeeklyHoursLimitError(result.error)) {
+              setBlockingAlertMessage(message);
+              return;
+            }
+            if (isAvailabilityExceedsTargetError(result.error)) {
+              setTargetExceedConfirmMessage(message);
+              return;
+            }
             setError(
               weekdaysToSave.length > 1
-                ? `${weekdayLabel(saveWeekday, localeKey, "long")}: ${result.error}`
-                : result.error
+                ? `${weekdayLabel(saveWeekday, localeKey, "long")}: ${message}`
+                : message
             );
             return;
           }
@@ -225,12 +280,26 @@ export function ProfileAvailabilityFormModal({
           weekday: saveWeekday,
           start_time: savedStart,
           end_time: savedEnd,
+          allowAvailabilityExceedsTarget,
         });
         if (!result.ok) {
+          if (result.requiresConfirmation && !allowAvailabilityExceedsTarget) {
+            resolveSaveError(result.error);
+            return;
+          }
+          const message = resolveProfileAvailabilityActionError(result.error, t);
+          if (isLegalWeeklyHoursLimitError(result.error)) {
+            setBlockingAlertMessage(message);
+            return;
+          }
+          if (isAvailabilityExceedsTargetError(result.error)) {
+            setTargetExceedConfirmMessage(message);
+            return;
+          }
           setError(
             weekdaysToSave.length > 1
-              ? `${weekdayLabel(saveWeekday, localeKey, "long")}: ${result.error}`
-              : result.error
+              ? `${weekdayLabel(saveWeekday, localeKey, "long")}: ${message}`
+              : message
           );
           return;
         }
@@ -269,6 +338,9 @@ export function ProfileAvailabilityFormModal({
   async function handleSubmit() {
     setError(null);
     setOvernightConfirmOpen(false);
+    setBlockingAlertMessage(null);
+    setTargetExceedConfirmMessage(null);
+    setPendingAllowTargetExceed(false);
 
     const timeCheck = parseCurrentTimeRange();
     if (!timeCheck.ok) {
@@ -282,6 +354,19 @@ export function ProfileAvailabilityFormModal({
     }
 
     await performSave(timeCheck);
+  }
+
+  async function confirmTargetExceedSave() {
+    setTargetExceedConfirmMessage(null);
+    setPendingAllowTargetExceed(true);
+    const timeCheck = parseCurrentTimeRange();
+    if (!timeCheck.ok) {
+      setError(timeCheck.error);
+      setPendingAllowTargetExceed(false);
+      return;
+    }
+    await performSave(timeCheck, true);
+    setPendingAllowTargetExceed(false);
   }
 
   async function confirmOvernightSave() {
@@ -323,7 +408,13 @@ export function ProfileAvailabilityFormModal({
         className={cn(settingsNestedModalOverlayClass(), saving && "cursor-wait")}
         role="presentation"
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget && !saving && !overnightConfirmOpen) {
+          if (
+            e.target === e.currentTarget &&
+            !saving &&
+            !overnightConfirmOpen &&
+            !blockingAlertMessage &&
+            !targetExceedConfirmMessage
+          ) {
             onClose();
           }
         }}
@@ -502,6 +593,82 @@ export function ProfileAvailabilityFormModal({
                 variant="primary"
                 onClick={() => void confirmOvernightSave()}
                 disabled={saving}
+              >
+                <CheckIcon />
+                {t("common.yes")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {blockingAlertMessage ? (
+        <div className={settingsNestedModalOverlayClass()} role="presentation">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="profile-availability-legal-alert"
+            className={settingsConfirmDialogClass()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p
+              id="profile-availability-legal-alert"
+              className="text-sm leading-relaxed text-red-600"
+            >
+              {blockingAlertMessage}
+            </p>
+            <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setBlockingAlertMessage(null)}
+                disabled={saving}
+              >
+                {t("common.ok")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {targetExceedConfirmMessage ? (
+        <div
+          className={settingsNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !saving) {
+              setTargetExceedConfirmMessage(null);
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="profile-availability-target-exceed-desc"
+            className={settingsConfirmDialogClass()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p
+              id="profile-availability-target-exceed-desc"
+              className="text-sm leading-relaxed text-foreground"
+            >
+              {targetExceedConfirmMessage}
+            </p>
+            <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTargetExceedConfirmMessage(null)}
+                disabled={saving || pendingAllowTargetExceed}
+              >
+                <CloseIcon />
+                {t("common.no")}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => void confirmTargetExceedSave()}
+                disabled={saving || pendingAllowTargetExceed}
               >
                 <CheckIcon />
                 {t("common.yes")}

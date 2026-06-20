@@ -252,7 +252,6 @@ export function AreaQualificationTemplatesPanelModal({
         });
         if (!result.ok) {
           setErrorMessage(result.error);
-          if (result.templates) applyTemplates(result.templates);
           bulkSelection.clear();
           setConfirmBulkDelete(false);
           return;

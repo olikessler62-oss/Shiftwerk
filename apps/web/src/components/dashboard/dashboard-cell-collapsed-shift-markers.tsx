@@ -17,6 +17,10 @@ import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline
 import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
+  preventPointerTextSelection,
+  SHIFT_CARD_INTERACTIVE_CLASS,
+} from "@/lib/calendar-interaction-ui";
+import {
   canOpenShiftCardContextMenu,
   handleShiftCardContextMenuPointerEvent,
   planningShiftCardShowsPointerCursor,
@@ -136,6 +140,7 @@ export function DashboardCellCollapsedShiftMarkers({
             key={segmentKey}
             type="button"
             disabled={pending}
+            onMouseDown={preventPointerTextSelection}
             onClick={() => onShiftClick(shift.id)}
             onContextMenu={
               onShiftContextMenu
@@ -145,7 +150,7 @@ export function DashboardCellCollapsedShiftMarkers({
                       canOpenShiftCardContextMenu(
                         shift.confirmationStatus,
                         shift.requestedAt,
-                        { shiftDate: shift.shift_date, isPastShiftDate }
+                        { shiftDate: shift.shift_date, cellDate, isPastShiftDate, displayState: shift.displayState }
                       ),
                       () => onShiftContextMenu(shift.id, event)
                     );
@@ -154,6 +159,7 @@ export function DashboardCellCollapsedShiftMarkers({
             }
             className={cn(
               "shrink-0 border-0 p-0 shadow-sm transition disabled:opacity-50",
+              SHIFT_CARD_INTERACTIVE_CLASS,
               showsPointerCursor
                 ? "cursor-pointer hover:opacity-90"
                 : "!cursor-default",

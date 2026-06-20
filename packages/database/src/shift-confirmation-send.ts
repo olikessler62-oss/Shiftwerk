@@ -119,15 +119,18 @@ export function parseStoredConfirmationSnapshot(
   for (const key of required) {
     if (typeof row[key] !== "string") return null;
   }
+  const toOptionalString = (v: unknown): string | null =>
+    typeof v === "string" ? v : null;
+
   return {
     employee_id: row.employee_id as string,
-    location_id: (row.location_id as string | null) ?? null,
-    location_area_id: (row.location_area_id as string | null) ?? null,
-    area_shift_template_id: (row.area_shift_template_id as string | null) ?? null,
+    location_id: toOptionalString(row.location_id),
+    location_area_id: toOptionalString(row.location_area_id),
+    area_shift_template_id: toOptionalString(row.area_shift_template_id),
     shift_date: row.shift_date as string,
     starts_at: row.starts_at as string,
     ends_at: row.ends_at as string,
-    notes: (row.notes as string | null) ?? null,
+    notes: toOptionalString(row.notes),
   };
 }
 

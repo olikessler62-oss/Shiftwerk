@@ -2,8 +2,11 @@
 
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { shiftConfirmationTooltipStatusTextClass } from "@/lib/shift-confirmation-display";
-import type { ShiftCardTooltipData } from "@/lib/shift-card-display-content";
+import { shiftConfirmationCardStatusTextClass } from "@/lib/shift-confirmation-display";
+import {
+  shiftCardTooltipShowsDeploymentTimeLabel,
+  type ShiftCardTooltipData,
+} from "@/lib/shift-card-display-content";
 
 type Props = {
   data: ShiftCardTooltipData;
@@ -17,6 +20,7 @@ export function ShiftCardTooltipContent({ data }: Props) {
   const timeLabel = data.timeLabel?.trim();
   const jobsLabel = data.jobsLabel?.trim();
   const confirmationStatusLine = data.confirmationStatusLine?.trim();
+  const showDeploymentTimeLabel = shiftCardTooltipShowsDeploymentTimeLabel(data);
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -30,10 +34,20 @@ export function ShiftCardTooltipContent({ data }: Props) {
           {t("common.shiftCardTooltipShiftLabel")}{" "}
           <span className="font-bold">{shiftTemplateName}</span>
         </div>
+      ) : showDeploymentTimeLabel ? (
+        <div>{t("common.shiftCardTooltipDeploymentTimeLabel")}</div>
       ) : shiftNameWithoutTemplate ? (
         <div>{shiftNameWithoutTemplate}</div>
       ) : null}
-      {timeLabel ? <div>{timeLabel}</div> : null}
+      {timeLabel ? (
+        <div>
+          {showDeploymentTimeLabel ? (
+            <span className="font-bold">{timeLabel}</span>
+          ) : (
+            timeLabel
+          )}
+        </div>
+      ) : null}
       {jobsLabel ? (
         <div>
           {t("common.shiftCardTooltipJobLabel")}{" "}
@@ -46,7 +60,10 @@ export function ShiftCardTooltipContent({ data }: Props) {
           <span
             className={cn(
               "font-bold",
-              shiftConfirmationTooltipStatusTextClass(data.confirmationStatus)
+              shiftConfirmationCardStatusTextClass(
+                data.confirmationStatus,
+                data.isPastShift ?? false
+              )
             )}
           >
             {confirmationStatusLine}

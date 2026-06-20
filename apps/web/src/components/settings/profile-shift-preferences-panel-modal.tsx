@@ -250,7 +250,6 @@ export function ProfileShiftPreferencesPanelModal({
         });
         if (!result.ok) {
           setErrorMessage(result.error);
-          if (result.preferences) applyList(result.preferences);
           bulkSelection.clear();
           setConfirmBulkRemove(false);
           return;

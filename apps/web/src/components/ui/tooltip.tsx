@@ -16,20 +16,46 @@ export const TOOLTIP_Z_INDEX = 200;
 export type TooltipPlacement = {
   /** Linker Tooltip-Rand liegt auf der horizontalen Mitte des Triggers. */
   anchorLeftToTriggerCenter?: boolean;
+  /** Rechter Tooltip-Rand am linken Trigger-Rand. */
+  anchorRightToTriggerLeft?: boolean;
+  /** Unterer Tooltip-Rand am oberen Trigger-Rand. */
+  anchorBottomToTriggerTop?: boolean;
+  /** Unterer Tooltip-Rand auf Höhe der vertikalen Trigger-Mitte. */
+  anchorBottomToTriggerCenterY?: boolean;
+  /** CSS-Selektor für Anker-Element innerhalb des Triggers (z. B. Mitarbeiterkarte). */
+  anchorToSelector?: string;
   /** Abstand zwischen Tooltip und Trigger (px). */
   gapPx?: number;
   /** Immer oberhalb — kein automatisches Umschalten nach unten. */
   side?: "above" | "auto";
 };
 
+export const EMPLOYEE_AVAILABILITY_TOOLTIP_ANCHOR_SELECTOR =
+  "[data-employee-availability-tooltip-anchor]";
+
+/** Verfügbarkeits-Tooltips in Mitarbeiterlisten: links an der Karte andocken. */
+export const employeeAvailabilityTooltipPlacement: TooltipPlacement = {
+  anchorRightToTriggerLeft: true,
+  anchorBottomToTriggerCenterY: true,
+  anchorToSelector: EMPLOYEE_AVAILABILITY_TOOLTIP_ANCHOR_SELECTOR,
+  gapPx: 3,
+  side: "above",
+};
+
 /** Einheitliches helles Tooltip — kein natives `title` (Browser-Default ist dunkel). */
 export const tooltipContentClassName =
   "pointer-events-none w-max max-w-[min(20rem,calc(100vw-1rem))] rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-snug text-foreground shadow-lg";
 
-/** Schichtkarten: etwas breiter für längere Statuszeilen (z. B. „Bestätigung angefordert“). */
+/** Schichtkarten: etwas breiter für längere Statuszeilen (z. B. „Bestätigung angefragt“). */
 export const shiftCardTooltipContentClassName = cn(
   tooltipContentClassName,
   "max-w-[min(28rem,calc(100vw-1rem))]"
+);
+
+/** Mitarbeiter-Verfügbarkeiten: Tabellenlayout mit Überschrift. */
+export const employeeAvailabilityTooltipContentClassName = cn(
+  tooltipContentClassName,
+  "w-max min-w-[11rem] max-w-[min(26rem,calc(100vw-1rem))]"
 );
 
 type TooltipProps = {
@@ -51,7 +77,16 @@ function resolveAnchorElement(
   trigger: HTMLElement,
   placement: TooltipPlacement | undefined
 ): HTMLElement {
-  if (placement?.anchorLeftToTriggerCenter) {
+  if (placement?.anchorToSelector) {
+    const matched = trigger.querySelector(placement.anchorToSelector);
+    if (matched instanceof HTMLElement) return matched;
+  }
+  if (
+    placement?.anchorLeftToTriggerCenter ||
+    placement?.anchorRightToTriggerLeft ||
+    placement?.anchorBottomToTriggerTop ||
+    placement?.anchorBottomToTriggerCenterY
+  ) {
     const child = trigger.firstElementChild;
     if (child instanceof HTMLElement) return child;
   }
@@ -84,14 +119,27 @@ export function Tooltip({
     const padding = 8;
     const gap = placement?.gapPx ?? 4;
     const anchorLeftToTriggerCenter = placement?.anchorLeftToTriggerCenter ?? false;
+    const anchorRightToTriggerLeft = placement?.anchorRightToTriggerLeft ?? false;
+    const anchorBottomToTriggerTop = placement?.anchorBottomToTriggerTop ?? false;
+    const anchorBottomToTriggerCenterY =
+      placement?.anchorBottomToTriggerCenterY ?? false;
     const fixedAbove = placement?.side === "above";
 
-    let top = triggerRect.top - height - gap;
-    let left = anchorLeftToTriggerCenter
-      ? triggerRect.left + triggerRect.width / 2
-      : triggerRect.left + triggerRect.width / 2 - width / 2;
+    let top = anchorBottomToTriggerCenterY
+      ? triggerRect.top + triggerRect.height / 2 - height
+      : triggerRect.top - height - gap;
+    let left = anchorRightToTriggerLeft
+      ? triggerRect.left - width - gap
+      : anchorLeftToTriggerCenter
+        ? triggerRect.left + triggerRect.width / 2
+        : triggerRect.left + triggerRect.width / 2 - width / 2;
 
-    if (!fixedAbove && top < padding) {
+    if (
+      !fixedAbove &&
+      !anchorBottomToTriggerTop &&
+      !anchorBottomToTriggerCenterY &&
+      top < padding
+    ) {
       top = triggerRect.bottom + gap;
     }
 
@@ -100,15 +148,21 @@ export function Tooltip({
       Math.min(left, window.innerWidth - width - padding)
     );
 
-    if (!fixedAbove) {
-      top = Math.max(
-        padding,
-        Math.min(top, window.innerHeight - height - padding)
-      );
-    }
+    top = Math.max(
+      padding,
+      Math.min(top, window.innerHeight - height - padding)
+    );
 
     setPosition({ top, left });
-  }, [placement?.anchorLeftToTriggerCenter, placement?.gapPx, placement?.side]);
+  }, [
+    placement?.anchorBottomToTriggerCenterY,
+    placement?.anchorBottomToTriggerTop,
+    placement?.anchorLeftToTriggerCenter,
+    placement?.anchorRightToTriggerLeft,
+    placement?.anchorToSelector,
+    placement?.gapPx,
+    placement?.side,
+  ]);
 
   useLayoutEffect(() => {
     if (!open || !show) return;

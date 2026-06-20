@@ -10,7 +10,8 @@ import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/areacalendar-assignment-presets";
 import { AreaCalendarView } from "@/components/areacalendar/areacalendar-view";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-calendar";
-import { resolveOrganizationTimeZone, resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
+import { resolveOrganizationTimeZone } from "@schichtwerk/database";
+import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedAreaCalendarShifts } from "@/lib/cached-areacalendar-shifts";
 import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data";
@@ -77,6 +78,7 @@ export default async function BereichKalenderPage({
     locations,
     profileQualificationIdsMap,
     absences,
+    recurringAvailability,
   ] = await Promise.all([
     db.listQualifications(orgId),
     db.listCompensationSurchargeTypes(orgId),
@@ -85,6 +87,7 @@ export default async function BereichKalenderPage({
     db.listLocationsForAreaCalendar(orgId, from, to),
     db.listProfileQualificationIdsByOrganization(orgId),
     db.listOrganizationAbsences(orgId, { statuses: ["approved"] }),
+    db.listOrganizationRecurringAvailability(orgId),
   ]);
 
   if (!roles.length) {
@@ -135,6 +138,8 @@ export default async function BereichKalenderPage({
           )
         : null;
 
+    const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(s);
+
     cards.push({
       id: s.id,
       shift_date: s.shift_date,
@@ -147,12 +152,10 @@ export default async function BereichKalenderPage({
       endTime: endFromTs,
       employeeName: profile?.full_name ?? "Unbekannt",
       employeeColor: profile?.color ?? null,
-      confirmationStatus: resolveEffectiveConfirmationStatus(
-        s.confirmation_status,
-        s.requested_at
-      ),
-      requestedAt: s.requested_at ?? null,
-      confirmationStatusUpdatedAt: s.confirmation_status_updated_at ?? null,
+      confirmationStatus: confirmationFields.confirmationStatus,
+      requestedAt: confirmationFields.requestedAt,
+      confirmationStatusUpdatedAt: confirmationFields.confirmationStatusUpdatedAt,
+      displayState: confirmationFields.displayState,
     });
   }
 
@@ -160,6 +163,7 @@ export default async function BereichKalenderPage({
 
   const canceledShiftIds = cards
     .filter((shift) => shift.confirmationStatus === "canceled")
+    .filter((shift) => !shift.displayState?.openCancellation?.cancelledBy)
     .map((shift) => shift.id);
 
   const [swapRequestRows, cancelActorEntries] =
@@ -200,6 +204,7 @@ export default async function BereichKalenderPage({
         profileQualificationIds={profileQualificationIds}
         locations={locations}
         absences={absences}
+        recurringAvailability={recurringAvailability}
         communicationSwapRequests={communicationSwapRequests}
         communicationCancelActors={Object.fromEntries(cancelActorEntries)}
         managerNotifications={managerNotifications}

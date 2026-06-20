@@ -230,7 +230,6 @@ export function ProfileQualificationsPanelModal({
         });
         if (!result.ok) {
           setErrorMessage(result.error);
-          if (result.qualifications) applyList(result.qualifications);
           bulkSelection.clear();
           setConfirmBulkRemove(false);
           return;

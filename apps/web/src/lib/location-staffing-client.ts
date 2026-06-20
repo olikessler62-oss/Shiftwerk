@@ -299,6 +299,46 @@ export function formatServiceHourStaffingTimeLabel(
   return templateName ? `${base} (${templateName})` : base;
 }
 
+/** Servicezeit-Fenster eines Bereichs an einem Kalendertag (sortiert nach Start). */
+export function areaServiceHoursOnDate(
+  serviceHours: readonly AreaServiceHourRef[],
+  areaId: string,
+  dateISO: string
+): Array<Pick<AreaServiceHourRef, "start_time" | "end_time">> {
+  const weekday = serviceWeekdayForDate(dateISO);
+  return serviceHours
+    .filter(
+      (hour) =>
+        hour.location_area_id === areaId &&
+        normalizeWeekday(hour.weekday) === weekday &&
+        hour.start_time?.trim() &&
+        hour.end_time?.trim()
+    )
+    .sort((a, b) =>
+      (a.start_time ?? "").localeCompare(b.start_time ?? "")
+    );
+}
+
+/** Tooltip-Text: alle Servicezeit-Fenster eines Bereichs an einem Tag (eine Zeile pro Fenster). */
+export function formatAreaServiceHoursDayTooltipBody(
+  serviceHours: readonly AreaServiceHourRef[],
+  areaId: string,
+  dateISO: string,
+  options: {
+    locale?: WeekdayLabelLocale;
+    shiftTemplates?: readonly ServiceHourShiftTemplateRef[];
+  } = {}
+): string {
+  const hours = areaServiceHoursOnDate(serviceHours, areaId, dateISO);
+  if (hours.length === 0) return "";
+  const locale = options.locale ?? "de";
+  return hours
+    .map((hour) =>
+      formatServiceHourStaffingTimeLabel(hour, options.shiftTemplates, locale)
+    )
+    .join("\n");
+}
+
 export function staffingQualificationLabelsForHour(
   serviceHourId: string,
   staffing: readonly { service_hour_id: string; qualification_id: string; required_count: number }[],
@@ -348,7 +388,7 @@ export function serviceWeekdayForDate(isoDate: string): number {
 }
 
 export function isAreaOpenOnDate(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaId: string,
   dateISO: string
 ): boolean {

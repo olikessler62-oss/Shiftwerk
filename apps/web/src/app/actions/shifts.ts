@@ -17,15 +17,27 @@ import {
 import { shiftsOverlapIso } from "@/lib/shift-overlap";
 import {
   DEFAULT_COUNTRY_CODE,
+  getOrgFeaturesFromPlanningMode,
   resolveConfirmationAssignPatch,
   resolveEffectiveConfirmationStatus,
   resolveOrganizationTimeZone,
+  validateEmployeeNotAbsentOnDate,
   validateProfileForShiftConfirmationAssign,
   validateRestPeriodForCountry,
   validateShiftDurationForCountry,
+  validateShiftServiceHoursForArea,
   validateEmployeeDayShiftAssignments,
   weekdayIndexFromDate,
+  restWeekStaffingDemandEligible,
+  isoWeekStartFromShiftDate,
+  isoWeekEndFromWeekStart,
+  resolveProfileWeeklyHoursTarget,
+  validateEmployeeWeeklyHoursAfterAssign,
+  type PlanningMode,
+  type WeeklyShiftHourWindow,
 } from "@schichtwerk/database";
+import { remainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
+import type { ShiftAssignValidationContext } from "@/lib/shift-assign-validation";
 import {
   setShiftAssignUndoBatch,
   takeShiftAssignUndoBatch,
@@ -61,6 +73,9 @@ type AssignShiftWithTimesInput = {
   simulatedProposedOnAssign?: boolean;
   /** Superadmin: App-Registrierungs-Gate umgehen. */
   relaxAppRegistrationGate?: boolean;
+  /** Gleiche Schicht an weiteren Wochentagen der sichtbaren Woche (still, wenn Bedingungen verletzt). */
+  assignToRemainingWeekDays?: boolean;
+  weekDates?: readonly string[];
 };
 
 function buildAssignSnapshotSource(
@@ -85,6 +100,8 @@ export type AssignShiftBatchRowInput = {
   startTime: string;
   endTime: string;
   areaShiftTemplateId: string | null;
+  /** Bestehende Ankertag-Schicht (Mehrfach-Modal mit Restwoche). */
+  existingShiftId?: string;
 };
 
 export type AssignShiftBatchRowResult =
@@ -122,6 +139,143 @@ function findOverlappingShifts(
   return existing.filter((shift) =>
     shiftsOverlapIso(shift.starts_at, shift.ends_at, startsAt, endsAt)
   );
+}
+
+async function canSilentlyAssignShiftOnRestWeekDay(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  organizationId: string,
+  planningMode: PlanningMode,
+  assignCtx: ShiftAssignValidationContext,
+  input: AssignShiftWithTimesInput,
+  targetDate: string,
+  timeZone: string
+): Promise<boolean> {
+  if (targetDate <= input.shiftDate || isPastShiftDate(targetDate)) return false;
+  if (!areAreaCalendarShiftTimesComplete(input.startTime, input.endTime)) {
+    return false;
+  }
+
+  const absenceCheck = validateEmployeeNotAbsentOnDate(
+    input.employeeId,
+    assignCtx.absences,
+    targetDate
+  );
+  if (!absenceCheck.ok) return false;
+
+  const orgFeatures = getOrgFeaturesFromPlanningMode(planningMode);
+  if (
+    orgFeatures.serviceHours &&
+    input.locationAreaId &&
+    !input.withoutServiceHours
+  ) {
+    const serviceHoursCheck = validateShiftServiceHoursForArea(
+      assignCtx.serviceHours ?? [],
+      input.locationAreaId,
+      assignCtx.countryCode,
+      targetDate,
+      input.startTime,
+      input.endTime
+    );
+    if (!serviceHoursCheck.ok) return false;
+  }
+
+  if (
+    orgFeatures.qualifications &&
+    input.locationAreaId &&
+    !input.withoutServiceHours
+  ) {
+    const employeeQualificationIds =
+      assignCtx.profileQualificationIds?.get(input.employeeId) ?? new Set<string>();
+    if (
+      !restWeekStaffingDemandEligible({
+        areaId: input.locationAreaId,
+        countryCode: assignCtx.countryCode,
+        shiftDate: targetDate,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        employeeId: input.employeeId,
+        serviceHours: assignCtx.serviceHours ?? [],
+        staffingRules: assignCtx.staffingRules ?? [],
+        employeeQualificationIds,
+        qualificationNameById: assignCtx.qualificationNameById ?? new Map(),
+      })
+    ) {
+      return false;
+    }
+  }
+
+  const { starts_at, ends_at } = buildShiftTimestamps(
+    targetDate,
+    input.startTime,
+    input.endTime,
+    timeZone
+  );
+
+  const employeeDayShifts = await db.listShiftsForEmployeeDate(
+    input.employeeId,
+    targetDate
+  );
+  if (findOverlappingShifts(employeeDayShifts, starts_at, ends_at).length > 0) {
+    return false;
+  }
+
+  const weeklyCheck = await validateShiftWeeklyHoursCompliance(
+    input.employeeId,
+    targetDate,
+    input.startTime,
+    input.endTime,
+    timeZone
+  );
+  if (!weeklyCheck.ok) return false;
+
+  return true;
+}
+
+async function assignShiftToRemainingWeekDaysSilently(
+  organizationId: string,
+  userId: string,
+  planningMode: PlanningMode,
+  assignCtx: ShiftAssignValidationContext,
+  input: AssignShiftWithTimesInput,
+  weekDates: readonly string[],
+  undoBatch: ShiftAssignUndoBatch,
+  timeZone: string,
+  shiftConfirmationEnabled: boolean
+): Promise<string[]> {
+  const db = await getDatabase();
+  const assignedDates: string[] = [];
+
+  for (const targetDate of remainingAssignableWeekDates(
+    input.shiftDate,
+    weekDates
+  )) {
+    const eligible = await canSilentlyAssignShiftOnRestWeekDay(
+      db,
+      organizationId,
+      planningMode,
+      assignCtx,
+      input,
+      targetDate,
+      timeZone
+    );
+    if (!eligible) continue;
+
+    try {
+      await persistShiftWithTimes(
+        organizationId,
+        userId,
+        { ...input, shiftDate: targetDate, existingShiftId: undefined },
+        undoBatch,
+        timeZone,
+        shiftConfirmationEnabled
+      );
+      assignedDates.push(targetDate);
+    } catch {
+      // Bedingung verletzt oder Persist fehlgeschlagen — Tag überspringen.
+    }
+  }
+
+  return assignedDates;
 }
 
 async function validateShiftLaborCompliance(
@@ -197,6 +351,68 @@ async function validateShiftLaborCompliance(
     ok: true,
     warnings: durationCheck.warnings.length ? durationCheck.warnings : undefined,
   };
+}
+
+async function validateShiftWeeklyHoursCompliance(
+  employeeId: string,
+  shiftDate: string,
+  startTime: string,
+  endTime: string,
+  timeZone: string,
+  options?: {
+    excludeShiftIds?: ReadonlySet<string>;
+    additionalWeekWindows?: readonly WeeklyShiftHourWindow[];
+    employeeName?: string;
+    weeklyHoursTarget?: number | null;
+  }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const db = await getDatabase();
+  const profile =
+    options?.weeklyHoursTarget !== undefined
+      ? null
+      : await db.getProfileById(employeeId);
+  const targetHours = resolveProfileWeeklyHoursTarget(
+    options?.weeklyHoursTarget ?? profile?.weekly_hours
+  );
+  const employeeName = options?.employeeName ?? profile?.full_name;
+
+  const weekStart = isoWeekStartFromShiftDate(shiftDate);
+  const weekEnd = isoWeekEndFromWeekStart(weekStart);
+  const existingShifts = await db.listShiftsForEmployeeInDateRange(
+    employeeId,
+    weekStart,
+    weekEnd
+  );
+
+  const { starts_at, ends_at } = buildShiftTimestamps(
+    shiftDate,
+    startTime,
+    endTime,
+    timeZone
+  );
+  const excludeIds = new Set(options?.excludeShiftIds ?? []);
+  const sameDay = existingShifts.filter(
+    (shift) => shift.shift_date === shiftDate && !excludeIds.has(shift.id)
+  );
+  for (const overlapping of findOverlappingShifts(sameDay, starts_at, ends_at)) {
+    excludeIds.add(overlapping.id);
+  }
+
+  const proposedWindows: WeeklyShiftHourWindow[] = [
+    { shiftDate, startTime, endTime },
+    ...(options?.additionalWeekWindows ?? []),
+  ];
+
+  const result = validateEmployeeWeeklyHoursAfterAssign({
+    targetHours,
+    weekStart,
+    existingShifts,
+    excludeShiftIds: excludeIds,
+    proposedWindows,
+    employeeName,
+  });
+
+  return result.ok ? { ok: true } : result;
 }
 
 async function persistShiftWithTimes(
@@ -462,6 +678,18 @@ export async function assignShiftWithTimes(
     );
     if (!laborCheck.ok) return laborCheck;
 
+    const weeklyCheck = await validateShiftWeeklyHoursCompliance(
+      input.employeeId,
+      input.shiftDate,
+      input.startTime,
+      input.endTime,
+      timeZone,
+      input.existingShiftId
+        ? { excludeShiftIds: new Set([input.existingShiftId]) }
+        : undefined
+    );
+    if (!weeklyCheck.ok) return weeklyCheck;
+
     const undoBatch: ShiftAssignUndoBatch = {
       createdIds: [],
       deletedIds: [],
@@ -476,11 +704,35 @@ export async function assignShiftWithTimes(
       timeZone,
       assignMode.shiftConfirmationEnabled
     );
+
+    const revalidatedDates = new Set<string>([input.shiftDate]);
+
+    if (
+      input.assignToRemainingWeekDays &&
+      input.weekDates?.length &&
+      !input.existingShiftId
+    ) {
+      const extraDates = await assignShiftToRemainingWeekDaysSilently(
+        organizationId,
+        userId,
+        organization.planning_mode,
+        assignCtx,
+        input,
+        input.weekDates,
+        undoBatch,
+        timeZone,
+        assignMode.shiftConfirmationEnabled
+      );
+      for (const date of extraDates) {
+        revalidatedDates.add(date);
+      }
+    }
+
     setShiftAssignUndoBatch(userId, undoBatch);
     revalidateShiftPaths({
       organizationId,
       locationId: input.locationId,
-      shiftDates: [input.shiftDate],
+      shiftDates: [...revalidatedDates],
     });
 
     return {
@@ -504,6 +756,8 @@ export async function assignShiftBatch(input: {
   withoutServiceHours?: boolean;
   simulatedProposedOnAssign?: boolean;
   relaxAppRegistrationGate?: boolean;
+  assignToRemainingWeekDays?: boolean;
+  weekDates?: readonly string[];
 }): Promise<AssignShiftBatchResult> {
   try {
     const { organizationId, userId, organization, profile } = await requireManager();
@@ -568,6 +822,9 @@ export async function assignShiftBatch(input: {
 
     const validRows: ValidRow[] = [];
     const results: AssignShiftBatchRowResult[] = [];
+    const pendingBatchWindowsByEmployee = new Map<string, WeeklyShiftHourWindow[]>();
+    const weeklyHoursTargetByEmployee = new Map<string, number | null>();
+    const employeeNameById = new Map<string, string>();
 
     const completeBatchRows = input.rows
       .map((row, rowIndex) => ({ row, rowIndex }))
@@ -625,6 +882,11 @@ export async function assignShiftBatch(input: {
         continue;
       }
 
+      const rowExcludeShiftIds = new Set(excludeShiftIds);
+      if (row.existingShiftId) {
+        rowExcludeShiftIds.add(row.existingShiftId);
+      }
+
       const laborCheck = await validateShiftLaborCompliance(
         organizationId,
         row.employeeId,
@@ -635,11 +897,40 @@ export async function assignShiftBatch(input: {
         {
           sameDayBatchPeerCount:
             (batchPeerCountByEmployee.get(row.employeeId) ?? 1) - 1,
-          excludeShiftIds,
+          excludeShiftIds: rowExcludeShiftIds,
         }
       );
       if (!laborCheck.ok) {
         results.push({ rowIndex, ok: false, error: laborCheck.error });
+        continue;
+      }
+
+      if (!weeklyHoursTargetByEmployee.has(row.employeeId)) {
+        const profile = await db.getProfileById(row.employeeId);
+        weeklyHoursTargetByEmployee.set(
+          row.employeeId,
+          profile?.weekly_hours ?? null
+        );
+        if (profile?.full_name) {
+          employeeNameById.set(row.employeeId, profile.full_name);
+        }
+      }
+
+      const weeklyCheck = await validateShiftWeeklyHoursCompliance(
+        row.employeeId,
+        input.shiftDate,
+        row.startTime,
+        row.endTime,
+        timeZone,
+        {
+          excludeShiftIds: rowExcludeShiftIds,
+          additionalWeekWindows: pendingBatchWindowsByEmployee.get(row.employeeId) ?? [],
+          weeklyHoursTarget: weeklyHoursTargetByEmployee.get(row.employeeId) ?? null,
+          employeeName: employeeNameById.get(row.employeeId),
+        }
+      );
+      if (!weeklyCheck.ok) {
+        results.push({ rowIndex, ok: false, error: weeklyCheck.error });
         continue;
       }
 
@@ -660,6 +951,14 @@ export async function assignShiftBatch(input: {
           laborCheck.warnings
         ),
       });
+
+      const pendingWindows = pendingBatchWindowsByEmployee.get(row.employeeId) ?? [];
+      pendingWindows.push({
+        shiftDate: input.shiftDate,
+        startTime: row.startTime,
+        endTime: row.endTime,
+      });
+      pendingBatchWindowsByEmployee.set(row.employeeId, pendingWindows);
     }
 
     for (let i = 0; i < validRows.length; i++) {
@@ -744,6 +1043,7 @@ export async function assignShiftBatch(input: {
     };
 
     let anySuccess = false;
+    const revalidatedDates = new Set<string>([input.shiftDate]);
 
     for (const shiftId of deleteShiftIds) {
       const snapshot = await db.getShiftRecordById(shiftId, organizationId);
@@ -778,6 +1078,8 @@ export async function assignShiftBatch(input: {
             areaShiftTemplateId: row.areaShiftTemplateId,
             locationId: input.locationId,
             locationAreaId: input.locationAreaId,
+            withoutServiceHours: input.withoutServiceHours,
+            existingShiftId: row.existingShiftId,
           },
           undoBatch,
           timeZone,
@@ -785,6 +1087,33 @@ export async function assignShiftBatch(input: {
         );
         results.push({ rowIndex: row.rowIndex, ok: true, warnings: row.warnings });
         anySuccess = true;
+
+        if (input.assignToRemainingWeekDays && input.weekDates?.length) {
+          const restWeekInput: AssignShiftWithTimesInput = {
+            employeeId: row.employeeId,
+            shiftDate: input.shiftDate,
+            startTime: row.startTime,
+            endTime: row.endTime,
+            areaShiftTemplateId: row.areaShiftTemplateId,
+            locationId: input.locationId,
+            locationAreaId: input.locationAreaId,
+            withoutServiceHours: input.withoutServiceHours,
+          };
+          const extraDates = await assignShiftToRemainingWeekDaysSilently(
+            organizationId,
+            userId,
+            organization.planning_mode,
+            assignCtx,
+            restWeekInput,
+            input.weekDates,
+            undoBatch,
+            timeZone,
+            assignMode.shiftConfirmationEnabled
+          );
+          for (const date of extraDates) {
+            revalidatedDates.add(date);
+          }
+        }
       } catch (e) {
         results.push({
           rowIndex: row.rowIndex,
@@ -799,7 +1128,7 @@ export async function assignShiftBatch(input: {
       revalidateShiftPaths({
         organizationId,
         locationId: input.locationId,
-        shiftDates: [input.shiftDate],
+        shiftDates: [...revalidatedDates],
       });
     }
 

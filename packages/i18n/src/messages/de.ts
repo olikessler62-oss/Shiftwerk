@@ -25,6 +25,7 @@ export const de = {
     shiftCardTooltipShift: "Schicht: {name}",
     shiftCardTooltipJob: "Tätigkeit: {names}",
     shiftCardTooltipShiftLabel: "Schicht:",
+    shiftCardTooltipDeploymentTimeLabel: "Einsatzzeit:",
     shiftCardTooltipJobLabel: "Tätigkeit:",
     shiftCardTooltipStatusLabel: "Status:",
     moveUp: "Nach oben",
@@ -94,7 +95,7 @@ export const de = {
       "Schaltet die UI-Funktionen an/aus. Keine Push-Nachrichten oder E-Mails.",
     superadminShiftConfirmationProposedOnAssign: "Neue Zuweisungen als „Geplant“",
     superadminShiftConfirmationProposedOnAssignHint:
-      "Speichert neu zugewiesene Schichten mit Status proposed und erlaubt „Bestätigung anfordern“ (Status requested) — ohne Push/E-Mail und ohne Org-Einstellung. Nur für Superadmin.",
+      "Speichert neu zugewiesene Schichten mit Status proposed und erlaubt „Bestätigung anfragen“ (Status requested) — ohne Push/E-Mail und ohne Org-Einstellung. Nur für Superadmin.",
     superadminRelaxAppRegistrationGate: "App-Registrierung nicht prüfen",
     superadminRelaxAppRegistrationGateHint:
       "Erlaubt Schichtzuweisung auch ohne App-Registrierung oder E-Mail-Modus — nur Superadmin, nur diese Session.",
@@ -109,6 +110,11 @@ export const de = {
     superadminShiftColumnEmployee: "Mitarbeiter",
     superadminShiftColumnStatus: "Status",
     superadminShiftEmpty: "Keine Schichten vorhanden.",
+    shiftsReset: "Daten-Reset",
+    shiftsResetPending: "Daten werden zurückgesetzt…",
+    shiftsResetConfirmTitle: "Daten-Reset durchführen?",
+    shiftsResetConfirmBody:
+      "Alle Schichten und zugehörige Daten werden gelöscht. Verfügbarkeiten: Mo–So 07:00–22:00. Servicezeiten und Personalbedarf für Restaurant, Küche und Bar werden zurückgesetzt (Mo–Mi und Fr–So, Donnerstag geschlossen). Tätigkeiten: Kellner/in für alle, Koch/Köchin (erste 7 Profile), Spülkraft (Profile 7–13), Barista (letzte 7 Profile). Entgelte: je 15,60 € für alle Mitarbeiter. Wochenstunden: je 40 Std. für alle Mitarbeiter. Abwesenheiten und übrige Stammdaten bleiben unverändert.",
     dbReset: "DB reset",
     dbResetPending: "Wird zurückgesetzt…",
     dbResetConfirmTitle: "Datenbank zurücksetzen?",
@@ -213,6 +219,7 @@ export const de = {
       saveProfileFailed: "Profil-Einstellungen konnten nicht gespeichert werden.",
       loadShiftsFailed: "Schichten konnten nicht geladen werden.",
       saveShiftStatusFailed: "Schichtstatus konnte nicht gespeichert werden.",
+      resetShiftsFailed: "Daten-Reset fehlgeschlagen.",
     },
   },
   areaCalendar: {
@@ -223,12 +230,18 @@ export const de = {
     noServiceHours: "Keine Servicezeiten",
     noServiceHoursHeaderTooltip:
       "Für diesen Bereich wurden für {weekday} keine Servicezeiten festgelegt!",
+    serviceHoursHeaderTooltipTitle: "Servicezeiten",
     tagAreaFooterTotalHours: "Gesamte Stunden: {hours}",
     tagAreaFooterTotalCost: "Gesamte Kosten: {amount} {currency}",
     tagAreaFooterTotalAmount: "Gesamtbetrag: {amount} €",
     tagAreaFooterCompensation: "Entgelt: {amount} €",
     tagAreaFooterSurcharges: "Zuschläge: {amount} €",
     tagAreaFooterShortLine: "Ges.: {hours} Std | {cost} €",
+    tagAreaFooterShortLineHoursPart: "Ges.: {hours} Std | ",
+    tagAreaFooterShortLineCostPart: "{cost} €",
+    tagAreaFooterTotalAmountLabel: "Gesamtbetrag:",
+    tagAreaFooterCompensationLabel: "Entgelt:",
+    tagAreaFooterSurchargesLabel: "Zuschläge:",
     weekEmployeeLegendEmpty: "Keine Schichten in dieser Woche.",
     noServiceHoursShiftConfirm:
       "An diesem Tag hat dieser Bereich \"{area}\" keine Servicezeit! Sollen dennoch Einsatzzeiten hinzugefügt werden?",
@@ -239,6 +252,8 @@ export const de = {
     deleteShiftConfirm: "Soll diese Schicht wirklich gelöscht werden?",
     editShift: "Schicht bearbeiten",
     addShiftTitle: "Schicht hinzufügen",
+    shiftOutsideEmployeeAvailability:
+      "Schichtzeit liegt außerhalb der Verfügbarkeit des Mitarbeiters.",
     bulkShiftTitle: "Einsatzzeiten zuweisen/bearbeiten",
     bulkShiftNewAssignmentsSection: "Neue Zuweisungen",
     bulkShiftExistingShiftsSection: "Bestehende Schichten",
@@ -294,6 +309,7 @@ export const de = {
       "Zeile {row}: Die Schicht liegt außerhalb der Servicezeiten.",
     bulkShiftOutsideServiceHoursConfirm:
       "Die Schicht liegt außerhalb der Servicezeiten! Soll sie dennoch hinzugefügt werden?",
+    assignRestOfWeekDays: "auch für Restwoche",
     bulkShiftValidationDailyHours:
       "{name}: Gesamtarbeitszeit {total} h am Tag überschreitet das Maximum von {limit} h (Einsatzzeiten: {spans}).",
     bulkShiftValidationShiftDuration:
@@ -414,6 +430,7 @@ export const de = {
     columnShiftType: "Schichtart",
     panelAvailability: "Verfügbarkeiten",
     panelAvailabilityOf: "Verfügbarkeiten von {name}",
+    panelAvailabilityOfLead: "Verfügbarkeiten von",
     panelAvailabilityOfPrefix: "Verfügbarkeiten:",
     panelShiftPreferences: "Wünsche",
     panelShiftPreferencesOf: "Wünsche von {name}",
@@ -505,11 +522,34 @@ export const de = {
     createTitle: "Profil anlegen",
     editTitle: "Profil bearbeiten",
     enterName: "Bitte einen Namen eingeben.",
+    duplicateFullName:
+      "Mitarbeiternamen müssen sich unterscheiden – gegebenenfalls mit Abkürzung, Nickname statt Vorname oder Zahl mit Hochzählung ab dem zweiten gleichen Mitarbeiternamen.",
     namePlaceholder: "z. B. Max Mustermann",
     email: "E-Mail",
     emailPlaceholder: "name@beispiel.de",
     mobilePhone: "Mobiltelefon",
     mobilePhonePlaceholder: "nur Ziffern",
+    weeklyHours: "Wochenstunden (Soll)",
+    weeklyHoursPlaceholder: "z. B. 40",
+    weeklyHoursHint:
+      "Soll-Wochenstunden für die Planung. Leer lassen = Standard 40 Std. Gesetzliches Maximum: {legalMax} Std.",
+    availabilityWeeklyHoursSummary:
+      "Verfügbarkeiten gesamt: {availability} Std./Woche · Soll: {target} Std. · Gesetzliches Maximum: {legalMax} Std.",
+    availabilityExceedsTarget:
+      "Verfügbarkeiten erlauben {hours} Std./Woche — über dem Soll von {targetHours} Std.",
+    availabilityExceedsTargetConfirm:
+      "Verfügbarkeiten erlauben {hours} Std./Woche — über dem Soll von {targetHours} Std. Trotzdem speichern?",
+    legalWeeklyHoursExceeded:
+      "Gesetzliche Höchstarbeitszeit überschritten — {hours} Std. (Maximum {legalMax} Std.).",
+    availabilityExceedsLegalWarning:
+      "Die Verfügbarkeiten überschreiten das gesetzliche Wochenmaximum von {legalMax} Std. Bitte Zeiten anpassen.",
+    availabilityExceedsTargetWarning:
+      "Die Verfügbarkeiten ({availability} Std.) liegen über dem Soll von {target} Std.",
+    weeklyHoursChangeConflictTitle: "Schichten prüfen",
+    weeklyHoursChangeConflictIntro:
+      "Die neuen Soll-Wochenstunden passen nicht zu bestehenden Schichten ab heute. Vergangene Schichten bleiben unverändert. Schichten mit gesendetem Status finden Sie unter Schicht-Stati → Konflikte.",
+    weeklyHoursChangeConflictLine:
+      "{date} · {time} · {status} ({weekTotal}/{target} Std./Woche)",
     color: "Farbe",
     selectColor: "Farbe auswählen",
     noColorsAvailable: "Alle Farben sind bereits vergeben.",
@@ -912,6 +952,8 @@ export const de = {
     saveFailed: "Speichern fehlgeschlagen",
     unknownError: "Unbekannter Fehler",
     batchRowOverlap: "Überschneidung mit einer anderen Zeile in dieser Eingabe.",
+    weeklyHoursExceeded:
+      "{name}Wochenstunden überschritten — nach Zuweisung {total} Std. (Maximum {target} Std.).",
     minRestPeriod:
       "Mindestruhezeit von {hours} Stunden zwischen Schichten nicht eingehalten.",
   },
@@ -926,19 +968,19 @@ export const de = {
     },
     tooltipStatus: {
       proposed: "Geplant",
-      requested: "Bestätigung angefordert",
+      requested: "Bestätigung angefragt",
       pending: "Ausstehend",
       rejected: "Abgelehnt",
       confirmed: "Bestätigt",
       canceled: "Abgesagt",
     },
     actions: {
-      requestConfirmation: "Bestätigung anfordern",
+      requestConfirmation: "Bestätigung anfragen",
       sendResponses: "Antworten senden",
       cancelShiftManager: "Schicht stornieren",
       cancelShiftEmployee: "Schicht absagen",
-      resendConfirmation: "Erneute Bestätigung anfordern",
-      setConfirmed: "Status auf bestätigt setzen",
+      resendConfirmation: "Bestätigung erneut anfragen",
+      setConfirmed: "Schicht auf Status bestätigt setzen",
     },
     cancel: {
       confirmManager: "Soll diese Schicht wirklich storniert werden?",
@@ -958,7 +1000,7 @@ export const de = {
     deleteBlockedByStatus:
       "Die Schicht kann nicht gelöscht werden, weil sie den Status „{status}“ hat.",
     send: {
-      modalTitle: "Bestätigung anfordern",
+      modalTitle: "Bestätigung anfragen",
       modalHint:
         "Wähle die Schichten aus, für die eine Bestätigungsanfrage gesendet werden soll.",
       noCandidates: "Keine offenen Schichten in dieser Woche.",
@@ -975,9 +1017,9 @@ export const de = {
       colTime: "Uhrzeit",
       colStatus: "Status",
       colConfirmationSelection: "Bestätigung-Auswahl",
-      rowRequestConfirmation: "Bestätigung anfordern",
+      rowRequestConfirmation: "Bestätigung anfragen",
       rowStatusOpen: "Offen",
-      rowStatusRequested: "Bestätigung angefordert",
+      rowStatusRequested: "Bestätigung angefragt",
       noTemplate: "Keine Vorlage",
     },
     disclaimer: {
@@ -1001,7 +1043,7 @@ export const de = {
         pending: "Ausstehend",
         rejected: "Abgelehnt",
         proposed: "Nicht versendet",
-        requested: "Bestätigung angefordert",
+        requested: "Bestätigung angefragt",
         confirmed: "Bestätigt",
         canceled: "Abgesagt",
       },
@@ -1017,16 +1059,20 @@ export const de = {
         pending: "Ausstehend",
         rejected: "Abgelehnt",
         proposed: "Nicht versendet",
-        requested: "Bestätigung angefordert",
+        requested: "Bestätigung angefragt",
         confirmed: "Bestätigt",
         canceled: "MA abgesagt",
       },
-      colConflict: "Abwesenheit",
+      colConflict: "Konflikt",
+      weeklyHoursConflictShort: "Wochenstunden",
+      weeklyHoursConflictTooltip:
+        "Wochenstunden überschritten — {weekTotal} Std. in dieser Kalenderwoche (Maximum {target} Std.).",
+      absenceConflictTooltip: "Abwesenheits-Konflikt: {absence}",
       colSelection: "Auswahl",
       colActions: "Aktionen",
       areaUnknown: "Ohne Bereich",
-      rowRequest: "Anfordern",
-      rowResend: "Erneut anfordern",
+      rowRequest: "Anfragen",
+      rowResend: "Erneut anfragen",
       rowReassign: "Neu zuweisen",
       rowSelect: "Auswählen",
       actionDelete: "Löschen",
@@ -1041,12 +1087,12 @@ export const de = {
       cancelSuccess: "{count} Schichten storniert.",
       partialDelete: "{done} gelöscht, {failed} fehlgeschlagen.",
       partialCancel: "{done} storniert, {failed} fehlgeschlagen.",
-      resendSelected: "Erneut anfordern",
+      resendSelected: "Erneut anfragen",
       resendSuccess: "{count} Anfragen gesendet.",
       partialResend: "{sent} gesendet, {failed} fehlgeschlagen.",
       tabActionSend: "Versenden",
       reassignRequiresOne: "Bitte genau eine Schicht zum Neu zuweisen auswählen.",
-      statusRequested: "Bestätigung angefordert",
+      statusRequested: "Bestätigung angefragt",
       swapColRequester: "Anfragender",
       swapColTarget: "Ziel-Mitarbeiter",
       swapOpenTarget: "Offen",

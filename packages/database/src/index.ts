@@ -118,6 +118,45 @@ export {
   validateProfileMobilePhone,
 } from "./profile-contact-validation";
 export {
+  availabilitySlotDurationHours,
+  defaultProfileWeeklyHoursForCreate,
+  evaluateProfileAvailabilityWeeklyLimits,
+  formatAvailabilityExceedsTargetError,
+  formatLegalWeeklyHoursExceededError,
+  LEGAL_MAX_WEEKLY_WORKING_HOURS_DE,
+  resolveLegalMaxWeeklyWorkingHours,
+  sumProfileAvailabilityMaxWeeklyHours,
+  validateProfileWeeklyHoursInput,
+  validateProfileWeeklyHoursLegalLimit,
+  type ProfileAvailabilitySlotRef,
+  type ProfileWeeklyHoursLimitViolation,
+} from "./profile-availability-weekly-hours";
+export { parseProfileWeeklyHours } from "./profile-weekly-hours-validation";
+export {
+  DEFAULT_PROFILE_WEEKLY_HOURS,
+  formatWeeklyHoursExceededError,
+  isoWeekStartFromShiftDate,
+  isShiftDateInIsoWeek,
+  resolveProfileWeeklyHoursTarget,
+  shiftHoursFromIsoRange,
+  sumEmployeeWeekHours,
+  validateEmployeeWeeklyHoursAfterAssign,
+  type WeeklyHoursExistingShift,
+  type WeeklyShiftHourWindow,
+} from "./employee-weekly-hours-validation";
+export {
+  collectEmployeeWeeklyHoursConflicts,
+  collectWeeklyHoursConflictsForEmployees,
+  shiftForWeeklyHoursConflictFromEmployeeShift,
+  type ShiftForWeeklyHoursConflict,
+  type ShiftWeeklyHoursConflict,
+} from "./employee-weekly-hours-conflict";
+export {
+  PROFILE_DUPLICATE_FULL_NAME_ERROR,
+  validateProfileFullNameUniqueness,
+  type ProfileFullNameUniquenessInput,
+} from "./profile-name-validation";
+export {
   dayBefore,
   dayAfter,
   isMutableHourlyRate,
@@ -141,7 +180,13 @@ export {
   sortProfileRecurringAvailabilityBySchedule,
 } from "./profile-availability-validation";
 export {
+  areAdjacentAvailabilitySlots,
+  planAdjacentProfileAvailabilityMerges,
+} from "./profile-availability-merge";
+export {
   PROFILE_AVAILABILITY_DELETE_SHIFT_CONFLICT_ERROR,
+  isShiftRelevantForAvailabilityChange,
+  wouldChangingAvailabilitySlotConflictWithActiveShifts,
   wouldDeletingAvailabilitySlotConflictWithFutureShifts,
 } from "./profile-availability-delete-validation";
 export {
@@ -211,6 +256,7 @@ export {
   getBreakDurationRule,
   getSuggestedBreakMinutes,
   breakRuleHint,
+  shiftDurationHours,
   validateShiftTypeBreaks,
   validateAreaShiftTemplateCount,
 } from "./shift-type-break-rules";
@@ -241,6 +287,7 @@ export {
   DEFAULT_ORGANIZATION_TIME_ZONE,
   COUNTRY_DEFAULT_TIME_ZONES,
   resolveOrganizationTimeZone,
+  organizationTodayISO,
   type OrganizationTimeZoneInput,
 } from "./organization-timezone";
 export {
@@ -268,6 +315,11 @@ export {
   staffingQualificationIdsForServiceHour,
   type ShiftStaffingQualificationStatus,
 } from "./shift-staffing-qualification";
+export {
+  employeeMeetsStaffingDemandQualification,
+  hasStaffingDemandForShiftWindow,
+  restWeekStaffingDemandEligible,
+} from "./shift-assign-rest-of-week";
 export {
   mergeShiftAssignWarnings,
   validateShiftAssignEligibility,
@@ -361,6 +413,17 @@ export {
   type ShiftConfirmationPendingJobResult,
 } from "./shift-confirmation-pending";
 export {
+  mapLegacyConfirmationStatusToLifecycleAndRequestStatus,
+  resolveLegacyConfirmationStatusForViewRow,
+  resolveLegacyConfirmationStatusFromLegacyFields,
+  resolveLifecycleFromInput,
+  resolveLegacyConfirmationStatusFromModel,
+  resolveShiftCardDisplayState,
+  resolveShiftLifecycleFromLegacy,
+  type ShiftDisplayInput,
+  type ShiftRequestSummary,
+} from "./shift-display-state";
+export {
   isOvernightShiftWindow,
   overnightShiftEndDateISO,
   shiftHoursOnCalendarDay,
@@ -402,6 +465,18 @@ export {
   buildSuperadminConfirmationStatusPatch,
   SUPERADMIN_SHIFT_CONFIRMATION_STATUSES,
 } from "./superadmin-shift-confirmation";
+export {
+  enrichShiftRowWithLifecycle,
+  lifecycleStatusForConfirmationStatus,
+  syncShiftRequestsAfterAssignConfirmationStatus,
+  syncShiftRequestsAfterCancellation,
+  syncShiftRequestsAfterConfirmationExpired,
+  syncShiftRequestsAfterConfirmationResent,
+  syncShiftRequestsAfterConfirmationSent,
+  syncShiftRequestsAfterEmployeeResponse,
+  syncShiftRequestsAfterManagerPastConfirm,
+  syncShiftRequestsForSuperadminStatus,
+} from "./shift-request-writes";
 export type {
   SuperadminShiftListRow,
   SuperadminShiftRecord,

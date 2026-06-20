@@ -1,89 +1,97 @@
-import { TagAreaHeaderStaffingOverlay } from "@/components/areacalendar/tag-area-header-staffing-overlay";
+import { TagAreaHeaderStaffingRow } from "@/components/areacalendar/tag-area-header-staffing-row";
 import {
   DaytimesHeaderImage,
   DAYTIMES_HEADER_IMAGE_HEIGHT_PX,
 } from "@/components/areacalendar/daytimes-header-image";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
-import { Tooltip } from "@/components/ui/tooltip";
+import { PLANNING_CLOSED_DAY_CELL_BG } from "@/lib/planning-calendar-layout";
 import { cn } from "@/lib/cn";
+import type { ReactNode } from "react";
 
 export { DAYTIMES_HEADER_IMAGE_SRC, DAYTIMES_HEADER_IMAGE_HEIGHT_PX } from "@/components/areacalendar/daytimes-header-image";
 
-type Props = {
-  showDaytimesGradient: boolean;
+export function TagAreaHeaderTooltipContent({
+  title,
+  subtitleLines,
+  body,
+}: {
+  title: string;
+  subtitleLines?: readonly string[];
+  body: ReactNode;
+}) {
+  return (
+    <>
+      <div className="mb-1.5 border-b border-border/60 pb-1.5">
+        <p className="text-xs font-semibold text-foreground">{title}</p>
+        {subtitleLines?.map((line, index) => (
+          <p key={index} className="mt-0.5 text-xs text-foreground">
+            {line}
+          </p>
+        ))}
+      </div>
+      {typeof body === "string" ? (
+        <span className="block whitespace-pre-line">{body}</span>
+      ) : (
+        body
+      )}
+    </>
+  );
+}
+
+type StaffingRowProps = {
   entries: TagAreaHeaderStaffingEntry[];
   /** Schichten ohne Servicezeit — Bedarf-Overlay ersetzen. */
   noServiceHoursLabel?: string;
-  noServiceHoursTooltip?: string;
-  overlayBackgroundColor?: string;
+  /** Tooltip für leere Bereiche der Header-Zeile (Servicezeiten). */
+  headerTooltip?: ReactNode;
   /** Zugeklappter Tag — Bedarf als „!“ statt unleserlichem Text. */
   dayCollapsed?: boolean;
   className?: string;
+};
+
+export { TagAreaHeaderStaffingRow } from "@/components/areacalendar/tag-area-header-staffing-row";
+
+type Props = StaffingRowProps & {
+  showDaytimesGradient: boolean;
+  overlayBackgroundColor?: string;
   style?: React.CSSProperties;
 };
 
 /** Tag-Bereich-Header: Tageszeit-Verlauf (2px oben) + Personalbedarf-Overlay. */
 export function TagAreaHeaderStrip({
   showDaytimesGradient,
-  entries,
-  noServiceHoursLabel,
-  noServiceHoursTooltip,
   overlayBackgroundColor,
-  dayCollapsed = false,
   className,
   style,
+  noServiceHoursLabel,
+  ...rowProps
 }: Props) {
+  const resolvedBackgroundColor =
+    overlayBackgroundColor ??
+    (noServiceHoursLabel ? PLANNING_CLOSED_DAY_CELL_BG : undefined);
+
   return (
     <div
       className={cn(
         "absolute inset-x-0 top-0 z-20 overflow-hidden border-b border-border",
-        overlayBackgroundColor ? undefined : "bg-background",
+        resolvedBackgroundColor ? undefined : "bg-background",
         className
       )}
       style={{
         ...style,
-        ...(overlayBackgroundColor
-          ? { backgroundColor: overlayBackgroundColor }
+        ...(resolvedBackgroundColor
+          ? { backgroundColor: resolvedBackgroundColor }
           : undefined),
       }}
     >
       {showDaytimesGradient ? (
         <DaytimesHeaderImage className="absolute inset-x-0 top-0" />
       ) : null}
-      <div
-        className={cn(
-          "relative z-[1] flex h-full w-full min-w-0 items-center justify-center px-1",
-        )}
-      >
-        {noServiceHoursLabel ? (
-          <Tooltip
-            content={
-              noServiceHoursTooltip ? (
-                <span className="block whitespace-pre-line">
-                  {noServiceHoursTooltip}
-                </span>
-              ) : (
-                noServiceHoursLabel
-              )
-            }
-          >
-            <span className="shrink-0 cursor-default whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black">
-              {noServiceHoursLabel}
-            </span>
-          </Tooltip>
-        ) : (
-          <TagAreaHeaderStaffingOverlay
-            key={entries
-              .map(
-                (entry) =>
-                  `${entry.serviceHourId}:${entry.assigned}/${entry.required}`
-              )
-              .join("|")}
-            entries={entries}
-            dayCollapsed={dayCollapsed}
-          />
-        )}
-      </div>
+      <TagAreaHeaderStaffingRow
+        className="relative z-[1]"
+        noServiceHoursLabel={noServiceHoursLabel}
+        {...rowProps}
+      />
     </div>
   );
 }

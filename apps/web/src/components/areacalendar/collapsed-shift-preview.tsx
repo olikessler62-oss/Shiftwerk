@@ -23,7 +23,15 @@ import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment
 import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
 import { useTranslations } from "@/i18n/locale-provider";
 import { isPastShiftDate } from "@/lib/planning-readonly";
-import { planningShiftCardShowsPointerCursor } from "@/lib/shift-card-context-menu-actions";
+import {
+  canOpenShiftCardContextMenu,
+  handleShiftCardContextMenuPointerEvent,
+  planningShiftCardShowsPointerCursor,
+} from "@/lib/shift-card-context-menu-actions";
+import {
+  preventPointerTextSelection,
+  SHIFT_CARD_INTERACTIVE_CLASS,
+} from "@/lib/calendar-interaction-ui";
 
 const COLLAPSED_SHIFT_LINE_FALLBACK_COLOR = "#94a3b8";
 
@@ -50,6 +58,7 @@ type Props = {
   /** Zusätzliche Marker-Höhe (px), z. B. +5 im Schichtplan. */
   markerHeightDeltaPx?: number;
   onShiftClick?: (shift: AreaCalendarShiftCard) => void;
+  onShiftContextMenu?: (shift: AreaCalendarShiftCard, event: React.MouseEvent) => void;
   selectedShiftId?: string | null;
   disabled?: boolean;
   className?: string;
@@ -107,6 +116,7 @@ export function CollapsedShiftPreview({
   markerWidthDeltaPx = 0,
   markerHeightDeltaPx = 0,
   onShiftClick,
+  onShiftContextMenu,
   selectedShiftId = null,
   disabled = false,
   className,
@@ -120,6 +130,8 @@ export function CollapsedShiftPreview({
       assignmentPresets,
       formatShiftTooltipLine: (name: string) =>
         t("common.shiftCardTooltipShift", { name }),
+      formatDeploymentTimeTooltipLine: () =>
+        t("common.shiftCardTooltipDeploymentTimeLabel"),
       formatJobTooltipLine: (names: string) =>
         t("common.shiftCardTooltipJob", { names }),
     }),
@@ -271,6 +283,26 @@ export function CollapsedShiftPreview({
   const showDetail = !isPastDay && !areaCollapsed;
   const interactive = Boolean(onShiftClick) && !disabled;
 
+  function resolveShiftContextMenuHandler(shift: AreaCalendarShiftCard) {
+    if (!onShiftContextMenu) return undefined;
+    return (event: React.MouseEvent) => {
+      handleShiftCardContextMenuPointerEvent(
+        event,
+        canOpenShiftCardContextMenu(
+          shift.confirmationStatus,
+          shift.requestedAt,
+          {
+            shiftDate: shift.shift_date,
+            cellDate,
+            isPastShiftDate,
+            displayState: shift.displayState,
+          }
+        ),
+        () => onShiftContextMenu(shift, event)
+      );
+    };
+  }
+
   return (
     <div
       ref={containerRef}
@@ -340,6 +372,7 @@ export function CollapsedShiftPreview({
 
         const color = resolvePreviewColor(shift, isPastDay, areaCollapsed);
         const isSelected = selectedShiftId === shift.id;
+        const onContextMenu = resolveShiftContextMenuHandler(shift);
         const shiftInteractive =
           interactive &&
           planningShiftCardShowsPointerCursor(
@@ -351,6 +384,7 @@ export function CollapsedShiftPreview({
             cellDate,
             isPastShiftDate
           );
+        const isContextMenuTarget = shiftInteractive || Boolean(onContextMenu);
 
         if (areaCollapsed) {
           const marker = (
@@ -361,14 +395,19 @@ export function CollapsedShiftPreview({
             />
           );
 
-          if (shiftInteractive) {
+          if (isContextMenuTarget) {
             return (
               <button
                 key={shift.id}
                 type="button"
-                onClick={() => onShiftClick!(shift)}
+                onMouseDown={
+                  shiftInteractive ? preventPointerTextSelection : undefined
+                }
+                onClick={shiftInteractive ? () => onShiftClick!(shift) : undefined}
+                onContextMenu={onContextMenu}
                 className={cn(
                   "absolute top-1/2 -translate-y-1/2 border-0 bg-transparent p-0",
+                  SHIFT_CARD_INTERACTIVE_CLASS,
                   shiftInteractive ? "cursor-pointer" : "!cursor-default",
                   isSelected && "ring-2 ring-primary ring-offset-1"
                 )}
@@ -412,14 +451,19 @@ export function CollapsedShiftPreview({
           isSelected && "ring-2 ring-primary ring-offset-1"
         );
 
-        if (shiftInteractive) {
+        if (isContextMenuTarget) {
           const button = (
             <button
               type="button"
-              onClick={() => onShiftClick!(shift)}
+              onMouseDown={
+                shiftInteractive ? preventPointerTextSelection : undefined
+              }
+              onClick={shiftInteractive ? () => onShiftClick!(shift) : undefined}
+              onContextMenu={onContextMenu}
               className={cn(
                 markerClass,
                 "border-0 p-0",
+                SHIFT_CARD_INTERACTIVE_CLASS,
                 shiftInteractive ? "cursor-pointer" : "!cursor-default"
               )}
               style={markerStyle}

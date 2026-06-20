@@ -29,7 +29,7 @@ describe("buildShiftCardDisplayContent tooltips", () => {
     expect(display.tooltipBody).toContain("Tätigkeit: Kellner/in");
   });
 
-  it("does not prefix shift name without matching template", () => {
+  it("shows Einsatzzeit label when times do not match a template", () => {
     const display = buildShiftCardDisplayContent(
       {
         employeeName: "Alexa Bello",
@@ -40,8 +40,10 @@ describe("buildShiftCardDisplayContent tooltips", () => {
       ""
     );
 
-    expect(display.tooltipBody).toContain("Sonder");
+    expect(display.tooltipBody).toContain("Einsatzzeit:");
+    expect(display.tooltipBody).toContain("08:00 – 16:00");
     expect(display.tooltipBody).not.toContain("Schicht:");
+    expect(display.tooltipBody).not.toContain("Sonder");
   });
 
   it("accepts null jobsLabel", () => {
@@ -56,6 +58,7 @@ describe("buildShiftCardDisplayContent tooltips", () => {
     );
 
     expect(display.jobsLabel).toBe("");
+    expect(display.tooltipBody).toContain("Einsatzzeit:");
     expect(display.tooltipBody).not.toContain("Tätigkeit:");
   });
 });

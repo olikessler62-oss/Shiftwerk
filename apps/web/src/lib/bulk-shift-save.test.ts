@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  isCompleteBulkShiftRow,
   isSaveableNewBulkShiftRow,
+  listCompleteBulkShiftRowsForAssign,
   resolveBulkShiftSaveIntent,
 } from "./bulk-shift-save";
 
@@ -25,6 +27,33 @@ describe("isSaveableNewBulkShiftRow", () => {
 
   it("rejects rows that belong to an existing shift", () => {
     expect(isSaveableNewBulkShiftRow(existingRow)).toBe(false);
+  });
+});
+
+describe("isCompleteBulkShiftRow", () => {
+  it("accepts rows without qualification when withoutServiceHours", () => {
+    expect(
+      isCompleteBulkShiftRow(
+        {
+          id: "new-1",
+          employeeId: "emp-1",
+          qualificationId: "",
+          startTime: "08:00",
+          endTime: "16:00",
+        },
+        { withoutServiceHours: true }
+      )
+    ).toBe(true);
+  });
+});
+
+describe("listCompleteBulkShiftRowsForAssign", () => {
+  it("includes existing rows for rest-of-week extension", () => {
+    expect(
+      listCompleteBulkShiftRowsForAssign([existingRow, completeNewRow]).map(
+        (row) => row.id
+      )
+    ).toEqual(["existing-row", "new-1"]);
   });
 });
 

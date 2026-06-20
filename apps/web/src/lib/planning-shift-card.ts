@@ -1,5 +1,5 @@
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
-import type { Profile, ShiftConfirmationStatus } from "@schichtwerk/types";
+import type { Profile, ShiftCardDisplayState, ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export type PlanningShift = {
   id: string;
@@ -14,6 +14,7 @@ export type PlanningShift = {
   confirmationStatus?: ShiftConfirmationStatus;
   requestedAt?: string | null;
   confirmationStatusUpdatedAt?: string | null;
+  displayState?: ShiftCardDisplayState;
 };
 
 export function planningShiftToAreaCalendarCard(
@@ -35,6 +36,7 @@ export function planningShiftToAreaCalendarCard(
     confirmationStatus: shift.confirmationStatus,
     requestedAt: shift.requestedAt,
     confirmationStatusUpdatedAt: shift.confirmationStatusUpdatedAt,
+    displayState: shift.displayState,
   };
 }
 

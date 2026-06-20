@@ -7,7 +7,8 @@ import { getDatabase } from "@/lib/db";
 import { getOrgFeatures } from "@/lib/org-features";
 import { loadManagerOrganization } from "@/lib/manager";
 import { isPastWeek } from "@/lib/planning-readonly";
-import { resolveOrganizationTimeZone, resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
+import { resolveOrganizationTimeZone } from "@schichtwerk/database";
+import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
 import {
   resolveSelectedAreaId,
   resolveSelectedLocationId,
@@ -160,6 +161,8 @@ export default async function DashboardPage({
           )
         : null;
 
+    const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(s);
+
     const planningShift: PlanningShift = {
       id: s.id,
       employee_id: s.employee_id,
@@ -171,12 +174,10 @@ export default async function DashboardPage({
       location_area_id: s.location_area_id,
       area_shift_template_id:
         s.area_shift_template_id ?? areaTemplate?.id ?? null,
-      confirmationStatus: resolveEffectiveConfirmationStatus(
-        s.confirmation_status,
-        s.requested_at
-      ),
-      requestedAt: s.requested_at ?? null,
-      confirmationStatusUpdatedAt: s.confirmation_status_updated_at ?? null,
+      confirmationStatus: confirmationFields.confirmationStatus,
+      requestedAt: confirmationFields.requestedAt,
+      confirmationStatusUpdatedAt: confirmationFields.confirmationStatusUpdatedAt,
+      displayState: confirmationFields.displayState,
     };
 
     locationShifts.push(planningShift);
@@ -201,6 +202,7 @@ export default async function DashboardPage({
 
   const canceledShiftIds = locationShifts
     .filter((shift) => shift.confirmationStatus === "canceled")
+    .filter((shift) => !shift.displayState?.openCancellation?.cancelledBy)
     .map((shift) => shift.id);
 
   const [swapRequestRows, cancelActorEntries] =

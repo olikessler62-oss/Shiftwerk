@@ -34,6 +34,17 @@ import { isPastShiftDate } from "@/lib/planning-readonly";
 import { useTranslations } from "@/i18n/locale-provider";
 import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
 
+type AreaCalendarShiftCardListRow =
+  | { kind: "row-gap" }
+  | { kind: "overnight-anchor"; shiftId: string }
+  | { kind: "overnight-tail-spacer"; shiftId: string }
+  | {
+      kind: "shift";
+      shift: AreaCalendarShiftCard;
+      display: ReturnType<typeof buildShiftCardDisplayContent>;
+      layout: ReturnType<typeof resolveShiftCardLayout>;
+    };
+
 type Props = {
   shifts: AreaCalendarShiftCard[];
   areaId: string;
@@ -192,13 +203,15 @@ export function AreaCalendarShiftCardsList({
       assignmentPresets,
       formatShiftTooltipLine: (name: string) =>
         t("common.shiftCardTooltipShift", { name }),
+      formatDeploymentTimeTooltipLine: () =>
+        t("common.shiftCardTooltipDeploymentTimeLabel"),
       formatJobTooltipLine: (names: string) =>
         t("common.shiftCardTooltipJob", { names }),
     }),
     [assignmentPresets, t]
   );
 
-  const shiftRows = useMemo(() => {
+  const shiftRows = useMemo((): AreaCalendarShiftCardListRow[] => {
     const sortedShifts = [...shifts].sort(compareShiftCards);
     const shiftCountInCell = sortedShifts.length;
 
@@ -261,7 +274,7 @@ export function AreaCalendarShiftCardsList({
       serviceTimeline
     );
 
-    return cellRows.flatMap((cellRow) => {
+    return cellRows.flatMap((cellRow): AreaCalendarShiftCardListRow[] => {
       if (cellRow.kind === "row-gap") {
         return [{ kind: "row-gap" as const }];
       }
@@ -373,7 +386,7 @@ export function AreaCalendarShiftCardsList({
       canOpenShiftCardContextMenu(
         shift.confirmationStatus,
         shift.requestedAt,
-        { shiftDate: shift.shift_date, isPastShiftDate }
+        { shiftDate: shift.shift_date, cellDate: dateISO, isPastShiftDate, displayState: shift.displayState }
       ),
       () => onShiftContextMenu(shift, event)
     );

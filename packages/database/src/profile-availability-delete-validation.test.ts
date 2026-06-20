@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { EmployeeShiftRecord, ProfileRecurringAvailability } from "@schichtwerk/types";
 import {
   PROFILE_AVAILABILITY_DELETE_SHIFT_CONFLICT_ERROR,
+  isShiftRelevantForAvailabilityChange,
+  wouldChangingAvailabilitySlotConflictWithActiveShifts,
   wouldDeletingAvailabilitySlotConflictWithFutureShifts,
 } from "./profile-availability-delete-validation";
 import { buildShiftTimestamps } from "./shift-timestamps";
@@ -154,6 +156,86 @@ describe("wouldDeletingAvailabilitySlotConflictWithFutureShifts", () => {
         countryCode,
         timeZone,
         todayISO: "2026-05-01",
+      })
+    ).toEqual({
+      ok: false,
+      error: PROFILE_AVAILABILITY_DELETE_SHIFT_CONFLICT_ERROR,
+    });
+  });
+});
+
+describe("isShiftRelevantForAvailabilityChange", () => {
+  it("ignores past shift dates", () => {
+    expect(
+      isShiftRelevantForAvailabilityChange(
+        { shift_date: "2026-06-16", ends_at: "2026-06-16T20:00:00.000Z" },
+        todayISO,
+        new Date("2026-06-17T12:00:00.000Z")
+      )
+    ).toBe(false);
+  });
+
+  it("ignores shifts on today that already ended", () => {
+    expect(
+      isShiftRelevantForAvailabilityChange(
+        { shift_date: todayISO, ends_at: "2026-06-17T08:00:00.000Z" },
+        todayISO,
+        new Date("2026-06-17T12:00:00.000Z")
+      )
+    ).toBe(false);
+  });
+
+  it("includes future dates and ongoing shifts today", () => {
+    expect(
+      isShiftRelevantForAvailabilityChange(
+        { shift_date: "2026-06-18", ends_at: "2026-06-18T16:00:00.000Z" },
+        todayISO,
+        new Date("2026-06-17T12:00:00.000Z")
+      )
+    ).toBe(true);
+    expect(
+      isShiftRelevantForAvailabilityChange(
+        { shift_date: todayISO, ends_at: "2026-06-17T20:00:00.000Z" },
+        todayISO,
+        new Date("2026-06-17T12:00:00.000Z")
+      )
+    ).toBe(true);
+  });
+});
+
+describe("wouldChangingAvailabilitySlotConflictWithActiveShifts", () => {
+  it("allows update when only past shifts would be affected", () => {
+    const slotBeforeChange = slot();
+    const availabilityAfterChange = [
+      slot({ start_time: "10:00:00", end_time: "14:00:00" }),
+    ];
+
+    expect(
+      wouldChangingAvailabilitySlotConflictWithActiveShifts({
+        slotBeforeChange,
+        availabilityAfterChange,
+        futureShifts: [shift("2026-06-10", "09:00", "15:00")],
+        countryCode,
+        timeZone,
+        todayISO,
+      })
+    ).toEqual({ ok: true });
+  });
+
+  it("blocks update when a future shift no longer fits", () => {
+    const slotBeforeChange = slot();
+    const availabilityAfterChange = [
+      slot({ start_time: "10:00:00", end_time: "14:00:00" }),
+    ];
+
+    expect(
+      wouldChangingAvailabilitySlotConflictWithActiveShifts({
+        slotBeforeChange,
+        availabilityAfterChange,
+        futureShifts: [shift("2026-06-24", "09:00", "15:00")],
+        countryCode,
+        timeZone,
+        todayISO,
       })
     ).toEqual({
       ok: false,

@@ -5,7 +5,7 @@ import {
   areaCalendarShiftsCacheTag,
   weekStartsForShiftCacheInvalidation,
 } from "@/lib/cached-areacalendar-shifts";
-import { getDatabase } from "@/lib/db";
+import { getAdminDatabase, getDatabase } from "@/lib/db";
 import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
 import { shiftTimeFromTimestamp } from "@/lib/dates";
 import type { SuperadminShiftListRow } from "@schichtwerk/database";
@@ -97,5 +97,22 @@ export async function updateSuperadminShiftConfirmationStatus(input: {
     return { ok: true };
   } catch {
     return { ok: false, errorKey: "superadmin.errors.saveShiftStatusFailed" };
+  }
+}
+
+function revalidateAllShiftViews() {
+  revalidatePath("/dashboard");
+  revalidatePath("/bereich-kalender");
+}
+
+export async function resetOrganizationShifts(): Promise<SuperadminShiftActionResult> {
+  try {
+    const { organizationId } = await requireSuperadminDeveloper();
+    const admin = getAdminDatabase();
+    await admin.resetOrganizationShiftData(organizationId);
+    revalidateAllShiftViews();
+    return { ok: true };
+  } catch {
+    return { ok: false, errorKey: "superadmin.errors.resetShiftsFailed" };
   }
 }

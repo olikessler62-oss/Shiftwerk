@@ -368,6 +368,78 @@ function stealPxFromEmptyExpandedAreas(
   return stolenPx;
 }
 
+function rebalanceEmptyExpandedAreas(
+  areas: readonly { id: string }[],
+  heights: Map<string, number>,
+  emptyExpandedAreas: readonly { id: string }[],
+  availableBodyHeightPx: number,
+): void {
+  if (emptyExpandedAreas.length <= 1) return;
+
+  const nonEmptyTotalPx = areas
+    .filter(
+      (area) => !emptyExpandedAreas.some((emptyArea) => emptyArea.id === area.id)
+    )
+    .reduce((sum, area) => sum + (heights.get(area.id) ?? 0), 0);
+
+  const emptyBudgetPx = availableBodyHeightPx - nonEmptyTotalPx;
+  if (emptyBudgetPx <= emptyExpandedAreas.length * AREA_ROW_MIN_HEIGHT_PX) {
+    return;
+  }
+
+  distributeTotalPxEvenlyAmongAreas(
+    heights,
+    emptyExpandedAreas,
+    emptyBudgetPx,
+  );
+}
+
+function ensureShiftAreasAtLeastAsTallAsEmptyExpanded(
+  heights: Map<string, number>,
+  shiftAreas: readonly { id: string }[],
+  emptyExpandedAreas: readonly { id: string }[],
+  requiredByArea: ReadonlyMap<string, number>,
+): void {
+  if (shiftAreas.length === 0 || emptyExpandedAreas.length === 0) return;
+
+  let guard = 0;
+  while (guard < shiftAreas.length * emptyExpandedAreas.length + 4) {
+    guard += 1;
+
+    const maxEmptyPx = Math.max(
+      AREA_ROW_MIN_HEIGHT_PX,
+      ...emptyExpandedAreas.map(
+        (area) => heights.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX,
+      ),
+    );
+
+    let adjusted = false;
+    for (const area of shiftAreas) {
+      const currentPx = heights.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX;
+      const requiredPx = requiredByArea.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX;
+      const targetPx =
+        maxEmptyPx > AREA_ROW_MIN_HEIGHT_PX
+          ? Math.max(requiredPx, maxEmptyPx + 1)
+          : Math.max(requiredPx, maxEmptyPx);
+      if (currentPx >= targetPx) continue;
+
+      const deficitPx = targetPx - currentPx;
+      const stolenPx = stealPxFromEmptyExpandedAreas(
+        heights,
+        emptyExpandedAreas,
+        deficitPx,
+      );
+      if (stolenPx <= 0) return;
+
+      heights.set(area.id, currentPx + stolenPx);
+      adjusted = true;
+      break;
+    }
+
+    if (!adjusted) return;
+  }
+}
+
 function boostShiftAreasFromEmptySlack(
   areas: readonly { id: string }[],
   heights: Map<string, number>,
@@ -518,6 +590,25 @@ function applyPhase1Layout(
     );
   }
 
+  ensureShiftAreasAtLeastAsTallAsEmptyExpanded(
+    heights,
+    shiftAreas,
+    emptyExpandedAreas,
+    requiredByArea,
+  );
+  rebalanceEmptyExpandedAreas(
+    areas,
+    heights,
+    emptyExpandedAreas,
+    availableBodyHeightPx,
+  );
+  ensureShiftAreasAtLeastAsTallAsEmptyExpanded(
+    heights,
+    shiftAreas,
+    emptyExpandedAreas,
+    requiredByArea,
+  );
+
   let slackPx = availableBodyHeightPx - sumHeights(areas, heights);
 
   if (shiftAreas.length > 0 && slackPx > 0) {
@@ -563,6 +654,19 @@ function applyPhase1Layout(
       layoutMinHeightAreaIds,
     );
   }
+
+  rebalanceEmptyExpandedAreas(
+    areas,
+    heights,
+    emptyExpandedAreas,
+    availableBodyHeightPx,
+  );
+  ensureShiftAreasAtLeastAsTallAsEmptyExpanded(
+    heights,
+    shiftAreas,
+    emptyExpandedAreas,
+    requiredByArea,
+  );
 }
 
 function applyPhase2Layout(

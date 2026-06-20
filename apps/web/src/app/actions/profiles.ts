@@ -8,7 +8,9 @@ import {
   validateHourlyRateValidFromPolicy,
   validateProfileColorAssignment,
   validateProfileEmail,
+  validateProfileFullNameUniqueness,
   validateProfileMobilePhone,
+  defaultProfileWeeklyHoursForCreate,
 } from "@schichtwerk/database";
 import type { Profile } from "@schichtwerk/types";
 import { getAdminDatabase, getDatabase } from "@/lib/db";
@@ -124,6 +126,14 @@ export async function createProfile(input: {
       return { ok: false, error: "Bitte einen Namen eingeben." };
     }
 
+    const db = await getDatabase();
+    const admin = getAdminDatabase();
+    const profiles = await db.listOrganizationProfiles(organizationId);
+    const nameCheck = validateProfileFullNameUniqueness(profiles, {
+      full_name: fullName,
+    });
+    if (!nameCheck.ok) return nameCheck;
+
     const contact = await validateProfileContact(organizationId, {
       email: input.email,
       mobile_phone: input.mobile_phone,
@@ -131,8 +141,6 @@ export async function createProfile(input: {
     });
     if (!contact.ok) return contact;
 
-    const db = await getDatabase();
-    const admin = getAdminDatabase();
     const schedulable = input.is_active ? input.schedulable : false;
 
     if (input.is_active) {
@@ -163,6 +171,7 @@ export async function createProfile(input: {
         email: contact.email,
         mobile_phone: contact.mobile_phone,
         color: contact.color,
+        weekly_hours: defaultProfileWeeklyHoursForCreate(),
         is_active: input.is_active,
         schedulable,
       });
@@ -230,6 +239,13 @@ export async function updateProfile(input: {
       input.id
     );
     if (!contact.ok) return contact;
+
+    const profiles = await db.listOrganizationProfiles(organizationId);
+    const nameCheck = validateProfileFullNameUniqueness(profiles, {
+      full_name: fullName,
+      excludeId: input.id,
+    });
+    if (!nameCheck.ok) return nameCheck;
 
     const schedulable = input.is_active ? input.schedulable : false;
 

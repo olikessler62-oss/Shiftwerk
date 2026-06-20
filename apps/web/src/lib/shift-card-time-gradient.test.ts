@@ -3,7 +3,7 @@ import {
   buildShiftCardGradientStops,
   buildShiftCardTimeGradientCss,
   parseClockTimeToMinutes,
-} from "./shift-card-time-gradient";
+} from "@schichtwerk/ui-tokens";
 
 describe("shift-card-time-gradient", () => {
   it("parses clock times", () => {

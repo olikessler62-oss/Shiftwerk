@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "seed:employees": "tsx scripts/seed-test-employees.ts",
+    "replace:employee-pool": "tsx scripts/replace-test-employee-pool.ts",
     "retention:shifts": "tsx scripts/run-shift-retention.ts",
     "retention:absences": "tsx scripts/run-absence-retention.ts"
   },

@@ -25,6 +25,7 @@ import {
   type DashboardShiftActionResult,
 } from "@/components/dashboard/dashboard-assign-shift-modal";
 import { AreaCalendarBulkShiftModal } from "@/components/areacalendar/areacalendar-bulk-shift-modal";
+import { NoServiceHoursShiftConfirmModal } from "@/components/areacalendar/no-service-hours-shift-confirm-modal";
 import type { AreaCalendarBulkShiftDialogState } from "@/components/areacalendar/areacalendar-add-shift-modal";
 import {
   CommunicationHubModal,
@@ -62,12 +63,18 @@ import {
   staffingAssignmentsForPlanningAreaDay,
 } from "@/lib/bulk-staffing-header";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
-import { resolveDashboardAssignPrefillFromOpenDemand } from "@/lib/dashboard-assign-prefill";
+import { resolveOpenDemandShiftPrefill } from "@/lib/bulk-shift-staffing";
 import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
 import { isPastShiftDate } from "@/lib/planning-readonly";
+import { clearDocumentTextSelection } from "@/lib/calendar-interaction-ui";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures } from "@/lib/org-features-provider";
+import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
+import { organizationTodayISO } from "@schichtwerk/database";
+import {
+  weeklyHoursByEmployeeIdFromEmployees,
+  weeklyHoursCheckShiftFromPlanningShift,
+} from "@/lib/weekly-hours-check-shifts";
 import {
   useEffectiveShiftConfirmationEnabled,
   useShiftConfirmationSimulation,
@@ -76,14 +83,21 @@ import {
 import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
 import { useAppShellModalLockActive, useAppShellWaitCursorActive, useIsAppShellLocked } from "@/lib/app-shell-modal-lock";
 import { translateActionError } from "@/lib/translate-action-error";
+import { validateShiftAssignWeeklyHoursClient } from "@/lib/shift-weekly-hours-validation-client";
+import { DEFAULT_ORGANIZATION_TIME_ZONE } from "@/lib/dates";
 import {
   canOpenShiftCardContextMenu,
+  isConfirmedShiftCard,
   planningShiftCardShowsPointerCursor,
   shiftCardAllowsRemoveFromAssignDialog,
   shiftCardContextMenuActionLabelKey,
   shiftCardContextMenuActions,
   type ShiftCardContextMenuAction,
 } from "@/lib/shift-card-context-menu-actions";
+import {
+  resolveShiftCardInteractionContext,
+  resolveShiftCardPrimaryClick,
+} from "@/lib/shift-card-interaction-policy";
 import {
   canDeleteShift,
   shiftDeleteBlockedMessage,
@@ -126,10 +140,14 @@ import {
   profileAvailabilityWeekdayFromAreaCalendarDate,
 } from "@/lib/available-employees-for-shift";
 import {
-  employeeHasRecurringAvailabilityOnWeekday,
+  getPlanningDayAssignBlockReason,
+} from "@/lib/planning-day-assign-block-reason";
+import { canPromptNoServiceHoursShiftAssignForDay } from "@/lib/areacalendar-area-day-assign";
+import {
   employeeMatchesShiftAvailability,
   isEmployeeAbsentOnDate,
 } from "@schichtwerk/database";
+import { sortProfilesByFirstName } from "@/lib/profile-display-sort";
 import {
   buildPlanningShiftsByCellDisplay,
 } from "@/lib/planning-overnight-shift-display";
@@ -154,6 +172,11 @@ import type {
   CommunicationSwapRequestRow,
 } from "@/lib/communication-hub";
 import { collectShiftAbsenceConflicts } from "@/lib/shift-absence-conflict";
+import {
+  DASHBOARD_CELL_CONTEXT_MENU_WIDTH_PX,
+  PLANNING_CONTEXT_MENU_SURFACE_CLASS,
+  useClampedContextMenuPosition,
+} from "@/lib/context-menu-position";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type {
   AbsenceRequest,
@@ -218,9 +241,6 @@ type CellContextMenuState = {
   shiftId?: string;
 };
 
-type DayAssignBlockReason = "absent" | "no_availability";
-
-const PLANNING_CELL_CONTEXT_MENU_WIDTH_PX = 240;
 const PLANNING_CELL_CONTEXT_MENU_ITEM_HEIGHT_PX = 36;
 const CONTEXT_MENU_CLOSE_DISTANCE_PX = 20;
 
@@ -246,7 +266,7 @@ function clampPlanningContextMenuPosition(
     return { x: clientX, y: clientY };
   }
   const padding = 8;
-  const menuWidth = PLANNING_CELL_CONTEXT_MENU_WIDTH_PX;
+  const menuWidth = DASHBOARD_CELL_CONTEXT_MENU_WIDTH_PX;
   const maxX = Math.max(padding, window.innerWidth - menuWidth - padding);
   const maxY = Math.max(padding, window.innerHeight - menuHeight - padding);
   return {
@@ -277,26 +297,6 @@ function distanceFromPointToMenu(
   const closestX = Math.max(rect.left, Math.min(clientX, rect.right));
   const closestY = Math.max(rect.top, Math.min(clientY, rect.bottom));
   return Math.hypot(clientX - closestX, clientY - closestY);
-}
-
-function getDayAssignBlockReason(
-  employeeId: string,
-  date: string,
-  recurringAvailability: ProfileRecurringAvailability[],
-  absences: AbsenceRequest[]
-): DayAssignBlockReason | null {
-  if (isEmployeeAbsentOnDate(employeeId, absences, date)) return "absent";
-  const weekday = profileAvailabilityWeekdayFromAreaCalendarDate(date);
-  if (
-    !employeeHasRecurringAvailabilityOnWeekday(
-      employeeId,
-      recurringAvailability,
-      weekday
-    )
-  ) {
-    return "no_availability";
-  }
-  return null;
 }
 
 function timeFieldValue(time: string): string {
@@ -332,6 +332,7 @@ export function DashboardView({
   const t = useTranslations();
   const { locale } = useLocale();
   const features = useOrgFeatures();
+  const organization = useOrganization();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
   const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
@@ -340,6 +341,10 @@ export function DashboardView({
   const simplePlanning = !features.areas;
   const intlLocale = toIntlLocale(locale);
   const todayISO = useMemo(() => toISODate(new Date()), []);
+  const weeklyHoursTodayISO = useMemo(
+    () => organizationTodayISO(organization.timezone),
+    [organization.timezone]
+  );
   const [pending, startTransition] = useTransition();
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<string | null>(
     null
@@ -364,6 +369,12 @@ export function DashboardView({
   } = usePlanningEmployeeListContextMenu();
   const [bulkShiftDialog, setBulkShiftDialog] =
     useState<AreaCalendarBulkShiftDialogState | null>(null);
+  const [noServiceHoursAssignConfirm, setNoServiceHoursAssignConfirm] =
+    useState<{
+      employeeId: string;
+      date: string;
+      mode: "picker" | "bulk";
+    } | null>(null);
   const [shiftDeleteConfirmId, setShiftDeleteConfirmId] = useState<string | null>(
     null
   );
@@ -705,7 +716,9 @@ export function DashboardView({
     () =>
       dates.map((date, dayIndex) => {
         if (!layoutActiveDayDates.has(date)) return false;
-        if (!dayHasOpenArea[dayIndex]) return false;
+        if (!dayHasOpenArea[dayIndex]) {
+          return !dayHasServiceHours[dayIndex];
+        }
         const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
         return hasShifts || dayHasServiceHours[dayIndex];
       }),
@@ -796,11 +809,16 @@ export function DashboardView({
       : CALENDAR_DAY_HEADER_ROW_HEIGHT;
   }, [showStaffingHeaderRow]);
 
+  const calendarEmployees = useMemo(
+    () => sortProfilesByFirstName(employees),
+    [employees]
+  );
+
   const planningBodyRowTemplate = useMemo(() => {
-    return employees.length > 0
-      ? `repeat(${employees.length}, minmax(${PLANNING_EMPLOYEE_ROW_HEIGHT}, 1fr))`
+    return calendarEmployees.length > 0
+      ? `repeat(${calendarEmployees.length}, minmax(${PLANNING_EMPLOYEE_ROW_HEIGHT}, 1fr))`
       : "";
-  }, [employees.length]);
+  }, [calendarEmployees.length]);
 
   const timesComplete = areAreaCalendarShiftTimesComplete(startTime, endTime);
 
@@ -951,18 +969,46 @@ export function DashboardView({
     [visibleLocationShifts, employeesById]
   );
 
+  const weeklyHoursCheckShifts = useMemo(
+    () => calendarPlanningShifts.map(weeklyHoursCheckShiftFromPlanningShift),
+    [calendarPlanningShifts]
+  );
+
+  const weeklyHoursByEmployeeId = useMemo(
+    () => weeklyHoursByEmployeeIdFromEmployees(employees),
+    [employees]
+  );
+
   const communicationHubOptions = useMemo(
     () => ({
       absences,
       swapRequests: communicationSwapRequests,
       cancelActors: communicationCancelActorsMap,
+      todayISO: weeklyHoursTodayISO,
+      weeklyHoursByEmployeeId,
+      weeklyHoursCheckShifts,
     }),
-    [absences, communicationSwapRequests, communicationCancelActorsMap]
+    [
+      absences,
+      communicationSwapRequests,
+      communicationCancelActorsMap,
+      weeklyHoursTodayISO,
+      weeklyHoursByEmployeeId,
+      weeklyHoursCheckShifts,
+    ]
   );
 
   const absenceConflictShiftIds = useMemo(() => {
+    const conflictEligibleShifts = calendarDisplayShifts.filter(
+      (shift) =>
+        !isConfirmedShiftCard(
+          shift.confirmationStatus,
+          shift.requestedAt,
+          shift.displayState
+        )
+    );
     const conflicts = collectShiftAbsenceConflicts(
-      calendarDisplayShifts.map((shift) => ({
+      conflictEligibleShifts.map((shift) => ({
         id: shift.id,
         employeeId: shift.employee_id,
         shift_date: shift.shift_date,
@@ -971,6 +1017,25 @@ export function DashboardView({
     );
     return new Set(conflicts.map((conflict) => conflict.shiftId));
   }, [calendarDisplayShifts, absences]);
+
+  const swapRequestShiftIds = useMemo(
+    () => new Set(communicationSwapRequests.map((request) => request.shiftId)),
+    [communicationSwapRequests]
+  );
+
+  const getShiftCardMenuOptions = useCallback(
+    (
+      shift: { id: string; shift_date: string; displayState?: PlanningShift["displayState"] },
+      cellDate?: string
+    ) => ({
+      shiftDate: shift.shift_date,
+      cellDate: cellDate ?? shift.shift_date,
+      isPastShiftDate,
+      displayState: shift.displayState,
+      hasAbsenceConflict: absenceConflictShiftIds.has(shift.id),
+    }),
+    [absenceConflictShiftIds]
+  );
 
   const communicationItemCount = useMemo(
     () =>
@@ -1064,42 +1129,90 @@ export function DashboardView({
   }
 
   function openPicker(employeeId: string, date: string, shiftId?: string) {
-    if (shiftId) {
-      const shift = shiftsById.get(shiftId);
-      if (
-        shift &&
-        !planningShiftCardShowsPointerCursor(
-          {
-            shift_date: shift.shift_date,
-            confirmationStatus: shift.confirmationStatus,
-            requestedAt: shift.requestedAt,
-          },
-          date,
-          isPastShiftDate
-        )
-      ) {
-        return;
-      }
-    }
+    clearDocumentTextSelection();
 
     const cellShifts = shiftsByCell.get(`${employeeId}:${date}`) ?? [];
     const existing = shiftId
       ? cellShifts.find((shift) => shift.id === shiftId)
       : undefined;
+    let existingPrimaryClickKind: ReturnType<
+      typeof resolveShiftCardPrimaryClick
+    >["kind"] | null = null;
+
+    if (existing) {
+      const interactionContext = resolveShiftCardInteractionContext(
+        {
+          id: existing.id,
+          shift_date: existing.shift_date,
+          confirmationStatus: existing.confirmationStatus,
+          requestedAt: existing.requestedAt,
+          displayState: existing.displayState,
+        },
+        date,
+        isPastShiftDate,
+        {
+          shiftConfirmationEnabled,
+          hasAbsenceConflict: absenceConflictShiftIds.has(existing.id),
+          hasSwapRequest: swapRequestShiftIds.has(existing.id),
+        }
+      );
+      const primaryClick = resolveShiftCardPrimaryClick(
+        {
+          id: existing.id,
+          shift_date: existing.shift_date,
+          confirmationStatus: existing.confirmationStatus,
+          requestedAt: existing.requestedAt,
+          displayState: existing.displayState,
+        },
+        interactionContext
+      );
+      existingPrimaryClickKind = primaryClick.kind;
+
+      if (primaryClick.kind === "none") {
+        return;
+      }
+
+      if (primaryClick.kind === "communicationHub") {
+        openCommunication({
+          category: primaryClick.category,
+          preselectedShiftIds: [existing.id],
+        });
+        return;
+      }
+
+      if (primaryClick.kind === "reassign" && selectedAreaId) {
+        openBulkShiftDialogForAreaDay(selectedAreaId, date, {
+          focusShiftId: existing.id,
+        });
+        return;
+      }
+    }
+
     if (isDayReadOnly(date) && !existing && cellShifts.length === 0) return;
     if (
       !existing &&
       cellShifts.length === 0 &&
-      getDayAssignBlockReason(employeeId, date, recurringAvailability, absences)
+      getPlanningDayAssignBlockReason(
+        employeeId,
+        date,
+        todayISO,
+        recurringAvailability,
+        absences
+      )
     ) {
       return;
     }
+
+    const reassigningExisting = existingPrimaryClickKind === "reassign";
+
     setPicker({
       employeeId: existing?.employee_id ?? employeeId,
       date,
       shiftId,
     });
-    setSelectedEmployeeId(existing?.employee_id ?? employeeId);
+    setSelectedEmployeeId(
+      reassigningExisting ? "" : (existing?.employee_id ?? employeeId)
+    );
     setQualificationManuallySelected(false);
     if (existing) {
       setStartTime(existing.startTime);
@@ -1132,18 +1245,12 @@ export function DashboardView({
     } else {
       const demandPrefill =
         !simplePlanning && selectedAreaId && showStaffingHeaderRow
-          ? resolveDashboardAssignPrefillFromOpenDemand({
-              employeeId,
-              dateISO: date,
+          ? resolveOpenDemandShiftPrefill({
               areaId: selectedAreaId,
               staffingEntries: dailyStaffingByDate.get(date) ?? [],
               serviceHours,
               assignmentPresets,
-      staffingRules,
-      profileQualificationIds,
-              recurringAvailability,
-              absences,
-              employees,
+              staffingRules,
             })
           : null;
 
@@ -1213,6 +1320,7 @@ export function DashboardView({
 
   async function handleAssign(options?: {
     withoutServiceHours?: boolean;
+    assignToRemainingWeekDays?: boolean;
   }): Promise<DashboardShiftActionResult> {
     if (!picker || isDayReadOnly(picker.date) || !selectedEmployeeId) {
       return { ok: false, error: t("areaCalendar.bulkShiftValidationTimesRequired") };
@@ -1275,6 +1383,36 @@ export function DashboardView({
       }
     }
 
+    const selectedEmployee = employees.find(
+      (employee) => employee.id === selectedEmployeeId
+    );
+    const weeklyHoursCheck = validateShiftAssignWeeklyHoursClient({
+      employeeId: selectedEmployeeId,
+      employeeName: selectedEmployee?.full_name,
+      weeklyHours: selectedEmployee?.weekly_hours ?? null,
+      weekShifts: locationShifts.map((shift) => ({
+        id: shift.id,
+        employee_id: shift.employee_id,
+        shift_date: shift.shift_date,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+      })),
+      shiftDate: picker.date,
+      startTime,
+      endTime,
+      timeZone: DEFAULT_ORGANIZATION_TIME_ZONE,
+      excludeShiftIds:
+        editingShift && !reassigningToDifferentEmployee
+          ? new Set([editingShift.id])
+          : undefined,
+    });
+    if (!weeklyHoursCheck.ok) {
+      return {
+        ok: false,
+        error: translateActionError(weeklyHoursCheck.error, t),
+      };
+    }
+
     const result = await assignShiftWithTimes({
       employeeId: selectedEmployeeId,
       shiftDate: picker.date,
@@ -1286,6 +1424,8 @@ export function DashboardView({
       locationId: selectedLocationId,
       locationAreaId: simplePlanning ? null : selectedAreaId,
       withoutServiceHours: options?.withoutServiceHours,
+      assignToRemainingWeekDays: options?.assignToRemainingWeekDays,
+      weekDates: dates,
       existingShiftId:
         reassigningToDifferentEmployee ? undefined : editingShift?.id,
       simulatedProposedOnAssign,
@@ -1359,6 +1499,37 @@ export function DashboardView({
     [serviceHours]
   );
 
+  function requestPlanningDayAssign(
+    employeeId: string,
+    date: string,
+    mode: "picker" | "bulk"
+  ) {
+    const dayIndex = dates.indexOf(date);
+    const dayHasService = dayIndex >= 0 ? dayHasServiceHours[dayIndex] : true;
+    const cellShifts = shiftsByCell.get(`${employeeId}:${date}`) ?? [];
+
+    if (
+      canPromptNoServiceHoursShiftAssignForDay(
+        date,
+        dayHasService,
+        cellShifts.length
+      )
+    ) {
+      setNoServiceHoursAssignConfirm({ employeeId, date, mode });
+      return;
+    }
+
+    if (mode === "bulk" && selectedAreaId) {
+      openBulkShiftDialogForAreaDay(selectedAreaId, date, {
+        presetEmployeeId: employeeId,
+        withoutServiceHours: !dayHasService,
+      });
+      return;
+    }
+
+    openPicker(employeeId, date);
+  }
+
   const openCellContextMenuAt = useCallback(
     (
       employeeId: string,
@@ -1374,7 +1545,7 @@ export function DashboardView({
           !canOpenShiftCardContextMenu(
             shift.confirmationStatus,
             shift.requestedAt,
-            { shiftDate: shift.shift_date, isPastShiftDate }
+            { ...getShiftCardMenuOptions(shift) }
           )
         ) {
           return;
@@ -1389,9 +1560,7 @@ export function DashboardView({
                 shiftsById.get(shiftId)?.requestedAt,
                 (() => {
                   const shift = shiftsById.get(shiftId);
-                  return shift
-                    ? { shiftDate: shift.shift_date, isPastShiftDate }
-                    : undefined;
+                  return shift ? getShiftCardMenuOptions(shift) : undefined;
                 })()
               ).length
             )
@@ -1412,7 +1581,7 @@ export function DashboardView({
       cellContextMenuOpenedAtRef.current = performance.now();
       setCellContextMenu({ x, y, employeeId, date, shiftId });
     },
-    [shiftConfirmationEnabled, shiftsById, simplePlanning, isPastShiftDate]
+    [shiftConfirmationEnabled, shiftsById, simplePlanning, getShiftCardMenuOptions]
   );
 
   const handleCellContextMenu = useCallback(
@@ -1441,7 +1610,7 @@ export function DashboardView({
     ) => {
       const shift = shiftsById.get(shiftId);
       if (!shift) return;
-      const menuOptions = { shiftDate: shift.shift_date, isPastShiftDate };
+      const menuOptions = getShiftCardMenuOptions(shift, date);
       if (
         !canOpenShiftCardContextMenu(
           shift.confirmationStatus,
@@ -1453,22 +1622,40 @@ export function DashboardView({
       }
       openCellContextMenuAt(employeeId, date, clientX, clientY, shiftId);
     },
-    [openCellContextMenuAt, shiftsById, isPastShiftDate]
+    [openCellContextMenuAt, shiftsById, getShiftCardMenuOptions]
   );
 
   const canOpenSingleAssignFromContext = useCallback(
     (employeeId: string, date: string) => {
       const cellSegments = shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
       if (isDayReadOnly(date) && cellSegments.length === 0) return false;
+      const dayIndex = dates.indexOf(date);
+      const dayHasService =
+        dayIndex >= 0 ? dayHasServiceHours[dayIndex] : true;
       if (
+        dayHasService &&
         cellSegments.length === 0 &&
-        getDayAssignBlockReason(employeeId, date, recurringAvailability, absences)
+        getPlanningDayAssignBlockReason(
+          employeeId,
+          date,
+          todayISO,
+          recurringAvailability,
+          absences
+        )
       ) {
         return false;
       }
       return true;
     },
-    [shiftsByCellDisplay, recurringAvailability, absences, readOnlyWeek]
+    [
+      shiftsByCellDisplay,
+      dates,
+      dayHasServiceHours,
+      recurringAvailability,
+      absences,
+      readOnlyWeek,
+      todayISO,
+    ]
   );
 
   const handleEmployeeRowContextMenu = useCallback(
@@ -1537,23 +1724,16 @@ export function DashboardView({
     skipCellContextMenuCloseRef.current = true;
     const { employeeId, date } = cellContextMenu;
     setCellContextMenu(null);
-    openPicker(employeeId, date);
-  }, [cellContextMenu, openPicker]);
+    requestPlanningDayAssign(employeeId, date, "picker");
+  }, [cellContextMenu]);
 
   const handleContextAssignBulk = useCallback(() => {
     if (!cellContextMenu || !selectedAreaId) return;
     skipCellContextMenuCloseRef.current = true;
     const { employeeId, date } = cellContextMenu;
-    const cellSegments = shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
-    const uniqueShiftIds = [
-      ...new Set(cellSegments.map((segment) => segment.shift.id)),
-    ];
     setCellContextMenu(null);
-    openBulkShiftDialogForAreaDay(selectedAreaId, date, {
-      focusShiftId: uniqueShiftIds.length === 1 ? uniqueShiftIds[0] : undefined,
-      presetEmployeeId: employeeId,
-    });
-  }, [cellContextMenu, selectedAreaId, shiftsByCellDisplay, openBulkShiftDialogForAreaDay]);
+    requestPlanningDayAssign(employeeId, date, "bulk");
+  }, [cellContextMenu, selectedAreaId]);
 
   const handleContextRemoveShift = useCallback(() => {
     if (!cellContextMenu) return;
@@ -1674,7 +1854,6 @@ export function DashboardView({
     setCellContextMenu(null);
     openBulkShiftDialogForAreaDay(selectedAreaId, date, {
       focusShiftId: shiftId,
-      presetEmployeeId: employeeId,
     });
   }, [cellContextMenu, selectedAreaId, openBulkShiftDialogForAreaDay]);
 
@@ -1811,7 +1990,7 @@ export function DashboardView({
           !shiftCardAllowsRemoveFromAssignDialog(
             shift.confirmationStatus,
             shift.requestedAt,
-            { shiftDate: shift.shift_date, isPastShiftDate }
+            { ...getShiftCardMenuOptions(shift) }
           )
         ) {
           return undefined;
@@ -1827,9 +2006,24 @@ export function DashboardView({
     return shiftCardContextMenuActions(
       shift.confirmationStatus,
       shift.requestedAt,
-      { shiftDate: shift.shift_date, isPastShiftDate }
+      getShiftCardMenuOptions(shift, cellContextMenu?.date)
     );
-  }, [cellContextMenu, shiftsById, shiftConfirmationEnabled]);
+  }, [cellContextMenu, shiftsById, shiftConfirmationEnabled, getShiftCardMenuOptions]);
+
+  const clampedCellContextMenuPosition = useClampedContextMenuPosition(
+    cellContextMenu != null,
+    cellContextMenu?.x ?? 0,
+    cellContextMenu?.y ?? 0,
+    cellContextMenuRef,
+    [
+      cellContextMenu?.shiftId,
+      cellContextMenu?.employeeId,
+      simplePlanning,
+      shiftConfirmationEnabled,
+      contextMenuShiftActions.length,
+      contextMenuRemoveShiftId,
+    ]
+  );
 
   const contextMenuShift = cellContextMenu?.shiftId
     ? shiftsById.get(cellContextMenu.shiftId)
@@ -1854,13 +2048,14 @@ export function DashboardView({
 
   const getDayAssignBlockReasonForCell = useCallback(
     (employeeId: string, date: string) =>
-      getDayAssignBlockReason(
+      getPlanningDayAssignBlockReason(
         employeeId,
         date,
+        todayISO,
         recurringAvailability,
         absences
       ),
-    [recurringAvailability, absences]
+    [recurringAvailability, absences, todayISO]
   );
 
   const canAssign =
@@ -1998,7 +2193,7 @@ export function DashboardView({
         >
           <DashboardCalendarGrid
             dates={dates}
-            employees={employees}
+            employees={calendarEmployees}
             shifts={calendarPlanningShifts}
             calendarDisplayShifts={calendarDisplayShifts}
             shiftsByCell={calendarShiftsByCell}
@@ -2035,25 +2230,34 @@ export function DashboardView({
             getDayAssignBlockReason={getDayAssignBlockReasonForCell}
             onToggleDayActive={toggleDayActive}
             onOpenPicker={openPicker}
+            onRequestPlanningDayAssign={requestPlanningDayAssign}
             onCellContextMenu={handleCellContextMenu}
             onShiftContextMenu={handleShiftContextMenu}
             onEmployeeRowContextMenu={handleEmployeeRowContextMenu}
             selectedAreaId={selectedAreaId}
+            selectedAreaName={selectedAreaName}
             serviceHours={serviceHours}
             staffingRules={staffingRules}
             qualifications={qualifications}
             profileQualificationIds={profileQualificationIdsRecord}
+            recurringAvailability={recurringAvailability}
             highlightedEmployeeId={highlightedEmployeeId}
             onEmployeeHover={setHighlightedEmployeeId}
             absenceConflictShiftIds={absenceConflictShiftIds}
+            swapRequestShiftIds={swapRequestShiftIds}
+            shiftConfirmationEnabled={shiftConfirmationEnabled}
           />
         </main>
 
         {cellContextMenu ? (
           <div
             ref={cellContextMenuRef}
-            className="fixed z-[100] min-w-[15rem] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
-            style={{ left: cellContextMenu.x, top: cellContextMenu.y }}
+            className={PLANNING_CONTEXT_MENU_SURFACE_CLASS}
+            style={{
+              left: clampedCellContextMenuPosition.x,
+              top: clampedCellContextMenuPosition.y,
+              width: DASHBOARD_CELL_CONTEXT_MENU_WIDTH_PX,
+            }}
             role="menu"
             aria-label={t("dashboard.contextAssignSingle")}
             onMouseDown={(event) => event.stopPropagation()}
@@ -2185,6 +2389,7 @@ export function DashboardView({
             timesComplete={timesComplete}
             canAssign={canAssign}
             hasExistingShift={Boolean(picker.shiftId)}
+            weekDates={dates}
             presetEmployeeId={
               picker.shiftId ? undefined : picker.employeeId
             }
@@ -2209,6 +2414,25 @@ export function DashboardView({
             }}
           />
         ) : null}
+
+      {noServiceHoursAssignConfirm ? (
+        <NoServiceHoursShiftConfirmModal
+          areaName={selectedAreaName ?? ""}
+          onCancel={() => setNoServiceHoursAssignConfirm(null)}
+          onConfirm={() => {
+            const { employeeId, date, mode } = noServiceHoursAssignConfirm;
+            setNoServiceHoursAssignConfirm(null);
+            if (mode === "bulk" && selectedAreaId) {
+              openBulkShiftDialogForAreaDay(selectedAreaId, date, {
+                presetEmployeeId: employeeId,
+                withoutServiceHours: true,
+              });
+              return;
+            }
+            openPicker(employeeId, date);
+          }}
+        />
+      ) : null}
 
       {bulkShiftDialog && selectedLocationId && selectedAreaId && !simplePlanning ? (
         <AreaCalendarBulkShiftModal
@@ -2255,6 +2479,7 @@ export function DashboardView({
               endTime: shift.endTime,
               locationAreaId: shift.location_area_id,
             }))}
+          weekDates={dates}
           onClose={() => setBulkShiftDialog(null)}
           onSaved={handleBulkShiftSaved}
         />
@@ -2321,7 +2546,7 @@ export function DashboardView({
 
       {communicationOpen ? (
         <CommunicationHubModal
-          key={communicationOptions?.category ?? communicationOptions?.responseTab ?? "auto"}
+          key={`communication-${communicationOptions?.category ?? communicationOptions?.responseTab ?? "auto"}-${communicationOptions?.preselectedShiftIds?.join(",") ?? ""}`}
           weekStart={weekStart}
           locationId={selectedLocationId}
           locationName={selectedLocationName}
@@ -2330,6 +2555,9 @@ export function DashboardView({
           absences={absences}
           swapRequests={communicationSwapRequests}
           cancelActors={communicationCancelActorsMap}
+          todayISO={weeklyHoursTodayISO}
+          weeklyHoursByEmployeeId={weeklyHoursByEmployeeId}
+          weeklyHoursCheckShifts={weeklyHoursCheckShifts}
           shiftConfirmationEnabled={shiftConfirmationEnabled}
           initialOptions={communicationOptions}
           onClose={closeCommunication}

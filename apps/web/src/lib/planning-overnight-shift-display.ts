@@ -270,7 +270,8 @@ export function canOpenPlanningOvernightShiftContextMenu(
   if (
     resolveShiftCardContextMenuStatus(
       span.shift.confirmationStatus,
-      span.shift.requestedAt
+      span.shift.requestedAt,
+      span.shift.displayState
     ) === "confirmed"
   ) {
     return false;

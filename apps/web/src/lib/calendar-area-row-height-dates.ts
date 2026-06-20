@@ -31,6 +31,28 @@ export function isCalendarAreaRowHeightDate(
   return !isPastCalendarDate(dateISO, todayISO);
 }
 
+/** Vergangene, ausgeklappte Tage — nur für Zeilenhöhe, wenn Zukunft/heute leer ist. */
+export function isCalendarAreaRowPastHeightDate(
+  dateISO: string,
+  layoutActiveDayDates: ReadonlySet<string>,
+  todayISO: string
+): boolean {
+  if (!layoutActiveDayDates.has(dateISO)) return false;
+  return isPastCalendarDate(dateISO, todayISO);
+}
+
+/**
+ * Zukunft/heute bestimmen Sollhöhe; nur wenn dort keine Schichten liegen,
+ * fließen ausgeklappte Vergangenheitstage ein (Priorität vor leeren Bereichen).
+ */
+export function resolveAreaRowHeightLaneCount(
+  futureLaneCount: number,
+  pastExpandedLaneCount: number
+): number {
+  if (futureLaneCount > 0) return futureLaneCount;
+  return pastExpandedLaneCount;
+}
+
 /**
  * Expandierter Bereich darf auf 68 px minimiert werden, wenn:
  * - ab heute bis Wochenende (sichtbare `weekDates`) weder Servicezeit noch Schichten, und

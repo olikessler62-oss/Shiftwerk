@@ -1,0 +1,119 @@
+import { StyleSheet, View } from "react-native";
+import type { ConfirmationDecision } from "@schichtwerk/types";
+import { WeekDayHeader } from "@/components/week-day-header";
+import { WeekShiftCard } from "@/components/week-shift-card";
+import type { WeekShiftActionContext } from "@/components/week-shift-action-sheet";
+import { isPastDateISO, isTodayDateISO, type WeekPlanDay } from "@/lib/mobile-week-plan";
+import { useWeekPlanLayout } from "@/lib/responsive-layout";
+import { WEEK_PLAN_ACTIVE, WEEK_PLAN_PAST } from "@/lib/week-plan-theme";
+import { spacing } from "@schichtwerk/ui-tokens";
+
+const SHIFT_CARD_AREA_HEIGHT_RATIO = 0.9;
+const SHIFT_CARD_GAP = 4;
+
+type WeekDaySlotProps = {
+  day: WeekPlanDay;
+  slotHeight: number;
+  drafts: Record<string, ConfirmationDecision>;
+  onShiftPress: (context: WeekShiftActionContext) => void;
+};
+
+export function WeekDaySlot({
+  day,
+  slotHeight,
+  drafts,
+  onShiftPress,
+}: WeekDaySlotProps) {
+  const layout = useWeekPlanLayout();
+  const isPastDay = isPastDateISO(day.dateISO);
+  const isToday = isTodayDateISO(day.dateISO);
+  const theme = isPastDay ? WEEK_PLAN_PAST : WEEK_PLAN_ACTIVE;
+  const cardsAreaHeight = Math.floor(slotHeight * SHIFT_CARD_AREA_HEIGHT_RATIO);
+  const shiftCount = day.shifts.length;
+  const cardHeight =
+    shiftCount > 0
+      ? Math.floor(
+          (cardsAreaHeight - SHIFT_CARD_GAP * Math.max(shiftCount - 1, 0)) /
+            shiftCount
+        )
+      : 0;
+
+  return (
+    <View
+      style={[
+        styles.slot,
+        { borderBottomColor: theme.rowDivider },
+      ]}
+    >
+      <View
+        style={[
+          styles.dayColumn,
+          {
+            width: layout.dayLabelColumnWidth,
+            paddingLeft: layout.horizontalPadding,
+            backgroundColor: theme.columnBackground,
+          },
+        ]}
+      >
+        <WeekDayHeader
+          weekdayLabel={day.weekdayLabel}
+          dateLabel={day.dateLabel}
+          isPastDay={isPastDay}
+          isToday={isToday}
+        />
+      </View>
+
+      <View
+        style={[
+          styles.shiftsColumn,
+          {
+            paddingLeft: layout.shiftCardLeftInset,
+            paddingRight: layout.horizontalPadding,
+            backgroundColor: theme.columnBackground,
+          },
+        ]}
+      >
+        {shiftCount > 0 ? (
+          <View style={[styles.cardsStack, { height: cardsAreaHeight }]}>
+            {day.shifts.map(({ shift, display, confirmation }) => (
+              <WeekShiftCard
+                key={shift.id}
+                shift={shift}
+                display={display}
+                confirmation={confirmation}
+                draft={drafts[shift.id]}
+                isPastDay={isPastDay}
+                onPress={onShiftPress}
+                compact={layout.shiftCardCompact}
+                height={cardHeight}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  slot: {
+    height: "100%",
+    flexDirection: "row",
+    alignItems: "stretch",
+    overflow: "hidden",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  dayColumn: {
+    paddingRight: spacing.sm,
+    justifyContent: "center",
+  },
+  shiftsColumn: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: "center",
+  },
+  cardsStack: {
+    justifyContent: "center",
+    gap: SHIFT_CARD_GAP,
+  },
+});

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   COLLAPSED_DAY_COLUMN_LINE_MAX_WIDTH_PX,
+  SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX,
+  SHIFT_CARD_MIN_CELL_WIDTH_RATIO,
   computeCollapsedDayShiftLineLayouts,
   computeCollapsedShiftLineLayout,
   computeCollapsedShiftPixelLeftPx,
@@ -12,6 +14,7 @@ import {
   resolveShiftCardDurationWidthPx,
   resolveSubThreeHourUniformTargetWidthPx,
   resolveThreeHourTierDisplayWidthPx,
+  shiftCardMinWidthFromCellPx,
   SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS,
   timelineThreeHourReferenceWidthPx,
   sparseCellFairShareWidthPx,
@@ -503,9 +506,13 @@ describe("shift-card-cell-layout", () => {
       trackWidthPx,
       timeline
     );
-    expect(shortTargetPx).toBeCloseTo(
-      threeHourDisplayPx * SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS,
-      0
+    const readabilityTargetPx =
+      threeHourDisplayPx * SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS;
+    const timelineTargetPx =
+      timelineThreeHourReferenceWidthPx(trackWidthPx, timeline) *
+      SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS;
+    expect(shortTargetPx).toBe(
+      Math.max(SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX, Math.min(readabilityTargetPx, timelineTargetPx))
     );
     expect(resolveShiftCardDurationWidthPx("08:00", "09:00", trackWidthPx, timeline))
       .toBe(shortTargetPx);
@@ -520,10 +527,76 @@ describe("shift-card-cell-layout", () => {
 
     expect(shortLayouts[0]!.layout.widthPx).toBe(shortLayouts[1]!.layout.widthPx);
     expect(shortLayouts[0]!.layout.widthPx).toBeLessThan(threeHour.widthPx);
-    expect(shortLayouts[0]!.layout.widthPx / threeHour.widthPx).toBeCloseTo(
-      SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS,
-      1
+    expect(shortLayouts[0]!.layout.widthPx).toBeGreaterThanOrEqual(
+      SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX
     );
+  });
+
+  it("never renders shift cards narrower than 23% of the day cell width", () => {
+    const timeline = resolveLocationServiceDayTimeline(
+      MULTI_AREA_SERVICE_HOURS,
+      "2026-06-19"
+    );
+    const cellWidthPx = 120;
+    const minWidthPx = shiftCardMinWidthFromCellPx(cellWidthPx);
+
+    expect(minWidthPx).toBe(
+      Math.max(
+        SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX,
+        cellWidthPx * SHIFT_CARD_MIN_CELL_WIDTH_RATIO
+      )
+    );
+
+    const evening = computeShiftCardCellLayout(
+      cellWidthPx,
+      "18:00",
+      "22:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 1, uniformShiftDurationWidth: true }
+    );
+    const morning = computeShiftCardCellLayout(
+      cellWidthPx,
+      "08:00",
+      "10:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 1, uniformShiftDurationWidth: true }
+    );
+
+    expect(evening.widthPx).toBeGreaterThanOrEqual(minWidthPx);
+    expect(morning.widthPx).toBeGreaterThanOrEqual(minWidthPx);
+  });
+
+  it("4h evening shift is wider than 2h morning shift with uniform duration width", () => {
+    const timeline = resolveLocationServiceDayTimeline(
+      MULTI_AREA_SERVICE_HOURS,
+      "2026-06-19"
+    );
+    const cellWidthPx = 120;
+
+    const evening = computeShiftCardCellLayout(
+      cellWidthPx,
+      "18:00",
+      "22:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 1, uniformShiftDurationWidth: true }
+    );
+    const morning = computeShiftCardCellLayout(
+      cellWidthPx,
+      "08:00",
+      "10:00",
+      timeline,
+      "two-line",
+      120,
+      { shiftCountInCell: 1, uniformShiftDurationWidth: true }
+    );
+
+    expect(evening.widthPx).toBeGreaterThan(morning.widthPx);
   });
 
   it("keeps uniform short shifts at timeline width with two-line density", () => {

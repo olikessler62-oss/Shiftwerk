@@ -26,7 +26,7 @@ export function getSupabase() {
   if (!client) {
     if (!url || !anonKey) {
       throw new Error(
-        "Supabase-Konfiguration fehlt. Trage NEXT_PUBLIC_SUPABASE_URL und NEXT_PUBLIC_SUPABASE_ANON_KEY in apps/web/.env.local ein — oder lege apps/mobile/.env mit EXPO_PUBLIC_* an."
+        "Supabase-Konfiguration fehlt. Lege apps/mobile/.env an und trage EXPO_PUBLIC_SUPABASE_URL und EXPO_PUBLIC_SUPABASE_ANON_KEY ein."
       );
     }
     client = createClient(url, anonKey, {

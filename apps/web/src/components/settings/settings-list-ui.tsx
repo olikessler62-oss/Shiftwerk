@@ -335,7 +335,7 @@ export function SettingsListRowDeleteButton({
 export function shouldIgnoreSettingsListRowActivation(
   event: MouseEvent<HTMLElement>
 ): boolean {
-  return !!event.target.closest(
+  return !!(event.target as HTMLElement | null)?.closest(
     "label, button, input, textarea, select, a, [role='checkbox']"
   );
 }

@@ -10,6 +10,18 @@ import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline
 
 export const PLANNING_CELL_HEIGHT_PX = 44;
 export const PLANNING_CELL_PADDING_PX = 4;
+/** Graues Info-Panel in Kalenderzellen (keine Verfügbarkeit, vergangene Abwesenheit). */
+export const PLANNING_CELL_INFO_LABEL_PANEL_CLASS =
+  "rounded-lg bg-slate-100 text-xs text-slate-500";
+export const PLANNING_CELL_BLOCKED_INFO_PANEL_CLASS =
+  "flex min-h-0 flex-1 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500";
+/** Abwesenheit in aktuellen/künftigen Tagen (hervorgehoben). */
+export const PLANNING_CELL_ABSENT_ACTIVE_PANEL_CLASS =
+  "flex min-h-0 flex-1 items-center justify-center rounded-lg bg-rose-50 text-xs font-medium text-rose-700";
+/** Legende: keine Verfügbarkeit (slate-400). */
+export const PLANNING_LEGEND_NO_AVAILABILITY_DOT_COLOR = "#94a3b8";
+/** Legende: Abwesenheit in aktuellen/künftigen Tagen. */
+export const PLANNING_LEGEND_ABSENT_ACTIVE_DOT_COLOR = "#f43f5e";
 /** Eingeklappte Schichtkarte: fester Abstand vom linken Zellrand (Schichtplan). */
 export const PLANNING_COLLAPSED_SHIFT_LEFT_INSET_PX = 5;
 export const PLANNING_COLLAPSED_SHIFT_WIDTH_DELTA_PX = -2;

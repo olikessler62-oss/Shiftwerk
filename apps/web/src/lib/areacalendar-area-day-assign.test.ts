@@ -5,6 +5,8 @@ import {
   canOpenAssignShiftContextMenu,
   canOpenBulkShiftFromShiftCard,
   canPromptNoServiceHoursShiftAssign,
+  canPromptNoServiceHoursShiftAssignForDay,
+  canShowAreaDayAssignContextMenu,
 } from "./areacalendar-area-day-assign";
 
 function futureISO(daysAhead: number): string {
@@ -37,6 +39,18 @@ describe("areacalendar-area-day-assign", () => {
         0
       )
     ).toBe(true);
+  });
+
+  it("prompts before first shift on a no-service planning day", () => {
+    expect(
+      canPromptNoServiceHoursShiftAssignForDay(noServiceDayISO, false, 0)
+    ).toBe(true);
+    expect(
+      canPromptNoServiceHoursShiftAssignForDay(noServiceDayISO, false, 1)
+    ).toBe(false);
+    expect(
+      canPromptNoServiceHoursShiftAssignForDay(noServiceDayISO, true, 0)
+    ).toBe(false);
   });
 
   it("prompts before first shift on a no-service future day", () => {
@@ -73,6 +87,20 @@ describe("areacalendar-area-day-assign", () => {
         2
       )
     ).toBe(false);
+  });
+
+  it("opens context menu on no-service days via right-click policy", () => {
+    expect(
+      canShowAreaDayAssignContextMenu(
+        "bar",
+        noServiceDayISO,
+        true,
+        true,
+        serviceHours,
+        0,
+        false
+      )
+    ).toBe(true);
   });
 
   it("allows bulk modal from shift card on manual assignment days", () => {

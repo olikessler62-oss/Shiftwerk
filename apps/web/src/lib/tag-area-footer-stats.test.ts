@@ -6,6 +6,34 @@ import {
   shiftCompensationKey,
 } from "./tag-area-footer-stats";
 
+function mockFooterTranslate(
+  key: string,
+  params?: Record<string, string>
+): string {
+  if (key === "areaCalendar.tagAreaFooterShortLine") {
+    return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
+  }
+  if (key === "areaCalendar.tagAreaFooterShortLineHoursPart") {
+    return `Ges.: ${params?.hours ?? ""} Std | `;
+  }
+  if (key === "areaCalendar.tagAreaFooterShortLineCostPart") {
+    return `${params?.cost ?? ""} €`;
+  }
+  if (key === "areaCalendar.tagAreaFooterTotalHours") {
+    return `Gesamte Stunden: ${params?.hours ?? ""}`;
+  }
+  if (key === "areaCalendar.tagAreaFooterTotalAmountLabel") {
+    return "Gesamtbetrag:";
+  }
+  if (key === "areaCalendar.tagAreaFooterCompensationLabel") {
+    return "Entgelt:";
+  }
+  if (key === "areaCalendar.tagAreaFooterSurchargesLabel") {
+    return "Zuschläge:";
+  }
+  return `Gesamte Kosten: ${params?.amount ?? ""} ${params?.currency ?? ""}`;
+}
+
 describe("tag-area-footer-stats", () => {
   it("sums hours and costs using effective hourly rates", () => {
     const employeeId = "emp-1";
@@ -126,15 +154,7 @@ describe("tag-area-footer-stats", () => {
         hasCompensation: true,
         currency: "EUR",
       },
-      (key, params) => {
-        if (key === "areaCalendar.tagAreaFooterShortLine") {
-          return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
-        }
-        if (key === "areaCalendar.tagAreaFooterTotalHours") {
-          return `Gesamte Stunden: ${params?.hours ?? ""}`;
-        }
-        return `Gesamte Kosten: ${params?.amount ?? ""} ${params?.currency ?? ""}`;
-      },
+      mockFooterTranslate,
       "de"
     );
     expect(line).toBe("Ges.: 8:00 Std | 160,00 €");
@@ -150,29 +170,17 @@ describe("tag-area-footer-stats", () => {
         hasCompensation: true,
         currency: "EUR",
       },
-      (key, params) => {
-        if (key === "areaCalendar.tagAreaFooterShortLine") {
-          return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
-        }
-        if (key === "areaCalendar.tagAreaFooterTotalHours") {
-          return `Gesamte Stunden: ${params?.hours ?? ""}`;
-        }
-        if (key === "areaCalendar.tagAreaFooterTotalAmount") {
-          return `Gesamtbetrag: ${params?.amount ?? ""} €`;
-        }
-        if (key === "areaCalendar.tagAreaFooterCompensation") {
-          return `Entgelt: ${params?.amount ?? ""} €`;
-        }
-        if (key === "areaCalendar.tagAreaFooterSurcharges") {
-          return `Zuschläge: ${params?.amount ?? ""} €`;
-        }
-        return key;
-      },
+      mockFooterTranslate,
       "de"
     );
     expect(labels.hoursLine).toBe("Gesamte Stunden: 8:00");
     expect(labels.costLine).toBe("Entgelt: 160,00 €");
     expect(labels.line).toBe("Ges.: 8:00 Std | 160,00 €");
+    expect(labels.shortLinePrefix).toBe("Ges.: 8:00 Std | ");
+    expect(labels.shortLineCostAmount).toBe("160,00 €");
+    expect(labels.costTooltipParts).toEqual([
+      { label: "Entgelt:", amount: "160,00 €" },
+    ]);
   });
 
   it("includes surcharges line in cost tooltip when present", () => {
@@ -185,29 +193,17 @@ describe("tag-area-footer-stats", () => {
         hasCompensation: true,
         currency: "EUR",
       },
-      (key, params) => {
-        if (key === "areaCalendar.tagAreaFooterShortLine") {
-          return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
-        }
-        if (key === "areaCalendar.tagAreaFooterTotalHours") {
-          return `Gesamte Stunden: ${params?.hours ?? ""}`;
-        }
-        if (key === "areaCalendar.tagAreaFooterTotalAmount") {
-          return `Gesamtbetrag: ${params?.amount ?? ""} €`;
-        }
-        if (key === "areaCalendar.tagAreaFooterCompensation") {
-          return `Entgelt: ${params?.amount ?? ""} €`;
-        }
-        if (key === "areaCalendar.tagAreaFooterSurcharges") {
-          return `Zuschläge: ${params?.amount ?? ""} €`;
-        }
-        return key;
-      },
+      mockFooterTranslate,
       "de"
     );
     expect(labels.costLine).toBe(
       "Gesamtbetrag: 200,00 €\nEntgelt: 160,00 €\nZuschläge: 40,00 €"
     );
+    expect(labels.costTooltipParts).toEqual([
+      { label: "Gesamtbetrag:", amount: "200,00 €" },
+      { label: "Entgelt:", amount: "160,00 €" },
+      { label: "Zuschläge:", amount: "40,00 €" },
+    ]);
   });
 
   it("omits cost tooltip when no compensation is recorded", () => {
@@ -220,15 +216,7 @@ describe("tag-area-footer-stats", () => {
         hasCompensation: false,
         currency: "EUR",
       },
-      (key, params) => {
-        if (key === "areaCalendar.tagAreaFooterShortLine") {
-          return `Ges.: ${params?.hours ?? ""} Std | ${params?.cost ?? ""} €`;
-        }
-        if (key === "areaCalendar.tagAreaFooterTotalHours") {
-          return `Gesamte Stunden: ${params?.hours ?? ""}`;
-        }
-        return key;
-      },
+      mockFooterTranslate,
       "de"
     );
     expect(labels.costLine).toBe("");

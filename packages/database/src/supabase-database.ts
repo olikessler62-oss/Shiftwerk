@@ -62,6 +62,7 @@ import {
   sortProfileRecurringAvailabilityBySchedule,
   validateNoOverlappingAvailability,
 } from "./profile-availability-validation";
+import { planAdjacentProfileAvailabilityMerges } from "./profile-availability-merge";
 import {
   findProfileShiftPreferenceDuplicate,
   validateNoDuplicateProfileShiftPreference,
@@ -107,6 +108,18 @@ import {
 import { assertCanConfirmPastShiftAsManager } from "./shift-past-cleanup";
 import { buildSuperadminConfirmationStatusPatch } from "./superadmin-shift-confirmation";
 import type { SuperadminShiftRecord } from "./superadmin-shifts";
+import {
+  enrichShiftRowWithLifecycle,
+  lifecycleStatusForConfirmationStatus,
+  syncShiftRequestsAfterAssignConfirmationStatus,
+  syncShiftRequestsAfterCancellation,
+  syncShiftRequestsAfterConfirmationExpired,
+  syncShiftRequestsAfterConfirmationResent,
+  syncShiftRequestsAfterConfirmationSent,
+  syncShiftRequestsAfterEmployeeResponse,
+  syncShiftRequestsAfterManagerPastConfirm,
+  syncShiftRequestsForSuperadminStatus,
+} from "./shift-request-writes";
 import { elapsedMinutesBetween } from "./business-minutes";
 import { resolveOrganizationTimeZone } from "./organization-timezone";
 import {
@@ -142,7 +155,7 @@ type ProfileRow = Omit<Profile, "role" | "role_name"> & {
 };
 
 function mapProfile(row: ProfileRow): Profile {
-  const roleRel = Array.isArray(row.roles) ? row.roles[0] : row.roles;
+  const roleRel = Array.isArray(row.roles) ? (row.roles[0] ?? null) : row.roles;
   const { roles: _roles, ...rest } = row;
   return {
     ...rest,
@@ -762,7 +775,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .single();
     if (!data) return null;
     const roleRel = (data as { roles: { permission_level: RolePermissionLevel } | { permission_level: RolePermissionLevel }[] }).roles;
-    const level = Array.isArray(roleRel) ? roleRel[0]?.permission_level : roleRel?.permission_level;
+    const level = Array.isArray(roleRel) ? (roleRel[0] ?? null)?.permission_level : roleRel?.permission_level;
     return level ?? null;
   }
 
@@ -798,6 +811,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     email: string;
     mobile_phone?: string | null;
     color?: string | null;
+    weekly_hours?: number | null;
     is_active?: boolean;
     schedulable?: boolean;
   }) {
@@ -821,6 +835,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       mobile_phone: row.mobile_phone ?? null,
       color: row.color ?? null,
       sort_order: sortOrder,
+      ...(row.weekly_hours !== undefined ? { weekly_hours: row.weekly_hours } : {}),
       ...(row.is_active !== undefined ? { is_active: row.is_active } : {}),
       ...(row.schedulable !== undefined ? { schedulable: row.schedulable } : {}),
     });
@@ -837,6 +852,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       email: string;
       mobile_phone: string | null;
       color: string | null;
+      weekly_hours?: number | null;
       email_fallback_mode?: boolean;
     }
   ) {
@@ -849,6 +865,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         email: row.email,
         mobile_phone: row.mobile_phone,
         color: row.color,
+        ...(row.weekly_hours !== undefined ? { weekly_hours: row.weekly_hours } : {}),
         ...(row.email_fallback_mode !== undefined
           ? { email_fallback_mode: row.email_fallback_mode }
           : {}),
@@ -1343,7 +1360,45 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error(error?.message ?? "Speichern fehlgeschlagen");
     }
     await this.syncProfileRecurringAvailabilitySortOrder(organizationId, profileId);
+    await this.mergeAdjacentProfileRecurringAvailability(organizationId, profileId);
     return mapProfileRecurringAvailability(data as ProfileRecurringAvailabilityRow);
+  }
+
+  private async mergeAdjacentProfileRecurringAvailability(
+    organizationId: string,
+    profileId: string
+  ): Promise<void> {
+    const existing = await this.listProfileRecurringAvailability(
+      organizationId,
+      profileId
+    );
+    const mergePlans = planAdjacentProfileAvailabilityMerges(existing);
+    if (mergePlans.length === 0) return;
+
+    for (const plan of mergePlans) {
+      const { error: updateError } = await this.client
+        .from(T.profileRecurringAvailability)
+        .update({
+          start_time: plan.start_time,
+          end_time: plan.end_time,
+        })
+        .eq("id", plan.keepId)
+        .eq("profile_id", profileId)
+        .eq("organization_id", organizationId);
+      if (updateError) throw new Error(updateError.message);
+
+      for (const deleteId of plan.deleteIds) {
+        const { error: deleteError } = await this.client
+          .from(T.profileRecurringAvailability)
+          .delete()
+          .eq("id", deleteId)
+          .eq("profile_id", profileId)
+          .eq("organization_id", organizationId);
+        if (deleteError) throw new Error(deleteError.message);
+      }
+    }
+
+    await this.syncProfileRecurringAvailabilitySortOrder(organizationId, profileId);
   }
 
   async updateProfileRecurringAvailability(
@@ -1394,6 +1449,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .single();
     if (error || !data) throw new Error(error?.message ?? "Speichern fehlgeschlagen");
     await this.syncProfileRecurringAvailabilitySortOrder(organizationId, profileId);
+    await this.mergeAdjacentProfileRecurringAvailability(organizationId, profileId);
     return mapProfileRecurringAvailability(data as ProfileRecurringAvailabilityRow);
   }
 
@@ -3434,6 +3490,122 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []) as Shift[];
   }
 
+  async listMyShiftWeekDisplay(fromDate: string, toDate: string) {
+    const from = clampShiftQueryFromDate(fromDate);
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, employee_id, location_area_id, locations(name), location_areas(name), area_shift_templates(name, color)"
+      )
+      .gte("shift_date", from)
+      .lte("shift_date", toDate)
+      .order("shift_date", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    if (!data?.length) return [];
+
+    const employeeIds = [
+      ...new Set(
+        data
+          .map((row) => row.employee_id as string | null)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    const areaIds = [
+      ...new Set(
+        data
+          .map((row) => row.location_area_id as string | null)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+
+    const profileQualificationsByEmployee = new Map<string, Set<string>>();
+    if (employeeIds.length) {
+      const { data: profileQualLinks, error: profileQualError } =
+        await this.client
+          .from(T.profileQualifications)
+          .select("profile_id, qualification_id")
+          .in("profile_id", employeeIds);
+      if (profileQualError) throw new Error(profileQualError.message);
+
+      for (const link of profileQualLinks ?? []) {
+        const profileId = link.profile_id as string;
+        const qualificationId = link.qualification_id as string;
+        const set = profileQualificationsByEmployee.get(profileId) ?? new Set<string>();
+        set.add(qualificationId);
+        profileQualificationsByEmployee.set(profileId, set);
+      }
+    }
+
+    const areaQualificationsByArea = new Map<
+      string,
+      Array<{ qualificationId: string; name: string; sortOrder: number }>
+    >();
+    if (areaIds.length) {
+      const { data: areaQualRows, error: areaQualError } = await this.client
+        .from(T.areaQualificationTemplates)
+        .select(
+          "location_area_id, qualification_id, sort_order, qualifications(name)"
+        )
+        .in("location_area_id", areaIds)
+        .order("sort_order");
+      if (areaQualError) throw new Error(areaQualError.message);
+
+      for (const row of areaQualRows ?? []) {
+        const areaId = row.location_area_id as string;
+        const qualification = relation(
+          row.qualifications as { name: string } | { name: string }[] | null
+        );
+        const name = qualification?.name?.trim();
+        if (!name) continue;
+
+        const list = areaQualificationsByArea.get(areaId) ?? [];
+        list.push({
+          qualificationId: row.qualification_id as string,
+          name,
+          sortOrder: row.sort_order as number,
+        });
+        areaQualificationsByArea.set(areaId, list);
+      }
+    }
+
+    return data.map((row) => {
+      const location = relation(
+        row.locations as { name: string } | { name: string }[] | null
+      );
+      const area = relation(
+        row.location_areas as { name: string } | { name: string }[] | null
+      );
+      const template = relation(
+        row.area_shift_templates as
+          | { name: string; color: string | null }
+          | { name: string; color: string | null }[]
+          | null
+      );
+      const employeeId = row.employee_id as string;
+      const areaId = row.location_area_id as string | null;
+      const employeeQualifications =
+        profileQualificationsByEmployee.get(employeeId) ?? new Set<string>();
+      const areaQualifications = areaId
+        ? (areaQualificationsByArea.get(areaId) ?? [])
+        : [];
+      const jobName =
+        areaQualifications
+          .filter((entry) => employeeQualifications.has(entry.qualificationId))
+          .map((entry) => entry.name)
+          .join(", ") || null;
+
+      return {
+        shiftId: row.id as string,
+        locationName: location?.name ?? "",
+        areaName: area?.name ?? "",
+        templateName: template?.name ?? null,
+        templateColor: template?.color ?? null,
+        jobName,
+      };
+    });
+  }
+
   async listAreaCalendarShifts(
     organizationId: string,
     from: string,
@@ -3444,14 +3616,66 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data } = await this.client
       .from(T.shifts)
       .select(
-        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, confirmation_status, confirmation_status_updated_at, requested_at, pending_since, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
+        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, confirmation_status, confirmation_status_updated_at, requested_at, pending_since, lifecycle_status, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
       )
       .eq("organization_id", organizationId)
       .eq("location_id", locationId)
       .gte("shift_date", clampedFrom)
       .lte("shift_date", to)
       .order("shift_date");
-    return (data ?? []) as unknown as AreaCalendarShiftRow[];
+    const rows = (data ?? []) as unknown as AreaCalendarShiftRow[];
+    if (!rows.length) return rows;
+
+    const shiftIds = rows.map((row) => row.id);
+    const requestsByShiftId = await this.listShiftRequestsForShifts(
+      organizationId,
+      shiftIds
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      shift_requests: requestsByShiftId.get(row.id),
+    }));
+  }
+
+  private async listShiftRequestsForShifts(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<Map<string, import("./shift-display-state").ShiftRequestSummary[]>> {
+    const grouped = new Map<
+      string,
+      import("./shift-display-state").ShiftRequestSummary[]
+    >();
+    if (!shiftIds.length) return grouped;
+
+    const { data, error } = await this.client
+      .from(T.shiftRequests)
+      .select(
+        "id, shift_id, type, status, sent_at, responded_at, payload, created_at"
+      )
+      .eq("organization_id", organizationId)
+      .in("shift_id", shiftIds)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    for (const row of data ?? []) {
+      const shiftId = row.shift_id as string;
+      const list = grouped.get(shiftId) ?? [];
+      list.push({
+        id: row.id as string,
+        shift_id: shiftId,
+        type: row.type as import("@schichtwerk/types").ShiftRequestType,
+        status: row.status as import("@schichtwerk/types").ShiftRequestStatus,
+        sent_at: (row.sent_at as string | null) ?? null,
+        responded_at: (row.responded_at as string | null) ?? null,
+        payload: (row.payload as Record<string, unknown>) ?? {},
+        created_at: row.created_at as string,
+      });
+      grouped.set(shiftId, list);
+    }
+
+    return grouped;
   }
 
   async getShiftById(id: string, organizationId: string) {
@@ -3503,6 +3727,25 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       )
       .eq("employee_id", employeeId)
       .gte("shift_date", fromDate)
+      .order("shift_date")
+      .order("starts_at");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as EmployeeShiftRecord[];
+  }
+
+  async listShiftsForEmployeeInDateRange(
+    employeeId: string,
+    fromDate: string,
+    toDate: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at"
+      )
+      .eq("employee_id", employeeId)
+      .gte("shift_date", fromDate)
+      .lte("shift_date", toDate)
       .order("shift_date")
       .order("starts_at");
     if (error) throw new Error(error.message);
@@ -3609,16 +3852,28 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     pending_reminder_sent_at?: string | null;
   }) {
     const { area_shift_template_id, ...rest } = row;
-    const payload =
+    const payload = enrichShiftRowWithLifecycle(
       area_shift_template_id != null && area_shift_template_id !== ""
         ? { ...rest, area_shift_template_id }
-        : rest;
+        : rest
+    );
     const { data, error } = await this.client
       .from(T.shifts)
       .insert(payload)
       .select("id")
       .single();
     if (error) throw new Error(error.message);
+
+    if (payload.confirmation_status) {
+      await syncShiftRequestsAfterAssignConfirmationStatus({
+        client: this.client,
+        organizationId: row.organization_id,
+        shiftId: data.id as string,
+        confirmationStatus: payload.confirmation_status,
+        now: payload.confirmation_status_updated_at ?? new Date().toISOString(),
+      });
+    }
+
     return { id: data.id as string };
   }
 
@@ -3639,12 +3894,31 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }
   ) {
     const { area_shift_template_id, ...rest } = row;
-    const payload =
+    const payload = enrichShiftRowWithLifecycle(
       area_shift_template_id != null && area_shift_template_id !== ""
         ? { ...rest, area_shift_template_id }
-        : rest;
+        : rest
+    );
     const { error } = await this.client.from(T.shifts).update(payload).eq("id", id);
     if (error) throw new Error(error.message);
+
+    if (payload.confirmation_status) {
+      const { data: shiftRow, error: orgError } = await this.client
+        .from(T.shifts)
+        .select("organization_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (orgError) throw new Error(orgError.message);
+      if (!shiftRow) throw new Error("Schicht nicht gefunden.");
+
+      await syncShiftRequestsAfterAssignConfirmationStatus({
+        client: this.client,
+        organizationId: shiftRow.organization_id as string,
+        shiftId: id,
+        confirmationStatus: payload.confirmation_status,
+        now: payload.confirmation_status_updated_at ?? new Date().toISOString(),
+      });
+    }
   }
 
   async deleteShift(id: string, organizationId: string, deletedBy: string) {
@@ -3682,9 +3956,14 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     });
     if (error) throw new Error(error.message);
 
-    for (const userId of authUserIds) {
-      await this.authDeleteUser(userId);
-    }
+    await Promise.all(authUserIds.map((userId) => this.authDeleteUser(userId)));
+  }
+
+  async resetOrganizationShiftData(organizationId: string): Promise<void> {
+    const { error } = await this.client.rpc("reset_organization_shift_data", {
+      p_organization_id: organizationId,
+    });
+    if (error) throw new Error(error.message);
   }
 
   async listOrganizationAbsences(
@@ -4060,50 +4339,71 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
     const batchId = batchRow.id as string;
 
-    for (const shift of sendable) {
-      const snapshot = shiftToConfirmationSnapshot(shift);
-      const fromStatus = shift.confirmation_status ?? "proposed";
+    // Each shift's writes are independent — run them in parallel to reduce latency.
+    // Note: if any shift fails partway through, the batch row and already-processed
+    // shifts remain committed (no cross-shift transaction). Callers should treat a
+    // partial failure as retriable; the shift.confirmation_status guard prevents
+    // double-processing already-requested shifts.
+    await Promise.all(
+      sendable.map(async (shift) => {
+        const snapshot = shiftToConfirmationSnapshot(shift);
+        const fromStatus = shift.confirmation_status ?? "proposed";
 
-      const { error: itemError } = await this.client
-        .from(T.confirmationRequestItems)
-        .insert({
-          batch_id: batchId,
-          shift_id: shift.id,
-          snapshot,
-        });
-      if (itemError) throw new Error(itemError.message);
+        const { error: itemError } = await this.client
+          .from(T.confirmationRequestItems)
+          .insert({
+            batch_id: batchId,
+            shift_id: shift.id,
+            snapshot,
+          });
+        if (itemError) throw new Error(itemError.message);
 
-      const { error: shiftError } = await this.client
-        .from(T.shifts)
-        .update({
-          confirmation_status: "requested",
-          confirmation_status_updated_at: now,
-          requested_at: now,
-          pending_since: null,
-          pending_reminder_sent_at: null,
-        })
-        .eq("id", shift.id)
-        .eq("organization_id", input.organizationId)
-        .eq("confirmation_status", "proposed");
+        const { error: shiftError } = await this.client
+          .from(T.shifts)
+          .update({
+            confirmation_status: "requested",
+            lifecycle_status: "planned",
+            confirmation_status_updated_at: now,
+            requested_at: now,
+            pending_since: null,
+            pending_reminder_sent_at: null,
+          })
+          .eq("id", shift.id)
+          .eq("organization_id", input.organizationId)
+          .eq("confirmation_status", "proposed");
 
-      if (shiftError) throw new Error(shiftError.message);
+        if (shiftError) throw new Error(shiftError.message);
 
-      const { error: eventError } = await this.client
-        .from(T.shiftConfirmationEvents)
-        .insert({
-          organization_id: input.organizationId,
-          shift_id: shift.id,
-          actor_id: input.sentBy,
-          from_status: fromStatus,
-          to_status: "requested",
+        await syncShiftRequestsAfterConfirmationSent({
+          client: this.client,
+          organizationId: input.organizationId,
+          shiftId: shift.id,
+          actorId: input.sentBy,
+          sentAt: now,
           payload: {
             batch_id: batchId,
             scope: input.scope,
             is_delta: isDelta,
           },
         });
-      if (eventError) throw new Error(eventError.message);
-    }
+
+        const { error: eventError } = await this.client
+          .from(T.shiftConfirmationEvents)
+          .insert({
+            organization_id: input.organizationId,
+            shift_id: shift.id,
+            actor_id: input.sentBy,
+            from_status: fromStatus,
+            to_status: "requested",
+            payload: {
+              batch_id: batchId,
+              scope: input.scope,
+              is_delta: isDelta,
+            },
+          });
+        if (eventError) throw new Error(eventError.message);
+      })
+    );
 
     if (!input.skipNotificationOutbox) {
       const { error: outboxError } = await this.client
@@ -4158,7 +4458,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         if (!fromStatus || !resendableStatuses.has(fromStatus)) {
           failed.push({
             shiftId,
-            error: "Schicht kann nicht erneut angefordert werden.",
+            error: "Schicht kann nicht erneut angefragt werden.",
           });
           continue;
         }
@@ -4173,6 +4473,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           .from(T.shifts)
           .update({
             confirmation_status: "requested",
+            lifecycle_status: "planned",
             confirmation_status_updated_at: nowIso,
             requested_at: nowIso,
             pending_since: null,
@@ -4186,6 +4487,15 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           failed.push({ shiftId, error: updateError.message });
           continue;
         }
+
+        await syncShiftRequestsAfterConfirmationResent({
+          client: this.client,
+          organizationId: input.organizationId,
+          shiftId,
+          actorId: input.sentBy,
+          sentAt: nowIso,
+          payload: { resend: true },
+        });
 
         const { error: eventError } = await this.client
           .from(T.shiftConfirmationEvents)
@@ -4226,7 +4536,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       } catch (error) {
         failed.push({
           shiftId,
-          error: error instanceof Error ? error.message : "Erneut anfordern fehlgeschlagen.",
+          error: error instanceof Error ? error.message : "Erneut anfragen fehlgeschlagen.",
         });
       }
     }
@@ -4355,7 +4665,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       const profile = Array.isArray(profileRel) ? profileRel[0] : profileRel;
       const requestedAt = row.requested_at as string | null;
 
-      if (!requestedAt || !profile) {
+      if (!requestedAt || !profile || !organization) {
         return [];
       }
 
@@ -4387,6 +4697,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .from(T.shifts)
       .update({
         confirmation_status: "pending",
+        lifecycle_status: "planned",
         confirmation_status_updated_at: nowIso,
         pending_since: nowIso,
         pending_reminder_sent_at: nowIso,
@@ -4399,6 +4710,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
     if (error) throw new Error(error.message);
     if (!data) return false;
+
+    await syncShiftRequestsAfterConfirmationExpired({
+      client: this.client,
+      organizationId: shift.organization_id,
+      shiftId: shift.id,
+      now: nowIso,
+    });
 
     const { error: eventError } = await this.client
       .from(T.shiftConfirmationEvents)
@@ -4549,6 +4867,41 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     };
   }
 
+  async listEmployeePendingConfirmationItems(
+    employeeId: string,
+    organizationId: string,
+    fromDate: string,
+    organizationDisclaimer: string | null
+  ): Promise<ConfirmationWeekResponse> {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, shift_date, starts_at, ends_at, confirmation_status, locations!inner(name), location_areas(name), area_shift_templates(name)"
+      )
+      .eq("organization_id", organizationId)
+      .eq("employee_id", employeeId)
+      .in("confirmation_status", ["requested", "pending"])
+      .gte("shift_date", fromDate)
+      .order("shift_date", { ascending: true })
+      .order("starts_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    const items = (data ?? [])
+      .map((row) =>
+        mapConfirmationWeekRow(
+          row as Record<string, unknown>,
+          organizationDisclaimer
+        )
+      )
+      .filter((item): item is ConfirmationWeekItem => item !== null);
+
+    return {
+      items,
+      organizationDisclaimer,
+    };
+  }
+
   async getEmployeeConfirmationShiftItem(
     employeeId: string,
     organizationId: string,
@@ -4626,11 +4979,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     for (const item of input.items) {
       const current = openShiftsById.get(item.shiftId)!;
       const toStatus = decisionToConfirmationStatus(item.decision);
+      const lifecycleStatus = lifecycleStatusForConfirmationStatus(toStatus);
 
       const { data: updated, error: updateError } = await this.client
         .from(T.shifts)
         .update({
           confirmation_status: toStatus,
+          lifecycle_status: lifecycleStatus,
           confirmation_status_updated_at: now,
           pending_since: null,
           pending_reminder_sent_at: null,
@@ -4646,6 +5001,15 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       if (!updated) {
         throw new Error("Schicht konnte nicht aktualisiert werden.");
       }
+
+      await syncShiftRequestsAfterEmployeeResponse({
+        client: this.client,
+        organizationId: input.organizationId,
+        shiftId: item.shiftId,
+        employeeId: input.employeeId,
+        decision: item.decision,
+        now,
+      });
 
       updatedShiftIds.push(item.shiftId);
       updatedShifts.push({
@@ -4732,6 +5096,46 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }
 
     if (input.actorRole === "manager") {
+      if (storedStatus === "confirmed") {
+        const employeeProfile = await this.getProfileById(shift.employee_id);
+        const channel = resolveConfirmationNotificationChannel(
+          employeeProfile ?? { email_fallback_mode: false }
+        );
+        const { error: outboxError } = await this.client
+          .from(T.notificationOutbox)
+          .insert({
+            organization_id: input.organizationId,
+            recipient_profile_id: shift.employee_id,
+            channel,
+            template_key: "shift_canceled_by_manager",
+            payload: {
+              shift_id: input.shiftId,
+              shift_date: shift.shift_date,
+              starts_at: shift.starts_at,
+              ends_at: shift.ends_at,
+              canceled_by: "manager",
+            },
+            simulated: true,
+          });
+        if (outboxError) throw new Error(outboxError.message);
+
+        const { error: eventError } = await this.client
+          .from(T.shiftConfirmationEvents)
+          .insert({
+            organization_id: input.organizationId,
+            shift_id: input.shiftId,
+            actor_id: input.actorId,
+            from_status: storedStatus,
+            to_status: "canceled",
+            payload: {
+              canceled_by: input.actorRole,
+              source: "manager_storno_confirmed",
+              deleted: true,
+            },
+          });
+        if (eventError) throw new Error(eventError.message);
+      }
+
       await this.deleteShift(input.shiftId, input.organizationId, input.actorId);
       return {
         locationId: shift.location_id,
@@ -4755,6 +5159,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .from(T.shifts)
       .update({
         confirmation_status: "canceled",
+        lifecycle_status: "cancelled",
         confirmation_status_updated_at: now,
         requested_at: null,
         pending_since: null,
@@ -4770,6 +5175,16 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (!updated) {
       throw new Error("Schicht konnte nicht abgesagt werden.");
     }
+
+    await syncShiftRequestsAfterCancellation({
+      client: this.client,
+      organizationId: input.organizationId,
+      shiftId: input.shiftId,
+      actorId: input.actorId,
+      cancelledBy: "employee",
+      now,
+      payload: { source: "mobile_cancel" },
+    });
 
     const { error: eventError } = await this.client
       .from(T.shiftConfirmationEvents)
@@ -4848,6 +5263,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .from(T.shifts)
       .update({
         confirmation_status: "confirmed",
+        lifecycle_status: "confirmed",
         confirmation_status_updated_at: now,
         requested_at: null,
         pending_since: null,
@@ -4863,6 +5279,14 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (!updated) {
       throw new Error("Schicht konnte nicht bestätigt werden.");
     }
+
+    await syncShiftRequestsAfterManagerPastConfirm({
+      client: this.client,
+      organizationId: input.organizationId,
+      shiftId: input.shiftId,
+      actorId: input.actorId,
+      now,
+    });
 
     const { error: eventError } = await this.client
       .from(T.shiftConfirmationEvents)
@@ -4964,6 +5388,15 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (!updated) {
       throw new Error("Schichtstatus konnte nicht gespeichert werden.");
     }
+
+    await syncShiftRequestsForSuperadminStatus({
+      client: this.client,
+      organizationId: input.organizationId,
+      shiftId: input.shiftId,
+      actorId: input.actorId,
+      toStatus: input.confirmationStatus,
+      now,
+    });
 
     const { error: eventError } = await this.client
       .from(T.shiftConfirmationEvents)

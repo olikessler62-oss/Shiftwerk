@@ -36,6 +36,8 @@ const MIN_REST_PERIOD_PREFIX = "Mindestruhezeit von ";
 const MIN_REST_PERIOD_SUFFIX =
   " Stunden zwischen Schichten nicht eingehalten.";
 
+const WEEKLY_HOURS_EXCEEDED_CORE = "Wochenstunden überschritten — nach Zuweisung ";
+
 export function translateActionError(message: string, t: Translator): string {
   if (message.startsWith("organization.errors.")) {
     return t(message);
@@ -69,6 +71,20 @@ export function translateActionError(message: string, t: Translator): string {
     const base = t("shiftAssign.minRestPeriod", { hours });
     const remainder = message.slice(suffixIdx + MIN_REST_PERIOD_SUFFIX.length);
     return remainder ? `${base}${remainder}` : base;
+  }
+
+  if (message.includes(WEEKLY_HOURS_EXCEEDED_CORE)) {
+    const match = message.match(
+      /^(?:(.+?): )?Wochenstunden überschritten — nach Zuweisung ([0-9]+(?:[.,][0-9]+)?) Std\. \(Maximum ([0-9]+(?:[.,][0-9]+)?) Std\.\)\.$/
+    );
+    if (match) {
+      const [, name, total, target] = match;
+      return t("shiftAssign.weeklyHoursExceeded", {
+        name: name ? `${name}: ` : "",
+        total,
+        target,
+      });
+    }
   }
 
   return message;

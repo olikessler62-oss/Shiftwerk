@@ -287,15 +287,6 @@ export function ProfileCompensationPanelModal({
         });
         if (!result.ok) {
           setErrorMessage(result.error);
-          if (result.rates) {
-            applyCompensation({
-              currentRate: result.currentRate ?? null,
-              rates: result.rates ?? [],
-              currentSurcharges: result.currentSurcharges ?? currentSurcharges,
-              surchargeEntries: result.surchargeEntries ?? surchargeEntries,
-              serverToday: result.serverToday ?? serverToday,
-            });
-          }
           bulkSelection.clear();
           setConfirmBulkDelete(false);
           return;

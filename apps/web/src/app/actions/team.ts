@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { validateProfileFullNameUniqueness } from "@schichtwerk/database";
 import { getAdminDatabase, getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 
@@ -40,6 +41,12 @@ export async function inviteEmployee(
     if (existing) {
       return { ok: false, error: "Diese E-Mail ist bereits im Team." };
     }
+
+    const profiles = await db.listOrganizationProfiles(organizationId);
+    const nameCheck = validateProfileFullNameUniqueness(profiles, {
+      full_name: fullName,
+    });
+    if (!nameCheck.ok) return nameCheck;
 
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";

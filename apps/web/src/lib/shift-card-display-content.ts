@@ -18,11 +18,25 @@ export type ShiftCardDisplayInput = {
 export type ShiftCardTooltipFormatOptions = {
   assignmentPresets?: readonly AreaCalendarAssignmentPreset[];
   formatShiftTooltipLine?: (name: string) => string;
+  formatDeploymentTimeTooltipLine?: () => string;
   formatJobTooltipLine?: (jobs: string) => string;
 };
 
 export function formatShiftCardTooltipShiftLine(name: string): string {
   return `Schicht: ${name}`;
+}
+
+export function formatShiftCardTooltipDeploymentTimeLabel(): string {
+  return "Einsatzzeit:";
+}
+
+export function shiftCardTooltipShowsDeploymentTimeLabel(
+  data: Pick<
+    ShiftCardTooltipData,
+    "shiftTemplateName" | "timeLabel"
+  >
+): boolean {
+  return !data.shiftTemplateName?.trim() && Boolean(data.timeLabel?.trim());
 }
 
 export function formatShiftCardTooltipJobLine(names: string): string {
@@ -38,12 +52,14 @@ export type ShiftCardTooltipData = {
   jobsLabel?: string;
   confirmationStatusLine?: string;
   confirmationStatus?: ShiftConfirmationStatus;
+  isPastShift?: boolean;
 };
 
 export function formatShiftCardTooltipPlainText(
   data: ShiftCardTooltipData,
   options?: {
     formatShiftLine?: (name: string) => string;
+    formatDeploymentTimeLine?: () => string;
     formatJobLine?: (names: string) => string;
     formatStatusLine?: (status: string) => string;
   }
@@ -56,6 +72,11 @@ export function formatShiftCardTooltipPlainText(
     lines.push(
       options?.formatShiftLine?.(data.shiftTemplateName.trim()) ??
         formatShiftCardTooltipShiftLine(data.shiftTemplateName.trim())
+    );
+  } else if (shiftCardTooltipShowsDeploymentTimeLabel(data)) {
+    lines.push(
+      options?.formatDeploymentTimeLine?.() ??
+        formatShiftCardTooltipDeploymentTimeLabel()
     );
   } else if (data.shiftNameWithoutTemplate?.trim()) {
     lines.push(data.shiftNameWithoutTemplate.trim());
@@ -88,10 +109,19 @@ export type ShiftCardDisplayContent = {
   /** Im Tooltip immer beide; in der Karte je nach Platz. */
   timeLabel: string;
   shiftLabel: string;
+  /** Passende Schichtvorlage für exakte Von/Bis-Zeiten, sonst null. */
+  templateName: string | null;
   jobsLabel: string;
   tooltip: ShiftCardTooltipData;
   tooltipBody: string;
 };
+
+/** Uhrzeit ist die primäre Bezeichnung, wenn keine Schichtvorlage passt. */
+export function shiftCardTimeLabelIsPrimary(
+  display: Pick<ShiftCardDisplayContent, "shiftLabel" | "templateName">
+): boolean {
+  return !display.shiftLabel.trim() && !display.templateName?.trim();
+}
 
 const CARD_HORIZONTAL_PADDING_PX = 12;
 const CARD_GAP_PX = 6;
@@ -207,6 +237,7 @@ export function buildShiftCardDisplayContent(
 
   const tooltipBody = formatShiftCardTooltipPlainText(tooltip, {
     formatShiftLine: tooltipOptions?.formatShiftTooltipLine,
+    formatDeploymentTimeLine: tooltipOptions?.formatDeploymentTimeTooltipLine,
     formatJobLine: tooltipOptions?.formatJobTooltipLine,
   });
 
@@ -216,6 +247,7 @@ export function buildShiftCardDisplayContent(
     line1Secondary,
     timeLabel,
     shiftLabel,
+    templateName,
     jobsLabel: normalizedJobsLabel,
     tooltip,
     tooltipBody,

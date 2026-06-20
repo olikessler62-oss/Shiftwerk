@@ -1,6 +1,7 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
+import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import type { AreaCalendarWeekLegendEmployee } from "@/lib/areacalendar-week-employee-legend";
 import {
@@ -30,6 +31,7 @@ type Props = {
   targetHours: number;
   locale: string;
   employeeHoursLabel: string;
+  availabilityTooltip: ReactNode;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void;
@@ -41,6 +43,7 @@ export function AreaCalendarEmployeeLegendCard({
   targetHours,
   locale,
   employeeHoursLabel,
+  availabilityTooltip,
   onMouseEnter,
   onMouseLeave,
   onContextMenu,
@@ -52,18 +55,25 @@ export function AreaCalendarEmployeeLegendCard({
   const cardHeightPx = AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_HEIGHT_PX;
 
   return (
-    <div
-      className="shrink-0 self-start"
-      style={{
-        width: `calc(100% - ${SHIFT_CARD_SHADOW_BLEED_PX}px)`,
-        height: AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_LIST_ITEM_HEIGHT_PX,
-      }}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      onContextMenu={onContextMenu}
+    <Tooltip
+      className="block w-full"
+      content={availabilityTooltip}
+      contentClassName={employeeAvailabilityTooltipContentClassName}
+      placement={employeeAvailabilityTooltipPlacement}
     >
       <div
+        className="shrink-0 self-start"
+        style={{
+          width: `calc(100% - ${SHIFT_CARD_SHADOW_BLEED_PX}px)`,
+          height: AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_LIST_ITEM_HEIGHT_PX,
+        }}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        onContextMenu={onContextMenu}
+      >
+      <div
         className={EMPLOYEE_LEGEND_CARD_FRAME_CLASS}
+        data-employee-availability-tooltip-anchor
         style={{
           boxShadow: EMPLOYEE_LEGEND_CARD_DROP_SHADOW,
           height: cardHeightPx,
@@ -114,6 +124,7 @@ export function AreaCalendarEmployeeLegendCard({
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </Tooltip>
   );
 }

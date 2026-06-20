@@ -13,6 +13,9 @@ import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
 import { formatDayHeader } from "@/lib/planning-utils";
 import {
+  shouldShowGroupedEmployeeName,
+} from "@/lib/communication-hub";
+import {
   useShiftConfirmationSimulation,
   useSimulatedProposedOnAssignRequest,
 } from "@/lib/shift-confirmation-simulation-context";
@@ -63,24 +66,43 @@ export function CommunicationSendTab({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const sortedShifts = useMemo(() => {
+    const sorted = [...shifts].sort((a, b) => {
+      const nameDiff = a.employeeName.localeCompare(b.employeeName, "de");
+      if (nameDiff !== 0) return nameDiff;
+      return a.shiftDate.localeCompare(b.shiftDate);
+    });
+    let lastEmployeeNameKey: string | null = null;
+    return sorted.map((row) => {
+      const groupedName = shouldShowGroupedEmployeeName(
+        row.employeeName,
+        lastEmployeeNameKey
+      );
+      lastEmployeeNameKey = groupedName.nameKey;
+      return { row, showEmployeeName: groupedName.show };
+    });
+  }, [shifts]);
+
   const sendableShifts = useMemo(
-    () => shifts.filter((row) => row.sendable),
-    [shifts]
+    () => sortedShifts.filter(({ row }) => row.sendable),
+    [sortedShifts]
   );
 
   const allSendableSelected = useMemo(
     () =>
       sendableShifts.length > 0 &&
-      sendableShifts.every((row) => selected.has(row.shiftId)),
+      sendableShifts.every(({ row }) => selected.has(row.shiftId)),
     [sendableShifts, selected]
   );
 
   const someSendableSelected = useMemo(
-    () => sendableShifts.some((row) => selected.has(row.shiftId)),
+    () => sendableShifts.some(({ row }) => selected.has(row.shiftId)),
     [sendableShifts, selected]
   );
 
-  const selectedCount = sendableShifts.filter((row) => selected.has(row.shiftId)).length;
+  const selectedCount = sendableShifts.filter(({ row }) =>
+    selected.has(row.shiftId)
+  ).length;
 
   useEffect(() => {
     let cancelled = false;
@@ -125,7 +147,9 @@ export function CommunicationSendTab({
 
   function toggleAllSendable(checked: boolean) {
     setSelected(
-      checked ? new Set(sendableShifts.map((row) => row.shiftId)) : new Set()
+      checked
+        ? new Set(sendableShifts.map(({ row }) => row.shiftId))
+        : new Set()
     );
   }
 
@@ -133,8 +157,8 @@ export function CommunicationSendTab({
     setErrorMessage(null);
     setSuccessMessage(null);
     const shiftIds = sendableShifts
-      .filter((row) => selected.has(row.shiftId))
-      .map((row) => row.shiftId);
+      .filter(({ row }) => selected.has(row.shiftId))
+      .map(({ row }) => row.shiftId);
     if (!shiftIds.length) {
       setErrorMessage(t("shiftConfirmation.send.noSelection"));
       return;
@@ -232,7 +256,7 @@ export function CommunicationSendTab({
               MODAL_SCROLLBAR_CLASS
             )}
           >
-            {shifts.map((row) => {
+            {sortedShifts.map(({ row, showEmployeeName }) => {
               const { weekday, label } = formatDayHeader(
                 row.shiftDate,
                 intlLocale,
@@ -267,7 +291,7 @@ export function CommunicationSendTab({
                         : "font-medium text-foreground"
                     )}
                   >
-                    {row.employeeName}
+                    {showEmployeeName ? row.employeeName : null}
                   </span>
                   <span className={cn(CELL_CLASS, "text-muted")}>
                     {weekday}, {label}

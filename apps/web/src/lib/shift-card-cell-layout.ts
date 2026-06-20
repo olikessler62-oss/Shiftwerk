@@ -14,6 +14,17 @@ export const SHIFT_CARD_MARKER_WIDTH_PX = SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX;
 export const SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX =
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX + 24;
 
+/** Mindestbreite einer Schichtkarte relativ zur Tageszellenbreite (Bereich-Kalender). */
+export const SHIFT_CARD_MIN_CELL_WIDTH_RATIO = 0.23;
+
+export function shiftCardMinWidthFromCellPx(cellWidthPx: number): number {
+  if (cellWidthPx <= 0) return SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX;
+  return Math.max(
+    SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX,
+    cellWidthPx * SHIFT_CARD_MIN_CELL_WIDTH_RATIO
+  );
+}
+
 /** Untergrenze für compact-Dichte (Inhalt + Mitarbeiterstreifen). */
 export const SHIFT_CARD_COMPACT_READABLE_WIDTH_PX =
   SHIFT_CARD_COMPACT_MIN_FALLBACK_PX + SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX;
@@ -96,9 +107,18 @@ export function resolveSubThreeHourUniformTargetWidthPx(
     trackWidthPx,
     timeline
   );
+  const threeHourTimelinePx = timelineThreeHourReferenceWidthPx(
+    trackWidthPx,
+    timeline
+  );
+  const readabilityTargetPx =
+    threeHourDisplayPx * SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS;
+  const timelineTargetPx =
+    threeHourTimelinePx * SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS;
+
   return Math.max(
     SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX,
-    threeHourDisplayPx * SHORT_SHIFT_WIDTH_RATIO_OF_THREE_HOURS
+    Math.min(readabilityTargetPx, timelineTargetPx)
   );
 }
 
@@ -114,17 +134,35 @@ export function resolveShiftCardDurationWidthPx(
   timeline: ShiftCardServiceTimeline
 ): number {
   const durationMin = shiftClockDurationMinutes(startTime, endTime);
+  const proportional = timelineDurationWidthPx(
+    startTime,
+    endTime,
+    trackWidthPx,
+    timeline
+  );
 
-  if (durationMin >= SHIFT_CARD_FULL_DURATION_TIER_MINUTES) {
-    return timelineDurationWidthPx(
-      startTime,
-      endTime,
-      trackWidthPx,
-      timeline
+  if (durationMin < SHIFT_CARD_FULL_DURATION_TIER_MINUTES) {
+    return Math.max(
+      proportional,
+      resolveSubThreeHourUniformTargetWidthPx(trackWidthPx, timeline)
     );
   }
 
-  return resolveSubThreeHourUniformTargetWidthPx(trackWidthPx, timeline);
+  const subThreeHourReferencePx = resolveSubThreeHourUniformTargetWidthPx(
+    trackWidthPx,
+    timeline
+  );
+  const durationScaledFromTwoHoursPx =
+    subThreeHourReferencePx * (durationMin / (2 * 60));
+
+  if (proportional >= durationScaledFromTwoHoursPx) {
+    return Math.max(
+      proportional,
+      resolveThreeHourTierDisplayWidthPx(trackWidthPx, timeline)
+    );
+  }
+
+  return durationScaledFromTwoHoursPx;
 }
 
 function isSubThreeHourShift(startTime: string, endTime: string): boolean {
@@ -156,9 +194,32 @@ function clampShiftCardLayoutToCell(
     0,
     cellWidthPx - padding - layout.marginLeftPx
   );
-  layout.widthPx = Math.min(
+  const cellMinWidthPx = shiftCardMinWidthFromCellPx(cellWidthPx);
+  layout.widthPx = clamp(
     layout.widthPx + SHIFT_CARD_EXTRA_WIDTH_PX,
+    cellMinWidthPx + SHIFT_CARD_EXTRA_WIDTH_PX,
     availableWidthPx + SHIFT_CARD_EXTRA_WIDTH_PX
+  );
+}
+
+function finalizeShiftCardCellLayout(
+  cellWidthPx: number,
+  startTime: string,
+  trackWidthPx: number,
+  timeline: ShiftCardServiceTimeline,
+  padding: number,
+  layout: ShiftCardCellLayout
+): void {
+  const cellMinWidthPx = shiftCardMinWidthFromCellPx(cellWidthPx);
+  layout.widthPx = Math.max(layout.widthPx, cellMinWidthPx);
+  clampShiftCardLayoutToCell(
+    cellWidthPx,
+    startTime,
+    trackWidthPx,
+    timeline,
+    padding,
+    layout,
+    layout.widthPx
   );
 }
 
@@ -179,6 +240,7 @@ export function computeShiftCardCellLayout(
   const trackWidthPx = Math.max(0, cellWidthPx - padding * 2);
   const shiftCount = options.shiftCountInCell ?? 1;
   const subThreeHourShift = isSubThreeHourShift(startTime, endTime);
+  const cellMinWidthPx = shiftCardMinWidthFromCellPx(cellWidthPx);
 
   const durationWidthPx = resolveShiftCardDurationWidthPx(
     startTime,
@@ -207,7 +269,7 @@ export function computeShiftCardCellLayout(
   const widthHintPx = options.uniformShiftDurationWidth
     ? Math.min(
         trackWidthPx,
-        Math.max(durationWidthPx, SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX)
+        Math.max(durationWidthPx, cellMinWidthPx)
       )
     : Math.min(
         trackWidthPx,
@@ -215,7 +277,7 @@ export function computeShiftCardCellLayout(
           durationWidthPx,
           fairSharePx,
           readableMinWidthPx,
-          SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX
+          cellMinWidthPx
         )
       );
 
@@ -234,26 +296,37 @@ export function computeShiftCardCellLayout(
   let widthPx = Math.max(
     durationWidthPx,
     fairSharePx,
-    SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX
+    cellMinWidthPx
   );
 
   if (options.uniformShiftDurationWidth) {
     if (subThreeHourShift) {
-      widthPx = resolveSubThreeHourUniformTargetWidthPx(
-        trackWidthPx,
-        timeline
+      widthPx = Math.max(
+        resolveSubThreeHourUniformTargetWidthPx(trackWidthPx, timeline),
+        cellMinWidthPx
       );
     } else {
-      widthPx = Math.max(durationWidthPx, SHIFT_CARD_COMPACT_READABLE_WIDTH_PX);
+      widthPx = Math.max(
+        durationWidthPx,
+        SHIFT_CARD_COMPACT_READABLE_WIDTH_PX,
+        cellMinWidthPx
+      );
     }
   } else if (widthPx < readableCapPx) {
     widthPx = readableCapPx;
   }
 
-  widthPx = clamp(widthPx, SHIFT_CARD_ABSOLUTE_MIN_WIDTH_PX, availableWidthPx);
-  widthPx = Math.min(widthPx + SHIFT_CARD_EXTRA_WIDTH_PX, availableWidthPx + SHIFT_CARD_EXTRA_WIDTH_PX);
+  const layout: ShiftCardCellLayout = { widthPx, marginLeftPx, density };
+  finalizeShiftCardCellLayout(
+    cellWidthPx,
+    startTime,
+    trackWidthPx,
+    timeline,
+    padding,
+    layout
+  );
 
-  return { widthPx, marginLeftPx, density };
+  return layout;
 }
 
 /**
@@ -274,9 +347,9 @@ export function applySubThreeHourUniformShiftCardWidths(
   );
   if (shortItems.length === 0) return;
 
-  let uniformWidthPx = resolveSubThreeHourUniformTargetWidthPx(
-    trackWidthPx,
-    timeline
+  let uniformWidthPx = Math.max(
+    resolveSubThreeHourUniformTargetWidthPx(trackWidthPx, timeline),
+    shiftCardMinWidthFromCellPx(cellWidthPx)
   );
 
   for (const item of shortItems) {
@@ -339,7 +412,7 @@ export function applyDurationMonotonicShiftCardWidths(
     }))
     .sort((a, b) => a.durationMin - b.durationMin);
 
-  let widthFloorPx = 0;
+  let widthFloorPx = shiftCardMinWidthFromCellPx(cellWidthPx);
   for (const { item } of sorted) {
     widthFloorPx = Math.max(widthFloorPx, item.layout.widthPx);
     if (item.layout.widthPx >= widthFloorPx) continue;

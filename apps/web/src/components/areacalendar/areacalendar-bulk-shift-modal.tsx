@@ -36,6 +36,7 @@ import {
 import {
   Button,
   Alert,
+  Checkbox,
   CloseIcon,
   IconButton,
   PlusIcon,
@@ -113,6 +114,7 @@ import {
   type StaffingAssignmentRef,
 } from "@/lib/bulk-staffing-header";
 import { formatDayHeader } from "@/lib/planning-utils";
+import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
 import {
   findServiceHourIdForShift,
   isAreaOpenOnDate,
@@ -126,6 +128,10 @@ import {
 } from "@/lib/shift-overlap";
 import { cn } from "@/lib/cn";
 import { translateActionError } from "@/lib/translate-action-error";
+import {
+  shiftAssignAlertPromptForError,
+  shiftAssignAlertPromptHasBlockingFailure,
+} from "@/lib/shift-assign-blocking-errors";
 import { shiftCardAllowsBulkRowDelete } from "@/lib/shift-card-context-menu-actions";
 import { useSimulatedProposedOnAssignRequest } from "@/lib/shift-confirmation-simulation-context";
 import {
@@ -144,6 +150,7 @@ import {
   scheduleScrollBulkShiftRowIntoView,
 } from "@/lib/bulk-shift-list-scroll";
 import {
+  listCompleteBulkShiftRowsForAssign,
   listSaveableNewBulkShiftRows,
   listUnsavedBulkShiftRows,
   resolveBulkShiftSaveIntent,
@@ -352,6 +359,7 @@ type Props = {
   existingAreaShifts: BulkModalExistingShift[];
   areaExistingAssignments: AreaCalendarAssignmentTimeWindow[];
   locationDayAssignments: LocationDayAssignment[];
+  weekDates: readonly string[];
   onClose: () => void;
   onSaved?: () => void;
 };
@@ -1539,6 +1547,7 @@ export function AreaCalendarBulkShiftModal({
   areaExistingAssignments,
   existingAreaShifts,
   locationDayAssignments,
+  weekDates,
   onClose,
   onSaved,
 }: Props) {
@@ -1620,7 +1629,12 @@ export function AreaCalendarBulkShiftModal({
   const [timeZone, setTimeZone] = useState(DEFAULT_ORGANIZATION_TIME_ZONE);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [assignRestOfWeekDays, setAssignRestOfWeekDays] = useState(false);
   const [prompt, setPrompt] = useState<BulkModalPrompt | null>(null);
+  const showAssignRestOfWeekDaysOption = hasRemainingAssignableWeekDates(
+    dialog.date,
+    weekDates
+  );
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [activeRowId, setActiveRowId] = useState<string | null>(() =>
     resolveBulkShiftRowIdForShiftFocus([], dialog.focusShiftId)
@@ -2015,7 +2029,10 @@ export function AreaCalendarBulkShiftModal({
           createEmptyRow,
           targetDemand,
           withoutServiceHours,
-          presetEmployeeId: dialog.presetEmployeeId,
+          presetEmployeeId:
+            rows.some((row) => !row.existingShiftId)
+              ? undefined
+              : dialog.presetEmployeeId,
         });
 
       const previewRow = buildRowForExisting(rows);
@@ -2209,14 +2226,28 @@ export function AreaCalendarBulkShiftModal({
       const saveWithoutServiceHours =
         options?.withoutServiceHours ?? withoutServiceHours;
       const hasDeletes = deletedExistingShiftIds.length > 0;
-      const saveIntent = resolveBulkShiftSaveIntent(rowsSnapshot, hasDeletes);
+      const completeAssignRows = listCompleteBulkShiftRowsForAssign(
+        rowsSnapshot,
+        saveWithoutServiceHours
+      );
+      const canExtendRestOfWeek =
+        assignRestOfWeekDays && completeAssignRows.length > 0;
+      const saveIntent = resolveBulkShiftSaveIntent(
+        rowsSnapshot,
+        hasDeletes,
+        { withoutServiceHours: saveWithoutServiceHours }
+      );
 
-      if (saveIntent.kind === "close-without-changes") {
+      if (
+        saveIntent.kind === "close-without-changes" &&
+        !hasDeletes &&
+        !canExtendRestOfWeek
+      ) {
         onClose();
         return;
       }
 
-      if (saveIntent.kind === "reject-unsaved-incomplete") {
+      if (saveIntent.kind === "reject-unsaved-incomplete" && !canExtendRestOfWeek) {
         setPrompt({
           kind: "alert",
           message: t("areaCalendar.bulkShiftValidationNoCompleteRows"),
@@ -2225,9 +2256,22 @@ export function AreaCalendarBulkShiftModal({
         return;
       }
 
-      const saveableRows = saveIntent.saveableRows as BulkRow[];
-      const newRows = listUnsavedBulkShiftRows(rowsSnapshot);
-      const completeAssignments: AreaCalendarAssignmentTimeWindow[] = newRows.flatMap(
+      const saveableRows =
+        saveIntent.kind === "persist" ? (saveIntent.saveableRows as BulkRow[]) : [];
+      const rowsForBatch = canExtendRestOfWeek
+        ? (completeAssignRows as BulkRow[])
+        : saveableRows;
+
+      if (rowsForBatch.length === 0 && !hasDeletes) {
+        setPrompt({
+          kind: "alert",
+          message: t("areaCalendar.bulkShiftValidationNoCompleteRows"),
+          blocking: true,
+        });
+        return;
+      }
+
+      const completeAssignments: AreaCalendarAssignmentTimeWindow[] = rowsForBatch.flatMap(
         (row) => {
           if (row.employeeId === AREA_CALENDAR_EMPTY_EMPLOYEE_ID) return [];
           if (!areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)) return [];
@@ -2259,7 +2303,7 @@ export function AreaCalendarBulkShiftModal({
       }
 
       const payloadRows = sortBulkShiftRows(
-        saveableRows.map((row) => ({
+        rowsForBatch.map((row) => ({
           ...row,
           employeeName:
             employees.find((e) => e.id === row.employeeId)?.full_name ?? "",
@@ -2280,14 +2324,21 @@ export function AreaCalendarBulkShiftModal({
           startTime: row.startTime,
           endTime: row.endTime,
           areaShiftTemplateId: areaShiftTemplateIdForAssign(row.shiftTypeId),
+          existingShiftId: row.existingShiftId,
         })),
         simulatedProposedOnAssign,
         relaxAppRegistrationGate,
+        assignToRemainingWeekDays: assignRestOfWeekDays,
+        weekDates,
       });
       setSaving(false);
 
       if (!result.ok) {
-        setPrompt({ kind: "alert", message: translateActionError(result.error, t) });
+        setPrompt(
+          shiftAssignAlertPromptForError(result.error, (error) =>
+            translateActionError(error, t)
+          )
+        );
         return;
       }
 
@@ -2356,6 +2407,9 @@ export function AreaCalendarBulkShiftModal({
         kind: "alert",
         message: t("areaCalendar.bulkShiftPartialSuccess"),
         partialSaveFailures: saveFailures,
+        blocking: shiftAssignAlertPromptHasBlockingFailure(
+          saveFailures.map((failure) => failure.error)
+        ),
       });
     },
     [
@@ -2368,6 +2422,10 @@ export function AreaCalendarBulkShiftModal({
       employeeNameById,
       timeZone,
       withoutServiceHours,
+      assignRestOfWeekDays,
+      weekDates,
+      simulatedProposedOnAssign,
+      relaxAppRegistrationGate,
       onClose,
       onSaved,
       router,
@@ -2681,22 +2739,39 @@ export function AreaCalendarBulkShiftModal({
           </div>
         </div>
 
-        <div className={settingsModalFooterClass()}>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={saving || modalLocked}
-          >
-            {t("common.cancel")}
-          </Button>
-          <Button
-            type="button"
-            onClick={() => void handleOk()}
-            disabled={loading || saving || !!prompt}
-          >
-            {t("common.ok")}
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
+          {showAssignRestOfWeekDaysOption ? (
+            <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
+              <Checkbox
+                checked={assignRestOfWeekDays}
+                disabled={saving || modalLocked}
+                onChange={(event) =>
+                  setAssignRestOfWeekDays(event.target.checked)
+                }
+                className="mt-0.5 shrink-0"
+              />
+              <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
+            </label>
+          ) : (
+            <span />
+          )}
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={saving || modalLocked}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleOk()}
+              disabled={loading || saving || !!prompt}
+            >
+              {t("common.ok")}
+            </Button>
+          </div>
         </div>
       </div>
 

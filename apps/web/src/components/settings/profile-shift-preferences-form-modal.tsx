@@ -228,6 +228,7 @@ export function ProfileShiftPreferencesFormModal({
       if (cancelled) return;
       if (result.ok) {
         setFormOptions({
+          ok: true,
           locations: result.locations,
           areas: result.areas,
           qualifications: result.qualifications,

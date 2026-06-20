@@ -1,4 +1,9 @@
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import {
+  SHIFT_CONFIRMATION_OVERLAY_OPACITY,
+  shiftConfirmationBadgeSymbol,
+  shiftConfirmationShowsOverlay,
+} from "@schichtwerk/ui-tokens";
 
 /** Vollflächiger Overlay-Schleier auf dem Karteninhalt (linker Mitarbeiter-Farbstreifen bleibt frei). */
 export const SHIFT_CONFIRMATION_OVERLAY_COLOR_CLASS = "bg-black/40";
@@ -6,36 +11,11 @@ export const SHIFT_CONFIRMATION_OVERLAY_COLOR_CLASS = "bg-black/40";
 /** Status-Badge-Hintergrund (einheitlich schwarz). */
 export const SHIFT_CONFIRMATION_BADGE_PANEL_CLASS = "rounded-sm bg-black";
 
-export function shiftConfirmationShowsOverlay(
-  status: ShiftConfirmationStatus | undefined | null
-): boolean {
-  return (
-    status === "proposed" ||
-    status === "requested" ||
-    status === "pending" ||
-    status === "rejected" ||
-    status === "canceled"
-  );
-}
-
-export function shiftConfirmationBadgeSymbol(
-  status: ShiftConfirmationStatus
-): string {
-  switch (status) {
-    case "proposed":
-      return "⋯";
-    case "requested":
-      return "?";
-    case "pending":
-      return "⏱";
-    case "rejected":
-      return "✕";
-    case "canceled":
-      return "⊘";
-    default:
-      return "";
-  }
-}
+export {
+  SHIFT_CONFIRMATION_OVERLAY_OPACITY,
+  shiftConfirmationShowsOverlay,
+  shiftConfirmationBadgeSymbol,
+};
 
 export function shiftConfirmationBadgeSymbolClass(
   status: ShiftConfirmationStatus
@@ -66,7 +46,7 @@ export const SHIFT_CONFIRMATION_REJECTED_TOOLTIP_TEXT_CLASS = "text-red-800";
 
 export const SHIFT_CONFIRMATION_PROPOSED_TOOLTIP_TEXT_CLASS = "text-neutral-950";
 
-/** Dunkles Ocker — Tab „Bestätigung angefordert“ und Status in der Tabelle. */
+/** Dunkles Ocker — Tab „Bestätigung angefragt“ und Status in der Tabelle. */
 export const SHIFT_CONFIRMATION_REQUESTED_TOOLTIP_TEXT_CLASS = "text-[#7A5A10]";
 
 /** Dunklere Tab-Überschriften im Schicht-Stati-Modal. */
@@ -105,6 +85,19 @@ export function shiftConfirmationTooltipStatusTextClass(
   }
 }
 
+/** Inline-/Tooltip-Status für vergangene Schichtkarten (Dashboard, Bereich-Kalender). */
+export const SHIFT_CONFIRMATION_PAST_SHIFT_STATUS_TEXT_CLASS = "text-neutral-600";
+
+export function shiftConfirmationCardStatusTextClass(
+  status: ShiftConfirmationStatus | undefined,
+  isPastShift: boolean
+): string {
+  if (isPastShift) {
+    return SHIFT_CONFIRMATION_PAST_SHIFT_STATUS_TEXT_CLASS;
+  }
+  return shiftConfirmationTooltipStatusTextClass(status);
+}
+
 export function shiftConfirmationStatusLabelKey(
   status: ShiftConfirmationStatus
 ): `shiftConfirmation.status.${ShiftConfirmationStatus}` {
@@ -115,4 +108,14 @@ export function shiftConfirmationTooltipStatusLabelKey(
   status: ShiftConfirmationStatus
 ): `shiftConfirmation.tooltipStatus.${ShiftConfirmationStatus}` {
   return `shiftConfirmation.tooltipStatus.${status}`;
+}
+
+export function formatDashboardShiftCardInlineStatusLabel(
+  formatStatusTooltipLine: (statusText: string) => string,
+  formatStatusText: (key: ReturnType<typeof shiftConfirmationTooltipStatusLabelKey>) => string,
+  status: ShiftConfirmationStatus
+): string {
+  return formatStatusTooltipLine(
+    formatStatusText(shiftConfirmationTooltipStatusLabelKey(status))
+  );
 }

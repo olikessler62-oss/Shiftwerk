@@ -27,6 +27,7 @@ export const en = {
     shiftCardTooltipShift: "Shift: {name}",
     shiftCardTooltipJob: "Job: {names}",
     shiftCardTooltipShiftLabel: "Shift:",
+    shiftCardTooltipDeploymentTimeLabel: "Assignment time:",
     shiftCardTooltipJobLabel: "Job:",
     shiftCardTooltipStatusLabel: "Status:",
     moveUp: "Move up",
@@ -111,6 +112,11 @@ export const en = {
     superadminShiftColumnEmployee: "Employee",
     superadminShiftColumnStatus: "Status",
     superadminShiftEmpty: "No shifts found.",
+    shiftsReset: "Data reset",
+    shiftsResetPending: "Resetting data…",
+    shiftsResetConfirmTitle: "Run data reset?",
+    shiftsResetConfirmBody:
+      "All shifts and related data will be deleted. Availabilities: Mon–Sun 07:00–22:00. Service hours and staffing for Restaurant, Kitchen, and Bar will be reset (Mon–Wed and Fri–Sun, closed Thursdays). Jobs: Waiter/waitress for everyone, cook (first 7 profiles), dishwasher (profiles 7–13), barista (last 7 profiles). Compensation: €15.60 for every employee. Weekly hours: 40 h for every employee. Absences and other master data remain unchanged.",
     dbReset: "DB reset",
     dbResetPending: "Resetting…",
     dbResetConfirmTitle: "Reset database?",
@@ -214,6 +220,7 @@ export const en = {
       saveProfileFailed: "Could not save profile settings.",
       loadShiftsFailed: "Could not load shifts.",
       saveShiftStatusFailed: "Could not save shift status.",
+      resetShiftsFailed: "Data reset failed.",
     },
   },
   areaCalendar: {
@@ -224,12 +231,18 @@ export const en = {
     noServiceHours: "No service hours",
     noServiceHoursHeaderTooltip:
       "No service hours were configured for {weekday} in this area.",
+    serviceHoursHeaderTooltipTitle: "Service hours",
     tagAreaFooterTotalHours: "Total hours: {hours}",
     tagAreaFooterTotalCost: "Total cost: {amount} {currency}",
     tagAreaFooterTotalAmount: "Total: {amount} €",
     tagAreaFooterCompensation: "Compensation: {amount} €",
     tagAreaFooterSurcharges: "Surcharges: {amount} €",
     tagAreaFooterShortLine: "Tot.: {hours} h | {cost} €",
+    tagAreaFooterShortLineHoursPart: "Tot.: {hours} h | ",
+    tagAreaFooterShortLineCostPart: "{cost} €",
+    tagAreaFooterTotalAmountLabel: "Total:",
+    tagAreaFooterCompensationLabel: "Compensation:",
+    tagAreaFooterSurchargesLabel: "Surcharges:",
     weekEmployeeLegendEmpty: "No shifts this week.",
     noServiceHoursShiftConfirm:
       "This area \"({area})\" has no service hours on this day. Add duty times anyway?",
@@ -240,6 +253,8 @@ export const en = {
     deleteShiftConfirm: "Do you really want to delete this shift?",
     editShift: "Edit shift",
     addShiftTitle: "Add shift",
+    shiftOutsideEmployeeAvailability:
+      "Shift time is outside the employee's availability.",
     bulkShiftTitle: "Assign/edit duty times",
     bulkShiftNewAssignmentsSection: "New assignments",
     bulkShiftExistingShiftsSection: "Existing shifts",
@@ -295,6 +310,7 @@ export const en = {
       "Row {row}: The shift is outside service hours.",
     bulkShiftOutsideServiceHoursConfirm:
       "This shift is outside service hours. Add it anyway?",
+    assignRestOfWeekDays: "Also for rest of week",
     bulkShiftValidationDailyHours:
       "{name}: Total work time {total} h on this day exceeds the maximum of {limit} h (assignments: {spans}).",
     bulkShiftValidationShiftDuration:
@@ -415,6 +431,7 @@ export const en = {
     columnShiftType: "Shift type",
     panelAvailability: "Availability",
     panelAvailabilityOf: "Availability of {name}",
+    panelAvailabilityOfLead: "Availability of",
     panelAvailabilityOfPrefix: "Availability:",
     panelShiftPreferences: "Preferences",
     panelShiftPreferencesOf: "Preferences of {name}",
@@ -506,11 +523,34 @@ export const en = {
     createTitle: "Create profile",
     editTitle: "Edit profile",
     enterName: "Please enter a name.",
+    duplicateFullName:
+      "Employee names must be unique — use an abbreviation, nickname instead of first name, or append an incrementing number from the second duplicate.",
     namePlaceholder: "e.g. Jane Doe",
     email: "Email",
     emailPlaceholder: "name@example.com",
     mobilePhone: "Mobile phone",
     mobilePhonePlaceholder: "digits only",
+    weeklyHours: "Weekly hours (target)",
+    weeklyHoursPlaceholder: "e.g. 40",
+    weeklyHoursHint:
+      "Target hours per week for planning. Leave empty for default 40 h. Legal maximum: {legalMax} h.",
+    availabilityWeeklyHoursSummary:
+      "Total availability: {availability} h/week · Target: {target} h · Legal maximum: {legalMax} h.",
+    availabilityExceedsTarget:
+      "Availability allows {hours} h/week — above the target of {targetHours} h.",
+    availabilityExceedsTargetConfirm:
+      "Availability allows {hours} h/week — above the target of {targetHours} h. Save anyway?",
+    legalWeeklyHoursExceeded:
+      "Legal maximum working time exceeded — {hours} h (maximum {legalMax} h).",
+    availabilityExceedsLegalWarning:
+      "Availability exceeds the legal weekly maximum of {legalMax} h. Please adjust the times.",
+    availabilityExceedsTargetWarning:
+      "Availability ({availability} h) is above the target of {target} h.",
+    weeklyHoursChangeConflictTitle: "Review shifts",
+    weeklyHoursChangeConflictIntro:
+      "The new target weekly hours do not match existing shifts from today onward. Past shifts remain unchanged. Shifts with a sent status appear under Shift statuses → Conflicts.",
+    weeklyHoursChangeConflictLine:
+      "{date} · {time} · {status} ({weekTotal}/{target} h/week)",
     color: "Color",
     selectColor: "Select color",
     noColorsAvailable: "All colors are already assigned.",
@@ -910,6 +950,8 @@ export const en = {
     saveFailed: "Save failed",
     unknownError: "Unknown error",
     batchRowOverlap: "Overlaps with another row in this entry.",
+    weeklyHoursExceeded:
+      "{name}Weekly hours exceeded — after assignment {total} h (maximum {target} h).",
     minRestPeriod: "Minimum rest period of {hours} hours between shifts not met.",
   },
   shiftConfirmation: {
@@ -935,7 +977,7 @@ export const en = {
       cancelShiftManager: "Cancel shift",
       cancelShiftEmployee: "Decline shift",
       resendConfirmation: "Request confirmation again",
-      setConfirmed: "Set status to confirmed",
+      setConfirmed: "Set shift status to confirmed",
     },
     cancel: {
       confirmManager: "Cancel this shift assignment?",
@@ -1016,7 +1058,11 @@ export const en = {
         confirmed: "Confirmed",
         canceled: "Employee canceled",
       },
-      colConflict: "Absence",
+      colConflict: "Conflict",
+      weeklyHoursConflictShort: "Weekly hours",
+      weeklyHoursConflictTooltip:
+        "Weekly hours exceeded — {weekTotal} h in this calendar week (maximum {target} h).",
+      absenceConflictTooltip: "Absence conflict: {absence}",
       colSelection: "Selection",
       colActions: "Actions",
       areaUnknown: "No area",

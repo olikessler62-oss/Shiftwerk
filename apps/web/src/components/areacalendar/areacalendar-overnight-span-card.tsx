@@ -15,13 +15,18 @@ import { cn } from "@/lib/cn";
 import {
   buildEmployeeShiftHighlightBoxShadow,
   employeeShiftHighlightOverlayStyle,
+  preventPointerTextSelection,
+  SHIFT_CARD_INTERACTIVE_CLASS,
 } from "@/lib/calendar-interaction-ui";
 import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
 import type { PlanningOvernightSpanDisplayMode } from "@/lib/planning-overnight-span-layout";
 import { AREA_CALENDAR_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/areacalendar-overnight-span-layout";
 import { PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX } from "@/lib/planning-calendar-layout";
 import { COLLAPSED_PAST_DAY_SHIFT_COLOR } from "@/lib/shift-card-cell-layout";
-import type { ShiftCardDisplayContent } from "@/lib/shift-card-display-content";
+import {
+  shiftCardTimeLabelIsPrimary,
+  type ShiftCardDisplayContent,
+} from "@/lib/shift-card-display-content";
 import {
   buildShiftCardTimeGradientCss,
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
@@ -57,6 +62,8 @@ function ExpandedSpanCardText({
   display: ShiftCardDisplayContent;
   compact: boolean;
 }) {
+  const emphasizeTime = shiftCardTimeLabelIsPrimary(display);
+
   if (compact) {
     return (
       <div className="flex min-w-0 items-baseline gap-1 overflow-hidden text-[11px] leading-none">
@@ -64,7 +71,11 @@ function ExpandedSpanCardText({
         {display.lastName ? (
           <span className="min-w-0 truncate font-medium">{display.lastName}</span>
         ) : null}
-        <span className="shrink-0 whitespace-nowrap tabular-nums">
+        <span
+          className={`shrink-0 whitespace-nowrap tabular-nums ${
+            emphasizeTime ? "font-bold" : ""
+          }`}
+        >
           {display.line1Secondary ?? display.timeLabel}
         </span>
       </div>
@@ -83,7 +94,11 @@ function ExpandedSpanCardText({
         {display.shiftLabel ? (
           <span className="shrink-0">{display.shiftLabel}</span>
         ) : (
-          <span className="shrink-0 whitespace-nowrap tabular-nums">
+          <span
+            className={`shrink-0 whitespace-nowrap tabular-nums ${
+              emphasizeTime ? "font-bold" : ""
+            }`}
+          >
             {display.timeLabel}
           </span>
         )}
@@ -112,6 +127,7 @@ export function AreaCalendarOvernightSpanCard({
   const textContentRef = useRef<HTMLDivElement>(null);
   const [textOverflows, setTextOverflows] = useState(false);
 
+  const isPastShift = isPastShiftDate(cellDate);
   const confirmationStatusLabel = shift.confirmationStatus
     ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
     : undefined;
@@ -120,8 +136,12 @@ export function AreaCalendarOvernightSpanCard({
         ...display.tooltip,
         confirmationStatusLine: confirmationStatusLabel,
         confirmationStatus: shift.confirmationStatus,
+        isPastShift,
       }
-    : display.tooltip;
+    : {
+        ...display.tooltip,
+        isPastShift,
+      };
   const tooltipPlainText = confirmationStatusLabel
     ? formatShiftCardTooltipPlainText(tooltipData, {
         formatStatusLine: (status) =>
@@ -184,6 +204,7 @@ export function AreaCalendarOvernightSpanCard({
         <button
           type="button"
           disabled={pending}
+          onMouseDown={preventPointerTextSelection}
           onClick={onShiftClick}
           onContextMenu={(event) => {
             if (!onShiftContextMenu) return;
@@ -193,6 +214,7 @@ export function AreaCalendarOvernightSpanCard({
           }}
           className={cn(
             "block shrink-0 rounded-sm border-0 p-0 shadow-sm transition disabled:opacity-50",
+            SHIFT_CARD_INTERACTIVE_CLASS,
             showsPointerCursor
               ? "cursor-pointer hover:opacity-90"
               : "!cursor-default",
@@ -252,6 +274,7 @@ export function AreaCalendarOvernightSpanCard({
           <button
             type="button"
             disabled={pending}
+            onMouseDown={preventPointerTextSelection}
             onClick={onShiftClick}
             onContextMenu={(event) => {
               if (!onShiftContextMenu) return;
@@ -261,6 +284,7 @@ export function AreaCalendarOvernightSpanCard({
             }}
             className={cn(
               "relative flex h-full w-full shrink-0 overflow-hidden rounded text-left text-black transition disabled:opacity-50",
+              SHIFT_CARD_INTERACTIVE_CLASS,
               showsPointerCursor
                 ? "cursor-pointer hover:opacity-90"
                 : "!cursor-default",

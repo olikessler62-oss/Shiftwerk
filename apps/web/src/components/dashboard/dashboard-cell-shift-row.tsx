@@ -2,13 +2,14 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AREA_CALENDAR_SHIFT_CARD_BOX_SHADOW } from "@/components/areacalendar/areacalendar-shift-card-view";
-import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
   buildEmployeeShiftHighlightBoxShadow,
   employeeShiftHighlightOverlayStyle,
+  preventPointerTextSelection,
+  SHIFT_CARD_INTERACTIVE_CLASS,
 } from "@/lib/calendar-interaction-ui";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import {
@@ -24,6 +25,7 @@ import {
   DashboardExpandedShiftCardText,
   DashboardShiftCardTextArea,
 } from "@/components/dashboard/dashboard-expanded-shift-card-text";
+import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import {
   buildPlanningShiftSegmentCardContent,
@@ -35,7 +37,9 @@ import {
   planningShiftSegmentTouchesDayBorder,
   type PlanningShiftDisplaySegment,
 } from "@/lib/planning-overnight-shift-display";
-import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
+import {
+  shiftConfirmationTooltipStatusLabelKey,
+} from "@/lib/shift-confirmation-display";
 import { SHIFT_ABSENCE_CONFLICT_RING_CLASS } from "@/lib/shift-absence-conflict";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
@@ -77,6 +81,8 @@ type Props = {
   shiftJobContext: PlanningShiftJobContext;
   employeeHighlighted?: boolean;
   absenceConflictShiftIds?: ReadonlySet<string>;
+  swapRequestShiftIds?: ReadonlySet<string>;
+  shiftConfirmationEnabled?: boolean;
 };
 
 export function DashboardCellShiftRow({
@@ -93,6 +99,8 @@ export function DashboardCellShiftRow({
   shiftJobContext,
   employeeHighlighted = false,
   absenceConflictShiftIds,
+  swapRequestShiftIds,
+  shiftConfirmationEnabled = true,
 }: Props) {
   const t = useTranslations();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -144,10 +152,11 @@ export function DashboardCellShiftRow({
         const showAnyText = cardWidthPx >= MIN_WIDTH_FOR_TIME_PX;
         const showTitle = cardWidthPx >= MIN_WIDTH_FOR_TITLE_PX;
         const stripWidthPx = resolveStripWidthPx(cardWidthPx);
+        const showEmployeeStrip = planningShiftSegmentShowsEmployeeStrip(part);
+        const isPastShift = isPastShiftDate(cellDate);
         const confirmationStatusLine = shift.confirmationStatus
           ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
           : undefined;
-        const showEmployeeStrip = planningShiftSegmentShowsEmployeeStrip(part);
         const jobsLabel = resolvePlanningShiftJobsLabel(shift, shiftJobContext);
         const jobsLine = jobsLabel.trim()
           ? t("common.shiftCardTooltipJob", { names: jobsLabel })
@@ -161,8 +170,11 @@ export function DashboardCellShiftRow({
             confirmationStatusLine,
             confirmationStatus: shift.confirmationStatus,
             jobsLabel,
+            isPastShift,
             formatTemplateTooltipLine: (templateName) =>
               t("common.shiftCardTooltipShift", { name: templateName }),
+            formatDeploymentTimeTooltipLine: () =>
+              t("common.shiftCardTooltipDeploymentTimeLabel"),
             formatJobTooltipLine: (names) =>
               t("common.shiftCardTooltipJob", { names }),
             formatStatusTooltipLine: (status) =>
@@ -178,12 +190,19 @@ export function DashboardCellShiftRow({
           : AREA_CALENDAR_SHIFT_CARD_BOX_SHADOW;
         const showsPointerCursor = planningShiftCardShowsPointerCursor(
           {
+            id: shift.id,
             shift_date: shift.shift_date,
             confirmationStatus: shift.confirmationStatus,
             requestedAt: shift.requestedAt,
+            displayState: shift.displayState,
           },
           cellDate,
-          isPastShiftDate
+          isPastShiftDate,
+          {
+            shiftConfirmationEnabled,
+            hasAbsenceConflict: absenceConflictShiftIds?.has(shift.id),
+            hasSwapRequest: swapRequestShiftIds?.has(shift.id),
+          }
         );
 
         return (
@@ -215,6 +234,7 @@ export function DashboardCellShiftRow({
               <button
                 type="button"
                 disabled={pending}
+                onMouseDown={preventPointerTextSelection}
                 onClick={() => onShiftClick(shift.id)}
                 onContextMenu={(event) => {
                   if (!onShiftContextMenu) return;
@@ -223,13 +243,20 @@ export function DashboardCellShiftRow({
                     canOpenShiftCardContextMenu(
                       shift.confirmationStatus,
                       shift.requestedAt,
-                      { shiftDate: shift.shift_date, isPastShiftDate }
+                      {
+                        shiftDate: shift.shift_date,
+                        cellDate,
+                        isPastShiftDate,
+                        displayState: shift.displayState,
+                        hasAbsenceConflict: absenceConflictShiftIds?.has(shift.id),
+                      }
                     ),
                     () => onShiftContextMenu(shift.id, event)
                   );
                 }}
                 className={cn(
                   "relative flex min-h-0 min-w-0 flex-1 overflow-hidden text-left text-black transition disabled:opacity-50",
+                  SHIFT_CARD_INTERACTIVE_CLASS,
                   showsPointerCursor
                     ? "cursor-pointer hover:opacity-90"
                     : "!cursor-default",

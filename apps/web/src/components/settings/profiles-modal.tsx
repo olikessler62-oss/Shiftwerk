@@ -909,6 +909,7 @@ export function ProfilesModal({
             onCacheUpdate={(profileId, list) => {
               setAvailabilityCache((prev) => ({ ...prev, [profileId]: list }));
             }}
+            onProfileUpdate={handleProfileSaved}
           />
         )}
         {detailPanel === "shiftPreferences" && selectedProfile && (

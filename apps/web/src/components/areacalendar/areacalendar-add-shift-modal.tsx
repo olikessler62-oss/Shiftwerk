@@ -22,6 +22,7 @@ import { cn } from "@/lib/cn";
 import {
   Alert,
   Button,
+  Checkbox,
   CheckIcon,
   ChevronDownIcon,
   CloseIcon,
@@ -38,6 +39,8 @@ import {
   profileAvailabilityWeekdayFromAreaCalendarDate,
 } from "@/lib/available-employees-for-shift";
 import { pickEmployeeForBulkPrefill } from "@/lib/bulk-shift-row-prefill";
+import { computeBulkStaffingHeaderEntries } from "@/lib/bulk-staffing-header";
+import { resolveAddShiftFormInitialValues } from "@/lib/bulk-shift-staffing";
 import { isEmployeeWishFulfilled } from "@/lib/profile-shift-preference-matching";
 import type { AreaCalendarAssignmentTimeWindow } from "@/lib/shift-overlap";
 import { DEFAULT_ORGANIZATION_TIME_ZONE } from "@/lib/dates";
@@ -50,6 +53,13 @@ import {
 } from "@/lib/areacalendar-assignment-presets";
 import { formatDayHeader } from "@/lib/planning-utils";
 import { validateAreaCalendarShiftServiceHours } from "@/lib/service-hours-shift-validation";
+import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
+import {
+  evaluateShiftAssignAvailabilityConflict,
+  isShiftAssignAvailabilityConflictError,
+  useShiftAssignAvailabilityNotice,
+} from "@/lib/shift-assign-availability-notice";
+import { isShiftAssignWeeklyHoursExceededError } from "@/lib/shift-assign-blocking-errors";
 import {
   formatAvailabilityTimeRange,
   weekdayLabel,
@@ -74,6 +84,8 @@ import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type {
   AreaShiftTemplateWithBreaks,
   LocationArea,
+  LocationAreaStaffing,
+  Qualification,
 } from "@schichtwerk/types";
 
 const EMPTY_EMPLOYEE_ID = "";
@@ -328,6 +340,12 @@ export type AreaCalendarBulkShiftDialogState = {
   /** Dashboard: Mitarbeiter der angeklickten Zeilen-Zelle für neue Zeilen. */
   presetEmployeeId?: string;
 };
+
+/** Schicht-hinzufügen-Dialog: Standard `max-w-md` (28rem) + 20 %. */
+export const ADD_SHIFT_MODAL_MAX_WIDTH_CLASS = "max-w-[33.6rem]";
+
+export const ADD_SHIFT_AVAILABILITY_NOTICE_CLASS =
+  "mt-1 text-xs text-red-600";
 
 function EmployeeColorSwatch({ hex }: { hex: string | null }) {
   if (!hex) {
@@ -913,10 +931,25 @@ type AddShiftModalProps = {
   areas: LocationArea[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   serviceHours: AreaServiceHourRef[];
+  staffingRules?: LocationAreaStaffing[];
+  qualifications?: Qualification[];
+  profileQualificationIds?: Record<string, string[]>;
   areaExistingAssignments: AreaCalendarAssignmentTimeWindow[];
+  weekDates: readonly string[];
   onClose: () => void;
   onSaved?: () => void;
 };
+
+function buildProfileQualificationIdsMap(
+  profileQualificationIds: Record<string, string[]> | undefined
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const map = new Map<string, Set<string>>();
+  if (!profileQualificationIds) return map;
+  for (const [profileId, ids] of Object.entries(profileQualificationIds)) {
+    map.set(profileId, new Set(ids));
+  }
+  return map;
+}
 
 export function AreaCalendarAddShiftModal({
   dialog,
@@ -924,7 +957,11 @@ export function AreaCalendarAddShiftModal({
   areas,
   areaShiftTemplates,
   serviceHours,
+  staffingRules = [],
+  qualifications = [],
+  profileQualificationIds = {},
   areaExistingAssignments,
+  weekDates,
   onClose,
   onSaved,
 }: AddShiftModalProps) {
@@ -955,12 +992,67 @@ export function AreaCalendarAddShiftModal({
     () => areaCalendarAssignmentPresetsForArea(templatesForArea),
     [templatesForArea]
   );
+  const profileQualificationIdsMap = useMemo(
+    () => buildProfileQualificationIdsMap(profileQualificationIds),
+    [profileQualificationIds]
+  );
+  const staffingEntries = useMemo(() => {
+    if (simplePlanning || !dialog.areaId || staffingRules.length === 0) {
+      return [];
+    }
+    return computeBulkStaffingHeaderEntries({
+      staffingRules,
+      areaId: dialog.areaId,
+      dateISO: dialog.date,
+      serviceHours,
+      assignments: areaExistingAssignments.map((assignment) => ({
+        startTime: assignment.startTime,
+        endTime: assignment.endTime,
+        employeeId: assignment.employeeId,
+      })),
+      assignmentPresets,
+      qualifications,
+      profileQualificationIds: profileQualificationIdsMap,
+      formatTimeLabel: (_weekdayLabel, startTime, endTime) =>
+        `${startTime} – ${endTime}`,
+      weekdayLabel: (weekdayIndex) =>
+        weekdayLabel(weekdayIndex, locale === "en" ? "en" : "de", "short"),
+    });
+  }, [
+    simplePlanning,
+    dialog.areaId,
+    dialog.date,
+    staffingRules,
+    serviceHours,
+    areaExistingAssignments,
+    assignmentPresets,
+    qualifications,
+    profileQualificationIdsMap,
+    locale,
+  ]);
+  const initialShiftForm = useMemo(
+    () =>
+      resolveAddShiftFormInitialValues({
+        areaId: dialog.areaId,
+        assignmentPresets,
+        staffingEntries,
+        serviceHours,
+        staffingRules,
+      }),
+    [
+      dialog.areaId,
+      assignmentPresets,
+      staffingEntries,
+      serviceHours,
+      staffingRules,
+    ]
+  );
   const presetPlaceholder = t("areaCalendar.selectShiftTemplate");
   const presetLabel = t("areaCalendar.shiftTemplateLabel");
 
-  const [shiftTypeId, setShiftTypeId] = useState("");
-  const [startTime, setStartTime] = useState("00:00");
-  const [endTime, setEndTime] = useState("00:00");
+  const [shiftTypeId, setShiftTypeId] = useState(initialShiftForm.shiftTypeId);
+  const [startTime, setStartTime] = useState(initialShiftForm.startTime);
+  const [endTime, setEndTime] = useState(initialShiftForm.endTime);
   const [employees, setEmployees] = useState<AreaCalendarShiftAssignEmployee[]>([]);
   const [profileShiftPreferences, setProfileShiftPreferences] = useState<
     Record<string, ProfileShiftPreferenceEntry[]>
@@ -974,7 +1066,17 @@ export function AreaCalendarAddShiftModal({
   const [complianceNotice, setComplianceNotice] = useState<string | null>(null);
   const [outsideServiceHoursConfirm, setOutsideServiceHoursConfirm] =
     useState(false);
+  const [availabilityConflictPrompt, setAvailabilityConflictPrompt] =
+    useState(false);
+  const [weeklyHoursAlertMessage, setWeeklyHoursAlertMessage] = useState<
+    string | null
+  >(null);
+  const [assignRestOfWeekDays, setAssignRestOfWeekDays] = useState(false);
   const skipShiftTypeFromTimesSyncRef = useRef(false);
+
+  const showAssignRestOfWeekDaysOption =
+    !simplePlanning &&
+    hasRemainingAssignableWeekDates(dialog.date, weekDates);
 
   const timesComplete = areAreaCalendarShiftTimesComplete(startTime, endTime);
 
@@ -999,6 +1101,24 @@ export function AreaCalendarAddShiftModal({
       timeZone,
     ]
   );
+
+  const availabilityNotice = useShiftAssignAvailabilityNotice({
+    weekday,
+    startTime,
+    endTime,
+    employeeId,
+    emptyEmployeeId: EMPTY_EMPLOYEE_ID,
+    employees,
+    loadingEmployees,
+    assignmentPresets,
+    shiftTypeId,
+    timesComplete,
+  });
+
+  const showAvailabilityConflictFeedback = useCallback(() => {
+    availabilityNotice.runAvailabilityCheck();
+    setAvailabilityConflictPrompt(true);
+  }, [availabilityNotice]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1083,10 +1203,14 @@ export function AreaCalendarAddShiftModal({
     profileShiftPreferences,
   ]);
 
-  const handleEmployeeChange = useCallback((nextId: string) => {
-    setEmployeeManuallySelected(true);
-    setEmployeeId(nextId);
-  }, []);
+  const handleEmployeeChange = useCallback(
+    (nextId: string) => {
+      setEmployeeManuallySelected(true);
+      setEmployeeId(nextId);
+      availabilityNotice.notifyEmployeeChange(nextId);
+    },
+    [availabilityNotice]
+  );
 
   const handleShiftTypeChange = useCallback(
     (nextId: string) => {
@@ -1094,17 +1218,21 @@ export function AreaCalendarAddShiftModal({
       const preset = assignmentPresets.find((item) => item.id === nextId);
       if (preset) {
         skipShiftTypeFromTimesSyncRef.current = true;
-        setStartTime(timeFieldValue(preset.start_time));
-        setEndTime(timeFieldValue(preset.end_time));
+        const nextStart = timeFieldValue(preset.start_time);
+        const nextEnd = timeFieldValue(preset.end_time);
+        setStartTime(nextStart);
+        setEndTime(nextEnd);
+        availabilityNotice.notifyShiftTemplateChange(nextStart, nextEnd);
       }
     },
-    [assignmentPresets]
+    [assignmentPresets, availabilityNotice]
   );
 
   const handleApplyAvailability = useCallback(
     (entry: AreaCalendarEmployeeAvailabilityEntry) => {
       const nextStart = timeFieldValue(entry.start_time);
       const nextEnd = timeFieldValue(entry.end_time);
+      availabilityNotice.beforeTimeInputChange();
       skipShiftTypeFromTimesSyncRef.current = true;
       setStartTime(nextStart);
       setEndTime(nextEnd);
@@ -1119,7 +1247,7 @@ export function AreaCalendarAddShiftModal({
         setShiftTypeId(matchedPresetId);
       }
     },
-    [assignmentPresets]
+    [assignmentPresets, availabilityNotice]
   );
 
   const performAssign = useCallback(
@@ -1137,17 +1265,31 @@ export function AreaCalendarAddShiftModal({
         locationId,
         locationAreaId: simplePlanning ? null : dialog.areaId,
         withoutServiceHours: options?.withoutServiceHours,
+        assignToRemainingWeekDays: assignRestOfWeekDays,
+        weekDates,
         simulatedProposedOnAssign,
         relaxAppRegistrationGate,
       });
       setSaving(false);
 
       if (!result.ok) {
-        setError(translateActionError(result.error, t));
+        if (isShiftAssignAvailabilityConflictError(result.error)) {
+          showAvailabilityConflictFeedback();
+        }
+        const translated = translateActionError(result.error, t);
+        if (isShiftAssignWeeklyHoursExceededError(result.error)) {
+          setWeeklyHoursAlertMessage(translated);
+          setError(null);
+          setComplianceNotice(null);
+          return;
+        }
+        setWeeklyHoursAlertMessage(null);
+        setError(translated);
         setComplianceNotice(null);
         return;
       }
 
+      setWeeklyHoursAlertMessage(null);
       setError(null);
       onSaved?.();
       router.refresh();
@@ -1173,6 +1315,10 @@ export function AreaCalendarAddShiftModal({
       router,
       t,
       simulatedProposedOnAssign,
+      relaxAppRegistrationGate,
+      assignRestOfWeekDays,
+      weekDates,
+      showAvailabilityConflictFeedback,
     ]
   );
 
@@ -1190,6 +1336,20 @@ export function AreaCalendarAddShiftModal({
             ? t("areaCalendar.bulkShiftValidationEmployeeRequired")
             : t("areaCalendar.bulkShiftValidationEmployeeOrTimesRequired");
       setError(message);
+      return;
+    }
+
+    if (
+      evaluateShiftAssignAvailabilityConflict({
+        employeeId,
+        emptyEmployeeId: EMPTY_EMPLOYEE_ID,
+        employees,
+        weekday,
+        startTime,
+        endTime,
+      })
+    ) {
+      showAvailabilityConflictFeedback();
       return;
     }
 
@@ -1219,6 +1379,9 @@ export function AreaCalendarAddShiftModal({
     simplePlanning,
     performAssign,
     t,
+    employees,
+    weekday,
+    showAvailabilityConflictFeedback,
   ]);
 
   const wishFulfilled = useMemo(() => {
@@ -1268,7 +1431,15 @@ export function AreaCalendarAddShiftModal({
       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4"
       role="presentation"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) onClose();
+        if (
+          event.target === event.currentTarget &&
+          !saving &&
+          !outsideServiceHoursConfirm &&
+          !availabilityConflictPrompt &&
+          !weeklyHoursAlertMessage
+        ) {
+          onClose();
+        }
       }}
     >
       <div
@@ -1276,7 +1447,8 @@ export function AreaCalendarAddShiftModal({
         aria-modal="true"
         aria-labelledby="areacalendar-add-shift-title"
         className={cn(
-          "relative z-[111] flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          "relative z-[111] flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
+          ADD_SHIFT_MODAL_MAX_WIDTH_CLASS,
           MODAL_SCROLLBAR_CLASS
         )}
         onMouseDown={(event) => event.stopPropagation()}
@@ -1332,7 +1504,10 @@ export function AreaCalendarAddShiftModal({
                 className="mt-1"
                 value={startTime}
                 disabled={saving}
-                onChange={(event) => setStartTime(event.target.value)}
+                onChange={(event) => {
+                  availabilityNotice.beforeTimeInputChange();
+                  setStartTime(event.target.value);
+                }}
               />
             </div>
             <div>
@@ -1341,7 +1516,10 @@ export function AreaCalendarAddShiftModal({
                 className="mt-1"
                 value={endTime}
                 disabled={saving}
-                onChange={(event) => setEndTime(event.target.value)}
+                onChange={(event) => {
+                  availabilityNotice.beforeTimeInputChange();
+                  setEndTime(event.target.value);
+                }}
               />
             </div>
           </div>
@@ -1365,16 +1543,38 @@ export function AreaCalendarAddShiftModal({
                 {t("profiles.shiftPreferenceWishNotFulfilled")}
               </p>
             ) : null}
+            {availabilityNotice.visible ? (
+              <p className={ADD_SHIFT_AVAILABILITY_NOTICE_CLASS}>
+                {t("areaCalendar.shiftOutsideEmployeeAvailability")}
+              </p>
+            ) : null}
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-4">
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="button" onClick={() => void handleOk()} disabled={saving}>
-            {t("common.ok")}
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
+          {showAssignRestOfWeekDaysOption ? (
+            <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
+              <Checkbox
+                checked={assignRestOfWeekDays}
+                disabled={saving}
+                onChange={(event) =>
+                  setAssignRestOfWeekDays(event.target.checked)
+                }
+                className="mt-0.5 shrink-0"
+              />
+              <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
+            </label>
+          ) : (
+            <span />
+          )}
+          <div className="flex shrink-0 gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" onClick={() => void handleOk()} disabled={saving}>
+              {t("common.ok")}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -1424,6 +1624,83 @@ export function AreaCalendarAddShiftModal({
                 }}
               >
                 {t("common.yes")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {availabilityConflictPrompt ? (
+        <div
+          className={areaCalendarNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !saving) {
+              setAvailabilityConflictPrompt(false);
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="areacalendar-add-shift-availability-conflict"
+            className={areaCalendarAlertDialogClass()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p
+              id="areacalendar-add-shift-availability-conflict"
+              className="text-sm text-red-600"
+            >
+              {t("areaCalendar.shiftOutsideEmployeeAvailability")}
+            </p>
+            <div
+              className={settingsModalFooterClass(
+                "mt-5 border-0 px-0 pb-0 pt-0 sm:justify-end"
+              )}
+            >
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setAvailabilityConflictPrompt(false)}
+                disabled={saving}
+              >
+                {t("common.ok")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {weeklyHoursAlertMessage ? (
+        <div
+          className={areaCalendarNestedModalOverlayClass()}
+          role="presentation"
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="areacalendar-add-shift-weekly-hours-alert"
+            className={areaCalendarAlertDialogClass()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p
+              id="areacalendar-add-shift-weekly-hours-alert"
+              className="text-sm text-red-600"
+            >
+              {weeklyHoursAlertMessage}
+            </p>
+            <div
+              className={settingsModalFooterClass(
+                "mt-5 border-0 px-0 pb-0 pt-0 sm:justify-end"
+              )}
+            >
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setWeeklyHoursAlertMessage(null)}
+                disabled={saving}
+              >
+                {t("common.ok")}
               </Button>
             </div>
           </div>

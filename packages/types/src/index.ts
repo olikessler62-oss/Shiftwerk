@@ -33,6 +33,58 @@ export type ShiftConfirmationStatus =
   | "pending"
   | "canceled";
 
+/** Planungs-Lifecycle auf der Schicht (Sprint 1 — parallel zu confirmation_status). */
+export type ShiftLifecycleStatus = "planned" | "confirmed" | "cancelled";
+
+export type ShiftRequestType = "confirmation" | "cancellation";
+
+export type ShiftRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "expired"
+  | "cancelled";
+
+export type ShiftRequestActorRole = "employee" | "manager";
+
+export interface ShiftRequest {
+  id: string;
+  organization_id: string;
+  shift_id: string;
+  type: ShiftRequestType;
+  status: ShiftRequestStatus;
+  actor_id: string | null;
+  sent_at: string | null;
+  responded_at: string | null;
+  expires_at: string | null;
+  reminder_sent_at: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ShiftCardDisplayState = {
+  shiftId: string;
+  lifecycle: ShiftLifecycleStatus;
+  /** Abgeleiteter Legacy-Status für bestehende UI während der Migration. */
+  legacyConfirmationStatus: ShiftConfirmationStatus;
+  openConfirmation?: {
+    requestId: string;
+    status: "pending" | "expired";
+    sentAt: string;
+  };
+  lastConfirmation?: {
+    requestId: string;
+    status: "approved" | "rejected";
+    respondedAt: string | null;
+  };
+  openCancellation?: {
+    requestId: string;
+    status: "approved";
+    cancelledBy?: ShiftRequestActorRole;
+  };
+};
+
 export type ConfirmationRequestScope =
   | "single_shift"
   | "employee_day"
@@ -273,6 +325,7 @@ export interface Shift {
   updated_at: string;
   confirmation_status: ShiftConfirmationStatus;
   confirmation_status_updated_at: string;
+  lifecycle_status?: ShiftLifecycleStatus;
   requested_at: string | null;
   pending_since: string | null;
   pending_reminder_sent_at: string | null;
@@ -352,6 +405,16 @@ export interface ConfirmationWeekItem {
 export interface ConfirmationWeekResponse {
   items: ConfirmationWeekItem[];
   organizationDisclaimer: string | null;
+}
+
+/** Anzeige-Metadaten für Mitarbeiter-Wochenplan (alle Schichten, nicht nur offene Bestätigungen). */
+export interface EmployeeWeekShiftDisplayItem {
+  shiftId: string;
+  locationName: string;
+  areaName: string;
+  templateName: string | null;
+  templateColor: string | null;
+  jobName: string | null;
 }
 
 export interface ConfirmationRespondItem {

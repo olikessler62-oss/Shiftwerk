@@ -7,6 +7,7 @@ import { DashboardCellShiftRow } from "@/components/dashboard/dashboard-cell-shi
 import { DashboardEmployeeRowOvernightOverlay } from "@/components/dashboard/dashboard-employee-row-overnight-overlay";
 import { DashboardDayColumnWidthReporter } from "@/components/dashboard/dashboard-day-column-width-reporter";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
+import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement } from "@/components/ui/tooltip";
 import { isPastCalendarDate } from "@/lib/dates";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { canOpenShiftCardContextMenu } from "@/lib/shift-card-context-menu-actions";
@@ -25,12 +26,15 @@ import {
   formatDayHeader,
   formatPlanningHoursRatio,
 } from "@/lib/planning-utils";
-import { TagAreaHeaderStaffingOverlay } from "@/components/areacalendar/tag-area-header-staffing-overlay";
+import { TagAreaHeaderStaffingRow } from "@/components/areacalendar/tag-area-header-strip";
+import { buildTagAreaServiceHoursHeaderTooltip } from "@/components/areacalendar/tag-area-header-service-hours-tooltip";
 import { DashboardWeeklySummaryFooter } from "@/components/dashboard/dashboard-weekly-summary-footer";
 import { TagAreaFooterStrip } from "@/components/areacalendar/tag-area-footer-strip";
 import {
   PLANNING_CALENDAR_GRID_TRANSITION_CLASS,
   PLANNING_CELL_CONTENT_TRANSITION_CLASS,
+  PLANNING_CELL_BLOCKED_INFO_PANEL_CLASS,
+  PLANNING_CELL_ABSENT_ACTIVE_PANEL_CLASS,
   PLANNING_CELL_HEIGHT_PX,
   PLANNING_CELL_PADDING_PX,
   PLANNING_COLUMN_DIVIDER_CLASS,
@@ -42,6 +46,7 @@ import {
   PLANNING_HEADER_ROW_BORDER_CLASS,
   PLANNING_ROW_DIVIDER_CLASS,
   PLANNING_STAFF_COLUMN_BOTTOM_EDGE_CLASS,
+  PLANNING_CLOSED_DAY_CELL_BG,
   resolvePlanningCellBackground,
 } from "@/lib/planning-calendar-layout";
 import type { TagAreaHeaderStaffingEntry, AreaServiceHourRef } from "@/lib/location-staffing-client";
@@ -52,6 +57,7 @@ import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline
 import type {
   LocationAreaStaffing,
   Profile,
+  ProfileRecurringAvailability,
   Qualification,
 } from "@schichtwerk/types";
 import {
@@ -72,6 +78,8 @@ import {
 import { planningCellDataAttribute } from "@/lib/planning-overnight-span-layout";
 import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
+import { PlanningEmployeeAvailabilityTooltipContent } from "@/components/planning/planning-employee-availability-tooltip-content";
+import { groupRecurringAvailabilityByProfileId, resolvePlanningEmployeeJobsTooltipLabel } from "@/lib/planning-employee-availability-tooltip";
 
 const EMPLOYEE_COLOR_FALLBACK = "#94a3b8";
 
@@ -123,6 +131,11 @@ type Props = {
   ) => DayAssignBlockReason | null;
   onToggleDayActive: (date: string, active: boolean) => void;
   onOpenPicker: (employeeId: string, date: string, shiftId?: string) => void;
+  onRequestPlanningDayAssign: (
+    employeeId: string,
+    date: string,
+    mode: "picker" | "bulk"
+  ) => void;
   onCellContextMenu: (
     employeeId: string,
     date: string,
@@ -142,13 +155,17 @@ type Props = {
     clientY: number
   ) => void;
   selectedAreaId: string | null;
+  selectedAreaName?: string;
   serviceHours: readonly AreaServiceHourRef[];
   staffingRules: readonly LocationAreaStaffing[];
   qualifications: readonly Qualification[];
   profileQualificationIds: Record<string, string[]>;
+  recurringAvailability?: readonly ProfileRecurringAvailability[];
   highlightedEmployeeId?: string | null;
   onEmployeeHover?: (employeeId: string | null) => void;
   absenceConflictShiftIds?: ReadonlySet<string>;
+  swapRequestShiftIds?: ReadonlySet<string>;
+  shiftConfirmationEnabled?: boolean;
 };
 
 function dayHeaderColumnDivider(dayIndex: number, totalDays: number) {
@@ -200,17 +217,22 @@ export function DashboardCalendarGrid({
   getDayAssignBlockReason,
   onToggleDayActive,
   onOpenPicker,
+  onRequestPlanningDayAssign,
   onCellContextMenu,
   onShiftContextMenu,
   onEmployeeRowContextMenu,
   selectedAreaId,
+  selectedAreaName = "",
   serviceHours,
   staffingRules,
   qualifications,
   profileQualificationIds,
+  recurringAvailability = [],
   highlightedEmployeeId = null,
   onEmployeeHover,
   absenceConflictShiftIds,
+  swapRequestShiftIds,
+  shiftConfirmationEnabled = true,
 }: Props) {
   const [dayColumnInnerWidthPxByDate, setDayColumnInnerWidthPxByDate] =
     useState<Map<string, number>>(() => new Map());
@@ -241,6 +263,14 @@ export function DashboardCalendarGrid({
     () => createPlanningShiftJobContextMaps(qualifications),
     [qualifications]
   );
+
+  const availabilityByProfileId = useMemo(
+    () => groupRecurringAvailabilityByProfileId(recurringAvailability),
+    [recurringAvailability]
+  );
+  const availabilityTooltipLocale = locale === "en" ? "en" : "de";
+  const emptyAvailabilityTooltipLabel = t("profiles.emptyAvailability");
+  const showEmployeeJobs = qualifications.length > 0;
 
   const shiftJobContextByDate = useMemo(() => {
     const byDate = new Map<string, PlanningShiftJobContext>();
@@ -376,7 +406,7 @@ export function DashboardCalendarGrid({
                 height: CALENDAR_DAY_HEADER_ROW_HEIGHT,
               }}
             >
-              {dayHasOpenArea[dayIndex] ? (
+              {dayHasOpenArea[dayIndex] || !dayHasServiceHours[dayIndex] ? (
                 <CalendarCornerCheckbox
                   aria-label={`${weekday} ${label}`}
                   checked={activeDayDates.has(date)}
@@ -425,6 +455,21 @@ export function DashboardCalendarGrid({
           ? dates.map((date, dayIndex) => {
               const mutedHeader = !dayHasServiceHours[dayIndex];
               const staffingEntries = dailyStaffingByDate?.get(date) ?? [];
+              const showNoServiceHoursInHeader = !dayHasServiceHours[dayIndex];
+              const headerTooltip =
+                selectedAreaId && selectedAreaName
+                  ? buildTagAreaServiceHoursHeaderTooltip({
+                      t,
+                      intlLocale,
+                      locale: locale === "en" ? "en" : "de",
+                      areaId: selectedAreaId,
+                      areaName: selectedAreaName,
+                      date,
+                      serviceHours,
+                      shiftTemplates: assignmentPresets,
+                      showNoServiceHoursInHeader,
+                    })
+                  : undefined;
 
               return (
                 <div
@@ -432,7 +477,11 @@ export function DashboardCalendarGrid({
                   className={cn(
                     "sticky z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-300",
                     PLANNING_HEADER_ROW_BORDER_CLASS,
-                    mutedHeader ? CALENDAR_DAY_HEADER_MUTED_CLASS : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
+                    showNoServiceHoursInHeader
+                      ? undefined
+                      : mutedHeader
+                        ? CALENDAR_DAY_HEADER_MUTED_CLASS
+                        : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
                     dayHeaderColumnDivider(dayIndex, dates.length)
                   )}
                   style={{
@@ -440,18 +489,21 @@ export function DashboardCalendarGrid({
                     gridRow: staffingHeaderRow!,
                     top: CALENDAR_DAY_HEADER_ROW_HEIGHT,
                     height: PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
+                    ...(showNoServiceHoursInHeader
+                      ? { backgroundColor: PLANNING_CLOSED_DAY_CELL_BG }
+                      : undefined),
                   }}
                 >
-                  {!dayHasServiceHours[dayIndex] ? (
-                    <span className="shrink-0 whitespace-nowrap text-[11px] font-medium leading-none text-black">
-                      {t("areaCalendar.noServiceHours")}
-                    </span>
-                  ) : staffingEntries.length > 0 ? (
-                    <TagAreaHeaderStaffingOverlay
-                      entries={staffingEntries}
-                      dayCollapsed={!layoutActiveDayDates.has(date)}
-                    />
-                  ) : null}
+                  <TagAreaHeaderStaffingRow
+                    entries={staffingEntries}
+                    noServiceHoursLabel={
+                      showNoServiceHoursInHeader
+                        ? t("areaCalendar.noServiceHours")
+                        : undefined
+                    }
+                    headerTooltip={headerTooltip}
+                    dayCollapsed={!layoutActiveDayDates.has(date)}
+                  />
                 </div>
               );
             })
@@ -482,40 +534,69 @@ export function DashboardCalendarGrid({
                   isEmployeeHighlighted && "bg-subtle"
                 )}
                 style={{ gridColumn: 1, gridRow }}
-                onMouseEnter={() => onEmployeeHover?.(emp.id)}
-                onMouseLeave={() => onEmployeeHover?.(null)}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onEmployeeRowContextMenu?.(emp.id, event.clientX, event.clientY);
-                }}
               >
-                <div className="flex min-w-0 items-center gap-2 py-0 pl-3 pr-2">
-                  <span
-                    className="shrink-0 rounded-l"
-                    style={{
-                      width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
-                      height: SHIFT_CARD_TWO_LINE_HEIGHT_PX,
-                      backgroundColor:
-                        emp.color?.trim() || EMPLOYEE_COLOR_FALLBACK,
+                <Tooltip
+                  className="flex min-h-0 w-full self-stretch"
+                  contentClassName={employeeAvailabilityTooltipContentClassName}
+                  content={
+                    <PlanningEmployeeAvailabilityTooltipContent
+                      slots={availabilityByProfileId.get(emp.id) ?? []}
+                      employeeName={emp.full_name}
+                      locale={availabilityTooltipLocale}
+                      emptyLabel={emptyAvailabilityTooltipLabel}
+                      jobsLabel={
+                        showEmployeeJobs
+                          ? resolvePlanningEmployeeJobsTooltipLabel(
+                              emp.id,
+                              profileQualificationIds,
+                              qualificationMaps.qualificationNameById,
+                              qualificationMaps.qualificationSortOrder
+                            )
+                          : undefined
+                      }
+                    />
+                  }
+                  placement={employeeAvailabilityTooltipPlacement}
+                >
+                  <div
+                    data-employee-availability-tooltip-anchor
+                    className="flex min-h-0 w-full self-stretch items-center"
+                    onMouseEnter={() => onEmployeeHover?.(emp.id)}
+                    onMouseLeave={() => onEmployeeHover?.(null)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onEmployeeRowContextMenu?.(emp.id, event.clientX, event.clientY);
                     }}
-                    aria-hidden
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium leading-tight">
-                      {emp.full_name}
-                    </div>
-                    <div
-                      className={cn(
-                        "truncate text-xs leading-tight",
-                        overHours ? "font-medium text-amber-600" : "text-muted"
-                      )}
-                    >
-                      {t("common.basic")}{" "}
-                      {formatPlanningHoursRatio(weekH, targetH, locale)}
+                  >
+                    <div className="flex min-w-0 items-center gap-2 py-0 pl-3 pr-2">
+                      <span
+                        className="shrink-0 rounded-l"
+                        style={{
+                          width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
+                          height: SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+                          backgroundColor:
+                            emp.color?.trim() || EMPLOYEE_COLOR_FALLBACK,
+                        }}
+                        aria-hidden
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium leading-tight">
+                          {emp.full_name}
+                        </div>
+                        <div
+                          className={cn(
+                            "truncate text-xs leading-tight",
+                            overHours ? "font-medium text-amber-600" : "text-muted"
+                          )}
+                        >
+                          {t("common.basic")}{" "}
+                          {formatPlanningHoursRatio(weekH, targetH, locale)}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </Tooltip>
               </div>
 
               {dates.map((date, dayIndex) => {
@@ -533,6 +614,8 @@ export function DashboardCalendarGrid({
                   cellHasShift
                     ? null
                     : getDayAssignBlockReason(emp.id, date);
+                const isNoServiceDay = !dayHasServiceHours[dayIndex];
+                const effectiveBlockReason = isNoServiceDay ? null : blockReason;
                 const isPastDay = isPastCalendarDate(date, todayISO);
                 const dayReadOnly = isDayReadOnly(date);
                 const isDayExpanded = layoutActiveDayDates.has(date);
@@ -554,7 +637,8 @@ export function DashboardCalendarGrid({
                   onOpenPicker(emp.id, date, shiftId);
                 const canOpenNewShiftInCell =
                   !pending && canAssign && !dayReadOnly;
-                const openNewShiftInCell = () => onOpenPicker(emp.id, date);
+                const openNewShiftInCell = () =>
+                  onRequestPlanningDayAssign(emp.id, date, "picker");
                 const emptyAreaLabel = t("dashboard.addShiftTitle");
                 const collapsedOvernightAnchors = !isDayExpanded
                   ? employeeOvernightSpans.filter(
@@ -580,18 +664,33 @@ export function DashboardCalendarGrid({
                       pending={pending}
                       selectedShiftId={selectedShiftId}
                       onShiftClick={onShiftClick}
-                      onShiftContextMenu={
-                        !isPastDay
-                          ? (shiftId, event) =>
-                              onShiftContextMenu(
-                                emp.id,
-                                date,
-                                shiftId,
-                                event.clientX,
-                                event.clientY
-                              )
-                          : undefined
-                      }
+                      onShiftContextMenu={(shiftId, event) => {
+                        const segment = cellSegments.find(
+                          (entry) => entry.shift.id === shiftId
+                        );
+                        if (
+                          segment &&
+                          !canOpenShiftCardContextMenu(
+                            segment.shift.confirmationStatus,
+                            segment.shift.requestedAt,
+                            {
+                              shiftDate: segment.shift.shift_date,
+                              cellDate: date,
+                              isPastShiftDate,
+                              displayState: segment.shift.displayState,
+                            }
+                          )
+                        ) {
+                          return;
+                        }
+                        onShiftContextMenu(
+                          emp.id,
+                          date,
+                          shiftId,
+                          event.clientX,
+                          event.clientY
+                        );
+                      }}
                       onEmptyAreaClick={openNewShiftInCell}
                       emptyAreaDisabled={!canOpenNewShiftInCell}
                       emptyAreaLabel={emptyAreaLabel}
@@ -622,7 +721,9 @@ export function DashboardCalendarGrid({
                                   segment.shift.requestedAt,
                                   {
                                     shiftDate: segment.shift.shift_date,
+                                    cellDate: date,
                                     isPastShiftDate,
+                                    displayState: segment.shift.displayState,
                                   }
                                 )
                               ) {
@@ -640,6 +741,8 @@ export function DashboardCalendarGrid({
                       }
                       employeeHighlighted={isEmployeeHighlighted && isDayExpanded}
                       absenceConflictShiftIds={absenceConflictShiftIds}
+                      swapRequestShiftIds={swapRequestShiftIds}
+                      shiftConfirmationEnabled={shiftConfirmationEnabled}
                     />
                   ) : null;
 
@@ -678,6 +781,7 @@ export function DashboardCalendarGrid({
                             pastUnconfirmedMenu: {
                               shiftDate: overnightSpanOnCell.shift.shift_date,
                               isPastShiftDate,
+                              displayState: overnightSpanOnCell.shift.displayState,
                             },
                           }
                         ) &&
@@ -708,7 +812,7 @@ export function DashboardCalendarGrid({
                         return;
                       }
                       if (isPastDay) return;
-                      if (blockReason === "absent") return;
+                      if (effectiveBlockReason === "absent") return;
                       onCellContextMenu(
                         emp.id,
                         date,
@@ -761,21 +865,25 @@ export function DashboardCalendarGrid({
                             className="min-h-0 flex-1"
                             style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
                           />
-                        ) : blockReason === "absent" ? (
+                        ) : effectiveBlockReason === "absent" ? (
                           <div
-                            className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-rose-50 text-xs font-medium text-rose-700"
+                            className={
+                              isPastDay
+                                ? PLANNING_CELL_BLOCKED_INFO_PANEL_CLASS
+                                : PLANNING_CELL_ABSENT_ACTIVE_PANEL_CLASS
+                            }
                             style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
                           >
                             {t("dashboard.cellAbsent")}
                           </div>
-                        ) : blockReason === "no_availability" ? (
+                        ) : effectiveBlockReason === "no_availability" ? (
                           <div
-                            className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500"
+                            className={PLANNING_CELL_BLOCKED_INFO_PANEL_CLASS}
                             style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
                           >
                             {t("dashboard.cellNoAvailability")}
                           </div>
-                        ) : isPastDay ? (
+                        ) : isPastDay || isNoServiceDay ? (
                           <div
                             aria-hidden
                             className="min-h-0 flex-1"
@@ -839,6 +947,7 @@ export function DashboardCalendarGrid({
                         pastUnconfirmedMenu: {
                           shiftDate: span.shift.shift_date,
                           isPastShiftDate,
+                          displayState: span.shift.displayState,
                         },
                       })
                     ) {
@@ -852,6 +961,7 @@ export function DashboardCalendarGrid({
                         pastUnconfirmedMenu: {
                           shiftDate: span.shift.shift_date,
                           isPastShiftDate,
+                          displayState: span.shift.displayState,
                         },
                       }),
                       shiftId,
@@ -860,6 +970,7 @@ export function DashboardCalendarGrid({
                     );
                   }}
                   highlightedEmployeeId={highlightedEmployeeId}
+                  shiftConfirmationEnabled={shiftConfirmationEnabled}
                 />
               ) : null}
             </div>
@@ -903,8 +1014,10 @@ export function DashboardCalendarGrid({
               {footerLabels ? (
                 <TagAreaFooterStrip
                   label={footerLabels.line}
+                  shortLinePrefix={footerLabels.shortLinePrefix}
+                  shortLineCostAmount={footerLabels.shortLineCostAmount}
                   hoursTooltipLine={footerLabels.hoursLine}
-                  costTooltipLine={footerLabels.costLine}
+                  costTooltipParts={footerLabels.costTooltipParts}
                   dayCollapsed={!layoutActiveDayDates.has(date)}
                 />
               ) : null}

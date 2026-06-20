@@ -10,10 +10,17 @@ import {
 import {
   deleteProfileRecurringAvailability,
   fetchProfileRecurringAvailability,
+  updateProfileWeeklyHours,
+  type ProfileWeeklyHoursConflictRow,
 } from "@/app/actions/profile-availability";
 import { resolveProfileAvailabilityActionError } from "@/lib/profile-availability-action-error";
+import { isLegalWeeklyHoursLimitError } from "@/lib/profile-weekly-hours-blocking-errors";
+import { useOrganization } from "@/lib/org-features-provider";
 import { fetchProfileShiftPreferences } from "@/app/actions/profile-shift-preferences";
-import { sortProfileRecurringAvailabilityBySchedule } from "@schichtwerk/database";
+import {
+  evaluateProfileAvailabilityWeeklyLimits,
+  sortProfileRecurringAvailabilityBySchedule,
+} from "@schichtwerk/database";
 import {
   formatAvailabilityTimeRange,
   formatProfileAvailabilitySummaryLabel,
@@ -31,6 +38,7 @@ import { ProfileAvailabilityFormModal } from "./profile-availability-form-modal"
 import {
   SETTINGS_MODAL_TITLE_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
+  settingsConfirmDialogClass,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -58,14 +66,18 @@ import {
 import {
   Alert,
   Button,
+  CheckIcon,
   CloseIcon,
   IconButton,
+  Input,
+  LabelMuted,
   ListIcon,
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
+import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
 
 const MAX_NAME_DISPLAY = 25;
 const EMPTY_STATE_CLASS = "min-h-full";
@@ -90,6 +102,7 @@ type Props = {
     profileId: string,
     availability: ProfileRecurringAvailability[]
   ) => void;
+  onProfileUpdate?: (profile: Profile) => void;
 };
 
 export function ProfileAvailabilityPanelModal({
@@ -98,7 +111,9 @@ export function ProfileAvailabilityPanelModal({
   cachedShiftPreferences,
   onClose,
   onCacheUpdate,
+  onProfileUpdate,
 }: Props) {
+  const organization = useOrganization();
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
@@ -118,6 +133,33 @@ export function ProfileAvailabilityPanelModal({
   const [shiftPreferenceWarning, setShiftPreferenceWarning] = useState<
     string | null
   >(null);
+  const [weeklyHoursInput, setWeeklyHoursInput] = useState(() =>
+    profile.weekly_hours != null ? String(profile.weekly_hours) : ""
+  );
+  const [weeklyHoursSaving, setWeeklyHoursSaving] = useState(false);
+  const [weeklyHoursBlockingAlert, setWeeklyHoursBlockingAlert] = useState<
+    string | null
+  >(null);
+  const [weeklyHoursConflictWarning, setWeeklyHoursConflictWarning] = useState<
+    ProfileWeeklyHoursConflictRow[] | null
+  >(null);
+
+  const weeklyLimits = useMemo(
+    () =>
+      evaluateProfileAvailabilityWeeklyLimits({
+        availabilities: profileAvailabilities,
+        weeklyHoursTarget: profile.weekly_hours,
+        countryCode: organization.country_code,
+      }),
+    [organization.country_code, profile.weekly_hours, profileAvailabilities]
+  );
+
+  const legalViolation = weeklyLimits.violations.find(
+    (violation) => violation.kind === "availability_exceeds_legal"
+  );
+  const targetViolation = weeklyLimits.violations.find(
+    (violation) => violation.kind === "availability_exceeds_target"
+  );
 
   const applyList = useCallback(
     (list: ProfileRecurringAvailability[]) => {
@@ -148,6 +190,12 @@ export function ProfileAvailabilityPanelModal({
   useScrollToSettingsListItem(sortedAvailabilities, scrollToItemId, () =>
     setScrollToItemId(null)
   );
+
+  useEffect(() => {
+    setWeeklyHoursInput(
+      profile.weekly_hours != null ? String(profile.weekly_hours) : ""
+    );
+  }, [profile.weekly_hours]);
 
   useEffect(() => {
     if (cachedAvailability !== undefined) {
@@ -239,6 +287,35 @@ export function ProfileAvailabilityPanelModal({
     void syncShiftPreferenceWarning(list);
   }
 
+  async function handleSaveWeeklyHours() {
+    setErrorMessage(null);
+    setWeeklyHoursBlockingAlert(null);
+    setWeeklyHoursSaving(true);
+    try {
+      const result = await updateProfileWeeklyHours({
+        profileId: profile.id,
+        weekly_hours: weeklyHoursInput,
+      });
+      if (!result.ok) {
+        const message = resolveProfileAvailabilityActionError(result.error, t);
+        if (isLegalWeeklyHoursLimitError(result.error)) {
+          setWeeklyHoursBlockingAlert(message);
+          return;
+        }
+        setErrorMessage(message);
+        return;
+      }
+      if (result.profile) {
+        onProfileUpdate?.(result.profile);
+      }
+      if (result.weeklyHoursConflicts?.length) {
+        setWeeklyHoursConflictWarning(result.weeklyHoursConflicts);
+      }
+    } finally {
+      setWeeklyHoursSaving(false);
+    }
+  }
+
   function handleRemove() {
     if (!selectedAvailability) return;
     setErrorMessage(null);
@@ -270,7 +347,6 @@ export function ProfileAvailabilityPanelModal({
         });
         if (!result.ok) {
           setErrorMessage(resolveProfileAvailabilityActionError(result.error, t));
-          if (result.availability) applyList(result.availability);
           bulkSelection.clear();
           setConfirmBulkRemove(false);
           return;
@@ -344,6 +420,62 @@ export function ProfileAvailabilityPanelModal({
             <Alert variant="info">{shiftPreferenceWarning}</Alert>
           </div>
         )}
+
+        <div className="mx-4 mt-3 shrink-0 space-y-2 border-b border-border pb-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1">
+              <LabelMuted>{t("profiles.weeklyHours")}</LabelMuted>
+              <Input
+                className="mt-1"
+                value={weeklyHoursInput}
+                inputMode="decimal"
+                disabled={pending || loading || weeklyHoursSaving}
+                placeholder={t("profiles.weeklyHoursPlaceholder")}
+                onChange={(e) => {
+                  setWeeklyHoursInput(e.target.value);
+                  setErrorMessage(null);
+                }}
+              />
+              <p className="mt-1 text-xs leading-snug text-muted">
+                {t("profiles.weeklyHoursHint", {
+                  legalMax: weeklyLimits.legalMax,
+                })}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
+              disabled={pending || loading || weeklyHoursSaving}
+              onClick={() => void handleSaveWeeklyHours()}
+            >
+              <CheckIcon />
+              {weeklyHoursSaving ? t("common.saving") : t("common.ok")}
+            </Button>
+          </div>
+          <p className="text-xs leading-snug text-muted">
+            {t("profiles.availabilityWeeklyHoursSummary", {
+              availability: weeklyLimits.availabilityHours,
+              target: weeklyLimits.targetHours,
+              legalMax: weeklyLimits.legalMax,
+            })}
+          </p>
+          {legalViolation ? (
+            <Alert variant="error">
+              {t("profiles.availabilityExceedsLegalWarning", {
+                legalMax: legalViolation.legalMax,
+              })}
+            </Alert>
+          ) : targetViolation ? (
+            <Alert variant="info">
+              {t("profiles.availabilityExceedsTargetWarning", {
+                availability: targetViolation.hours,
+                target: targetViolation.targetHours,
+              })}
+            </Alert>
+          ) : null}
+        </div>
 
         <div className="min-h-0 bg-background px-4 py-3">
           <div
@@ -538,6 +670,7 @@ export function ProfileAvailabilityPanelModal({
         <ProfileAvailabilityFormModal
           mode="create"
           profileId={profile.id}
+          weeklyHoursTarget={profile.weekly_hours}
           existingAvailability={profileAvailabilities}
           onClose={() => setFormMode(null)}
           onSaved={handleSaved}
@@ -547,6 +680,7 @@ export function ProfileAvailabilityPanelModal({
         <ProfileAvailabilityFormModal
           mode="edit"
           profileId={profile.id}
+          weeklyHoursTarget={profile.weekly_hours}
           currentAvailability={formMode.availability}
           existingAvailability={profileAvailabilities}
           onClose={() => setFormMode(null)}
@@ -557,6 +691,7 @@ export function ProfileAvailabilityPanelModal({
         <ProfileAvailabilityFormModal
           mode="bulk-edit"
           profileId={profile.id}
+          weeklyHoursTarget={profile.weekly_hours}
           currentAvailability={formMode.availability}
           existingAvailability={profileAvailabilities}
           onClose={() => setFormMode(null)}
@@ -583,6 +718,78 @@ export function ProfileAvailabilityPanelModal({
           onConfirm={handleBulkRemove}
         />
       )}
+      {weeklyHoursBlockingAlert ? (
+        <div className={settingsSubModalOverlayClass()} role="presentation">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="profile-weekly-hours-legal-alert"
+            className={settingsConfirmDialogClass()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p
+              id="profile-weekly-hours-legal-alert"
+              className="text-sm leading-relaxed text-red-600"
+            >
+              {weeklyHoursBlockingAlert}
+            </p>
+            <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setWeeklyHoursBlockingAlert(null)}
+              >
+                {t("common.ok")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {weeklyHoursConflictWarning ? (
+        <div className={settingsSubModalOverlayClass()} role="presentation">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="profile-weekly-hours-conflict-alert"
+            className={cn(settingsConfirmDialogClass(), "max-w-lg")}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h4
+              id="profile-weekly-hours-conflict-alert"
+              className="text-sm font-semibold text-foreground"
+            >
+              {t("profiles.weeklyHoursChangeConflictTitle")}
+            </h4>
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              {t("profiles.weeklyHoursChangeConflictIntro")}
+            </p>
+            <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto text-sm text-foreground">
+              {weeklyHoursConflictWarning.map((row) => (
+                <li key={row.id} className="leading-snug">
+                  {t("profiles.weeklyHoursChangeConflictLine", {
+                    date: row.shift_date,
+                    time: `${row.startTime}–${row.endTime}`,
+                    status: row.confirmation_status
+                      ? t(shiftConfirmationStatusLabelKey(row.confirmation_status))
+                      : t("shiftConfirmation.status.proposed"),
+                    weekTotal: row.weekTotalHours,
+                    target: row.targetHours,
+                  })}
+                </li>
+              ))}
+            </ul>
+            <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setWeeklyHoursConflictWarning(null)}
+              >
+                {t("common.ok")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

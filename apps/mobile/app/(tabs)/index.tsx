@@ -1,20 +1,23 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
-  RefreshControl,
   ActivityIndicator,
   Pressable,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { router } from "expo-router";
+import { isShiftDateInPast } from "@schichtwerk/database";
+import { isOpenEmployeeConfirmationShift } from "@/lib/open-confirmation-shift";
+import type { ConfirmationDecision, ConfirmationWeekItem, EmployeeWeekShiftDisplayItem, Shift } from "@schichtwerk/types";
+import { WeekNavHeader } from "@/components/week-nav-header";
+import { WeekDaySlot } from "@/components/week-day-slot";
 import {
-  canCancelShiftByConfirmationStatus,
-  isEmployeeRespondableConfirmationStatus,
-  isShiftDateInPast,
-} from "@schichtwerk/database";
-import type { ConfirmationDecision, ConfirmationWeekItem, Shift } from "@schichtwerk/types";
+  WeekShiftActionSheet,
+  type WeekShiftActionContext,
+} from "@/components/week-shift-action-sheet";
+import { ResponsiveContentFrame } from "@/components/responsive-content-frame";
 import { getDatabase } from "@/lib/db";
 import {
   fetchConfirmationWeek,
@@ -23,54 +26,17 @@ import {
 } from "@/lib/confirmations-api";
 import { MobileApiError } from "@/lib/mobile-api-client";
 import { confirmAlert, showAppAlert } from "@/lib/app-alert";
-import { shiftConfirmationStatusLabel } from "@/lib/shift-confirmation-labels";
+import { buildWeekPlanDays, weekRangeForOffset } from "@/lib/mobile-week-plan";
+import { usePendingConfirmations } from "@/lib/pending-confirmations-context";
+import { useWeekPlanLayout } from "@/lib/responsive-layout";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 
-function weekRange() {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  const mon = new Date(now);
-  mon.setDate(now.getDate() + diff);
-  const sun = new Date(mon);
-  sun.setDate(mon.getDate() + 6);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: fmt(mon), to: fmt(sun) };
-}
-
-function formatShiftDate(value: string) {
-  return new Intl.DateTimeFormat("de-DE", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(new Date(value));
-}
-
-function formatShiftTime(value: string) {
-  return new Intl.DateTimeFormat("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function statusBadgeStyle(status: Shift["confirmation_status"]) {
-  switch (status) {
-    case "requested":
-    case "pending":
-      return styles.statusBadgeOpen;
-    case "confirmed":
-      return styles.statusBadgeConfirmed;
-    case "rejected":
-      return styles.statusBadgeRejected;
-    case "canceled":
-      return styles.statusBadgeCanceled;
-    default:
-      return styles.statusBadgeNeutral;
-  }
-}
-
 export default function WeekScreen() {
+  const [weekOffset, setWeekOffset] = useState(0);
   const [shifts, setShifts] = useState<Shift[]>([]);
+  const [displayByShiftId, setDisplayByShiftId] = useState<
+    Record<string, EmployeeWeekShiftDisplayItem>
+  >({});
   const [confirmationByShiftId, setConfirmationByShiftId] = useState<
     Record<string, ConfirmationWeekItem>
   >({});
@@ -82,12 +48,28 @@ export default function WeekScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cancelingShiftId, setCancelingShiftId] = useState<string | null>(null);
+  const [actionSheetContext, setActionSheetContext] =
+    useState<WeekShiftActionContext | null>(null);
+  const [weekGridHeight, setWeekGridHeight] = useState(0);
+  const initialFocusRef = useRef(true);
+
+  const weekMeta = useMemo(() => weekRangeForOffset(weekOffset), [weekOffset]);
+  const isCurrentWeek = weekOffset === 0;
+  const layout = useWeekPlanLayout();
+  const { refresh: refreshPendingConfirmations, count: pendingConfirmationCount } =
+    usePendingConfirmations();
 
   const load = useCallback(async () => {
-    const { from, to } = weekRange();
+    const { from, to } = weekMeta;
     try {
-      const data = await getDatabase().listMyShifts(from, to);
+      const [data, displayItems] = await Promise.all([
+        getDatabase().listMyShifts(from, to),
+        getDatabase().listMyShiftWeekDisplay(from, to),
+      ]);
       setShifts(data);
+      setDisplayByShiftId(
+        Object.fromEntries(displayItems.map((item) => [item.shiftId, item]))
+      );
 
       try {
         const confirmation = await fetchConfirmationWeek(from, to);
@@ -111,29 +93,71 @@ export default function WeekScreen() {
       }
     } catch {
       setShifts([]);
+      setDisplayByShiftId({});
       setConfirmationByShiftId({});
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [weekMeta]);
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
+      if (initialFocusRef.current) {
+        initialFocusRef.current = false;
+        setLoading(true);
+      }
       void load();
     }, [load])
   );
 
-  const openConfirmationCount = useMemo(
+  useEffect(() => {
+    if (initialFocusRef.current) return;
+    setLoading(true);
+    void load();
+  }, [weekOffset, load]);
+
+  const weekDays = useMemo(
     () =>
-      shifts.filter((shift) =>
-        isEmployeeRespondableConfirmationStatus(shift.confirmation_status)
-      ).length,
+      buildWeekPlanDays(
+        shifts,
+        weekMeta.dates,
+        displayByShiftId,
+        confirmationByShiftId
+      ),
+    [shifts, weekMeta.dates, displayByShiftId, confirmationByShiftId]
+  );
+
+  const openConfirmationCount = useMemo(
+    () => shifts.filter((shift) => isOpenEmployeeConfirmationShift(shift)).length,
     [shifts]
   );
 
-  const draftEntries = useMemo(() => Object.entries(drafts), [drafts]);
+  const pendingInOtherWeeks = Math.max(
+    0,
+    pendingConfirmationCount - openConfirmationCount
+  );
+
+  const draftEntries = useMemo(
+    () =>
+      Object.entries(drafts).filter(([shiftId]) => {
+        const shift = shifts.find((entry) => entry.id === shiftId);
+        return shift != null && isOpenEmployeeConfirmationShift(shift);
+      }),
+    [drafts, shifts]
+  );
+
+  const shiftNeedsResponse = useCallback(
+    (shift: Shift) => isOpenEmployeeConfirmationShift(shift),
+    []
+  );
+
+  const shiftCanCancel = useCallback(
+    (shift: Shift) =>
+      !isShiftDateInPast(shift.shift_date) &&
+      shift.confirmation_status === "confirmed",
+    []
+  );
 
   function toggleDraft(shiftId: string, decision: ConfirmationDecision) {
     setDrafts((prev) => {
@@ -161,6 +185,7 @@ export default function WeekScreen() {
       );
       setRefreshing(true);
       await load();
+      await refreshPendingConfirmations();
     } catch (error) {
       showAppAlert(
         "Senden fehlgeschlagen",
@@ -184,6 +209,7 @@ export default function WeekScreen() {
     setCancelingShiftId(shiftId);
     try {
       await cancelConfirmationShift(shiftId);
+      setActionSheetContext(null);
       showAppAlert("Abgesagt", "Die Schicht wurde abgesagt.");
       setRefreshing(true);
       await load();
@@ -199,302 +225,185 @@ export default function WeekScreen() {
     }
   }
 
+  const daySlotHeight =
+    weekGridHeight > 0 ? Math.floor(weekGridHeight / weekDays.length) : 0;
+
+  const weekNav = (
+    <WeekNavHeader
+      weekMeta={weekMeta}
+      isCurrentWeek={isCurrentWeek}
+      onPreviousWeek={() => setWeekOffset((value) => value - 1)}
+      onNextWeek={() => setWeekOffset((value) => value + 1)}
+      onGoToToday={() => setWeekOffset(0)}
+    />
+  );
+
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
+      <View style={styles.screen}>
+        <ResponsiveContentFrame>
+          {weekNav}
+          <View style={styles.centered}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        </ResponsiveContentFrame>
       </View>
     );
   }
 
   return (
     <View style={styles.screen}>
-      <FlatList
-        style={styles.list}
-        contentContainerStyle={[
-          styles.listContent,
-          draftEntries.length > 0 ? styles.listContentWithFooter : null,
-        ]}
-        data={shifts}
-        keyExtractor={(item) => item.id}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              void load();
-            }}
-            tintColor={colors.primary}
-          />
-        }
-        ListHeaderComponent={
-          <View style={styles.headerBlock}>
-            <Text style={styles.heading}>Deine Schichten diese Woche</Text>
-            {openConfirmationCount > 0 ? (
-              <View style={styles.banner}>
-                <Text style={styles.bannerText}>
-                  {openConfirmationCount} Schicht
-                  {openConfirmationCount === 1 ? "" : "en"} warten auf deine
-                  Bestätigung.
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>Noch keine Schichten geplant.</Text>
-          </View>
-        }
-        renderItem={({ item }) => {
-          const confirmation = confirmationByShiftId[item.id];
-          const needsResponse = isEmployeeRespondableConfirmationStatus(
-            item.confirmation_status
-          );
-          const canCancel =
-            !isShiftDateInPast(item.shift_date) &&
-            canCancelShiftByConfirmationStatus(item.confirmation_status);
-          const draft = drafts[item.id];
+      <ResponsiveContentFrame>
+        {weekNav}
 
-          return (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.date}>{formatShiftDate(item.shift_date)}</Text>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    statusBadgeStyle(item.confirmation_status),
-                  ]}
-                >
-                  <Text style={styles.statusBadgeText}>
-                    {shiftConfirmationStatusLabel(item.confirmation_status)}
-                  </Text>
-                </View>
-              </View>
-
-              <Text style={styles.time}>
-                {formatShiftTime(item.starts_at)} – {formatShiftTime(item.ends_at)}
-              </Text>
-
-              {confirmation?.locationName ? (
-                <Text style={styles.meta}>
-                  {confirmation.locationName}
-                  {confirmation.areaName ? ` · ${confirmation.areaName}` : ""}
-                </Text>
-              ) : null}
-              {confirmation?.templateName ? (
-                <Text style={styles.meta}>{confirmation.templateName}</Text>
-              ) : null}
-              {item.notes ? <Text style={styles.notes}>{item.notes}</Text> : null}
-
-              {needsResponse ? (
-                <View style={styles.actions}>
-                  <Pressable
-                    style={[
-                      styles.actionButton,
-                      draft === "confirm" && styles.actionButtonConfirmActive,
-                    ]}
-                    onPress={() => toggleDraft(item.id, "confirm")}
-                  >
-                    <Text
-                      style={[
-                        styles.actionButtonText,
-                        draft === "confirm" && styles.actionButtonTextActive,
-                      ]}
-                    >
-                      Bestätigen
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.actionButton,
-                      draft === "reject" && styles.actionButtonRejectActive,
-                    ]}
-                    onPress={() => toggleDraft(item.id, "reject")}
-                  >
-                    <Text
-                      style={[
-                        styles.actionButtonText,
-                        draft === "reject" && styles.actionButtonTextActive,
-                      ]}
-                    >
-                      Ablehnen
-                    </Text>
-                  </Pressable>
-                </View>
-              ) : null}
-
-              {canCancel ? (
-                <Pressable
-                  style={[
-                    styles.cancelButton,
-                    cancelingShiftId === item.id && styles.cancelButtonDisabled,
-                  ]}
-                  disabled={cancelingShiftId === item.id}
-                  onPress={() => void handleCancelShift(item.id)}
-                >
-                  {cancelingShiftId === item.id ? (
-                    <ActivityIndicator color={colors.destructive} />
-                  ) : (
-                    <Text style={styles.cancelButtonText}>Schicht absagen</Text>
-                  )}
-                </Pressable>
-              ) : null}
-            </View>
-          );
-        }}
-      />
-
-      {draftEntries.length > 0 ? (
-        <View style={styles.footer}>
-          {organizationDisclaimer ? (
-            <Text style={styles.disclaimer}>{organizationDisclaimer}</Text>
-          ) : (
-            <Text style={styles.disclaimer}>
-              Mit dem Senden bestätigst du deine Auswahl für die markierten
-              Schichten.
-            </Text>
-          )}
-          <Pressable
-            style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-            onPress={() => void handleSubmitResponses()}
-            disabled={submitting}
+        {openConfirmationCount > 0 ? (
+          <View
+            style={[
+              styles.banner,
+              {
+                marginHorizontal: layout.horizontalPadding,
+                borderRadius: layout.isTablet ? radius.lg : radius.md,
+              },
+            ]}
           >
-            {submitting ? (
-              <ActivityIndicator color={colors.primaryForeground} />
+            <Text style={[styles.bannerText, { fontSize: layout.bannerFontSize }]}>
+              {openConfirmationCount} Schicht
+              {openConfirmationCount === 1 ? "" : "en"} warten auf deine
+              Bestätigung.
+            </Text>
+          </View>
+        ) : null}
+
+        {pendingInOtherWeeks > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/(tabs)/requests")}
+            style={[
+              styles.otherWeekBanner,
+              {
+                marginHorizontal: layout.horizontalPadding,
+                borderRadius: layout.isTablet ? radius.lg : radius.md,
+              },
+            ]}
+          >
+            <Text style={[styles.otherWeekBannerText, { fontSize: layout.bannerFontSize }]}>
+              {pendingInOtherWeeks} weitere Anfrage
+              {pendingInOtherWeeks === 1 ? "" : "n"} in anderen Wochen — unter
+              Anfragen öffnen.
+            </Text>
+          </Pressable>
+        ) : null}
+
+        <View
+          style={styles.weekGridHost}
+          onLayout={(event) => setWeekGridHeight(event.nativeEvent.layout.height)}
+        >
+          {daySlotHeight > 0
+            ? weekDays.map((day) => (
+                <View key={day.dateISO} style={{ height: daySlotHeight }}>
+                  <WeekDaySlot
+                    day={day}
+                    slotHeight={daySlotHeight}
+                    drafts={drafts}
+                    onShiftPress={setActionSheetContext}
+                  />
+                </View>
+              ))
+            : null}
+        </View>
+
+        {draftEntries.length > 0 ? (
+          <View style={styles.footer}>
+            {organizationDisclaimer ? (
+              <Text style={styles.disclaimer}>{organizationDisclaimer}</Text>
             ) : (
-              <Text style={styles.submitButtonText}>
-                Antworten senden ({draftEntries.length})
+              <Text style={styles.disclaimer}>
+                Mit dem Senden bestätigst du deine Auswahl für die markierten
+                Schichten.
               </Text>
             )}
-          </Pressable>
-        </View>
-      ) : null}
+            <Pressable
+              style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+              onPress={() => void handleSubmitResponses()}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color={colors.primaryForeground} />
+              ) : (
+                <Text style={styles.submitButtonText}>
+                  Antworten senden ({draftEntries.length})
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        ) : null}
+
+        <WeekShiftActionSheet
+          visible={actionSheetContext != null}
+          context={actionSheetContext}
+          needsResponse={
+            actionSheetContext
+              ? shiftNeedsResponse(actionSheetContext.shift)
+              : false
+          }
+          canCancel={
+            actionSheetContext
+              ? shiftCanCancel(actionSheetContext.shift)
+              : false
+          }
+          draft={
+            actionSheetContext
+              ? drafts[actionSheetContext.shift.id]
+              : undefined
+          }
+          canceling={
+            actionSheetContext != null &&
+            cancelingShiftId === actionSheetContext.shift.id
+          }
+          onClose={() => setActionSheetContext(null)}
+          onToggleDraft={toggleDraft}
+          onCancel={(shiftId) => void handleCancelShift(shiftId)}
+        />
+      </ResponsiveContentFrame>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  list: { flex: 1 },
-  listContent: { padding: spacing.md, paddingBottom: spacing.xl },
-  listContentWithFooter: { paddingBottom: 140 },
+  weekGridHost: {
+    flex: 1,
+    minHeight: 0,
+  },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: colors.background,
-  },
-  headerBlock: { marginBottom: spacing.md },
-  heading: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.foreground,
-    marginBottom: spacing.sm,
   },
   banner: {
     backgroundColor: "#FFFBEB",
     borderColor: colors.warning,
     borderWidth: 1,
-    borderRadius: radius.md,
     padding: spacing.sm,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   bannerText: {
     color: colors.foreground,
-    fontSize: 13,
     lineHeight: 18,
   },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+  otherWeekBanner: {
+    backgroundColor: "#EFF6FF",
+    borderColor: colors.primary,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.primary,
+    padding: spacing.sm,
+    marginBottom: spacing.xs,
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-  },
-  date: {
-    flex: 1,
-    fontSize: 16,
+  otherWeekBannerText: {
+    color: colors.primary,
     fontWeight: "600",
-    color: colors.foreground,
+    lineHeight: 18,
   },
-  statusBadge: {
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-  },
-  statusBadgeOpen: { backgroundColor: "#FEF3C7" },
-  statusBadgeConfirmed: { backgroundColor: "#DCFCE7" },
-  statusBadgeRejected: { backgroundColor: "#FEE2E2" },
-  statusBadgeCanceled: { backgroundColor: "#FFEDD5" },
-  statusBadgeNeutral: { backgroundColor: colors.background },
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  time: { fontSize: 14, color: colors.muted, marginTop: 4 },
-  meta: { fontSize: 13, color: colors.muted, marginTop: 6 },
-  notes: { fontSize: 13, color: colors.muted, marginTop: 8 },
-  actions: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  actionButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.background,
-  },
-  actionButtonConfirmActive: {
-    borderColor: colors.success,
-    backgroundColor: "#DCFCE7",
-  },
-  actionButtonRejectActive: {
-    borderColor: colors.destructive,
-    backgroundColor: "#FEE2E2",
-  },
-  actionButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.foreground,
-  },
-  actionButtonTextActive: {
-    color: colors.foreground,
-  },
-  cancelButton: {
-    marginTop: spacing.md,
-    minHeight: 40,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.destructive,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFF7ED",
-  },
-  cancelButtonDisabled: {
-    opacity: 0.7,
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.destructive,
-  },
-  empty: { padding: spacing.xl, alignItems: "center" },
-  emptyText: { color: colors.muted, textAlign: "center" },
   footer: {
     borderTopWidth: 1,
     borderTopColor: colors.border,

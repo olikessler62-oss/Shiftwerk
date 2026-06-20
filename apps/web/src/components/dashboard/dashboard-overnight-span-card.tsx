@@ -15,6 +15,8 @@ import { cn } from "@/lib/cn";
 import {
   buildEmployeeShiftHighlightBoxShadow,
   employeeShiftHighlightOverlayStyle,
+  preventPointerTextSelection,
+  SHIFT_CARD_INTERACTIVE_CLASS,
 } from "@/lib/calendar-interaction-ui";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import {
@@ -29,7 +31,9 @@ import {
 import type { PlanningOvernightSpanDisplayMode } from "@/lib/planning-overnight-span-layout";
 import { PLANNING_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/planning-overnight-span-layout";
 import type { PlanningShift } from "@/lib/planning-shift-card";
-import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
+import {
+  shiftConfirmationTooltipStatusLabelKey,
+} from "@/lib/shift-confirmation-display";
 import {
   buildShiftCardTimeGradientCss,
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
@@ -64,6 +68,7 @@ type Props = {
   onShiftClick: () => void;
   onShiftContextMenu?: (event: React.MouseEvent) => void;
   employeeHighlighted?: boolean;
+  shiftConfirmationEnabled?: boolean;
 };
 
 export function DashboardOvernightSpanCard({
@@ -82,11 +87,13 @@ export function DashboardOvernightSpanCard({
   onShiftClick,
   onShiftContextMenu,
   employeeHighlighted = false,
+  shiftConfirmationEnabled = true,
 }: Props) {
   const t = useTranslations();
   const textContentRef = useRef<HTMLDivElement>(null);
   const [textOverflows, setTextOverflows] = useState(false);
 
+  const isPastShift = isPastShiftDate(cellDate);
   const confirmationStatusLine = shift.confirmationStatus
     ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
     : undefined;
@@ -102,8 +109,11 @@ export function DashboardOvernightSpanCard({
       confirmationStatusLine,
       confirmationStatus: shift.confirmationStatus,
       jobsLabel,
+      isPastShift,
       formatTemplateTooltipLine: (templateName) =>
         t("common.shiftCardTooltipShift", { name: templateName }),
+      formatDeploymentTimeTooltipLine: () =>
+        t("common.shiftCardTooltipDeploymentTimeLabel"),
       formatJobTooltipLine: (names) =>
         t("common.shiftCardTooltipJob", { names }),
       formatStatusTooltipLine: (status) =>
@@ -171,6 +181,7 @@ export function DashboardOvernightSpanCard({
         <button
           type="button"
           disabled={pending}
+          onMouseDown={preventPointerTextSelection}
           onClick={onShiftClick}
           onContextMenu={(event) => {
             if (!onShiftContextMenu) return;
@@ -180,6 +191,7 @@ export function DashboardOvernightSpanCard({
           }}
           className={cn(
             "block shrink-0 rounded-sm border-0 p-0 shadow-sm transition disabled:opacity-50",
+            SHIFT_CARD_INTERACTIVE_CLASS,
             showsPointerCursor
               ? "cursor-pointer hover:opacity-90"
               : "!cursor-default",
@@ -230,6 +242,7 @@ export function DashboardOvernightSpanCard({
         <button
           type="button"
           disabled={pending}
+          onMouseDown={preventPointerTextSelection}
           onClick={onShiftClick}
           onContextMenu={(event) => {
             if (!onShiftContextMenu) return;
@@ -239,6 +252,7 @@ export function DashboardOvernightSpanCard({
           }}
           className={cn(
             "relative flex h-full w-full shrink-0 overflow-hidden rounded text-left text-black transition disabled:opacity-50",
+            SHIFT_CARD_INTERACTIVE_CLASS,
             showsPointerCursor
               ? "cursor-pointer hover:opacity-90"
               : "!cursor-default",

@@ -2,6 +2,19 @@
 export const CALENDAR_INTERACTION_SURFACE_CLASS =
   "cursor-default select-none [&_button:not(:disabled)]:cursor-pointer [&_[role=button]:not([aria-disabled=true])]:cursor-pointer [&_a]:cursor-pointer [&_label[for]]:cursor-pointer";
 
+/** Schichtkarten: keine Textauswahl beim Klick (verhindert Modal-Highlight-Bug). */
+export const SHIFT_CARD_INTERACTIVE_CLASS = "select-none";
+
+/** Verhindert Textauswahl, wenn ein Klick ein Modal öffnet (mousedown → Re-Render → mouseup). */
+export function preventPointerTextSelection(event: { preventDefault(): void }): void {
+  event.preventDefault();
+}
+
+export function clearDocumentTextSelection(): void {
+  if (typeof window === "undefined") return;
+  window.getSelection()?.removeAllRanges();
+}
+
 /** Platz für den Leuchtrand — verhindert Abschneiden durch overflow:hidden der Liste. */
 export const EMPLOYEE_SHIFT_HIGHLIGHT_GLOW_BLEED_PX = 18;
 

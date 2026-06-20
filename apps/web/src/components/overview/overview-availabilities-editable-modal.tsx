@@ -224,9 +224,24 @@ export function OverviewAvailabilitiesEditableModal({
     setSelectedAvailabilityId(null);
   }, [rows, selectedAvailabilityId]);
 
-  const selectedAvailability = selectedAvailabilityId
-    ? (availabilityById.get(selectedAvailabilityId) ?? null)
+  useEffect(() => {
+    if (!jumpSelectedEmployeeId) return;
+    if (rows.some((row) => row.employeeId === jumpSelectedEmployeeId)) return;
+    setSelectedAvailabilityId(null);
+  }, [jumpSelectedEmployeeId, rows]);
+
+  const selectedRow = useMemo(
+    () =>
+      selectedAvailabilityId
+        ? (rows.find((row) => row.id === selectedAvailabilityId) ?? null)
+        : null,
+    [rows, selectedAvailabilityId]
+  );
+
+  const selectedAvailability = selectedRow
+    ? (availabilityById.get(selectedRow.id) ?? null)
     : null;
+  const canEditSelectedAvailability = selectedAvailability != null;
   const tableSelectedEmployeeId = selectedAvailability?.profile_id ?? null;
   const createEmployeeId =
     jumpSelectedEmployeeId || tableSelectedEmployeeId || null;
@@ -314,7 +329,9 @@ export function OverviewAvailabilitiesEditableModal({
       mergeProfileAvailability(profileId, remaining);
       setJumpSelectedEmployeeId(profileId);
       setSelectedAvailabilityId(
-        firstOverviewAvailabilityRowIdForEmployee(displayRows, profileId)
+        remaining.length > 0
+          ? firstOverviewAvailabilityRowIdForEmployee(displayRows, profileId)
+          : null
       );
       setConfirmRemove(false);
     });
@@ -624,7 +641,7 @@ export function OverviewAvailabilitiesEditableModal({
                       <SettingsIconActionButton
                         label={t("profiles.edit")}
                         icon={<PencilIcon />}
-                        disabled={pending || !selectedAvailability}
+                        disabled={pending || !canEditSelectedAvailability}
                         onClick={() => {
                           if (!selectedAvailability) return;
                           setFormMode({
@@ -638,7 +655,7 @@ export function OverviewAvailabilitiesEditableModal({
                       <SettingsIconActionButton
                         label={t("profiles.availabilityBulkEdit")}
                         icon={<ListIcon />}
-                        disabled={pending || !selectedAvailability}
+                        disabled={pending || !canEditSelectedAvailability}
                         onClick={() => {
                           if (!selectedAvailability) return;
                           setFormMode({

@@ -308,6 +308,33 @@ describe("shift-card-row-layout", () => {
     ).toBe("restaurant");
   });
 
+  it("T12: single-shift area stays taller than empty expanded areas", () => {
+    const areas = [{ id: "with" }, { id: "emptyA" }, { id: "emptyB" }];
+    const layouts = computeAreaRowLayouts(
+      areas,
+      new Set(["with", "emptyA", "emptyB"]),
+      new Map([
+        ["with", 1],
+        ["emptyA", 0],
+        ["emptyB", 0],
+      ]),
+      900,
+    );
+
+    expect(layouts.get("with")!.heightPx).toBeGreaterThan(
+      layouts.get("emptyA")!.heightPx,
+    );
+    expect(layouts.get("with")!.heightPx).toBeGreaterThan(
+      layouts.get("emptyB")!.heightPx,
+    );
+    expect(
+      Math.abs(
+        layouts.get("emptyA")!.heightPx - layouts.get("emptyB")!.heightPx
+      ),
+    ).toBeLessThanOrEqual(1);
+    expect(totalAssignedRowHeightPx(areas, layouts)).toBe(900);
+  });
+
   it("reserves header and footer chrome when measuring calendar body height", () => {
     expect(calendarAvailableBodyHeightPx(800)).toBe(682);
     expect(calendarAvailableBodyHeightPx(100)).toBe(0);

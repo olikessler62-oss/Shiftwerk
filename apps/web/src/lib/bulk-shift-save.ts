@@ -9,12 +9,35 @@ export type BulkShiftSaveRow = {
   endTime: string;
 };
 
-export function isSaveableNewBulkShiftRow(row: BulkShiftSaveRow): boolean {
-  return (
-    !row.existingShiftId &&
-    Boolean(row.employeeId) &&
-    row.qualificationId.length > 0 &&
-    areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)
+export function isCompleteBulkShiftRow(
+  row: BulkShiftSaveRow,
+  options?: { withoutServiceHours?: boolean }
+): boolean {
+  if (
+    !row.employeeId ||
+    !areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)
+  ) {
+    return false;
+  }
+  if (!options?.withoutServiceHours && !row.qualificationId.length) {
+    return false;
+  }
+  return true;
+}
+
+export function isSaveableNewBulkShiftRow(
+  row: BulkShiftSaveRow,
+  options?: { withoutServiceHours?: boolean }
+): boolean {
+  return !row.existingShiftId && isCompleteBulkShiftRow(row, options);
+}
+
+export function listCompleteBulkShiftRowsForAssign(
+  rows: readonly BulkShiftSaveRow[],
+  withoutServiceHours = false
+): BulkShiftSaveRow[] {
+  return rows.filter((row) =>
+    isCompleteBulkShiftRow(row, { withoutServiceHours })
   );
 }
 
@@ -25,9 +48,10 @@ export function listUnsavedBulkShiftRows(
 }
 
 export function listSaveableNewBulkShiftRows(
-  rows: readonly BulkShiftSaveRow[]
+  rows: readonly BulkShiftSaveRow[],
+  options?: { withoutServiceHours?: boolean }
 ): BulkShiftSaveRow[] {
-  return rows.filter(isSaveableNewBulkShiftRow);
+  return rows.filter((row) => isSaveableNewBulkShiftRow(row, options));
 }
 
 export type BulkShiftSaveIntent =
@@ -37,10 +61,11 @@ export type BulkShiftSaveIntent =
 
 export function resolveBulkShiftSaveIntent(
   rows: readonly BulkShiftSaveRow[],
-  hasDeletes: boolean
+  hasDeletes: boolean,
+  options?: { withoutServiceHours?: boolean }
 ): BulkShiftSaveIntent {
   const unsavedRows = listUnsavedBulkShiftRows(rows);
-  const saveableRows = listSaveableNewBulkShiftRows(rows);
+  const saveableRows = listSaveableNewBulkShiftRows(rows, options);
 
   if (saveableRows.length > 0 || hasDeletes) {
     return { kind: "persist", saveableRows };

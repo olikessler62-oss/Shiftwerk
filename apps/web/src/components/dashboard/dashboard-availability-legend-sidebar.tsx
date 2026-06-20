@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/cn";
+import { PLANNING_LEGEND_ABSENT_ACTIVE_DOT_COLOR, PLANNING_LEGEND_NO_AVAILABILITY_DOT_COLOR } from "@/lib/planning-calendar-layout";
 
 type Props = {
   title: string;
@@ -49,8 +50,8 @@ export function DashboardAvailabilityLegendSidebar({
         {title}
       </h2>
       <LegendPlus label={availableLabel} />
-      <LegendDot color="#94a3b8" label={noAvailabilityLabel} />
-      <LegendDot color="#f43f5e" label={absentLabel} />
+      <LegendDot color={PLANNING_LEGEND_NO_AVAILABILITY_DOT_COLOR} label={noAvailabilityLabel} />
+      <LegendDot color={PLANNING_LEGEND_ABSENT_ACTIVE_DOT_COLOR} label={absentLabel} />
     </section>
   );
 }

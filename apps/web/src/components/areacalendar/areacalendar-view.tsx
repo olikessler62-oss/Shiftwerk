@@ -8,6 +8,7 @@ import type {
   LocationArea,
   LocationAreaStaffing,
   Profile,
+  ProfileRecurringAvailability,
   Qualification,
   CompensationSurchargeType,
   Role,
@@ -19,6 +20,12 @@ import type {
 } from "@/lib/location-staffing-client";
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
 import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
+import { useOrganization } from "@/lib/org-features-provider";
+import { organizationTodayISO } from "@schichtwerk/database";
+import {
+  weeklyHoursByEmployeeIdFromProfiles,
+  weeklyHoursCheckShiftFromAreaCalendarCard,
+} from "@/lib/weekly-hours-check-shifts";
 import { useAppShellModalLockActive, useAppShellWaitCursorActive } from "@/lib/app-shell-modal-lock";
 import { AreaCalendarEmployeeLegendSidebar } from "./areacalendar-employee-legend-sidebar";
 import { PlanningEmployeeListContextMenu } from "@/components/planning/planning-employee-list-context-menu";
@@ -65,6 +72,7 @@ type Props = {
   profileQualificationIds: Record<string, string[]>;
   locations: Location[];
   absences?: AbsenceRequest[];
+  recurringAvailability?: readonly ProfileRecurringAvailability[];
   communicationSwapRequests?: CommunicationSwapRequestRow[];
   communicationCancelActors?: Record<string, "employee" | "manager">;
   managerNotifications?: ManagerNotification[];
@@ -88,6 +96,7 @@ export function AreaCalendarView({
   profileQualificationIds,
   locations,
   absences = [],
+  recurringAvailability = [],
   communicationSwapRequests = [],
   communicationCancelActors = {},
   managerNotifications = [],
@@ -98,6 +107,11 @@ export function AreaCalendarView({
   const t = useTranslations();
   const { locale } = useLocale();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
+  const organization = useOrganization();
+  const weeklyHoursTodayISO = useMemo(
+    () => organizationTodayISO(organization.timezone),
+    [organization.timezone]
+  );
   const [communicationOpen, setCommunicationOpen] = useState(false);
   const [communicationBusy, setCommunicationBusy] = useState(false);
   const [communicationOptions, setCommunicationOptions] = useState<
@@ -145,13 +159,33 @@ export function AreaCalendarView({
   );
   const shiftCompensation = useLazyShiftCompensation(compensationShiftRefs);
 
+  const weeklyHoursCheckShifts = useMemo(
+    () => visibleShifts.map(weeklyHoursCheckShiftFromAreaCalendarCard),
+    [visibleShifts]
+  );
+
+  const weeklyHoursByEmployeeId = useMemo(
+    () => weeklyHoursByEmployeeIdFromProfiles(profiles),
+    [profiles]
+  );
+
   const communicationHubOptions = useMemo(
     () => ({
       absences,
       swapRequests: communicationSwapRequests,
       cancelActors: communicationCancelActorsMap,
+      todayISO: weeklyHoursTodayISO,
+      weeklyHoursByEmployeeId,
+      weeklyHoursCheckShifts,
     }),
-    [absences, communicationSwapRequests, communicationCancelActorsMap]
+    [
+      absences,
+      communicationSwapRequests,
+      communicationCancelActorsMap,
+      weeklyHoursTodayISO,
+      weeklyHoursByEmployeeId,
+      weeklyHoursCheckShifts,
+    ]
   );
   const communicationItemCount = useMemo(
     () =>
@@ -220,6 +254,9 @@ export function AreaCalendarView({
             shifts={calendarShifts}
             profiles={profiles}
             absences={absences}
+            recurringAvailability={recurringAvailability}
+            qualifications={qualifications}
+            profileQualificationIds={profileQualificationIds}
             locale={locale}
             employeeHoursLabel={t("common.basic")}
             emptyLabel={t("areaCalendar.weekEmployeeLegendEmpty")}
@@ -256,6 +293,10 @@ export function AreaCalendarView({
               highlightedEmployeeId={highlightedEmployeeId}
               onLocalShiftRemoved={markRemoved}
               onLocalShiftRestore={unmarkRemoved}
+              onOpenCommunication={openCommunication}
+              swapRequestShiftIds={
+                new Set(communicationSwapRequests.map((request) => request.shiftId))
+              }
             />
           </div>
         </div>
@@ -275,7 +316,7 @@ export function AreaCalendarView({
         />
         {communicationOpen ? (
           <CommunicationHubModal
-            key={communicationOptions?.category ?? communicationOptions?.responseTab ?? "auto"}
+            key={`communication-${communicationOptions?.category ?? communicationOptions?.responseTab ?? "auto"}-${communicationOptions?.preselectedShiftIds?.join(",") ?? ""}`}
             weekStart={weekStart}
             locationId={selectedLocationId}
             locationName={selectedLocation?.name}
@@ -284,6 +325,9 @@ export function AreaCalendarView({
             absences={absences}
             swapRequests={communicationSwapRequests}
             cancelActors={communicationCancelActorsMap}
+            todayISO={weeklyHoursTodayISO}
+            weeklyHoursByEmployeeId={weeklyHoursByEmployeeId}
+            weeklyHoursCheckShifts={weeklyHoursCheckShifts}
             shiftConfirmationEnabled={shiftConfirmationEnabled}
             initialOptions={communicationOptions}
             onClose={closeCommunication}

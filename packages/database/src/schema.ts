@@ -23,6 +23,7 @@ export const Schema = {
     shifts: "shifts",
     shiftsArchive: "shifts_archive",
     shiftConfirmationEvents: "shift_confirmation_events",
+    shiftRequests: "shift_requests",
     shiftDeletionEvents: "shift_deletion_events",
     confirmationRequestBatches: "confirmation_request_batches",
     confirmationRequestItems: "confirmation_request_items",

@@ -38,8 +38,13 @@ describe("handleShiftCardContextMenuPointerEvent", () => {
 });
 
 describe("canOpenShiftCardContextMenu", () => {
-  it("blocks confirmed shifts and allows other statuses with actions", () => {
-    expect(canOpenShiftCardContextMenu("confirmed")).toBe(false);
+  it("allows confirmed future shifts with storno menu", () => {
+    expect(
+      canOpenShiftCardContextMenu("confirmed", null, {
+        shiftDate: "2026-06-20",
+        isPastShiftDate,
+      })
+    ).toBe(true);
     expect(canOpenShiftCardContextMenu("proposed")).toBe(true);
     expect(canOpenShiftCardContextMenu("pending")).toBe(true);
   });
@@ -50,23 +55,14 @@ describe("canOpenShiftCardContextMenu", () => {
     expect(canOpenShiftCardContextMenu("confirmed", null, options)).toBe(false);
   });
 
-  it("allows edit-only menus when includeEdit is set", () => {
+  it("allows legacy delete fallback without confirmation", () => {
     expect(
-      canOpenShiftCardContextMenu("proposed", null, {
+      canOpenShiftCardContextMenu(undefined, null, {
         shiftDate: "2026-06-20",
         isPastShiftDate,
-        includeEdit: true,
-        showsEdit: true,
+        legacyDeleteFallback: true,
       })
     ).toBe(true);
-    expect(
-      canOpenShiftCardContextMenu("confirmed", null, {
-        shiftDate: "2026-06-20",
-        isPastShiftDate,
-        includeEdit: true,
-        showsEdit: true,
-      })
-    ).toBe(false);
   });
 });
 
@@ -77,7 +73,10 @@ describe("shiftCardContextMenuActions", () => {
       "delete",
     ]);
     expect(shiftCardContextMenuActions("requested")).toEqual(["cancel"]);
-    expect(shiftCardContextMenuActions("confirmed")).toEqual([]);
+    expect(shiftCardContextMenuActions("confirmed", null, {
+      shiftDate: "2026-06-20",
+      isPastShiftDate,
+    })).toEqual(["cancel"]);
     expect(shiftCardContextMenuActions("rejected")).toEqual([
       "reassign",
       "delete",
@@ -92,15 +91,45 @@ describe("shiftCardContextMenuActions", () => {
     ]);
   });
 
-  it("offers only setConfirmed for past unconfirmed shifts", () => {
-    const options = { shiftDate: "2026-06-10", isPastShiftDate };
+  it("offers delete and setConfirmed for past unconfirmed shifts", () => {
+    const options = { shiftDate: "2026-06-10", cellDate: "2026-06-10", isPastShiftDate };
     expect(shiftCardContextMenuActions("pending", null, options)).toEqual([
+      "delete",
       "setConfirmed",
     ]);
     expect(shiftCardContextMenuActions("requested", null, options)).toEqual([
+      "delete",
       "setConfirmed",
     ]);
     expect(shiftCardContextMenuActions("confirmed", null, options)).toEqual([]);
+  });
+
+  it("uses conflict tab actions when flagged", () => {
+    expect(
+      shiftCardContextMenuActions("proposed", null, {
+        shiftDate: "2026-06-20",
+        isPastShiftDate,
+        hasAbsenceConflict: true,
+      })
+    ).toEqual(["reassign", "cancel", "delete"]);
+  });
+
+  it("ignores absence conflict for confirmed shifts", () => {
+    expect(
+      shiftCardContextMenuActions("confirmed", null, {
+        shiftDate: "2026-06-20",
+        isPastShiftDate,
+        hasAbsenceConflict: true,
+      })
+    ).toEqual(["cancel"]);
+    expect(
+      shiftCardContextMenuActions("confirmed", null, {
+        shiftDate: "2026-06-10",
+        cellDate: "2026-06-10",
+        isPastShiftDate,
+        hasAbsenceConflict: true,
+      })
+    ).toEqual([]);
   });
 });
 
@@ -124,6 +153,16 @@ describe("isPastUnconfirmedShift", () => {
         isPastShiftDate,
       })
     ).toBe(false);
+  });
+
+  it("uses cellDate when it differs from shiftDate", () => {
+    expect(
+      isPastUnconfirmedShift("pending", null, {
+        shiftDate: "2026-06-20",
+        cellDate: "2026-06-10",
+        isPastShiftDate,
+      })
+    ).toBe(true);
   });
 });
 
@@ -170,8 +209,9 @@ describe("isPastConfirmedPlanningShift", () => {
 });
 
 describe("planningShiftCardShowsPointerCursor", () => {
-  it("hides pointer on past confirmed cells and keeps it for past unconfirmed", () => {
+  it("hides pointer on past confirmed cells and keeps it for proposed future shifts", () => {
     const shift = {
+      id: "s1",
       shift_date: "2026-06-10",
       confirmationStatus: "confirmed" as const,
     };
@@ -180,13 +220,17 @@ describe("planningShiftCardShowsPointerCursor", () => {
     ).toBe(false);
     expect(
       planningShiftCardShowsPointerCursor(
-        { ...shift, confirmationStatus: "pending" },
-        "2026-06-10",
+        { ...shift, shift_date: "2026-06-20", confirmationStatus: "pending" },
+        "2026-06-20",
         isPastShiftDate
       )
-    ).toBe(true);
+    ).toBe(false);
     expect(
-      planningShiftCardShowsPointerCursor(shift, "2026-06-20", isPastShiftDate)
+      planningShiftCardShowsPointerCursor(
+        { ...shift, shift_date: "2026-06-20", confirmationStatus: "proposed" },
+        "2026-06-20",
+        isPastShiftDate
+      )
     ).toBe(true);
   });
 });
@@ -204,25 +248,9 @@ describe("canOpenPastUnconfirmedShiftContextMenu", () => {
 });
 
 describe("shiftCardContextMenuShowsEdit", () => {
-  it("hides edit for pending and effective pending from overdue requested", () => {
-    expect(shiftCardContextMenuShowsEdit("pending")).toBe(false);
-    expect(
-      shiftCardContextMenuShowsEdit("requested", "2020-01-01T00:00:00.000Z")
-    ).toBe(false);
-  });
-
-  it("allows edit for other confirmation statuses", () => {
-    expect(shiftCardContextMenuShowsEdit("proposed")).toBe(true);
-    expect(shiftCardContextMenuShowsEdit("requested")).toBe(true);
-    expect(shiftCardContextMenuShowsEdit("confirmed")).toBe(true);
-  });
-
-  it("hides edit for past unconfirmed cleanup menu", () => {
-    expect(
-      shiftCardContextMenuShowsEdit("pending", null, {
-        shiftDate: "2026-06-10",
-        isPastShiftDate,
-      })
-    ).toBe(false);
+  it("never shows edit in context menu", () => {
+    expect(shiftCardContextMenuShowsEdit("proposed")).toBe(false);
+    expect(shiftCardContextMenuShowsEdit("requested")).toBe(false);
+    expect(shiftCardContextMenuShowsEdit("confirmed")).toBe(false);
   });
 });

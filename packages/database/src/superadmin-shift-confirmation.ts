@@ -1,4 +1,5 @@
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import { resolveShiftLifecycleFromLegacy } from "./shift-display-state";
 
 export const SUPERADMIN_SHIFT_CONFIRMATION_STATUSES: readonly ShiftConfirmationStatus[] =
   ["proposed", "requested", "pending", "confirmed", "rejected", "canceled"];
@@ -9,6 +10,7 @@ export function buildSuperadminConfirmationStatusPatch(
 ): {
   confirmation_status: ShiftConfirmationStatus;
   confirmation_status_updated_at: string;
+  lifecycle_status: ReturnType<typeof resolveShiftLifecycleFromLegacy>;
   requested_at: string | null;
   pending_since: string | null;
   pending_reminder_sent_at: null;
@@ -16,6 +18,7 @@ export function buildSuperadminConfirmationStatusPatch(
   const base = {
     confirmation_status: status,
     confirmation_status_updated_at: now,
+    lifecycle_status: resolveShiftLifecycleFromLegacy(status),
     pending_reminder_sent_at: null as null,
   };
 

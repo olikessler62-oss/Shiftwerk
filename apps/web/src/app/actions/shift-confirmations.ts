@@ -496,7 +496,7 @@ export async function resendConfirmationRequestForSelectedShifts(input: {
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "Erneut anfordern fehlgeschlagen.",
+      error: e instanceof Error ? e.message : "Erneut anfragen fehlgeschlagen.",
     };
   }
 }

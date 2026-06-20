@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   isAreaRowMinimizedFromTodayThroughWeek,
   isCalendarAreaRowHeightDate,
+  isCalendarAreaRowPastHeightDate,
+  resolveAreaRowHeightLaneCount,
 } from "./calendar-area-row-height-dates";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 
@@ -25,6 +27,21 @@ describe("calendar-area-row-height-dates", () => {
     expect(isCalendarAreaRowHeightDate("2026-06-13", active, todayISO)).toBe(
       true
     );
+  });
+
+  it("resolveAreaRowHeightLaneCount prefers future lanes, else past expanded", () => {
+    expect(resolveAreaRowHeightLaneCount(3, 8)).toBe(3);
+    expect(resolveAreaRowHeightLaneCount(0, 8)).toBe(8);
+  });
+
+  it("isCalendarAreaRowPastHeightDate matches expanded past days only", () => {
+    const active = new Set(["2026-06-09", "2026-06-13"]);
+    expect(
+      isCalendarAreaRowPastHeightDate("2026-06-09", active, "2026-06-10")
+    ).toBe(true);
+    expect(
+      isCalendarAreaRowPastHeightDate("2026-06-13", active, "2026-06-10")
+    ).toBe(false);
   });
 
   it("minimizes when no service and no shifts from today through week end", () => {

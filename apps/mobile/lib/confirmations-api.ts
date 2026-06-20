@@ -14,6 +14,12 @@ export async function fetchConfirmationWeek(
   );
 }
 
+export async function fetchPendingConfirmations(): Promise<ConfirmationWeekResponse> {
+  return fetchMobileApi<ConfirmationWeekResponse>(
+    "/api/mobile/confirmations/pending"
+  );
+}
+
 export async function submitConfirmationResponses(
   items: ConfirmationRespondBody["items"]
 ): Promise<{ ok: true; updatedCount: number }> {

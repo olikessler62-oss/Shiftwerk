@@ -53,6 +53,8 @@ export type AreaCalendarShiftRow = {
   confirmation_status_updated_at?: string;
   requested_at?: string | null;
   pending_since?: string | null;
+  lifecycle_status?: import("@schichtwerk/types").ShiftLifecycleStatus;
+  shift_requests?: import("./shift-display-state").ShiftRequestSummary[];
   area_shift_templates: {
     name: string;
     color: string;
@@ -184,6 +186,7 @@ export interface SchichtwerkDatabase {
     email: string;
     mobile_phone?: string | null;
     color?: string | null;
+    weekly_hours?: number | null;
     is_active?: boolean;
     schedulable?: boolean;
   }): Promise<void>;
@@ -197,6 +200,7 @@ export interface SchichtwerkDatabase {
       email: string;
       mobile_phone: string | null;
       color: string | null;
+      weekly_hours?: number | null;
       email_fallback_mode?: boolean;
     }
   ): Promise<void>;
@@ -678,6 +682,11 @@ export interface SchichtwerkDatabase {
   // —— Shifts ——
   /** Eigene Schichten (Mitarbeiter-App, gefiltert per RLS) */
   listMyShifts(fromDate: string, toDate: string): Promise<Shift[]>;
+  /** Anzeige-Metadaten für den Mitarbeiter-Wochenplan (Bereich, Vorlage, Farbe). */
+  listMyShiftWeekDisplay(
+    fromDate: string,
+    toDate: string
+  ): Promise<import("@schichtwerk/types").EmployeeWeekShiftDisplayItem[]>;
   listAreaCalendarShifts(
     organizationId: string,
     from: string,
@@ -699,6 +708,11 @@ export interface SchichtwerkDatabase {
   listShiftsForEmployeeFromDate(
     employeeId: string,
     fromDate: string
+  ): Promise<EmployeeShiftRecord[]>;
+  listShiftsForEmployeeInDateRange(
+    employeeId: string,
+    fromDate: string,
+    toDate: string
   ): Promise<EmployeeShiftRecord[]>;
   /** Schichten mit End-/Startfenster vor/nach der neuen Schicht (für Ruhezeitprüfung). */
   listShiftsForEmployeeRestCheck(
@@ -813,6 +827,13 @@ export interface SchichtwerkDatabase {
     organizationDisclaimer: string | null
   ): Promise<import("@schichtwerk/types").ConfirmationWeekResponse>;
 
+  listEmployeePendingConfirmationItems(
+    employeeId: string,
+    organizationId: string,
+    fromDate: string,
+    organizationDisclaimer: string | null
+  ): Promise<import("@schichtwerk/types").ConfirmationWeekResponse>;
+
   getEmployeeConfirmationShiftItem(
     employeeId: string,
     organizationId: string,
@@ -866,6 +887,8 @@ export interface SchichtwerkDatabase {
   }>;
 
   resetOrganizationOperationalData(organizationId: string): Promise<void>;
+
+  resetOrganizationShiftData(organizationId: string): Promise<void>;
 
   // —— Absence requests ——
   listOrganizationAbsences(

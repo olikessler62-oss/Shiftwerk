@@ -341,15 +341,6 @@ export function ProfileSurchargesPanelModal({
         });
         if (!result.ok) {
           setErrorMessage(result.error);
-          if (result.surchargeEntries) {
-            applyCompensation({
-              currentRate,
-              rates,
-              currentSurcharges: result.currentSurcharges ?? currentSurcharges,
-              surchargeEntries: result.surchargeEntries ?? [],
-              serverToday: result.serverToday ?? serverToday,
-            });
-          }
           bulkSelection.clear();
           setConfirmBulkDeleteSurcharge(false);
           return;

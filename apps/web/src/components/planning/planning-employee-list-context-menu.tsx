@@ -5,7 +5,7 @@
 import type { RefObject } from "react";
 
 import { useTranslations } from "@/i18n/locale-provider";
-
+import { useClampedContextMenuPosition } from "@/lib/context-menu-position";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useOrgFeatures } from "@/lib/org-features-provider";
 
@@ -59,7 +59,13 @@ export function PlanningEmployeeListContextMenu({
 
   const features = useOrgFeatures();
 
-
+  const position = useClampedContextMenuPosition(
+    true,
+    state.x,
+    state.y,
+    menuRef,
+    [features.qualifications, COMPENSATION_SURCHARGES_UI_ENABLED]
+  );
 
   return (
 
@@ -69,7 +75,7 @@ export function PlanningEmployeeListContextMenu({
 
       className="fixed z-[100] min-w-[15rem] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg"
 
-      style={{ left: state.x, top: state.y }}
+      style={{ left: position.x, top: position.y }}
 
       role="menu"
 
