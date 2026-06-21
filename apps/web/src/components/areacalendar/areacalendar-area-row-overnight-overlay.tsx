@@ -195,19 +195,21 @@ export function AreaCalendarAreaRowOvernightOverlay({
     };
     const map = new Map<string, ReturnType<typeof buildShiftCardDisplayContent>>();
     for (const span of spans) {
-      const jobsLabel = resolveJobLabelsForShiftAssignment(
-        span.shift.employeeId,
-        span.shift.locationAreaId ?? areaId,
-        span.startDate,
-        span.shift.startTime,
-        span.shift.endTime,
-        staffingRules,
-        serviceHours,
-        assignmentPresets,
-        profileQualificationIds,
-        qualificationNameById,
-        qualificationSortOrder
-      );
+      const jobsLabel =
+        span.shift.jobName?.trim() ??
+        resolveJobLabelsForShiftAssignment(
+          span.shift.employeeId,
+          span.shift.locationAreaId ?? areaId,
+          span.startDate,
+          span.shift.startTime,
+          span.shift.endTime,
+          staffingRules,
+          serviceHours,
+          assignmentPresets,
+          profileQualificationIds,
+          qualificationNameById,
+          qualificationSortOrder
+        );
       map.set(
         span.shift.id,
         buildShiftCardDisplayContent(span.shift, jobsLabel, tooltipOptions)

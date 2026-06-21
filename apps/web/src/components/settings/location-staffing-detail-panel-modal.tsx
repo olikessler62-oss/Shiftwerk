@@ -1,28 +1,43 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { saveServiceHourStaffing } from "@/app/actions/location-staffing";
+import {
+  saveServiceHourStaffing,
+  saveTemporaryAreaStaffing,
+} from "@/app/actions/location-staffing";
+import { CalendarWeekDateChipPicker } from "@/components/planning/calendar-week-date-chip-picker";
+import { CalendarWeekStaffingEntriesTable } from "@/components/planning/calendar-week-staffing-entries-table";
 import { resolvePresetIdFromTimes } from "@/lib/areacalendar-assignment-presets";
 import { SERVICE_HOUR_WEEKDAY_COUNT } from "@/lib/location-service-hour-entries";
+import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
   isShiftTemplateBlockedOnWeekday,
   suggestStaffingCreateWindow,
 } from "@/lib/location-staffing-create-suggest";
 import {
-  findServiceHourByWeekdayAndWindow,
   formatServiceHourStaffingListLabel,
+  resolveServiceHourForStaffingWindow,
+  sampleDateISOForWeekday,
   staffedWeekdaysMatchingWindow,
   weekdayLabelFromIndex,
 } from "@/lib/location-staffing-client";
+import {
+  buildBulkStaffingShiftEntries,
+  buildCreateStaffingShiftEntries,
+  buildWeekTemporaryStaffingEntries,
+  suggestNextWeekTemporaryShiftEntry,
+  type WeekTemporaryStaffingEntry,
+} from "@/lib/week-temporary-staffing-entries";
 import type {
   AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
   LocationAreaServiceHour,
   LocationAreaStaffing,
+  LocationAreaStaffingOverride,
   Qualification,
 } from "@schichtwerk/types";
-import { useTranslations } from "@/i18n/locale-provider";
+import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { WeekdayChipPicker } from "./weekday-chip-picker";
 import { SettingsMessageModal } from "./settings-message-modal";
@@ -35,6 +50,7 @@ import {
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
   settingsResponsiveWindowFieldsClass,
+  areaCalendarNestedModalOverlayClass,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -86,6 +102,34 @@ function buildInitialRows(
     }));
 }
 
+function buildInitialRowsFromOverrides(
+  serviceHourId: string,
+  anchorDate: string,
+  areaId: string,
+  staffing: LocationAreaStaffing[],
+  overrides: LocationAreaStaffingOverride[]
+): QualRow[] {
+  const overrideRules = overrides.filter(
+    (override) =>
+      override.location_area_id === areaId &&
+      override.shift_date === anchorDate &&
+      override.service_hour_id === serviceHourId &&
+      override.required_count > 0
+  );
+  const source =
+    overrideRules.length > 0
+      ? overrideRules
+      : staffing.filter(
+          (rule) =>
+            rule.service_hour_id === serviceHourId && rule.required_count > 0
+        );
+  return source.map((rule) => ({
+    key: rule.id,
+    qualification_id: rule.qualification_id,
+    count: String(rule.required_count),
+  }));
+}
+
 function timeFieldValue(time: string): string {
   return time.slice(0, 5);
 }
@@ -98,7 +142,9 @@ function initialWindowState(
   staffing: LocationAreaStaffing[]
 ) {
   if (
-    (mode === "edit" || mode === "bulk-edit") &&
+    (mode === "edit" ||
+      mode === "bulk-edit" ||
+      mode === "week-temporary") &&
     initialServiceHourId
   ) {
     const hour = serviceHours.find((entry) => entry.id === initialServiceHourId);
@@ -134,7 +180,7 @@ function initialWindowState(
 const COUNT_INPUT_CLASS =
   "h-8 !w-[3.25rem] shrink-0 px-0 text-center text-sm tabular-nums";
 
-type StaffingDetailMode = "create" | "edit" | "bulk-edit";
+type StaffingDetailMode = "create" | "edit" | "bulk-edit" | "week-temporary";
 
 type Props = {
   mode: StaffingDetailMode;
@@ -145,6 +191,12 @@ type Props = {
   qualifications: Qualification[];
   staffing: LocationAreaStaffing[];
   initialServiceHourId?: string;
+  /** Kalender: sichtbare Wochentage für temporäre Änderung */
+  calendarWeekDates?: string[];
+  anchorDate?: string;
+  staffingOverrides?: LocationAreaStaffingOverride[];
+  /** Kalender-Root: fixed Overlay; Einstellungen: nested absolute Overlay */
+  overlayPlacement?: "nested" | "fixed";
   onClose: () => void;
   onSaved: (
     createdServiceHourId?: string,
@@ -162,10 +214,16 @@ export function LocationStaffingDetailPanelModal({
   qualifications,
   staffing,
   initialServiceHourId,
+  calendarWeekDates = [],
+  anchorDate,
+  staffingOverrides = [],
+  overlayPlacement = "nested",
   onClose,
   onSaved,
 }: Props) {
   const t = useTranslations();
+  const { locale } = useLocale();
+  const intlLocale = locale === "en" ? "en-GB" : "de-DE";
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
@@ -200,15 +258,19 @@ export function LocationStaffingDetailPanelModal({
     }
     return new Set([initialWindow.weekday]);
   });
+  const [selectedCalendarDates, setSelectedCalendarDates] = useState<Set<string>>(
+    () =>
+      mode === "week-temporary" && anchorDate ? new Set([anchorDate]) : new Set()
+  );
   const [templateId, setTemplateId] = useState(initialWindow.templateId);
   const [startTime, setStartTime] = useState(initialWindow.start_time);
   const [endTime, setEndTime] = useState(initialWindow.end_time);
   const [dayFullyBooked, setDayFullyBooked] = useState(
     initialWindow.dayFullyBooked
   );
-  const [rows, setRows] = useState<QualRow[]>(() =>
-    mode === "create"
-      ? qualifications[0]
+  const [rows, setRows] = useState<QualRow[]>(() => {
+    if (mode === "create") {
+      return qualifications[0]
         ? [
             {
               key: nextRowKey(),
@@ -216,9 +278,66 @@ export function LocationStaffingDetailPanelModal({
               count: "1",
             },
           ]
-        : []
-      : buildInitialRows(initialServiceHourId ?? "", staffing)
-  );
+        : [];
+    }
+    if (
+      mode === "week-temporary" &&
+      initialServiceHourId &&
+      anchorDate
+    ) {
+      return buildInitialRowsFromOverrides(
+        initialServiceHourId,
+        anchorDate,
+        area.id,
+        staffing,
+        staffingOverrides
+      );
+    }
+    return buildInitialRows(initialServiceHourId ?? "", staffing);
+  });
+  const [shiftEntries, setShiftEntries] = useState<WeekTemporaryStaffingEntry[]>(() => {
+    if (mode === "week-temporary" && anchorDate) {
+      return buildWeekTemporaryStaffingEntries({
+        areaId: area.id,
+        anchorDate,
+        initialServiceHourId,
+        serviceHours,
+        staffing,
+        staffingOverrides,
+        shiftTemplates,
+        qualifications,
+      });
+    }
+    if (mode === "create") {
+      return buildCreateStaffingShiftEntries({
+        serviceHours,
+        staffing,
+        shiftTemplates,
+        qualifications,
+      });
+    }
+    if (mode === "bulk-edit") {
+      const referenceHour = initialServiceHourId
+        ? serviceHours.find((entry) => entry.id === initialServiceHourId)
+        : undefined;
+      const suggestion = suggestStaffingCreateWindow(
+        serviceHours,
+        staffing,
+        shiftTemplates,
+        { searchAllWeekdays: true }
+      );
+      return buildBulkStaffingShiftEntries({
+        areaId: area.id,
+        referenceWeekday: referenceHour?.weekday ?? suggestion.weekday,
+        initialServiceHourId,
+        serviceHours,
+        staffing,
+        shiftTemplates,
+        qualifications,
+      });
+    }
+    return [];
+  });
 
   const windowLabel = formatServiceHourStaffingListLabel(
     { weekday, start_time: startTime, end_time: endTime },
@@ -231,9 +350,34 @@ export function LocationStaffingDetailPanelModal({
       ? t("locations.staffingCreateTitle")
       : mode === "bulk-edit"
         ? t("locations.staffingBulkEditTitle")
-        : t("locations.staffingDetailTitle", { window: windowLabel });
+        : mode === "week-temporary"
+          ? t("calendarStaffing.temporaryTitle")
+          : t("locations.staffingDetailTitle", { window: windowLabel });
 
+  const usesWeekDatePicker = mode === "week-temporary";
+  const usesMultiShiftTable =
+    mode === "create" || mode === "week-temporary" || mode === "bulk-edit";
   const usesMultiDayPicker = mode === "create" || mode === "bulk-edit";
+  const dayColumnLabel = usesWeekDatePicker
+    ? t("calendarStaffing.datesColumn")
+    : t("locations.serviceHoursColumnWeekdays");
+  const selectableCalendarDates = calendarWeekDates.filter(
+    (date) => !isPastShiftDate(date)
+  );
+
+  function addShiftEntry() {
+    setShiftEntries((prev) => [
+      ...prev,
+      suggestNextWeekTemporaryShiftEntry(
+        prev,
+        serviceHours,
+        staffing,
+        shiftTemplates,
+        qualifications
+      ),
+    ]);
+    setError(null);
+  }
 
   useEffect(() => {
     if (!saving) return;
@@ -276,6 +420,16 @@ export function LocationStaffingDetailPanelModal({
   function applyWeekdayPreset(weekdays: number[]) {
     setSelectedWeekdays(new Set(weekdays));
     setDayFullyBooked(false);
+    setError(null);
+  }
+
+  function toggleCalendarDate(date: string) {
+    setSelectedCalendarDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
     setError(null);
   }
 
@@ -356,6 +510,196 @@ export function LocationStaffingDetailPanelModal({
       return;
     }
 
+    if (usesWeekDatePicker) {
+      const datesToSave = [...selectedCalendarDates].sort();
+      if (datesToSave.length === 0) {
+        setError(t("calendarStaffing.selectDates"));
+        return;
+      }
+      setSaving(true);
+      try {
+        let savedAny = false;
+        for (const entry of shiftEntries) {
+          const entryRules: {
+            qualification_id: string;
+            required_count: number;
+          }[] = [];
+          const seenEntryQualifications = new Set<string>();
+
+          for (const row of entry.qualifications) {
+            const trimmed = row.count.trim();
+            if (!trimmed) {
+              setError(t("locations.staffingEnterCount"));
+              return;
+            }
+            const count = Number.parseInt(trimmed, 10);
+            if (!Number.isFinite(count) || count < 1 || count > 99) {
+              setError(t("locations.staffingInvalidCount"));
+              return;
+            }
+            if (!row.qualification_id) {
+              setError(t("locations.staffingSelectQualification"));
+              return;
+            }
+            if (seenEntryQualifications.has(row.qualification_id)) {
+              setError(t("locations.staffingDuplicateQualification"));
+              return;
+            }
+            seenEntryQualifications.add(row.qualification_id);
+            entryRules.push({
+              qualification_id: row.qualification_id,
+              required_count: count,
+            });
+          }
+
+          if (entryRules.length === 0) continue;
+
+          const result = await saveTemporaryAreaStaffing({
+            locationId: location.id,
+            locationAreaId: area.id,
+            dates: datesToSave,
+            serviceHourId: entry.serviceHourId,
+            window: { start_time: entry.startTime, end_time: entry.endTime },
+            rules: entryRules,
+          });
+          if (!result.ok) {
+            setError(result.error);
+            return;
+          }
+          savedAny = true;
+        }
+
+        if (!savedAny) {
+          setError(t("locations.staffingCreateRequiresRows"));
+          return;
+        }
+
+        onSaved();
+      } catch {
+        setError("Speichern fehlgeschlagen");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    if (usesMultiShiftTable) {
+      const weekdaysToSave = [...selectedWeekdays].sort((a, b) => a - b);
+      if (weekdaysToSave.length === 0) {
+        setError(t("locations.staffingSelectWeekdays"));
+        return;
+      }
+      setSaving(true);
+      try {
+        let savedAny = false;
+        let lastServiceHourId: string | undefined;
+        let nextServiceHours = serviceHours;
+        let nextStaffing = staffing;
+
+        for (const entry of shiftEntries) {
+          const entryRules: {
+            qualification_id: string;
+            required_count: number;
+          }[] = [];
+          const seenEntryQualifications = new Set<string>();
+
+          for (const row of entry.qualifications) {
+            const trimmed = row.count.trim();
+            if (!trimmed) {
+              setError(t("locations.staffingEnterCount"));
+              return;
+            }
+            const count = Number.parseInt(trimmed, 10);
+            if (!Number.isFinite(count) || count < 1 || count > 99) {
+              setError(t("locations.staffingInvalidCount"));
+              return;
+            }
+            if (!row.qualification_id) {
+              setError(t("locations.staffingSelectQualification"));
+              return;
+            }
+            if (seenEntryQualifications.has(row.qualification_id)) {
+              setError(t("locations.staffingDuplicateQualification"));
+              return;
+            }
+            seenEntryQualifications.add(row.qualification_id);
+            entryRules.push({
+              qualification_id: row.qualification_id,
+              required_count: count,
+            });
+          }
+
+          if (entryRules.length === 0) continue;
+
+          for (const saveWeekday of weekdaysToSave) {
+            const dateISO = sampleDateISOForWeekday(saveWeekday);
+            const resolvedHourId = resolveServiceHourForStaffingWindow(
+              nextServiceHours,
+              area.id,
+              dateISO,
+              entry.startTime,
+              entry.endTime,
+              { referenceServiceHourId: entry.serviceHourId }
+            );
+            if (!resolvedHourId) {
+              setError(
+                t("locations.staffingBulkEditMissingWindow", {
+                  weekday: weekdayLabelFromIndex(saveWeekday, t),
+                })
+              );
+              return;
+            }
+
+            const hour = nextServiceHours.find((item) => item.id === resolvedHourId);
+            const window = hour
+              ? {
+                  weekday: saveWeekday,
+                  start_time: timeFieldValue(hour.start_time),
+                  end_time: timeFieldValue(hour.end_time),
+                }
+              : {
+                  weekday: saveWeekday,
+                  start_time: entry.startTime,
+                  end_time: entry.endTime,
+                };
+
+            const result = await saveServiceHourStaffing({
+              locationId: location.id,
+              locationAreaId: area.id,
+              window,
+              previousServiceHourId:
+                mode === "bulk-edit" ? resolvedHourId : undefined,
+              rules: entryRules,
+            });
+            if (!result.ok) {
+              setError(
+                weekdaysToSave.length > 1
+                  ? `${weekdayLabelFromIndex(saveWeekday, t)}: ${result.error}`
+                  : result.error
+              );
+              return;
+            }
+            lastServiceHourId = result.serviceHourId;
+            nextServiceHours = result.serviceHours ?? nextServiceHours;
+            nextStaffing = result.staffing ?? nextStaffing;
+          }
+          savedAny = true;
+        }
+
+        if (!savedAny) {
+          setError(t("locations.staffingCreateRequiresRows"));
+          return;
+        }
+
+        onSaved(lastServiceHourId, nextStaffing, nextServiceHours);
+      } catch {
+        setError("Speichern fehlgeschlagen");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     const rules: {
       qualification_id: string;
       required_count: number;
@@ -388,17 +732,8 @@ export function LocationStaffingDetailPanelModal({
       });
     }
 
-    if (mode === "create" && rules.length === 0) {
+    if (rules.length === 0) {
       setError(t("locations.staffingCreateRequiresRows"));
-      return;
-    }
-
-    const weekdaysToSave = usesMultiDayPicker
-      ? [...selectedWeekdays].sort((a, b) => a - b)
-      : [weekday];
-
-    if (usesMultiDayPicker && weekdaysToSave.length === 0) {
-      setError(t("locations.staffingSelectWeekdays"));
       return;
     }
 
@@ -408,51 +743,28 @@ export function LocationStaffingDetailPanelModal({
       let nextServiceHours = serviceHours;
       let nextStaffing = staffing;
 
-      for (const saveWeekday of weekdaysToSave) {
-        let previousServiceHourId: string | undefined;
-        if (mode === "edit") {
-          previousServiceHourId = initialServiceHourId;
-        } else if (mode === "bulk-edit") {
-          const existingHour = findServiceHourByWeekdayAndWindow(
-            saveWeekday,
-            startTime,
-            endTime,
-            nextServiceHours
-          );
-          if (!existingHour) {
-            setError(
-              t("locations.staffingBulkEditMissingWindow", {
-                weekday: weekdayLabelFromIndex(saveWeekday, t),
-              })
-            );
-            return;
-          }
-          previousServiceHourId = existingHour.id;
-        }
+      const saveWeekday = weekday;
 
-        const result = await saveServiceHourStaffing({
-          locationId: location.id,
-          locationAreaId: area.id,
-          window: {
-            weekday: saveWeekday,
-            start_time: startTime,
-            end_time: endTime,
-          },
-          previousServiceHourId,
-          rules,
-        });
-        if (!result.ok) {
-          setError(
-            usesMultiDayPicker && weekdaysToSave.length > 1
-              ? `${weekdayLabelFromIndex(saveWeekday, t)}: ${result.error}`
-              : result.error
-          );
-          return;
-        }
-        lastServiceHourId = result.serviceHourId;
-        nextServiceHours = result.serviceHours ?? nextServiceHours;
-        nextStaffing = result.staffing ?? nextStaffing;
+      let previousServiceHourId: string | undefined = initialServiceHourId;
+
+      const result = await saveServiceHourStaffing({
+        locationId: location.id,
+        locationAreaId: area.id,
+        window: {
+          weekday: saveWeekday,
+          start_time: startTime,
+          end_time: endTime,
+        },
+        previousServiceHourId,
+        rules,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
+      lastServiceHourId = result.serviceHourId;
+      nextServiceHours = result.serviceHours ?? nextServiceHours;
+      nextStaffing = result.staffing ?? nextStaffing;
 
       onSaved(lastServiceHourId, nextStaffing, nextServiceHours);
     } catch {
@@ -499,9 +811,14 @@ export function LocationStaffingDetailPanelModal({
     </Select>
   );
 
+  const overlayClass =
+    overlayPlacement === "fixed"
+      ? areaCalendarNestedModalOverlayClass()
+      : settingsNestedModalOverlayClass();
+
   return (
     <div
-      className={cn(settingsNestedModalOverlayClass(), saving && "cursor-wait")}
+      className={cn(overlayClass, saving && "cursor-wait")}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !saving) onClose();
@@ -556,80 +873,130 @@ export function LocationStaffingDetailPanelModal({
               {t("locations.staffingCreateDayFullyBooked")}
             </Alert>
           )}
+          {usesWeekDatePicker ? (
+            <Alert variant="info" className="mb-3">
+              {t("calendarStaffing.temporaryHint")}
+            </Alert>
+          ) : null}
 
-          <div className={cn(staffingDesktopGridClass(mode), "mb-[20px]")}>
-            <div className="flex justify-center">
-              <LabelMuted className="mb-0 block text-center">
-                {t("locations.serviceHoursColumnWeekdays")}
-              </LabelMuted>
-            </div>
-            <div className="min-w-0">
-              <LabelMuted className="mb-0 block">
-                {t("locations.serviceHoursColumnTemplate")}
-              </LabelMuted>
-            </div>
-            <div className="text-center">
-              <LabelMuted className="mb-0 block text-center">
-                {t("locations.serviceHoursColumnFrom")}
-              </LabelMuted>
-            </div>
-            <div className="text-center">
-              <LabelMuted className="mb-0 block text-center">
-                {t("locations.serviceHoursColumnTo")}
-              </LabelMuted>
-            </div>
-
-            {usesMultiDayPicker ? (
-              <div className="flex justify-center">
-                <WeekdayChipPicker
-                  selected={selectedWeekdays}
-                  disabled={saving}
-                  onToggle={toggleWeekday}
-                  onApplyPreset={applyWeekdayPreset}
-                />
+          {usesMultiShiftTable ? (
+            <>
+              <div className="mb-4 space-y-2">
+                <LabelMuted className="mb-0 block text-center">
+                  {dayColumnLabel}
+                </LabelMuted>
+                {usesWeekDatePicker ? (
+                  <CalendarWeekDateChipPicker
+                    weekDates={selectableCalendarDates}
+                    selected={selectedCalendarDates}
+                    disabled={saving}
+                    intlLocale={intlLocale}
+                    onToggle={toggleCalendarDate}
+                  />
+                ) : (
+                  <WeekdayChipPicker
+                    selected={selectedWeekdays}
+                    disabled={saving}
+                    onToggle={toggleWeekday}
+                    onApplyPreset={applyWeekdayPreset}
+                  />
+                )}
               </div>
-            ) : (
-              <Select
-                className={cn(STAFFING_FIELD_CLASS, "w-full min-w-[7.5rem]")}
-                value={String(weekday)}
+
+              <CalendarWeekStaffingEntriesTable
+                entries={shiftEntries}
+                shiftTemplates={shiftTemplates}
+                qualifications={qualifications}
                 disabled={saving}
-                aria-label={t("locations.serviceHoursColumnWeekdays")}
-                onChange={(event) => {
-                  handleEditWeekdayChange(Number.parseInt(event.target.value, 10));
-                }}
-              >
-                {Array.from({ length: SERVICE_HOUR_WEEKDAY_COUNT }, (_, index) => (
-                  <option key={index} value={String(index)}>
-                    {weekdayLabelFromIndex(index, t)}
-                  </option>
-                ))}
-              </Select>
-            )}
+                templateColumnLabel={t("locations.serviceHoursColumnTemplate")}
+                fromColumnLabel={t("locations.serviceHoursColumnFrom")}
+                toColumnLabel={t("locations.serviceHoursColumnTo")}
+                qualificationsColumnLabel={t("locations.staffingQualificationsSection")}
+                selectTemplateLabel={t("locations.serviceHoursSelectTemplate")}
+                addQualificationLabel={t("locations.staffingAddQualification")}
+                addShiftLabel={t("calendarStaffing.addShiftRow")}
+                deleteLabel={t("common.delete")}
+                countAriaLabel={t("locations.staffingFormColumnCount")}
+                onChange={setShiftEntries}
+                onAddShift={addShiftEntry}
+              />
+            </>
+          ) : (
+            <div className={cn(staffingDesktopGridClass(mode), "mb-[20px]")}>
+              <div className="flex justify-center">
+                <LabelMuted className="mb-0 block text-center">
+                  {dayColumnLabel}
+                </LabelMuted>
+              </div>
+              <div className="min-w-0">
+                <LabelMuted className="mb-0 block">
+                  {t("locations.serviceHoursColumnTemplate")}
+                </LabelMuted>
+              </div>
+              <div className="text-center">
+                <LabelMuted className="mb-0 block text-center">
+                  {t("locations.serviceHoursColumnFrom")}
+                </LabelMuted>
+              </div>
+              <div className="text-center">
+                <LabelMuted className="mb-0 block text-center">
+                  {t("locations.serviceHoursColumnTo")}
+                </LabelMuted>
+              </div>
 
-            <div className="min-w-0">{templateSelect}</div>
+              {usesMultiDayPicker ? (
+                <div className="flex justify-center">
+                  <WeekdayChipPicker
+                    selected={selectedWeekdays}
+                    disabled={saving}
+                    onToggle={toggleWeekday}
+                    onApplyPreset={applyWeekdayPreset}
+                  />
+                </div>
+              ) : (
+                <Select
+                  className={cn(STAFFING_FIELD_CLASS, "w-full min-w-[7.5rem]")}
+                  value={String(weekday)}
+                  disabled={saving}
+                  aria-label={t("locations.serviceHoursColumnWeekdays")}
+                  onChange={(event) => {
+                    handleEditWeekdayChange(Number.parseInt(event.target.value, 10));
+                  }}
+                >
+                  {Array.from({ length: SERVICE_HOUR_WEEKDAY_COUNT }, (_, index) => (
+                    <option key={index} value={String(index)}>
+                      {weekdayLabelFromIndex(index, t)}
+                    </option>
+                  ))}
+                </Select>
+              )}
 
-            <TimeInput
-              value={startTime}
-              disabled={saving}
-              aria-label={t("locations.serviceHoursColumnFrom")}
-              onChange={(event) => handleStartTimeChange(event.target.value)}
-              className={STAFFING_TIME_INPUT_CLASS}
-            />
+              <div className="min-w-0">{templateSelect}</div>
 
-            <TimeInput
-              value={endTime}
-              disabled={saving}
-              aria-label={t("locations.serviceHoursColumnTo")}
-              onChange={(event) => handleEndTimeChange(event.target.value)}
-              className={STAFFING_TIME_INPUT_CLASS}
-            />
-          </div>
+              <TimeInput
+                value={startTime}
+                disabled={saving}
+                aria-label={t("locations.serviceHoursColumnFrom")}
+                onChange={(event) => handleStartTimeChange(event.target.value)}
+                className={STAFFING_TIME_INPUT_CLASS}
+              />
 
+              <TimeInput
+                value={endTime}
+                disabled={saving}
+                aria-label={t("locations.serviceHoursColumnTo")}
+                onChange={(event) => handleEndTimeChange(event.target.value)}
+                className={STAFFING_TIME_INPUT_CLASS}
+              />
+            </div>
+          )}
+
+          {!usesMultiShiftTable ? (
           <div className="mb-[20px] space-y-3 lg:hidden">
             <div className={staffingMobileFieldsClass()}>
               <div className="min-w-0 text-center sm:col-span-2">
                 <LabelMuted className="mb-1 block text-center">
-                  {t("locations.serviceHoursColumnWeekdays")}
+                  {dayColumnLabel}
                 </LabelMuted>
                 {usesMultiDayPicker ? (
                   <WeekdayChipPicker
@@ -689,7 +1056,9 @@ export function LocationStaffingDetailPanelModal({
               </div>
             </div>
           </div>
+          ) : null}
 
+          {!usesMultiShiftTable ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-semibold text-foreground">
@@ -767,6 +1136,7 @@ export function LocationStaffingDetailPanelModal({
               </div>
             )}
           </div>
+          ) : null}
         </div>
 
         <div className={settingsModalFooterClass()}>

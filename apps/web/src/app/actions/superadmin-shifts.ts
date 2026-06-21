@@ -1,10 +1,6 @@
 "use server";
 
-import { revalidatePath, revalidateTag } from "next/cache";
-import {
-  areaCalendarShiftsCacheTag,
-  weekStartsForShiftCacheInvalidation,
-} from "@/lib/cached-areacalendar-shifts";
+import { revalidateAreaCalendarShiftCacheTags } from "@/lib/cached-areacalendar-shifts";
 import { getAdminDatabase, getDatabase } from "@/lib/db";
 import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
 import { shiftTimeFromTimestamp } from "@/lib/dates";
@@ -12,8 +8,25 @@ import type { SuperadminShiftListRow } from "@schichtwerk/database";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export type SuperadminShiftActionResult =
-  | { ok: true }
-  | { ok: false; errorKey: string };
+  | {
+      ok: true;
+      shiftCount?: number;
+      savedAt?: string;
+      restoredCount?: number;
+      updatedCount?: number;
+    }
+  | { ok: false; errorKey: string; error?: string };
+
+function actionError(
+  errorKey: string,
+  error: unknown
+): Extract<SuperadminShiftActionResult, { ok: false }> {
+  return {
+    ok: false,
+    errorKey,
+    error: error instanceof Error ? error.message : undefined,
+  };
+}
 
 function formatLocationAreaLabel(
   locationName: string | null,
@@ -49,16 +62,11 @@ function revalidateShiftViews(input: {
   locationId?: string | null;
   shiftDate: string;
 }) {
-  revalidatePath("/dashboard");
-  revalidatePath("/bereich-kalender");
-
-  if (!input.locationId) return;
-
-  for (const weekStart of weekStartsForShiftCacheInvalidation(input.shiftDate)) {
-    revalidateTag(
-      areaCalendarShiftsCacheTag(input.organizationId, input.locationId, weekStart)
-    );
-  }
+  revalidateAreaCalendarShiftCacheTags({
+    organizationId: input.organizationId,
+    locationId: input.locationId,
+    weekStarts: [input.shiftDate],
+  });
 }
 
 export async function listSuperadminShifts(): Promise<
@@ -71,6 +79,39 @@ export async function listSuperadminShifts(): Promise<
     return rows.map((row) => mapSuperadminShiftRow(row, organization.timezone));
   } catch {
     return { ok: false, errorKey: "superadmin.errors.loadShiftsFailed" };
+  }
+}
+
+export async function confirmAllSuperadminShiftStatuses(): Promise<SuperadminShiftActionResult> {
+  try {
+    const { organizationId, userId } = await requireSuperadminDeveloper();
+    const db = await getDatabase();
+    const rows = await db.listOrganizationShiftsForSuperadmin(organizationId);
+    const shiftDates = new Set<string>();
+    let updatedCount = 0;
+
+    for (const row of rows) {
+      if (row.confirmation_status === "confirmed") continue;
+      const result = await db.updateShiftConfirmationStatusAsSuperadmin({
+        organizationId,
+        shiftId: row.id,
+        actorId: userId,
+        confirmationStatus: "confirmed",
+      });
+      shiftDates.add(result.shiftDate);
+      updatedCount += 1;
+    }
+
+    if (shiftDates.size > 0) {
+      revalidateAreaCalendarShiftCacheTags({
+        organizationId,
+        weekStarts: [...shiftDates],
+      });
+    }
+
+    return { ok: true, updatedCount };
+  } catch (error) {
+    return actionError("superadmin.errors.confirmAllShiftStatusesFailed", error);
   }
 }
 
@@ -95,24 +136,60 @@ export async function updateSuperadminShiftConfirmationStatus(input: {
     });
 
     return { ok: true };
-  } catch {
-    return { ok: false, errorKey: "superadmin.errors.saveShiftStatusFailed" };
+  } catch (error) {
+    return actionError("superadmin.errors.saveShiftStatusFailed", error);
   }
 }
 
-function revalidateAllShiftViews() {
-  revalidatePath("/dashboard");
-  revalidatePath("/bereich-kalender");
-}
-
-export async function resetOrganizationShifts(): Promise<SuperadminShiftActionResult> {
+export async function getSuperadminShiftSnapshotMeta(): Promise<
+  | { savedAt: string; shiftCount: number }
+  | { ok: false; errorKey: string }
+> {
   try {
     const { organizationId } = await requireSuperadminDeveloper();
     const admin = getAdminDatabase();
-    await admin.resetOrganizationShiftData(organizationId);
-    revalidateAllShiftViews();
-    return { ok: true };
+    const meta = await admin.getOrganizationShiftSnapshotMeta(organizationId);
+    if (!meta) {
+      return { savedAt: "", shiftCount: 0 };
+    }
+    return meta;
   } catch {
-    return { ok: false, errorKey: "superadmin.errors.resetShiftsFailed" };
+    return { ok: false, errorKey: "superadmin.errors.loadShiftSnapshotFailed" };
+  }
+}
+
+export async function saveSuperadminShiftSnapshot(): Promise<SuperadminShiftActionResult> {
+  try {
+    const { organizationId } = await requireSuperadminDeveloper();
+    const admin = getAdminDatabase();
+    const shiftCount = await admin.saveOrganizationShiftSnapshot(organizationId);
+    const meta = await admin.getOrganizationShiftSnapshotMeta(organizationId);
+    return {
+      ok: true,
+      shiftCount,
+      savedAt: meta?.savedAt,
+    };
+  } catch (error) {
+    return actionError("superadmin.errors.saveShiftSnapshotFailed", error);
+  }
+}
+
+export async function resetOrganizationShifts(input?: {
+  deleteAllShifts?: boolean;
+}): Promise<SuperadminShiftActionResult> {
+  try {
+    const { organizationId } = await requireSuperadminDeveloper();
+    const admin = getAdminDatabase();
+    const deleteAllShifts = input?.deleteAllShifts ?? false;
+    await admin.resetOrganizationShiftData(organizationId, {
+      deleteShifts: deleteAllShifts,
+    });
+    if (deleteAllShifts) {
+      await admin.clearOrganizationShiftSnapshot(organizationId);
+    }
+    revalidateAreaCalendarShiftCacheTags({ organizationId });
+    return { ok: true, restoredCount: 0 };
+  } catch (error) {
+    return actionError("superadmin.errors.resetShiftsFailed", error);
   }
 }

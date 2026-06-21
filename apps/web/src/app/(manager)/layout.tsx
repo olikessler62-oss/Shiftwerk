@@ -10,6 +10,10 @@ import { DashboardAppSidebarSlotProvider } from "@/components/dashboard/dashboar
 import { loadManagerOrganization } from "@/lib/manager";
 import { isSuperadminDeveloperEmail } from "@/lib/superadmin-access";
 
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
+
 export default async function ManagerLayout({
   children,
 }: {

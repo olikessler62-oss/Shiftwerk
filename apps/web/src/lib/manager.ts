@@ -30,6 +30,7 @@ export async function loadManagerOrganization(
     industry: null,
     allow_retroactive_compensation_entries: true,
     shift_confirmation_enabled: false,
+    auto_approve_sick_absence: true,
     shift_confirmation_disclaimer: null,
     created_at: new Date().toISOString(),
   };

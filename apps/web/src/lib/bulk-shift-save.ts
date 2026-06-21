@@ -1,4 +1,11 @@
 import { areAreaCalendarShiftTimesComplete } from "@/lib/available-employees-for-shift";
+import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+
+export function shouldIncludeShiftInBulkEditExistingRows(input: {
+  confirmationStatus?: ShiftConfirmationStatus | null;
+}): boolean {
+  return input.confirmationStatus !== "canceled";
+}
 
 export type BulkShiftSaveRow = {
   id: string;

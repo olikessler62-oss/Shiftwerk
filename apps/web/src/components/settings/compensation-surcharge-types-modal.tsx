@@ -446,6 +446,7 @@ export function CompensationSurchargeTypesModal({
 
         {formMode?.type === "create" && (
           <CompensationSurchargeTypeFormModal
+            key="create"
             mode="create"
             existingTypes={list}
             onClose={() => setFormMode(null)}
@@ -454,6 +455,7 @@ export function CompensationSurchargeTypesModal({
         )}
         {formMode?.type === "edit" && (
           <CompensationSurchargeTypeFormModal
+            key={formMode.surchargeType.id}
             mode="edit"
             surchargeType={formMode.surchargeType}
             existingTypes={list}

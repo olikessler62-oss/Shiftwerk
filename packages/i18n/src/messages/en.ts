@@ -112,11 +112,24 @@ export const en = {
     superadminShiftColumnEmployee: "Employee",
     superadminShiftColumnStatus: "Status",
     superadminShiftEmpty: "No shifts found.",
+    superadminSaveShiftsSnapshot: "Save shifts",
+    superadminSaveShiftsSnapshotPending: "Saving shifts…",
+    superadminConfirmAllShiftStatuses: "Set all statuses to Confirmed",
+    superadminConfirmAllShiftStatusesPending: "Updating statuses…",
+    superadminConfirmAllShiftStatusesDone: "{count} shift(s) set to Confirmed.",
+    superadminShiftsSnapshotEmpty: "No shifts to save.",
+    superadminShiftsSnapshotSaved:
+      "{count} shifts saved for data reset ({savedAt}).",
+    superadminShiftsSnapshotStatus:
+      "Saved for data reset: {count} shifts ({savedAt})",
     shiftsReset: "Data reset",
     shiftsResetPending: "Resetting data…",
+    shiftsResetDeleteAllShifts: "Delete all shifts",
     shiftsResetConfirmTitle: "Run data reset?",
-    shiftsResetConfirmBody:
-      "All shifts and related data will be deleted. Availabilities: Mon–Sun 07:00–22:00. Service hours and staffing for Restaurant, Kitchen, and Bar will be reset (Mon–Wed and Fri–Sun, closed Thursdays). Jobs: Waiter/waitress for everyone, cook (first 7 profiles), dishwasher (profiles 7–13), barista (last 7 profiles). Compensation: €15.60 for every employee. Weekly hours: 40 h for every employee. Absences and other master data remain unchanged.",
+    shiftsResetConfirmBodyDeleteShifts:
+      "All shifts and related confirmation data will be deleted. A previously saved shift snapshot will be discarded and will not be restored. Availabilities: Mon–Sun 07:00–22:00. Service hours and staffing for Restaurant, Kitchen, and Bar will be reset (Mon–Wed and Fri–Sun, closed Thursdays). Jobs: Waiter/waitress for everyone, cook (first 7 profiles), dishwasher (profiles 7–13), barista (last 7 profiles). Compensation: €15.60 for every employee. Weekly hours: 40 h for every employee. Absences and other master data remain unchanged.",
+    shiftsResetConfirmBodyKeepShifts:
+      "Existing shifts will be kept. Availabilities: Mon–Sun 07:00–22:00. Service hours and staffing for Restaurant, Kitchen, and Bar will be reset (Mon–Wed and Fri–Sun, closed Thursdays). Jobs: Waiter/waitress for everyone, cook (first 7 profiles), dishwasher (profiles 7–13), barista (last 7 profiles). Compensation: €15.60 for every employee. Weekly hours: 40 h for every employee. Absences and other master data remain unchanged.",
     dbReset: "DB reset",
     dbResetPending: "Resetting…",
     dbResetConfirmTitle: "Reset database?",
@@ -220,8 +233,23 @@ export const en = {
       saveProfileFailed: "Could not save profile settings.",
       loadShiftsFailed: "Could not load shifts.",
       saveShiftStatusFailed: "Could not save shift status.",
+      confirmAllShiftStatusesFailed: "Could not set all shift statuses to Confirmed.",
       resetShiftsFailed: "Data reset failed.",
+      saveShiftSnapshotFailed: "Could not save shifts.",
+      loadShiftSnapshotFailed: "Could not load shift snapshot.",
     },
+  },
+  calendarStaffing: {
+    contextMenuAria: "Change staffing demand",
+    contextTemporary: "Change staffing for days in this week only",
+    contextPermanent: "Change staffing permanently",
+    temporaryTitle: "Staffing for this week",
+    temporaryHint: "Applies only to the selected calendar days.",
+    datesColumn: "Days",
+    addShiftRow: "Add shift",
+    selectDates: "Please select at least one day.",
+    save: "Save",
+    cancel: "Cancel",
   },
   areaCalendar: {
     location: "Location",
@@ -247,6 +275,9 @@ export const en = {
     noServiceHoursShiftConfirm:
       "This area \"({area})\" has no service hours on this day. Add duty times anyway?",
     staffingCount: "{assigned}/{required}",
+    staffingOverstaffedBadgeTooltip: "More staff than required",
+    staffingAssignmentMismatchBadgeTooltip:
+      "Staff assignment differs from staffing demand",
     assignShift: "Add a shift",
     assignMultipleShifts: "Assign/edit duty times",
     deleteShift: "Delete shift",
@@ -262,6 +293,7 @@ export const en = {
     bulkShiftStaffingPeriodLabel: "{weekday} {start} to {end}",
     bulkShiftStaffingTimeRangeLabel: "{start} – {end}",
     bulkShiftStaffingCalendarTooltipTimeLabel: "{start}-{end}",
+    bulkShiftStaffingTableShift: "Shift",
     bulkShiftStaffingTableTime: "Time",
     bulkShiftStaffingTableDemand: "Demand",
     bulkShiftStaffingTableQualification: "Job",
@@ -858,6 +890,7 @@ export const en = {
         overlap:
           "This period overlaps with an existing absence for this employee.",
         openEndedNotSick: "Open-ended absences are only allowed for sick leave.",
+        sickCannotReject: "Sick leave requests cannot be rejected.",
       },
     },
   },

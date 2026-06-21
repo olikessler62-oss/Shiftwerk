@@ -15,6 +15,9 @@ import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-s
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedAreaCalendarShifts } from "@/lib/cached-areacalendar-shifts";
 import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data";
+import { resolvePlanningShiftJobLabels } from "@/lib/planning-shift-job-label";
+
+export const dynamic = "force-dynamic";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
@@ -99,7 +102,7 @@ export default async function BereichKalenderPage({
   const selectedLocation =
     locations.find((l) => l.id === selectedLocationId) ?? null;
 
-  const [areas, staffingRules, serviceHours, shiftRows, areaShiftTemplates] =
+  const [areas, staffingRules, serviceHours, shiftRows, areaShiftTemplates, staffingOverrides] =
     selectedLocationId
     ? await Promise.all([
         db.listLocationAreasForAreaCalendar(selectedLocationId, from, to),
@@ -115,8 +118,11 @@ export default async function BereichKalenderPage({
         db.listAreaShiftTemplatesWithBreaksForLocation(selectedLocationId).catch(
           () => []
         ),
+        db
+          .listLocationAreaStaffingOverrides(selectedLocationId, from, to)
+          .catch(() => []),
       ])
-    : [[], [], [], [], []];
+    : [[], [], [], [], [], []];
 
   const cards: AreaCalendarShiftCard[] = [];
   for (const s of shiftRows) {
@@ -159,6 +165,31 @@ export default async function BereichKalenderPage({
     });
   }
 
+  const qualificationNameById = new Map(
+    qualifications.map((qualification) => [qualification.id, qualification.name])
+  );
+  const shiftJobLabels = resolvePlanningShiftJobLabels({
+    shifts: cards.map((card) => ({
+      id: card.id,
+      employee_id: card.employeeId,
+      shift_date: card.shift_date,
+      shiftName: card.shiftName,
+      color: card.color,
+      startTime: card.startTime,
+      endTime: card.endTime,
+      location_area_id: card.locationAreaId,
+      area_shift_template_id: card.areaShiftTemplateId,
+    })),
+    serviceHours,
+    staffingRules,
+    profileQualificationIds: Object.fromEntries(profileQualificationIdsMap),
+    qualificationNameById,
+    countryCode: organization.country_code,
+  });
+  for (const card of cards) {
+    card.jobName = shiftJobLabels.get(card.id) ?? null;
+  }
+
   const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
 
   const canceledShiftIds = cards
@@ -194,6 +225,7 @@ export default async function BereichKalenderPage({
         areas={areas}
         staffingRules={staffingRules}
         fullStaffingRules={staffingRules}
+        staffingOverrides={staffingOverrides}
         serviceHours={serviceHours}
         shifts={cards}
         areaShiftTemplates={areaShiftTemplates}

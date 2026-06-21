@@ -18,7 +18,7 @@ export function mobileApiCorsHeaders(request: Request): HeadersInit {
 
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
   };
 }

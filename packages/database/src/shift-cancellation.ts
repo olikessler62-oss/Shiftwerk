@@ -18,6 +18,9 @@ export const SHIFT_CANCEL_BLOCKED_ERROR_PREFIX = "SHIFT_CANCEL_BLOCKED:";
 export const SHIFT_CANCEL_NOT_OWNER_ERROR =
   "Schicht gehört nicht zum Mitarbeiter.";
 
+export const SHIFT_DISMISS_NOT_CANCELED_ERROR =
+  "Nur stornierte Schichten können aus dem Plan entfernt werden.";
+
 export function isShiftDateInPast(
   shiftDateISO: string,
   now: Date = new Date()
@@ -86,6 +89,49 @@ export function parseShiftCancelBlockedStatus(
     return status;
   }
   return null;
+}
+
+function formatDeDate(isoDate: string): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(`${isoDate}T12:00:00`));
+}
+
+function formatDeTime(isoDateTime: string): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(isoDateTime));
+}
+
+export function buildEmployeeShiftCanceledByManagerNotification(input: {
+  shiftId: string;
+  shiftDate: string;
+  startsAt: string;
+  endsAt: string;
+}): {
+  templateKey: "shift_canceled_by_manager";
+  title: string;
+  body: string;
+  payload: Record<string, unknown>;
+} {
+  const timeLabel = `${formatDeTime(input.startsAt)}–${formatDeTime(input.endsAt)}`;
+  const dateLabel = formatDeDate(input.shiftDate);
+
+  return {
+    templateKey: "shift_canceled_by_manager",
+    title: "Schicht storniert",
+    body: `Deine Schicht am ${dateLabel} (${timeLabel}) wurde storniert.`,
+    payload: {
+      shift_id: input.shiftId,
+      shift_date: input.shiftDate,
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      canceled_by: "manager",
+    },
+  };
 }
 
 export function buildManagerShiftCanceledNotification(input: {

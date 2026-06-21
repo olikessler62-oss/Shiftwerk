@@ -17,7 +17,10 @@ import {
 } from "@/lib/overview-modal-navigation";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useOrgFeatures } from "@/lib/org-features-provider";
-import { useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
+import {
+  buildPlanningPageUrl,
+  type PlanningPagePathname,
+} from "@/lib/planning-week";
 import { useSuperadminModal } from "@/components/settings/superadmin-modal-context";
 
 const NAV_LINKS_AFTER_PLANNING = [
@@ -217,10 +220,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     { labelKey: "nav.planningNotifyStaff" },
   ] as const;
 
-  function handlePageNav(pathname: string) {
+  function handlePageNav(pathname: PlanningPagePathname) {
     beginMainNavPending({ kind: "page", pathname });
     onNavigate?.();
   }
+
+  const dashboardHref = buildPlanningPageUrl("/dashboard", searchParams);
+  const areaCalendarHref = buildPlanningPageUrl("/bereich-kalender", searchParams);
 
   function handleSettingsNav(flag: SettingsModalQueryFlag) {
     beginMainNavPending({ kind: "settings-modal", flag });
@@ -245,7 +251,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   return (
     <nav className="flex flex-col gap-0.5 p-2">
       <Link
-        href="/dashboard"
+        href={dashboardHref}
         onClick={() => handlePageNav("/dashboard")}
         className={navItemClass(pathname === "/dashboard")}
       >
@@ -260,7 +266,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           )}
         >
           <Link
-            href="/bereich-kalender"
+            href={areaCalendarHref}
             onClick={() => handlePageNav("/bereich-kalender")}
             className="min-w-0 flex-1"
           >

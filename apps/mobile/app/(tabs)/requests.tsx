@@ -9,17 +9,28 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import type { ConfirmationDecision, ConfirmationWeekItem } from "@schichtwerk/types";
+import type {
+  ConfirmationDecision,
+  ConfirmationWeekItem,
+  EmployeeShiftCanceledNotificationItem,
+} from "@schichtwerk/types";
 import { ResponsiveContentFrame } from "@/components/responsive-content-frame";
-import { submitConfirmationResponses } from "@/lib/confirmations-api";
+import {
+  dismissCanceledShift,
+  submitConfirmationResponses,
+} from "@/lib/confirmations-api";
 import { MobileApiError } from "@/lib/mobile-api-client";
-import { showAppAlert } from "@/lib/app-alert";
+import { confirmAlert, showAppAlert } from "@/lib/app-alert";
 import { usePendingConfirmations } from "@/lib/pending-confirmations-context";
 import {
   shiftConfirmationStatusShortLabel,
   shiftConfirmationStatusBadgeBackground,
 } from "@/lib/shift-confirmation-labels";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
+
+type InboxListItem =
+  | { kind: "canceled"; item: EmployeeShiftCanceledNotificationItem }
+  | { kind: "confirmation"; item: ConfirmationWeekItem };
 
 function formatShiftDate(isoDate: string): string {
   return new Intl.DateTimeFormat("de-DE", {
@@ -34,6 +45,73 @@ function formatShiftTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function buildSubtitle(
+  confirmationCount: number,
+  canceledCount: number
+): string {
+  if (confirmationCount === 0 && canceledCount === 0) {
+    return "Keine offenen Mitteilungen ab heute.";
+  }
+
+  const parts: string[] = [];
+  if (canceledCount > 0) {
+    parts.push(
+      `${canceledCount} Stornierung${canceledCount === 1 ? "" : "en"}`
+    );
+  }
+  if (confirmationCount > 0) {
+    parts.push(
+      `${confirmationCount} Bestätigungsanfrage${confirmationCount === 1 ? "" : "n"}`
+    );
+  }
+  return parts.join(" · ");
+}
+
+function CanceledNotificationRow({
+  item,
+  dismissing,
+  onDismiss,
+}: {
+  item: EmployeeShiftCanceledNotificationItem;
+  dismissing: boolean;
+  onDismiss: (shiftId: string) => void;
+}) {
+  const timeLabel = `${formatShiftTime(item.startsAt)} – ${formatShiftTime(item.endsAt)}`;
+  const meta = [item.locationName, item.areaName, item.templateName]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <View style={[styles.row, styles.canceledRow]}>
+      <View style={styles.rowMain}>
+        <View style={styles.rowHeader}>
+          <Text style={styles.rowDate}>{formatShiftDate(item.shiftDate)}</Text>
+          <View style={[styles.statusBadge, styles.canceledBadge]}>
+            <Text style={styles.statusBadgeText}>Storniert</Text>
+          </View>
+        </View>
+        <Text style={styles.rowTitle}>{item.title}</Text>
+        <Text style={styles.rowMessage}>{item.message}</Text>
+        <Text style={styles.rowTime}>{timeLabel}</Text>
+        {meta ? <Text style={styles.rowMeta}>{meta}</Text> : null}
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        disabled={dismissing}
+        onPress={() => onDismiss(item.shiftId)}
+        style={[styles.dismissButton, dismissing && styles.dismissButtonDisabled]}
+      >
+        {dismissing ? (
+          <ActivityIndicator color={colors.foreground} />
+        ) : (
+          <Text style={styles.dismissButtonText}>Aus Liste entfernen</Text>
+        )}
+      </Pressable>
+    </View>
+  );
 }
 
 function RequestRow({
@@ -113,15 +191,27 @@ function RequestRow({
 }
 
 export default function RequestsScreen() {
-  const { items, loading, refresh } = usePendingConfirmations();
+  const { items, canceledByManagerItems, loading, refresh } =
+    usePendingConfirmations();
   const [drafts, setDrafts] = useState<Record<string, ConfirmationDecision>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [dismissingShiftId, setDismissingShiftId] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       void refresh();
     }, [refresh])
+  );
+
+  const listItems = useMemo<InboxListItem[]>(
+    () => [
+      ...canceledByManagerItems.map(
+        (item): InboxListItem => ({ kind: "canceled", item })
+      ),
+      ...items.map((item): InboxListItem => ({ kind: "confirmation", item })),
+    ],
+    [canceledByManagerItems, items]
   );
 
   const draftEntries = useMemo(
@@ -147,6 +237,31 @@ export default function RequestsScreen() {
     setRefreshing(true);
     await refresh();
     setRefreshing(false);
+  }
+
+  async function handleDismiss(shiftId: string) {
+    const confirmed = await confirmAlert({
+      title: "Aus Liste entfernen",
+      message:
+        "Die stornierte Schicht wird aus deinem Wochenplan und aus dieser Liste entfernt.",
+      confirmLabel: "Entfernen",
+    });
+    if (!confirmed) return;
+
+    setDismissingShiftId(shiftId);
+    try {
+      await dismissCanceledShift(shiftId);
+      await refresh();
+    } catch (error) {
+      showAppAlert(
+        "Entfernen fehlgeschlagen",
+        error instanceof MobileApiError
+          ? error.message
+          : "Die Mitteilung konnte nicht entfernt werden."
+      );
+    } finally {
+      setDismissingShiftId(null);
+    }
   }
 
   async function handleSubmit() {
@@ -175,7 +290,7 @@ export default function RequestsScreen() {
     }
   }
 
-  if (loading && items.length === 0) {
+  if (loading && listItems.length === 0) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator color={colors.primary} />
@@ -187,17 +302,19 @@ export default function RequestsScreen() {
     <View style={styles.screen}>
       <ResponsiveContentFrame>
         <View style={styles.header}>
-          <Text style={styles.title}>Schicht-Anfragen</Text>
+          <Text style={styles.title}>Benachrichtigungen</Text>
           <Text style={styles.subtitle}>
-            {items.length === 0
-              ? "Keine offenen Anfragen ab heute."
-              : `${items.length} offene Anfrage${items.length === 1 ? "" : "n"} — auch in anderen Kalenderwochen.`}
+            {buildSubtitle(items.length, canceledByManagerItems.length)}
           </Text>
         </View>
 
         <FlatList
-          data={items}
-          keyExtractor={(item) => item.shiftId}
+          data={listItems}
+          keyExtractor={(entry) =>
+            entry.kind === "canceled"
+              ? `canceled-${entry.item.shiftId}`
+              : `confirmation-${entry.item.shiftId}`
+          }
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => void handleRefresh()} />
           }
@@ -205,22 +322,30 @@ export default function RequestsScreen() {
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>Alles erledigt</Text>
               <Text style={styles.emptyText}>
-                Neue Anfragen erscheinen hier sofort — auch wenn die Schicht in einer
-                späteren Woche liegt.
+                Neue Bestätigungsanfragen und Stornierungen erscheinen hier — auch
+                wenn die Schicht in einer späteren Woche liegt.
               </Text>
             </View>
           }
-          renderItem={({ item }) => (
-            <RequestRow
-              item={item}
-              draft={drafts[item.shiftId]}
-              onToggleDraft={toggleDraft}
-            />
-          )}
+          renderItem={({ item: entry }) =>
+            entry.kind === "canceled" ? (
+              <CanceledNotificationRow
+                item={entry.item}
+                dismissing={dismissingShiftId === entry.item.shiftId}
+                onDismiss={(shiftId) => void handleDismiss(shiftId)}
+              />
+            ) : (
+              <RequestRow
+                item={entry.item}
+                draft={drafts[entry.item.shiftId]}
+                onToggleDraft={toggleDraft}
+              />
+            )
+          }
           ItemSeparatorComponent={() => <View style={styles.rowSeparator} />}
           contentContainerStyle={[
             styles.listContent,
-            items.length === 0 && styles.listContentEmpty,
+            listItems.length === 0 && styles.listContentEmpty,
           ]}
         />
 
@@ -293,6 +418,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
+  canceledRow: {
+    borderColor: "#FDBA74",
+    backgroundColor: "#FFF7ED",
+  },
   rowMain: {
     gap: 4,
   },
@@ -307,10 +436,23 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.foreground,
   },
+  rowTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.foreground,
+  },
+  rowMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.foreground,
+  },
   statusBadge: {
     borderRadius: radius.sm,
     paddingHorizontal: 8,
     paddingVertical: 2,
+  },
+  canceledBadge: {
+    backgroundColor: "#FFEDD5",
   },
   statusBadgeText: {
     fontSize: 11,
@@ -325,6 +467,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.muted,
     lineHeight: 18,
+  },
+  dismissButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  dismissButtonDisabled: {
+    opacity: 0.7,
+  },
+  dismissButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.foreground,
   },
   rowActions: {
     flexDirection: "row",

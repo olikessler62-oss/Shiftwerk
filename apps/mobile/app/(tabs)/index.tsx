@@ -23,6 +23,7 @@ import {
   fetchConfirmationWeek,
   submitConfirmationResponses,
   cancelConfirmationShift,
+  dismissCanceledShift,
 } from "@/lib/confirmations-api";
 import { MobileApiError } from "@/lib/mobile-api-client";
 import { confirmAlert, showAppAlert } from "@/lib/app-alert";
@@ -48,6 +49,7 @@ export default function WeekScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cancelingShiftId, setCancelingShiftId] = useState<string | null>(null);
+  const [dismissingShiftId, setDismissingShiftId] = useState<string | null>(null);
   const [actionSheetContext, setActionSheetContext] =
     useState<WeekShiftActionContext | null>(null);
   const [weekGridHeight, setWeekGridHeight] = useState(0);
@@ -159,6 +161,11 @@ export default function WeekScreen() {
     []
   );
 
+  const shiftCanDismiss = useCallback(
+    (shift: Shift) => shift.confirmation_status === "canceled",
+    []
+  );
+
   function toggleDraft(shiftId: string, decision: ConfirmationDecision) {
     setDrafts((prev) => {
       if (prev[shiftId] === decision) {
@@ -222,6 +229,33 @@ export default function WeekScreen() {
       );
     } finally {
       setCancelingShiftId(null);
+    }
+  }
+
+  async function handleDismissShift(shiftId: string) {
+    const confirmed = await confirmAlert({
+      title: "Aus Plan entfernen",
+      message:
+        "Die stornierte Schicht wird aus deinem Wochenplan entfernt. Du kannst sie danach nicht mehr einsehen.",
+      confirmLabel: "Entfernen",
+    });
+    if (!confirmed) return;
+
+    setDismissingShiftId(shiftId);
+    try {
+      await dismissCanceledShift(shiftId);
+      setActionSheetContext(null);
+      setRefreshing(true);
+      await load();
+    } catch (error) {
+      showAppAlert(
+        "Entfernen fehlgeschlagen",
+        error instanceof MobileApiError
+          ? error.message
+          : "Die Schicht konnte nicht entfernt werden."
+      );
+    } finally {
+      setDismissingShiftId(null);
     }
   }
 
@@ -289,7 +323,7 @@ export default function WeekScreen() {
             <Text style={[styles.otherWeekBannerText, { fontSize: layout.bannerFontSize }]}>
               {pendingInOtherWeeks} weitere Anfrage
               {pendingInOtherWeeks === 1 ? "" : "n"} in anderen Wochen — unter
-              Anfragen öffnen.
+              Benachrichtigungen öffnen.
             </Text>
           </Pressable>
         ) : null}
@@ -351,6 +385,11 @@ export default function WeekScreen() {
               ? shiftCanCancel(actionSheetContext.shift)
               : false
           }
+          canDismiss={
+            actionSheetContext
+              ? shiftCanDismiss(actionSheetContext.shift)
+              : false
+          }
           draft={
             actionSheetContext
               ? drafts[actionSheetContext.shift.id]
@@ -360,9 +399,14 @@ export default function WeekScreen() {
             actionSheetContext != null &&
             cancelingShiftId === actionSheetContext.shift.id
           }
+          dismissing={
+            actionSheetContext != null &&
+            dismissingShiftId === actionSheetContext.shift.id
+          }
           onClose={() => setActionSheetContext(null)}
           onToggleDraft={toggleDraft}
           onCancel={(shiftId) => void handleCancelShift(shiftId)}
+          onDismiss={(shiftId) => void handleDismissShift(shiftId)}
         />
       </ResponsiveContentFrame>
     </View>

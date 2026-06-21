@@ -15,6 +15,8 @@ export type PlanningShift = {
   requestedAt?: string | null;
   confirmationStatusUpdatedAt?: string | null;
   displayState?: ShiftCardDisplayState;
+  /** Tätigkeit in dieser Schicht (aus Personalbedarf-Zuordnung). */
+  jobName?: string | null;
 };
 
 export function planningShiftToAreaCalendarCard(

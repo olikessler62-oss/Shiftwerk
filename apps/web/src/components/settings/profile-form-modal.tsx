@@ -71,10 +71,12 @@ function ProfileColorCombobox({
   localeKey: "de" | "en";
   placeholder: string;
 }) {
+  const visibleColorRows = 3;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const closeCombobox = () => setOpen(false);
-  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef]);
+  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef, listRef]);
   const selected = options.find(
     (option) => option.hex.toUpperCase() === value.toUpperCase()
   );
@@ -124,8 +126,13 @@ function ProfileColorCombobox({
 
       {open && !disabled ? (
         <ul
+          ref={listRef}
           role="listbox"
-          className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-surface py-1 shadow-lg"
+          className={cn(
+            "absolute z-20 mt-1 w-full rounded-md border border-border bg-surface py-1 shadow-lg",
+            options.length > visibleColorRows &&
+              "max-h-[calc(0.5rem+3*2.5rem)] overflow-y-auto"
+          )}
         >
           {options.map((option) => {
             const isSelected = option.hex.toUpperCase() === value.toUpperCase();

@@ -34,7 +34,7 @@ function normalizeRequiredCount(value: number | string): number {
   return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
 }
 
-function qualificationRulesForServiceHour(
+export function qualificationRulesForServiceHour(
   rules: readonly LocationAreaStaffing[],
   areaId: string,
   serviceHourId: string
@@ -252,29 +252,26 @@ export function buildDemandWindowsForAreaDay(
   });
 }
 
-/** Verteilt Schichten ohne Doppelzählung auf Funktions-Bedarfe (größtes Defizit zuerst). */
-export function countQualificationCoverage(
+/** Ordnet jede Zuweisung genau einer Bedarf-Funktion zu (wie Personalbedarf-Zählung). */
+export function mapAssignmentQualificationIds(
   hourAssignments: readonly StaffingAssignmentRef[],
   qualRules: readonly LocationAreaStaffing[],
   profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>
-): Map<string, number> {
+): Map<number, string> {
+  const result = new Map<number, string>();
   const assignedByQual = new Map<string, number>();
   for (const rule of qualRules) {
     assignedByQual.set(rule.qualification_id, 0);
   }
-  if (qualRules.length === 0) return assignedByQual;
+  if (qualRules.length === 0) return result;
 
   const used = new Set<number>();
 
   hourAssignments.forEach((assignment, index) => {
     const qualId = assignment.qualificationId?.trim();
     if (!qualId || !assignedByQual.has(qualId)) return;
-    const required = normalizeRequiredCount(
-      qualRules.find((rule) => rule.qualification_id === qualId)?.required_count ?? 0
-    );
-    const assigned = assignedByQual.get(qualId) ?? 0;
-    if (assigned >= required) return;
-    assignedByQual.set(qualId, assigned + 1);
+    assignedByQual.set(qualId, (assignedByQual.get(qualId) ?? 0) + 1);
+    result.set(index, qualId);
     used.add(index);
   });
 
@@ -304,9 +301,33 @@ export function countQualificationCoverage(
         bestQualId,
         (assignedByQual.get(bestQualId) ?? 0) + 1
       );
+      result.set(index, bestQualId);
       used.add(index);
     }
   });
+
+  return result;
+}
+
+/** Verteilt Schichten ohne Doppelzählung auf Funktions-Bedarfe (größtes Defizit zuerst). */
+export function countQualificationCoverage(
+  hourAssignments: readonly StaffingAssignmentRef[],
+  qualRules: readonly LocationAreaStaffing[],
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>
+): Map<string, number> {
+  const assignedByQual = new Map<string, number>();
+  for (const rule of qualRules) {
+    assignedByQual.set(rule.qualification_id, 0);
+  }
+  if (qualRules.length === 0) return assignedByQual;
+
+  for (const qualId of mapAssignmentQualificationIds(
+    hourAssignments,
+    qualRules,
+    profileQualificationIds
+  ).values()) {
+    assignedByQual.set(qualId, (assignedByQual.get(qualId) ?? 0) + 1);
+  }
 
   return assignedByQual;
 }

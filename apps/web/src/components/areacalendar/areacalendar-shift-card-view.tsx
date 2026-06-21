@@ -56,6 +56,8 @@ export type AreaCalendarShiftCard = {
   confirmationStatusUpdatedAt?: string | null;
   /** Abgeleiteter Anzeige-Status aus lifecycle + shift_requests. */
   displayState?: ShiftCardDisplayState;
+  /** Tätigkeit in dieser Schicht (aus Personalbedarf-Zuordnung). */
+  jobName?: string | null;
 };
 
 const DASHBOARD_SHIFT_CARD_CLASS =

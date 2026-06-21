@@ -5,6 +5,7 @@ import {
   groupCommunicationHubData,
   groupCommunicationResponseShifts,
   groupCommunicationShiftsByArea,
+  groupedEmployeeListNameLabel,
   shouldShowGroupedEmployeeName,
   sortCommunicationHubShifts,
 } from "@/lib/communication-hub";
@@ -205,6 +206,11 @@ describe("groupCommunicationResponseShifts", () => {
     expect(first.show).toBe(true);
     expect(second.show).toBe(false);
     expect(third.show).toBe(true);
+  });
+
+  it("uses a double quote for grouped employee name continuation", () => {
+    expect(groupedEmployeeListNameLabel("Anna", true)).toBe("Anna");
+    expect(groupedEmployeeListNameLabel("Anna", false)).toBe('"');
   });
 });
 

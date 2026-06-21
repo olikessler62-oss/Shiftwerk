@@ -110,11 +110,24 @@ export const de = {
     superadminShiftColumnEmployee: "Mitarbeiter",
     superadminShiftColumnStatus: "Status",
     superadminShiftEmpty: "Keine Schichten vorhanden.",
+    superadminSaveShiftsSnapshot: "Schichten speichern",
+    superadminSaveShiftsSnapshotPending: "Schichten werden gespeichert…",
+    superadminConfirmAllShiftStatuses: "Alle Status auf Bestätigt setzen",
+    superadminConfirmAllShiftStatusesPending: "Status werden gesetzt…",
+    superadminConfirmAllShiftStatusesDone: "{count} Schicht(en) auf Bestätigt gesetzt.",
+    superadminShiftsSnapshotEmpty: "Keine Schichten zum Speichern vorhanden.",
+    superadminShiftsSnapshotSaved:
+      "{count} Schichten für den Daten-Reset gespeichert ({savedAt}).",
+    superadminShiftsSnapshotStatus:
+      "Gespeichert für Daten-Reset: {count} Schichten ({savedAt})",
     shiftsReset: "Daten-Reset",
     shiftsResetPending: "Daten werden zurückgesetzt…",
+    shiftsResetDeleteAllShifts: "Alle Schichten löschen",
     shiftsResetConfirmTitle: "Daten-Reset durchführen?",
-    shiftsResetConfirmBody:
-      "Alle Schichten und zugehörige Daten werden gelöscht. Verfügbarkeiten: Mo–So 07:00–22:00. Servicezeiten und Personalbedarf für Restaurant, Küche und Bar werden zurückgesetzt (Mo–Mi und Fr–So, Donnerstag geschlossen). Tätigkeiten: Kellner/in für alle, Koch/Köchin (erste 7 Profile), Spülkraft (Profile 7–13), Barista (letzte 7 Profile). Entgelte: je 15,60 € für alle Mitarbeiter. Wochenstunden: je 40 Std. für alle Mitarbeiter. Abwesenheiten und übrige Stammdaten bleiben unverändert.",
+    shiftsResetConfirmBodyDeleteShifts:
+      "Alle Schichten und zugehörige Bestätigungsdaten werden gelöscht. Ein zuvor gespeicherter Schicht-Speicherstand wird dabei verworfen und nicht wiederhergestellt. Verfügbarkeiten: Mo–So 07:00–22:00. Servicezeiten und Personalbedarf für Restaurant, Küche und Bar werden zurückgesetzt (Mo–Mi und Fr–So, Donnerstag geschlossen). Tätigkeiten: Kellner/in für alle, Koch/Köchin (erste 7 Profile), Spülkraft (Profile 7–13), Barista (letzte 7 Profile). Entgelte: je 15,60 € für alle Mitarbeiter. Wochenstunden: je 40 Std. für alle Mitarbeiter. Abwesenheiten und übrige Stammdaten bleiben unverändert.",
+    shiftsResetConfirmBodyKeepShifts:
+      "Bestehende Schichten bleiben erhalten. Verfügbarkeiten: Mo–So 07:00–22:00. Servicezeiten und Personalbedarf für Restaurant, Küche und Bar werden zurückgesetzt (Mo–Mi und Fr–So, Donnerstag geschlossen). Tätigkeiten: Kellner/in für alle, Koch/Köchin (erste 7 Profile), Spülkraft (Profile 7–13), Barista (letzte 7 Profile). Entgelte: je 15,60 € für alle Mitarbeiter. Wochenstunden: je 40 Std. für alle Mitarbeiter. Abwesenheiten und übrige Stammdaten bleiben unverändert.",
     dbReset: "DB reset",
     dbResetPending: "Wird zurückgesetzt…",
     dbResetConfirmTitle: "Datenbank zurücksetzen?",
@@ -219,8 +232,24 @@ export const de = {
       saveProfileFailed: "Profil-Einstellungen konnten nicht gespeichert werden.",
       loadShiftsFailed: "Schichten konnten nicht geladen werden.",
       saveShiftStatusFailed: "Schichtstatus konnte nicht gespeichert werden.",
+      confirmAllShiftStatusesFailed:
+        "Schicht-Stati konnten nicht auf Bestätigt gesetzt werden.",
       resetShiftsFailed: "Daten-Reset fehlgeschlagen.",
+      saveShiftSnapshotFailed: "Schichten konnten nicht gespeichert werden.",
+      loadShiftSnapshotFailed: "Schicht-Speicherstand konnte nicht geladen werden.",
     },
+  },
+  calendarStaffing: {
+    contextMenuAria: "Personalbedarf ändern",
+    contextTemporary: "Personalbedarf nur für Tage dieser Woche ändern",
+    contextPermanent: "Personalbedarf dauerhaft ändern",
+    temporaryTitle: "Personalbedarf für diese Woche",
+    temporaryHint: "Gilt nur für die ausgewählten Kalendertage.",
+    datesColumn: "Tage",
+    addShiftRow: "Schicht hinzufügen",
+    selectDates: "Bitte mindestens einen Tag auswählen.",
+    save: "Speichern",
+    cancel: "Abbrechen",
   },
   areaCalendar: {
     location: "Standort",
@@ -246,6 +275,9 @@ export const de = {
     noServiceHoursShiftConfirm:
       "An diesem Tag hat dieser Bereich \"{area}\" keine Servicezeit! Sollen dennoch Einsatzzeiten hinzugefügt werden?",
     staffingCount: "{assigned}/{required}",
+    staffingOverstaffedBadgeTooltip: "Mehr Personal als benötigt",
+    staffingAssignmentMismatchBadgeTooltip:
+      "Personal-Zuweisung unterscheidet sich von Personal-Bedarf",
     assignShift: "eine Schicht hinzufügen",
     assignMultipleShifts: "Einsatzzeiten zuweisen/bearbeiten",
     deleteShift: "Schicht löschen",
@@ -261,6 +293,7 @@ export const de = {
     bulkShiftStaffingPeriodLabel: "{weekday} {start} bis {end} Uhr",
     bulkShiftStaffingTimeRangeLabel: "{start} – {end}",
     bulkShiftStaffingCalendarTooltipTimeLabel: "{start}-{end} Uhr",
+    bulkShiftStaffingTableShift: "Schicht",
     bulkShiftStaffingTableTime: "Uhrzeit",
     bulkShiftStaffingTableDemand: "Bedarf",
     bulkShiftStaffingTableQualification: "Tätigkeit",
@@ -859,6 +892,7 @@ export const de = {
         endBeforeStart: "Das Enddatum darf nicht vor dem Startdatum liegen.",
         overlap: "Der Zeitraum überschneidet sich mit einer bestehenden Abwesenheit.",
         openEndedNotSick: "Offenes Ende ist nur bei Krankmeldungen möglich.",
+        sickCannotReject: "Krankmeldungen können nicht abgelehnt werden.",
       },
     },
   },

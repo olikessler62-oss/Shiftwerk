@@ -3,6 +3,7 @@ import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
+import type { ShiftAssignWeekShiftRef } from "@/lib/shift-weekly-hours-validation-client";
 
 export function weeklyHoursCheckShiftFromAreaCalendarCard(
   shift: AreaCalendarShiftCard
@@ -38,6 +39,42 @@ export function weeklyHoursByEmployeeIdFromEmployees(
   employees: readonly { id: string; weekly_hours: number | null }[]
 ): Map<string, number | null> {
   return new Map(employees.map((employee) => [employee.id, employee.weekly_hours]));
+}
+
+export function shiftAssignWeekShiftsFromAreaCalendarCards(
+  shifts: readonly {
+    id: string;
+    employeeId: string;
+    shift_date: string;
+    startTime: string;
+    endTime: string;
+  }[]
+): ShiftAssignWeekShiftRef[] {
+  return shifts.map((shift) => ({
+    id: shift.id,
+    employee_id: shift.employeeId,
+    shift_date: shift.shift_date,
+    startTime: shift.startTime,
+    endTime: shift.endTime,
+  }));
+}
+
+export function shiftAssignWeekShiftsFromPlanningShifts(
+  shifts: readonly {
+    id: string;
+    employee_id: string;
+    shift_date: string;
+    startTime: string;
+    endTime: string;
+  }[]
+): ShiftAssignWeekShiftRef[] {
+  return shifts.map((shift) => ({
+    id: shift.id,
+    employee_id: shift.employee_id,
+    shift_date: shift.shift_date,
+    startTime: shift.startTime,
+    endTime: shift.endTime,
+  }));
 }
 
 export type WeeklyHoursConflictWarningShift = {

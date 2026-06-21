@@ -13,6 +13,7 @@ import {
 import {
   personalbedarfDemandTimesForEntry,
   personalbedarfTimesForServiceHour,
+  resolveNextOpenStaffingDemand,
   resolveStaffingEntryForBulkPrefill,
 } from "@/lib/bulk-shift-staffing";
 import {
@@ -33,6 +34,11 @@ import {
 } from "@schichtwerk/database";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 import type { AreaCalendarAssignmentTimeWindow } from "@/lib/shift-overlap";
+import {
+  filterEmployeesWithinWeeklyHoursForShift,
+  weeklyHoursAssignContextForBulkShiftRow,
+  type ShiftAssignWeekShiftRef,
+} from "@/lib/shift-weekly-hours-validation-client";
 
 export type ProfileShiftPreferenceEntry = ProfileShiftPreferenceMatchEntry;
 
@@ -76,6 +82,7 @@ export type BuildPrefilledBulkRowInput = {
   areaQualifications: readonly StaffingQualificationOption[];
   areaExistingAssignments: readonly AreaCalendarAssignmentTimeWindow[];
   locationDayAssignments: readonly LocationDayAssignmentRef[];
+  weekShifts: readonly ShiftAssignWeekShiftRef[];
   emptyEmployeeId: string;
   createEmptyRow: () => BulkPrefillRow;
   /** Bedarfsliste: konkretes Servicezeit-Fenster + Job. */
@@ -155,6 +162,7 @@ function matchingEmployeesForPrefillRow(
   row: Pick<
     BulkPrefillRow,
     | "id"
+    | "employeeId"
     | "startTime"
     | "endTime"
     | "requestedStartTime"
@@ -174,6 +182,7 @@ function matchingEmployeesForPrefillRow(
     areaExistingAssignments: readonly AreaCalendarAssignmentTimeWindow[];
     locationDayAssignments: readonly LocationDayAssignmentRef[];
     allRows: readonly BulkPrefillRow[];
+    weekShifts: readonly ShiftAssignWeekShiftRef[];
     emptyEmployeeId: string;
     withoutServiceHours?: boolean;
   }
@@ -221,8 +230,22 @@ function matchingEmployeesForPrefillRow(
       ),
     }
   );
+  const assignContextForEmployee = weeklyHoursAssignContextForBulkShiftRow({
+    row,
+    allRows: options.allRows,
+    shiftDate: options.dateISO,
+    emptyEmployeeId: options.emptyEmployeeId,
+  });
+  const withinWeeklyHours = filterEmployeesWithinWeeklyHoursForShift(byWindow, {
+    weekShifts: options.weekShifts,
+    shiftDate: options.dateISO,
+    startTime: windowStart,
+    endTime: windowEnd,
+    timeZone: options.timeZone,
+    assignContextForEmployee,
+  });
   if (options.withoutServiceHours) {
-    return byWindow;
+    return withinWeeklyHours;
   }
   const demandQualificationIds = staffingQualificationIdsForServiceHour(
     options.staffingRules,
@@ -231,13 +254,13 @@ function matchingEmployeesForPrefillRow(
   );
   if (demandQualificationIds.size > 0) {
     return filterEmployeesWithAnyQualificationInSet(
-      byWindow,
+      withinWeeklyHours,
       demandQualificationIds,
       options.profileQualificationIds
     );
   }
   return filterEmployeesWithAnyAreaQualification(
-    byWindow,
+    withinWeeklyHours,
     areaQualificationIds,
     options.profileQualificationIds
   );
@@ -295,6 +318,7 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
             areaExistingAssignments: input.areaExistingAssignments,
             locationDayAssignments: input.locationDayAssignments,
             allRows: input.existingRows,
+            weekShifts: input.weekShifts,
             emptyEmployeeId: input.emptyEmployeeId,
             withoutServiceHours: true,
           }),
@@ -310,14 +334,31 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
     return row;
   }
 
-  const targetEntry = input.targetDemand
+  const openDemand =
+    input.targetDemand ??
+    resolveNextOpenStaffingDemand(
+      input.staffingEntries,
+      input.serviceHours,
+      input.existingRows,
+      {
+        staffingRules: input.staffingRules,
+        areaId: input.areaId,
+      }
+    ) ??
+    undefined;
+
+  const targetEntry = openDemand
     ? (input.staffingEntries.find(
-        (entry) => entry.serviceHourId === input.targetDemand!.serviceHourId
+        (entry) => entry.serviceHourId === openDemand.serviceHourId
       ) ?? null)
     : resolveStaffingEntryForBulkPrefill(
         input.staffingEntries,
         input.serviceHours,
-        input.existingRows
+        input.existingRows,
+        {
+          staffingRules: input.staffingRules,
+          areaId: input.areaId,
+        }
       );
 
   const shouldSetDemandTimes =
@@ -408,7 +449,9 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
   }
 
   if (input.prefill.qualification) {
-    if (input.targetDemand?.qualificationId) {
+    if (openDemand?.qualificationId) {
+      row.qualificationId = openDemand.qualificationId;
+    } else if (input.targetDemand?.qualificationId) {
       row.qualificationId = input.targetDemand.qualificationId;
     } else if (row.demandServiceHourId) {
       row.qualificationId = presetQualificationForServiceHour(
@@ -436,12 +479,19 @@ export function buildPrefilledBulkRow(input: BuildPrefilledBulkRowInput): BulkPr
       areaExistingAssignments: input.areaExistingAssignments,
       locationDayAssignments: input.locationDayAssignments,
       allRows: input.existingRows,
+      weekShifts: input.weekShifts,
       emptyEmployeeId: input.emptyEmployeeId,
     });
     if (input.targetDemand?.qualificationId) {
       eligible = filterEmployeesWithAnyQualificationInSet(
         eligible,
         new Set([input.targetDemand.qualificationId]),
+        input.profileQualificationIds
+      );
+    } else if (openDemand?.qualificationId) {
+      eligible = filterEmployeesWithAnyQualificationInSet(
+        eligible,
+        new Set([openDemand.qualificationId]),
         input.profileQualificationIds
       );
     }

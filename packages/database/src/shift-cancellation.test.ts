@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildEmployeeShiftCanceledByManagerNotification,
   canCancelShiftByConfirmationStatus,
   isShiftDateInPast,
   parseShiftCancelBlockedStatus,
@@ -40,5 +41,29 @@ describe("shiftCancelBlockedActionError", () => {
   it("round-trips through parseShiftCancelBlockedStatus", () => {
     const message = shiftCancelBlockedActionError("proposed");
     expect(parseShiftCancelBlockedStatus(message)).toBe("proposed");
+  });
+});
+
+describe("buildEmployeeShiftCanceledByManagerNotification", () => {
+  it("builds push payload for manager storno", () => {
+    const notification = buildEmployeeShiftCanceledByManagerNotification({
+      shiftId: "shift-1",
+      shiftDate: "2026-06-20",
+      startsAt: "2026-06-20T08:00:00.000Z",
+      endsAt: "2026-06-20T16:00:00.000Z",
+    });
+
+    expect(notification.templateKey).toBe("shift_canceled_by_manager");
+    expect(notification.title).toBe("Schicht storniert");
+    expect(notification.body).toContain("20.06.2026");
+    expect(notification.payload.canceled_by).toBe("manager");
+    expect(notification.payload.shift_id).toBe("shift-1");
+  });
+});
+
+describe("SHIFT_DISMISS_NOT_CANCELED_ERROR", () => {
+  it("is exported for dismiss validation", async () => {
+    const { SHIFT_DISMISS_NOT_CANCELED_ERROR } = await import("./shift-cancellation");
+    expect(SHIFT_DISMISS_NOT_CANCELED_ERROR).toContain("stornierte");
   });
 });

@@ -28,6 +28,13 @@ export const PLANNING_COLLAPSED_SHIFT_WIDTH_DELTA_PX = -2;
 export const PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX = 5;
 /** Aufgeklappte Tagzellen: Schichtkarten nutzen diese Breite weniger — visueller Abstand zum nächsten Tag. */
 export const PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX = 10;
+/** Dashboard: Schichtkarten höchstens 80 % der Zellbreite — Rest bleibt für weitere Schichten frei. */
+export const DASHBOARD_SHIFT_CARD_MAX_CELL_WIDTH_RATIO = 0.8;
+
+export function dashboardShiftCardTrackWidthPx(cellInnerWidthPx: number): number {
+  if (cellInnerWidthPx <= 0) return 0;
+  return cellInnerWidthPx * DASHBOARD_SHIFT_CARD_MAX_CELL_WIDTH_RATIO;
+}
 export const PLANNING_EMPLOYEE_ROW_HEIGHT = `${PLANNING_CELL_HEIGHT_PX + PLANNING_CELL_PADDING_PX * 2}px`;
 export const PLANNING_DAY_HEADER_ROW_HEIGHT = "3.75rem";
 export const PLANNING_DAY_HEADER_ROW_HEIGHT_PX = 60;

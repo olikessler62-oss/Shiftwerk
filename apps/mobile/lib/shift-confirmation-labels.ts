@@ -1,4 +1,4 @@
-import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import type { ShiftConfirmationStatus, ShiftRequestActorRole } from "@schichtwerk/types";
 import { colors } from "@schichtwerk/ui-tokens";
 
 const STATUS_LABELS: Record<ShiftConfirmationStatus, string> = {
@@ -19,15 +19,33 @@ const SHORT_STATUS_LABELS: Record<ShiftConfirmationStatus, string> = {
   canceled: "Abgesagt",
 };
 
-export function shiftConfirmationStatusLabel(
-  status: ShiftConfirmationStatus
+function canceledStatusLabel(
+  cancelledBy: ShiftRequestActorRole | undefined,
+  long: boolean
 ): string {
+  if (cancelledBy === "manager") {
+    return "Storniert";
+  }
+  return long ? STATUS_LABELS.canceled : SHORT_STATUS_LABELS.canceled;
+}
+
+export function shiftConfirmationStatusLabel(
+  status: ShiftConfirmationStatus,
+  cancelledBy?: ShiftRequestActorRole
+): string {
+  if (status === "canceled") {
+    return canceledStatusLabel(cancelledBy, true);
+  }
   return STATUS_LABELS[status] ?? status;
 }
 
 export function shiftConfirmationStatusShortLabel(
-  status: ShiftConfirmationStatus
+  status: ShiftConfirmationStatus,
+  cancelledBy?: ShiftRequestActorRole
 ): string {
+  if (status === "canceled") {
+    return canceledStatusLabel(cancelledBy, false);
+  }
   return SHORT_STATUS_LABELS[status] ?? status;
 }
 

@@ -1,10 +1,8 @@
 "use server";
 
-import { revalidatePath, revalidateTag } from "next/cache";
 import { buildShiftTimestamps, shiftTimeFromTimestamp } from "@/lib/dates";
 import {
-  areaCalendarShiftsCacheTag,
-  weekStartsForShiftCacheInvalidation,
+  revalidateAreaCalendarShiftCacheTags,
 } from "@/lib/cached-areacalendar-shifts";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
@@ -570,26 +568,18 @@ function revalidateShiftPaths(scope?: {
   locationId: string;
   shiftDates: string[];
 }) {
-  revalidatePath("/dashboard");
-  revalidatePath("/bereich-kalender");
-
-  if (!scope?.locationId) return;
-
-  const tags = new Set<string>();
-  for (const shiftDate of scope.shiftDates) {
-    for (const weekStart of weekStartsForShiftCacheInvalidation(shiftDate)) {
-      tags.add(
-        areaCalendarShiftsCacheTag(
-          scope.organizationId,
-          scope.locationId,
-          weekStart
-        )
-      );
+  if (!scope?.locationId) {
+    if (scope?.organizationId) {
+      revalidateAreaCalendarShiftCacheTags({ organizationId: scope.organizationId });
     }
+    return;
   }
-  for (const tag of tags) {
-    revalidateTag(tag);
-  }
+
+  revalidateAreaCalendarShiftCacheTags({
+    organizationId: scope.organizationId,
+    locationId: scope.locationId,
+    weekStarts: scope.shiftDates,
+  });
 }
 
 function revalidateShiftPathsFromUndoBatch(

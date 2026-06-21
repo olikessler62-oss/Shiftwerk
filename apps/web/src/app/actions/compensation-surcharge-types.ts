@@ -6,6 +6,7 @@ import {
   isCompensationSurchargeUnit,
   parseSurchargeAmount,
   validateCompensationSurchargeTypeUniqueness,
+  formatCompensationSurchargeStorageError,
 } from "@schichtwerk/database";
 import type { CompensationSurchargeType } from "@schichtwerk/types";
 import { getDatabase } from "@/lib/db";
@@ -74,7 +75,7 @@ export async function createCompensationSurchargeType(input: {
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "Speichern fehlgeschlagen",
+      error: formatCompensationSurchargeStorageError(e),
     };
   }
 }
@@ -119,7 +120,7 @@ export async function updateCompensationSurchargeType(input: {
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "Speichern fehlgeschlagen",
+      error: formatCompensationSurchargeStorageError(e),
     };
   }
 }

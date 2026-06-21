@@ -176,10 +176,10 @@ export function resolveJobLabelsForShiftAssignment(
     endTime
   );
   const employeeQualIds = profileQualificationIds[employeeId] ?? [];
-  const relevantIds =
-    demandIds.size > 0
-      ? employeeQualIds.filter((id) => demandIds.has(id))
-      : employeeQualIds;
+  if (demandIds.size === 0) return "";
+
+  const relevantIds = employeeQualIds.filter((id) => demandIds.has(id));
+  if (relevantIds.length === 0) return "";
 
   return relevantIds
     .slice()

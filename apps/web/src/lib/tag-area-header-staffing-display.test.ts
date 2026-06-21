@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { resolveCalendarStaffingTimeLabel, compactStaffingTimeRangeLabel } from "@/lib/location-staffing-client";
 import {
   resolveStaffingHeaderDisplay,
+  isTagAreaHeaderStaffingEntryAssignmentMismatch,
+  isTagAreaHeaderStaffingEntryOverstaffed,
+  isTagAreaHeaderStaffingEntryUnderstaffed,
+  isTagAreaHeaderStaffingHeaderAlertBadge,
+  gaugeCountsForTagAreaHeaderStaffingEntry,
   STAFFING_FILL_GAUGE_SIZE_PX,
   type StaffingHeaderSegment,
 } from "./tag-area-header-staffing-display";
@@ -67,6 +72,8 @@ describe("resolveStaffingHeaderDisplay", () => {
           assigned: 0,
           required: 1,
           understaffed: true,
+          overstaffed: false,
+          assignmentMismatch: false,
         }),
       ],
     });
@@ -101,7 +108,11 @@ describe("resolveStaffingHeaderDisplay", () => {
 
     const display = resolveStaffingHeaderDisplay(entries, 72);
 
-    expect(display).toEqual({ mode: "indicator", allMet: false });
+    expect(display).toEqual({
+      mode: "indicator",
+      allMet: false,
+      hasOverstaffed: false,
+    });
   });
 
   it("uses indicator with allMet when fully staffed but cramped", () => {
@@ -115,7 +126,178 @@ describe("resolveStaffingHeaderDisplay", () => {
 
     const display = resolveStaffingHeaderDisplay(entries, 72);
 
-    expect(display).toEqual({ mode: "indicator", allMet: true });
+    expect(display).toEqual({
+      mode: "indicator",
+      allMet: true,
+      hasOverstaffed: false,
+    });
+  });
+});
+
+describe("isTagAreaHeaderStaffingEntryOverstaffed", () => {
+  it("detects aggregate overstaffing", () => {
+    expect(isTagAreaHeaderStaffingEntryOverstaffed(entry("a", 3, 2))).toBe(
+      true
+    );
+  });
+
+  it("detects per-qualification overstaffing even when aggregate matches", () => {
+    expect(
+      isTagAreaHeaderStaffingEntryOverstaffed({
+        ...entry("a", 3, 3),
+        qualifications: [
+          { qualificationId: "k1", name: "Kellner", assigned: 3, required: 2 },
+          { qualificationId: "k2", name: "Koch", assigned: 0, required: 1 },
+        ],
+      })
+    ).toBe(true);
+  });
+
+  it("ignores zero required qualifications", () => {
+    expect(
+      isTagAreaHeaderStaffingEntryOverstaffed({
+        ...entry("a", 1, 1),
+        qualifications: [{ qualificationId: "o1", name: "Optional", assigned: 1, required: 0 }],
+      })
+    ).toBe(false);
+  });
+});
+
+describe("isTagAreaHeaderStaffingEntryUnderstaffed", () => {
+  it("detects missing qualification even when shift count matches total demand", () => {
+    const kitchenLunch = {
+      ...entry("lunch", 2, 2, "Mittag"),
+      qualifications: [
+        { qualificationId: "koch", name: "Köchin", assigned: 2, required: 1 },
+        { qualificationId: "spuel", name: "Spülkraft", assigned: 0, required: 1 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingEntryUnderstaffed(kitchenLunch)).toBe(true);
+    expect(gaugeCountsForTagAreaHeaderStaffingEntry(kitchenLunch)).toEqual({
+      assigned: 2,
+      required: 2,
+    });
+
+    const display = resolveStaffingHeaderDisplay([kitchenLunch], 120);
+    expect(display.mode).toBe("gauges");
+    if (display.mode === "gauges") {
+      expect(display.segments[0]).toMatchObject({
+        countText: "2/2",
+        understaffed: true,
+        overstaffed: true,
+        assignmentMismatch: true,
+      });
+    }
+  });
+
+  it("shows actual shift count when overstaffed on one qualification", () => {
+    const lunch = {
+      ...entry("lunch", 3, 2, "Mittag"),
+      qualifications: [
+        { qualificationId: "kellner", name: "Kellner", assigned: 3, required: 2 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingEntryUnderstaffed(lunch)).toBe(false);
+    expect(isTagAreaHeaderStaffingEntryOverstaffed(lunch)).toBe(true);
+    expect(gaugeCountsForTagAreaHeaderStaffingEntry(lunch)).toEqual({
+      assigned: 3,
+      required: 2,
+    });
+
+    const display = resolveStaffingHeaderDisplay([lunch], 120);
+    if (display.mode === "gauges") {
+      expect(display.segments[0]).toMatchObject({
+        countText: "3/2",
+        understaffed: false,
+        overstaffed: true,
+        assignmentMismatch: false,
+      });
+    }
+  });
+
+  it("uses shift count when only one mapped role is missing", () => {
+    const kitchenLunch = {
+      ...entry("lunch", 2, 2, "Mittag"),
+      qualifications: [
+        { qualificationId: "koch", name: "Köchin", assigned: 1, required: 1 },
+        { qualificationId: "spuel", name: "Spülkraft", assigned: 0, required: 1 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingEntryUnderstaffed(kitchenLunch)).toBe(true);
+    expect(gaugeCountsForTagAreaHeaderStaffingEntry(kitchenLunch)).toEqual({
+      assigned: 2,
+      required: 2,
+    });
+  });
+});
+
+describe("isTagAreaHeaderStaffingEntryAssignmentMismatch", () => {
+  it("detects wrong roles when shift count matches total demand", () => {
+    const kitchenLunch = {
+      ...entry("lunch", 2, 2, "Mittag"),
+      qualifications: [
+        { qualificationId: "koch", name: "Köchin", assigned: 2, required: 1 },
+        { qualificationId: "spuel", name: "Spülkraft", assigned: 0, required: 1 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingEntryAssignmentMismatch(kitchenLunch)).toBe(
+      true
+    );
+  });
+
+  it("does not flag simple understaffing when headcount is short", () => {
+    const kitchenLunch = {
+      ...entry("lunch", 1, 2, "Mittag"),
+      qualifications: [
+        { qualificationId: "koch", name: "Köchin", assigned: 1, required: 1 },
+        { qualificationId: "spuel", name: "Spülkraft", assigned: 0, required: 1 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingEntryAssignmentMismatch(kitchenLunch)).toBe(
+      false
+    );
+    expect(isTagAreaHeaderStaffingEntryUnderstaffed(kitchenLunch)).toBe(true);
+  });
+
+  it("does not flag overstaffing with matching roles", () => {
+    const lunch = {
+      ...entry("lunch", 3, 2, "Mittag"),
+      qualifications: [
+        { qualificationId: "kellner", name: "Kellner", assigned: 3, required: 2 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingEntryAssignmentMismatch(lunch)).toBe(false);
+    expect(isTagAreaHeaderStaffingEntryOverstaffed(lunch)).toBe(true);
+  });
+});
+
+describe("isTagAreaHeaderStaffingHeaderAlertBadge", () => {
+  it("includes overstaffing and assignment mismatch", () => {
+    const mismatch = {
+      ...entry("lunch", 2, 2, "Mittag"),
+      qualifications: [
+        { qualificationId: "koch", name: "Köchin", assigned: 2, required: 1 },
+        { qualificationId: "spuel", name: "Spülkraft", assigned: 0, required: 1 },
+      ],
+    };
+    const overstaffed = {
+      ...entry("lunch", 3, 2, "Mittag"),
+      qualifications: [
+        { qualificationId: "kellner", name: "Kellner", assigned: 3, required: 2 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingHeaderAlertBadge([mismatch])).toBe(true);
+    expect(isTagAreaHeaderStaffingHeaderAlertBadge([overstaffed])).toBe(true);
+    expect(isTagAreaHeaderStaffingHeaderAlertBadge([entry("a", 1, 2)])).toBe(
+      false
+    );
   });
 });
 
@@ -127,6 +309,8 @@ describe("staffing header segment helpers", () => {
       countText: "0/4",
       measureText: "Früh: 0/4",
       understaffed: true,
+      overstaffed: false,
+      assignmentMismatch: false,
       assigned: 0,
       required: 4,
     };

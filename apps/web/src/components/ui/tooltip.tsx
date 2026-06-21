@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -64,6 +65,8 @@ type TooltipProps = {
   className?: string;
   contentClassName?: string;
   disabled?: boolean;
+  /** Tooltip bleibt geschlossen (z. B. solange ein Kontextmenü offen ist). */
+  suppressOpen?: boolean;
   placement?: TooltipPlacement;
 };
 
@@ -99,6 +102,7 @@ export function Tooltip({
   className,
   contentClassName,
   disabled = false,
+  suppressOpen = false,
   placement,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
@@ -107,6 +111,11 @@ export function Tooltip({
   const tooltipRef = useRef<HTMLDivElement>(null);
   const id = useId();
   const show = !disabled && hasTooltipContent(content);
+  const allowOpen = show && !suppressOpen;
+
+  useEffect(() => {
+    if (suppressOpen) setOpen(false);
+  }, [suppressOpen]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -165,7 +174,7 @@ export function Tooltip({
   ]);
 
   useLayoutEffect(() => {
-    if (!open || !show) return;
+    if (!open || !allowOpen) return;
     updatePosition();
     const raf = requestAnimationFrame(updatePosition);
     window.addEventListener("resize", updatePosition);
@@ -175,22 +184,23 @@ export function Tooltip({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [open, show, content, updatePosition]);
+  }, [open, allowOpen, content, updatePosition]);
 
   return (
     <>
       <span
         ref={triggerRef}
         className={cn("inline-flex max-w-full min-w-0", className)}
-        onMouseEnter={() => show && setOpen(true)}
+        onMouseEnter={() => allowOpen && setOpen(true)}
         onMouseLeave={() => setOpen(false)}
-        onFocus={() => show && setOpen(true)}
+        onFocus={() => allowOpen && setOpen(true)}
         onBlur={() => setOpen(false)}
-        aria-describedby={open && show ? id : undefined}
+        onContextMenu={() => setOpen(false)}
+        aria-describedby={open && allowOpen ? id : undefined}
       >
         {children}
       </span>
-      {open && show && typeof document !== "undefined"
+      {open && allowOpen && typeof document !== "undefined"
         ? createPortal(
             <div
               ref={tooltipRef}

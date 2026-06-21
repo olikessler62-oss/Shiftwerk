@@ -17,6 +17,7 @@ import { ProfileCompensationSurchargeFormModal } from "./profile-compensation-su
 import type { ProfileCompensationCacheEntry } from "./profile-compensation-panel-modal";
 import { formatSurchargeAmountLabel } from "@/lib/profile-compensation-calculation";
 import {
+  assignableCompensationSurchargeTypesForProfile,
   formatSurchargeTriggerLabel,
   resolveProfileSurchargeAmount,
   resolveProfileSurchargeUnit,
@@ -173,12 +174,23 @@ export function ProfileSurchargesPanelModal({
     !!selectedSurcharge &&
     !!serverToday &&
     isMutableHourlyRate(selectedSurcharge.valid_from, serverToday);
+  const assignableSurchargeTypes = useMemo(
+    () =>
+      assignableCompensationSurchargeTypesForProfile({
+        types: availableSurchargeTypes,
+        surchargeEntries,
+        serverToday,
+      }),
+    [availableSurchargeTypes, surchargeEntries, serverToday]
+  );
   const canCreateSurcharge =
     COMPENSATION_SURCHARGES_UI_ENABLED &&
     !!serverToday &&
-    availableSurchargeTypes.length > 0;
+    assignableSurchargeTypes.length > 0;
   const canEditSurcharge =
-    COMPENSATION_SURCHARGES_UI_ENABLED && selectedSurchargeMutable;
+    COMPENSATION_SURCHARGES_UI_ENABLED &&
+    !!selectedSurcharge &&
+    !!serverToday;
   const canDeleteSurcharge =
     COMPENSATION_SURCHARGES_UI_ENABLED && selectedSurchargeMutable;
 
@@ -217,16 +229,21 @@ export function ProfileSurchargesPanelModal({
   );
 
   useEffect(() => {
-    if (cachedCompensation !== undefined) {
-      syncLocalCompensation(cachedCompensation);
-      setLoading(false);
-    } else {
-      let cancelled = false;
-      setLoading(true);
-      setErrorMessage(null);
-      void fetchProfileHourlyRates(profile.id).then((result) => {
+    let cancelled = false;
+
+    async function load() {
+      const shouldLoadCompensation =
+        cachedCompensation === undefined || !cachedCompensation.serverToday;
+
+      if (cachedCompensation !== undefined) {
+        syncLocalCompensation(cachedCompensation);
+      }
+
+      if (shouldLoadCompensation) {
+        setLoading(true);
+        setErrorMessage(null);
+        const result = await fetchProfileHourlyRates(profile.id);
         if (cancelled) return;
-        setLoading(false);
         if (!result.ok) {
           setErrorMessage(result.error);
           applyCompensation({
@@ -236,34 +253,36 @@ export function ProfileSurchargesPanelModal({
             surchargeEntries: [],
             serverToday: "",
           });
-          return;
+        } else {
+          applyCompensation({
+            currentRate: result.currentRate ?? null,
+            rates: result.rates ?? [],
+            currentSurcharges: result.currentSurcharges ?? [],
+            surchargeEntries: result.surchargeEntries ?? [],
+            serverToday: result.serverToday ?? "",
+          });
         }
-        applyCompensation({
-          currentRate: result.currentRate ?? null,
-          rates: result.rates ?? [],
-          currentSurcharges: result.currentSurcharges ?? [],
-          surchargeEntries: result.surchargeEntries ?? [],
-          serverToday: result.serverToday ?? "",
-        });
-      });
+        setLoading(false);
+      } else {
+        setLoading(false);
+      }
 
-      return () => {
-        cancelled = true;
-      };
+      if (!COMPENSATION_SURCHARGES_UI_ENABLED) return;
+      const typesResult = await fetchCompensationSurchargeTypes();
+      if (cancelled) return;
+      if (!typesResult.ok) {
+        setErrorMessage((current) => current ?? typesResult.error);
+        setAvailableSurchargeTypes([]);
+        return;
+      }
+      setAvailableSurchargeTypes(typesResult.types);
     }
-  }, [applyCompensation, cachedCompensation, profile.id, syncLocalCompensation]);
 
-  useEffect(() => {
-    if (!COMPENSATION_SURCHARGES_UI_ENABLED) return;
-    let cancelled = false;
-    void fetchCompensationSurchargeTypes().then((result) => {
-      if (cancelled || !result.ok) return;
-      setAvailableSurchargeTypes(result.types);
-    });
+    void load();
     return () => {
       cancelled = true;
     };
-  }, [profile.id]);
+  }, [applyCompensation, cachedCompensation, profile.id, syncLocalCompensation]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -639,7 +658,7 @@ export function ProfileSurchargesPanelModal({
             profileId={profile.id}
             serverToday={serverToday}
             currentEntry={currentCompensationEntry}
-            availableTypes={availableSurchargeTypes}
+            availableTypes={assignableSurchargeTypes}
             onClose={() => setSurchargeFormMode(null)}
             onSaved={handleSurchargeSaved}
           />

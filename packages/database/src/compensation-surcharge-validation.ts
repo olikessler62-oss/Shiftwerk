@@ -88,3 +88,13 @@ export function validateNewProfileCompensationSurcharge(input: {
   }
   return { ok: true };
 }
+
+/** Postgres constraint errors für Sonderzuschlag-Typen in lesbare Meldungen. */
+export function formatCompensationSurchargeStorageError(error: unknown): string {
+  const message =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (message.includes("compensation_surcharge_types_trigger_check")) {
+    return "Die gewählte Bedingung (z. B. Sonntag) ist in der Datenbank noch nicht freigeschaltet. Bitte die Supabase-Migration für Sonntags-Zuschläge ausführen.";
+  }
+  return message || "Speichern fehlgeschlagen";
+}

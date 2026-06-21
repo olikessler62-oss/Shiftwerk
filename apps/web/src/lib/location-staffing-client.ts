@@ -387,6 +387,16 @@ export function serviceWeekdayForDate(isoDate: string): number {
   return weekdayIndexFromDate(isoDate);
 }
 
+/** Referenzdatum für einen Wochentag (Mo=0 … So=6), ohne Feiertag. */
+export function sampleDateISOForWeekday(weekday: number): string {
+  const anchorDate = "2026-06-22";
+  const anchorWeekday = weekdayIndexFromDate(anchorDate);
+  const offset = normalizeWeekday(weekday) - anchorWeekday;
+  const date = new Date(`${anchorDate}T12:00:00`);
+  date.setDate(date.getDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
+
 export function isAreaOpenOnDate(
   serviceHours: readonly AreaServiceHourRef[],
   areaId: string,
@@ -822,5 +832,51 @@ export function findServiceHourByWeekdayAndWindow(
       hour.weekday === weekday &&
       serviceHourTimeFieldValue(hour.start_time) === start &&
       serviceHourTimeFieldValue(hour.end_time) === end
+  );
+}
+
+/** Servicezeit für Personalbedarf-Speichern: Bedarfszeiten können schmaler als das Fenster sein. */
+export function resolveServiceHourForStaffingWindow(
+  serviceHours: readonly AreaServiceHourRef[],
+  areaId: string,
+  dateISO: string,
+  startTime: string,
+  endTime: string,
+  options?: { referenceServiceHourId?: string }
+): string | null {
+  const weekday = serviceWeekdayForDate(dateISO);
+
+  if (options?.referenceServiceHourId) {
+    const reference = serviceHours.find(
+      (hour) => hour.id === options.referenceServiceHourId
+    );
+    if (reference?.id) {
+      if (normalizeWeekday(reference.weekday) === weekday) {
+        return reference.id;
+      }
+      const equivalent = findServiceHourByWeekdayAndWindow(
+        weekday,
+        reference.start_time ?? "",
+        reference.end_time ?? "",
+        serviceHours
+      );
+      if (equivalent) return equivalent.id;
+    }
+  }
+
+  const exact = findServiceHourByWeekdayAndWindow(
+    weekday,
+    startTime,
+    endTime,
+    serviceHours
+  );
+  if (exact) return exact.id;
+
+  return findServiceHourIdForShift(
+    serviceHours,
+    areaId,
+    dateISO,
+    startTime,
+    endTime
   );
 }

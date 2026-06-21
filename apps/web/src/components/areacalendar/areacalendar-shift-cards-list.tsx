@@ -228,19 +228,21 @@ export function AreaCalendarShiftCardsList({
     for (const shift of sortedShifts) {
       if (overnightAnchorShiftIds?.has(shift.id)) continue;
 
-      const jobsLabel = resolveJobLabelsForShiftAssignment(
-        shift.employeeId,
-        shift.locationAreaId ?? areaId,
-        dateISO,
-        shift.startTime,
-        shift.endTime,
-        staffingRules,
-        serviceHours,
-        assignmentPresets,
-        profileQualificationIds,
-        qualificationNameById,
-        qualificationSortOrder
-      );
+      const jobsLabel =
+        shift.jobName?.trim() ??
+        resolveJobLabelsForShiftAssignment(
+          shift.employeeId,
+          shift.locationAreaId ?? areaId,
+          dateISO,
+          shift.startTime,
+          shift.endTime,
+          staffingRules,
+          serviceHours,
+          assignmentPresets,
+          profileQualificationIds,
+          qualificationNameById,
+          qualificationSortOrder
+        );
       const display = buildShiftCardDisplayContent(shift, jobsLabel, tooltipOptions);
       layoutByShiftId.set(
         shift.id,
@@ -290,19 +292,21 @@ export function AreaCalendarShiftCardsList({
       }
 
       const shift = cellRow.shift;
-      const jobsLabel = resolveJobLabelsForShiftAssignment(
-        shift.employeeId,
-        shift.locationAreaId ?? areaId,
-        dateISO,
-        shift.startTime,
-        shift.endTime,
-        staffingRules,
-        serviceHours,
-        assignmentPresets,
-        profileQualificationIds,
-        qualificationNameById,
-        qualificationSortOrder
-      );
+      const jobsLabel =
+        shift.jobName?.trim() ??
+        resolveJobLabelsForShiftAssignment(
+          shift.employeeId,
+          shift.locationAreaId ?? areaId,
+          dateISO,
+          shift.startTime,
+          shift.endTime,
+          staffingRules,
+          serviceHours,
+          assignmentPresets,
+          profileQualificationIds,
+          qualificationNameById,
+          qualificationSortOrder
+        );
       const display = buildShiftCardDisplayContent(shift, jobsLabel, tooltipOptions);
       const layout = layoutByShiftId.get(shift.id)!;
 

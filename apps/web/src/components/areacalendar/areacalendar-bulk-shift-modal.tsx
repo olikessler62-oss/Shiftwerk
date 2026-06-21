@@ -90,6 +90,11 @@ import { sortBulkShiftRowsByColumn } from "@/lib/bulk-shift-row-sort";
 import { buildPrefilledBulkRow, pickEmployeeForBulkPrefill } from "@/lib/bulk-shift-row-prefill";
 import { isEmployeeWishFulfilled } from "@/lib/profile-shift-preference-matching";
 import {
+  filterEmployeesWithinWeeklyHoursForShift,
+  weeklyHoursAssignContextForBulkShiftRow,
+  type ShiftAssignWeekShiftRef,
+} from "@/lib/shift-weekly-hours-validation-client";
+import {
   insertBulkShiftRowInList,
   isBulkShiftEmployeeSortActive,
   partitionBulkShiftRows,
@@ -106,7 +111,7 @@ import {
   isStaffingFullyCovered,
   personalbedarfDemandTimesForEntry,
   personalbedarfTimesForServiceHour,
-  staffingEntryForNewBulkRow,
+  resolveNextOpenStaffingDemand,
   resolveCurrentBulkShiftRowId,
 } from "@/lib/bulk-shift-staffing";
 import {
@@ -154,6 +159,7 @@ import {
   listSaveableNewBulkShiftRows,
   listUnsavedBulkShiftRows,
   resolveBulkShiftSaveIntent,
+  shouldIncludeShiftInBulkEditExistingRows,
 } from "@/lib/bulk-shift-save";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
@@ -190,7 +196,7 @@ function BulkShiftStaffingTable({
     <div
       className={cn(
         "shrink-0 select-none rounded border border-border px-2 py-1.5",
-        showSpeedActions && "min-w-[26rem]"
+        showSpeedActions && "min-w-[30rem]"
       )}
     >
       <table className="w-full border-collapse text-xs">
@@ -199,6 +205,9 @@ function BulkShiftStaffingTable({
             {showSpeedActions ? (
               <th className="w-8 px-0.5 pb-1 font-medium" aria-hidden />
             ) : null}
+            <th className="whitespace-nowrap px-1.5 pb-1 pr-3 font-medium">
+              {t("areaCalendar.bulkShiftStaffingTableShift")}
+            </th>
             <th className="whitespace-nowrap px-1.5 pb-1 pr-3 font-medium">
               {t("areaCalendar.bulkShiftStaffingTableTime")}
             </th>
@@ -259,6 +268,9 @@ function BulkShiftStaffingTable({
                   ) : null}
                 </td>
               ) : null}
+              <td className="whitespace-nowrap px-1.5 py-0.5 pr-3 text-foreground">
+                {row.shiftLabel || "—"}
+              </td>
               <td className="whitespace-nowrap px-1.5 py-0.5 pr-3 text-foreground">
                 {row.timeLabel}
                 {row.hasFormattedTimeRange && locale === "de" ? (
@@ -360,6 +372,7 @@ type Props = {
   areaExistingAssignments: AreaCalendarAssignmentTimeWindow[];
   locationDayAssignments: LocationDayAssignment[];
   weekDates: readonly string[];
+  weekShifts: readonly ShiftAssignWeekShiftRef[];
   onClose: () => void;
   onSaved?: () => void;
 };
@@ -396,6 +409,16 @@ function bulkRowPatchDiff(
 
 function joinStableIds(ids: readonly string[]): string {
   return ids.join("\0");
+}
+
+function joinProfileQualificationIdsKey(
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>
+): string {
+  const parts: string[] = [];
+  profileQualificationIds.forEach((qualificationIds, profileId) => {
+    parts.push(`${profileId}:${joinStableIds([...qualificationIds].sort())}`);
+  });
+  return parts.sort().join("\0");
 }
 
 /** Verhindert Auto-Sync-Kaskaden auf fehlgeschlagenen, bereits gesendeten Zeilen. */
@@ -605,6 +628,8 @@ function matchingEmployeesForBulkRow(
   row: Pick<
     BulkRow,
     | "id"
+    | "employeeId"
+    | "existingShiftId"
     | "startTime"
     | "endTime"
     | "requestedStartTime"
@@ -624,6 +649,7 @@ function matchingEmployeesForBulkRow(
     areaExistingAssignments: AreaCalendarAssignmentTimeWindow[];
     locationDayAssignments: LocationDayAssignment[];
     allRows: BulkRow[];
+    weekShifts: readonly ShiftAssignWeekShiftRef[];
     withoutServiceHours?: boolean;
   }
 ): AreaCalendarShiftAssignEmployee[] {
@@ -665,8 +691,24 @@ function matchingEmployeesForBulkRow(
       ),
     }
   );
+
+  const assignContextForEmployee = weeklyHoursAssignContextForBulkShiftRow({
+    row,
+    allRows: options.allRows,
+    shiftDate: options.dateISO,
+    emptyEmployeeId: AREA_CALENDAR_EMPTY_EMPLOYEE_ID,
+  });
+  const withinWeeklyHours = filterEmployeesWithinWeeklyHoursForShift(byWindow, {
+    weekShifts: options.weekShifts,
+    shiftDate: options.dateISO,
+    startTime,
+    endTime,
+    timeZone: options.timeZone,
+    assignContextForEmployee,
+  });
+
   if (options.withoutServiceHours) {
-    return byWindow;
+    return withinWeeklyHours;
   }
   const demandQualificationIds = staffingQualificationIdsForServiceHour(
     options.staffingRules,
@@ -675,13 +717,13 @@ function matchingEmployeesForBulkRow(
   );
   if (demandQualificationIds.size > 0) {
     return filterEmployeesWithAnyQualificationInSet(
-      byWindow,
+      withinWeeklyHours,
       demandQualificationIds,
       options.profileQualificationIds
     );
   }
   return filterEmployeesWithAnyAreaQualification(
-    byWindow,
+    withinWeeklyHours,
     areaQualificationIds,
     options.profileQualificationIds
   );
@@ -804,8 +846,12 @@ function createInitialBulkModalRows(
     withoutServiceHours?: boolean;
   }
 ): BulkRow[] {
+  const editableExistingShifts = existingAreaShifts.filter((shift) =>
+    shouldIncludeShiftInBulkEditExistingRows(shift)
+  );
+
   return sortBulkShiftRows(
-    existingAreaShifts.map((shift) => ({
+    editableExistingShifts.map((shift) => ({
       ...createBulkRowFromExistingShift(shift, options),
       employeeName: "",
     }))
@@ -831,7 +877,20 @@ function createPresetBulkRow(
     prefillBulkRowWithEarliestAssignmentPreset(row, assignmentPresets);
     return row;
   }
-  const targetEntry = staffingEntryForNewBulkRow(staffingEntries, existingRows);
+  const openDemand = resolveNextOpenStaffingDemand(
+    staffingEntries,
+    serviceHours,
+    existingRows,
+    {
+      staffingRules,
+      areaId,
+    }
+  );
+  const targetEntry = openDemand
+    ? (staffingEntries.find(
+        (entry) => entry.serviceHourId === openDemand.serviceHourId
+      ) ?? null)
+    : null;
   let demand = targetEntry
     ? personalbedarfDemandTimesForEntry(
         targetEntry.serviceHourId,
@@ -875,7 +934,13 @@ function createPresetBulkRow(
     requestedEndTime: demandTimesComplete ? endTime : undefined,
     demandServiceHourId:
       demand?.serviceHourId || targetEntry?.serviceHourId || undefined,
-    qualificationId: "",
+    qualificationId:
+      openDemand?.qualificationId ||
+      presetQualificationForServiceHour(
+        staffingRules,
+        areaId,
+        demand?.serviceHourId || targetEntry?.serviceHourId
+      ),
     employeeManuallySelected: false,
     shiftTypeManuallySelected: false,
     qualificationManuallySelected: false,
@@ -899,10 +964,12 @@ type BulkShiftRowEditorProps = {
   areaExistingAssignments: AreaCalendarAssignmentTimeWindow[];
   locationDayAssignments: LocationDayAssignment[];
   allRows: BulkRow[];
+  weekShifts: readonly ShiftAssignWeekShiftRef[];
   profileQualificationIds: Map<string, Set<string>>;
   profileShiftPreferences: Record<string, ProfileShiftPreferenceEntry[]>;
   withoutServiceHours?: boolean;
   onChange: (patch: Partial<BulkRow>) => void;
+  onSyncChange: (patch: Partial<BulkRow>) => void;
   onDelete: () => void;
   showDeleteButton?: boolean;
   disabled?: boolean;
@@ -963,10 +1030,12 @@ function BulkShiftRowEditor({
   areaExistingAssignments,
   locationDayAssignments,
   allRows,
+  weekShifts,
   profileQualificationIds,
   profileShiftPreferences,
   withoutServiceHours = false,
   onChange,
+  onSyncChange,
   onDelete,
   showDeleteButton = true,
   disabled = false,
@@ -977,6 +1046,23 @@ function BulkShiftRowEditor({
   onActivate,
 }: BulkShiftRowEditorProps) {
   const t = useTranslations();
+  const qualificationNameById = useMemo(
+    () =>
+      new Map(
+        qualifications.map((qualification) => [qualification.id, qualification.name])
+      ),
+    [qualifications]
+  );
+  const qualificationSortOrder = useMemo(
+    () =>
+      new Map(
+        qualifications.map((qualification) => [
+          qualification.id,
+          qualification.sort_order,
+        ])
+      ),
+    [qualifications]
+  );
   const skipSyncRef = useRef(false);
   const timesComplete = areAreaCalendarShiftTimesComplete(row.startTime, row.endTime);
   const requestWindow = resolveShiftAssignmentRequestWindow(row);
@@ -1000,10 +1086,13 @@ function BulkShiftRowEditor({
         areaExistingAssignments,
         locationDayAssignments,
         allRows,
+        weekShifts,
         withoutServiceHours,
       }),
     [
       row.id,
+      row.employeeId,
+      row.existingShiftId,
       row.startTime,
       row.endTime,
       row.requestedStartTime,
@@ -1021,6 +1110,7 @@ function BulkShiftRowEditor({
       areaExistingAssignments,
       locationDayAssignments,
       allRows,
+      weekShifts,
       withoutServiceHours,
     ]
   );
@@ -1040,25 +1130,6 @@ function BulkShiftRowEditor({
             profileQualificationIds,
             AREA_CALENDAR_EMPTY_EMPLOYEE_ID
           ),
-    [
-      withoutServiceHours,
-      row.employeeId,
-      qualifications,
-      areaQualifications,
-      profileQualificationIds,
-    ]
-  );
-
-  const qualificationOptionsForPrefill = useMemo(
-    () =>
-      withoutServiceHours
-        ? employeeProfileQualificationOptions(
-            row.employeeId,
-            qualifications,
-            profileQualificationIds,
-            AREA_CALENDAR_EMPTY_EMPLOYEE_ID
-          )
-        : areaQualifications,
     [
       withoutServiceHours,
       row.employeeId,
@@ -1101,6 +1172,33 @@ function BulkShiftRowEditor({
     [rowAssignmentPresets]
   );
 
+  const areaQualificationIdsKey = useMemo(
+    () => joinStableIds(areaQualifications.map((option) => option.id)),
+    [areaQualifications]
+  );
+  const assignmentPresetsSyncKey = useMemo(
+    () =>
+      assignmentPresets
+        .map((preset) => `${preset.id}:${preset.start_time}:${preset.end_time}`)
+        .join("\0"),
+    [assignmentPresets]
+  );
+  const serviceHoursSyncKey = useMemo(
+    () =>
+      serviceHours
+        .map((hour) => `${hour.id}:${hour.start_time}:${hour.end_time}`)
+        .join("\0"),
+    [serviceHours]
+  );
+  const profileQualificationIdsKey = useMemo(
+    () => joinProfileQualificationIdsKey(profileQualificationIds),
+    [profileQualificationIds]
+  );
+  const profileShiftPreferencesKey = useMemo(
+    () => JSON.stringify(profileShiftPreferences),
+    [profileShiftPreferences]
+  );
+
   useEffect(() => {
     const isNewRow = !row.existingShiftId;
     const skipTypeFromTimesSync = skipSyncRef.current;
@@ -1130,7 +1228,7 @@ function BulkShiftRowEditor({
           requestedEndTime: hourTimes.endTime,
         });
         if (Object.keys(restorePatch).length > 0) {
-          onChange(restorePatch);
+          onSyncChange(restorePatch);
           return;
         }
       }
@@ -1141,7 +1239,7 @@ function BulkShiftRowEditor({
         const earliestPatch: Partial<BulkRow> = {};
         const draft = { ...row, ...earliestPatch };
         if (prefillBulkRowWithEarliestAssignmentPreset(draft, assignmentPresets)) {
-          onChange(
+          onSyncChange(
             bulkRowPatchDiff(row, {
               shiftTypeId: draft.shiftTypeId,
               startTime: draft.startTime,
@@ -1164,7 +1262,7 @@ function BulkShiftRowEditor({
       }
       if (row.qualificationId) patch.qualificationId = "";
       const incompletePatch = bulkRowPatchDiff(row, patch);
-      if (Object.keys(incompletePatch).length > 0) onChange(incompletePatch);
+      if (Object.keys(incompletePatch).length > 0) onSyncChange(incompletePatch);
       return;
     }
 
@@ -1215,11 +1313,27 @@ function BulkShiftRowEditor({
     }
 
     const effectiveEmployeeId = patch.employeeId ?? row.employeeId;
+    const effectiveQualificationOptions = withoutServiceHours
+      ? employeeProfileQualificationOptions(
+          effectiveEmployeeId,
+          qualifications,
+          profileQualificationIds,
+          AREA_CALENDAR_EMPTY_EMPLOYEE_ID
+        )
+      : employeeAreaQualificationOptions(
+          effectiveEmployeeId,
+          areaQualifications,
+          profileQualificationIds,
+          AREA_CALENDAR_EMPTY_EMPLOYEE_ID
+        );
+    const effectiveQualificationOptionsForPrefill = withoutServiceHours
+      ? effectiveQualificationOptions
+      : areaQualifications;
 
     if (!row.qualificationManuallySelected && columnPrefill.qualification) {
       const nextQualificationId = resolvePresetQualificationForEmployee(
         effectiveEmployeeId,
-        qualificationOptionsForPrefill,
+        effectiveQualificationOptionsForPrefill,
         profileQualificationIds,
         AREA_CALENDAR_EMPTY_EMPLOYEE_ID,
         row.qualificationId
@@ -1231,7 +1345,9 @@ function BulkShiftRowEditor({
       profileQualificationIds.size > 0 &&
       row.qualificationId &&
       effectiveEmployeeId !== AREA_CALENDAR_EMPTY_EMPLOYEE_ID &&
-      !rowQualificationOptions.some((option) => option.id === row.qualificationId)
+      !effectiveQualificationOptions.some(
+        (option) => option.id === row.qualificationId
+      )
     ) {
       patch.qualificationId = "";
       patch.qualificationManuallySelected = false;
@@ -1248,10 +1364,16 @@ function BulkShiftRowEditor({
       if (row.endTime !== requestWindow.endTime) {
         patch.endTime = requestWindow.endTime;
       }
+      if (row.requestedStartTime !== requestWindow.startTime) {
+        patch.requestedStartTime = requestWindow.startTime;
+      }
+      if (row.requestedEndTime !== requestWindow.endTime) {
+        patch.requestedEndTime = requestWindow.endTime;
+      }
     }
 
     const changedPatch = bulkRowPatchDiff(row, patch);
-    if (Object.keys(changedPatch).length > 0) onChange(changedPatch);
+    if (Object.keys(changedPatch).length > 0) onSyncChange(changedPatch);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only on time/type inputs
   }, [
     row.startTime,
@@ -1266,23 +1388,23 @@ function BulkShiftRowEditor({
     row.qualificationManuallySelected,
     row.existingShiftId,
     row.demandServiceHourId,
-    assignmentPresets,
-    areaQualifications,
-    qualificationOptionsForPrefill,
+    areaQualificationIdsKey,
+    assignmentPresetsSyncKey,
     withoutServiceHours,
     timesComplete,
     requestTimesComplete,
     requestWindow.startTime,
     requestWindow.endTime,
     matchingEmployeeIdsKey,
-    profileQualificationIds,
     rowQualificationOptionIdsKey,
     rowAssignmentPresetIdsKey,
     columnPrefill.template,
     columnPrefill.employee,
     columnPrefill.qualification,
-    profileShiftPreferences,
-    serviceHours,
+    profileQualificationIdsKey,
+    profileShiftPreferencesKey,
+    serviceHoursSyncKey,
+    qualifications,
   ]);
 
   const selectedEmployee = useMemo(
@@ -1509,6 +1631,9 @@ function BulkShiftRowEditor({
           rootClassName={BULK_SHIFT_TABLE_COMBO_ROOT_CLASS}
           triggerClassName={DASHBOARD_TABLE_COMBO_TRIGGER_CLASS}
           weekdayLabelStyle="long"
+          profileQualificationIds={profileQualificationIds}
+          qualificationNameById={qualificationNameById}
+          qualificationSortOrder={qualificationSortOrder}
         />
       </td>
       <td className="w-10 shrink-0 px-1 py-1.5 align-middle">
@@ -1548,6 +1673,7 @@ export function AreaCalendarBulkShiftModal({
   existingAreaShifts,
   locationDayAssignments,
   weekDates,
+  weekShifts,
   onClose,
   onSaved,
 }: Props) {
@@ -1682,8 +1808,12 @@ export function AreaCalendarBulkShiftModal({
   );
 
   const staffingEntriesRowFocusKey = useMemo(
-    () => resolveCurrentBulkShiftRowId(rows, staffingEntries) ?? "",
-    [rows, staffingEntries]
+    () =>
+      resolveCurrentBulkShiftRowId(rows, staffingEntries, serviceHours, {
+        staffingRules,
+        areaId: dialog.areaId,
+      }) ?? "",
+    [rows, staffingEntries, serviceHours, staffingRules, dialog.areaId]
   );
 
   const staffingSpeedActionsActive = useMemo(
@@ -1904,12 +2034,22 @@ export function AreaCalendarBulkShiftModal({
     };
   }, [dialog.date, relaxAppRegistrationGate, simulatedProposedOnAssign, t]);
 
+  const applyRowSyncPatch = useCallback((id: string, patch: Partial<BulkRow>) => {
+    setRows((current) => {
+      const row = current.find((entry) => entry.id === id);
+      if (!row) return current;
+      const changedPatch = bulkRowPatchDiff(row, patch);
+      if (Object.keys(changedPatch).length === 0) return current;
+      return current.map((entry) =>
+        entry.id === id ? { ...entry, ...changedPatch } : entry
+      );
+    });
+  }, []);
+
   const updateRow = useCallback((id: string, patch: Partial<BulkRow>) => {
     setActiveRowId(id);
-    setRows((current) =>
-      current.map((row) => (row.id === id ? { ...row, ...patch } : row))
-    );
-  }, []);
+    applyRowSyncPatch(id, patch);
+  }, [applyRowSyncPatch]);
 
   const deleteRow = useCallback((id: string) => {
     setRows((current) => {
@@ -1944,11 +2084,13 @@ export function AreaCalendarBulkShiftModal({
           areaExistingAssignments={effectiveAreaExistingAssignments}
           locationDayAssignments={effectiveLocationDayAssignments}
           allRows={rows}
+          weekShifts={weekShifts}
           profileQualificationIds={profileQualificationIds}
           profileShiftPreferences={profileShiftPreferences}
           withoutServiceHours={withoutServiceHours}
           disabled={loading || saving}
           onChange={(patch) => updateRow(row.id, patch)}
+          onSyncChange={(patch) => applyRowSyncPatch(row.id, patch)}
           onDelete={() => deleteRow(row.id)}
           showDeleteButton={canDeleteBulkRow(row)}
           presetPlaceholder={presetPlaceholder}
@@ -1976,12 +2118,14 @@ export function AreaCalendarBulkShiftModal({
       effectiveAreaExistingAssignments,
       effectiveLocationDayAssignments,
       rows,
+      weekShifts,
       profileQualificationIds,
       profileShiftPreferences,
       withoutServiceHours,
       loading,
       saving,
       updateRow,
+      applyRowSyncPatch,
       deleteRow,
       canDeleteBulkRow,
       presetPlaceholder,
@@ -2000,6 +2144,19 @@ export function AreaCalendarBulkShiftModal({
         });
         return;
       }
+
+      const resolvedDemand =
+        targetDemand ??
+        resolveNextOpenStaffingDemand(
+          staffingEntries,
+          serviceHours,
+          rows,
+          {
+            staffingRules,
+            areaId: dialog.areaId,
+          }
+        ) ??
+        undefined;
 
       const buildRowForExisting = (existingRows: BulkRow[]) =>
         buildPrefilledBulkRow({
@@ -2025,9 +2182,10 @@ export function AreaCalendarBulkShiftModal({
           ),
           areaExistingAssignments: effectiveAreaExistingAssignments,
           locationDayAssignments: effectiveLocationDayAssignments,
+          weekShifts,
           emptyEmployeeId: AREA_CALENDAR_EMPTY_EMPLOYEE_ID,
           createEmptyRow,
-          targetDemand,
+          targetDemand: resolvedDemand,
           withoutServiceHours,
           presetEmployeeId:
             rows.some((row) => !row.existingShiftId)
@@ -2110,7 +2268,15 @@ export function AreaCalendarBulkShiftModal({
 
     const needsPrefilledRow = withoutServiceHours
       ? rows.length === 0
-      : staffingEntries.some((entry) => entry.assigned < entry.required);
+      : resolveNextOpenStaffingDemand(
+          staffingEntries,
+          serviceHours,
+          rows,
+          {
+            staffingRules,
+            areaId: dialog.areaId,
+          }
+        ) !== null;
 
     if (!needsPrefilledRow) {
       autoPrefillAppendedForScopeRef.current = dialogScopeKey;
@@ -2165,6 +2331,7 @@ export function AreaCalendarBulkShiftModal({
           areaExistingAssignments: effectiveAreaExistingAssignments,
           locationDayAssignments: effectiveLocationDayAssignments,
           allRows: currentRows,
+          weekShifts,
           withoutServiceHours,
         }
       );
@@ -2184,6 +2351,7 @@ export function AreaCalendarBulkShiftModal({
       profileQualificationIds,
       effectiveAreaExistingAssignments,
       effectiveLocationDayAssignments,
+      weekShifts,
       withoutServiceHours,
     ]
   );

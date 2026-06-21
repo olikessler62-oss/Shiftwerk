@@ -67,6 +67,11 @@ export function validateOpenEndedSickOnly(
   return { ok: true };
 }
 
+/** Krankmeldungen dürfen nicht abgelehnt werden (nur genehmigen). */
+export function canRejectAbsenceType(type: string): boolean {
+  return type !== "sick";
+}
+
 export function absenceRangesOverlap(a: AbsenceRange, b: AbsenceRange): boolean {
   if (a.employee_id !== b.employee_id) return false;
   const aEnd = effectiveAbsenceEndDate(a);

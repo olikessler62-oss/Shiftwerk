@@ -8,6 +8,7 @@ import {
   type AreaCalendarAssignmentPreset,
 } from "@/lib/areacalendar-assignment-presets";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
+import { isTagAreaHeaderStaffingEntryOverstaffed } from "@/lib/tag-area-header-staffing-display";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
@@ -28,39 +29,92 @@ function timeFieldValue(time: string): string {
 export function isStaffingFullyCovered(
   entries: readonly TagAreaHeaderStaffingEntry[]
 ): boolean {
-  return (
-    entries.length > 0 &&
-    entries.every((entry) => entry.assigned >= entry.required)
-  );
+  if (entries.length === 0) return false;
+
+  return entries.every((entry) => {
+    const qualifications =
+      entry.qualifications?.filter((qualification) => qualification.required > 0) ??
+      [];
+    if (qualifications.length > 0) {
+      return qualifications.every(
+        (qualification) => qualification.assigned >= qualification.required
+      );
+    }
+    return entry.assigned >= entry.required;
+  });
 }
 
 export function staffingDemandExceeded(
   entries: readonly TagAreaHeaderStaffingEntry[]
 ): boolean {
-  return entries.some((entry) => entry.assigned > entry.required);
+  return entries.some((entry) => isTagAreaHeaderStaffingEntryOverstaffed(entry));
 }
 
 export type BulkStaffingRowDemandRef = {
   demandServiceHourId?: string;
+  qualificationId?: string;
   existingShiftId?: string;
   employeeId?: string;
   startTime?: string;
   endTime?: string;
 };
 
+export type OpenStaffingDemandRef = {
+  serviceHourId: string;
+  qualificationId: string;
+};
+
+function isCompleteUnsavedDemandRow(
+  row: BulkStaffingRowDemandRef
+): boolean {
+  if (row.existingShiftId) return false;
+  if (!row.employeeId) return false;
+  return areAreaCalendarShiftTimesComplete(
+    row.startTime ?? "",
+    row.endTime ?? ""
+  );
+}
+
 function completeUnsavedRowCountForServiceHour(
   existingRows: readonly BulkStaffingRowDemandRef[],
   serviceHourId: string
 ): number {
   return existingRows.filter((row) => {
-    if (row.existingShiftId) return false;
-    if (row.demandServiceHourId !== serviceHourId) return false;
-    if (!row.employeeId) return false;
-    return areAreaCalendarShiftTimesComplete(
-      row.startTime ?? "",
-      row.endTime ?? ""
-    );
+    if (!isCompleteUnsavedDemandRow(row)) return false;
+    return row.demandServiceHourId === serviceHourId;
   }).length;
+}
+
+function completeUnsavedRowCountForQualificationDemand(
+  existingRows: readonly BulkStaffingRowDemandRef[],
+  serviceHourId: string,
+  qualificationId: string
+): number {
+  return existingRows.filter((row) => {
+    if (!isCompleteUnsavedDemandRow(row)) return false;
+    if (row.demandServiceHourId !== serviceHourId) return false;
+    return row.qualificationId === qualificationId;
+  }).length;
+}
+
+/** Offener Bedarf einer Tätigkeit unter Berücksichtigung vorbefüllter Zeilen. */
+export function resolveRemainingQualificationNeed(
+  entry: TagAreaHeaderStaffingEntry,
+  qualificationId: string,
+  existingRows: readonly BulkStaffingRowDemandRef[] = []
+): number {
+  const qualification = entry.qualifications?.find(
+    (item) => item.qualificationId === qualificationId
+  );
+  if (!qualification) return 0;
+
+  const completeUnsavedRows = completeUnsavedRowCountForQualificationDemand(
+    existingRows,
+    entry.serviceHourId,
+    qualificationId
+  );
+  const effectiveAssigned = Math.max(qualification.assigned, completeUnsavedRows);
+  return Math.max(0, qualification.required - effectiveAssigned);
 }
 
 /** Offener Bedarf unter Berücksichtigung bereits vorbefüllter, noch nicht gespeicherter Zeilen. */
@@ -81,11 +135,69 @@ export function staffingEntryForNewBulkRow(
   staffingEntries: readonly TagAreaHeaderStaffingEntry[],
   existingRows: readonly BulkStaffingRowDemandRef[] = []
 ): TagAreaHeaderStaffingEntry | null {
+  const openDemand = resolveNextOpenStaffingDemand(
+    staffingEntries,
+    [],
+    existingRows
+  );
+  if (!openDemand) return null;
   return (
     staffingEntries.find(
-      (entry) => resolveRemainingStaffingNeed(entry, existingRows) > 0
+      (entry) => entry.serviceHourId === openDemand.serviceHourId
     ) ?? null
   );
+}
+
+/** Nächstes offenes Zeitfenster inkl. Tätigkeit (chronologisch). */
+export function resolveNextOpenStaffingDemand(
+  staffingEntries: readonly TagAreaHeaderStaffingEntry[],
+  serviceHours: readonly AreaServiceHourRef[],
+  existingRows: readonly BulkStaffingRowDemandRef[] = [],
+  options?: {
+    staffingRules?: readonly LocationAreaStaffing[];
+    areaId?: string;
+  }
+): OpenStaffingDemandRef | null {
+  const sorted = sortStaffingEntriesChronologically(staffingEntries, serviceHours);
+  const staffingRules = options?.staffingRules ?? [];
+  const areaId = options?.areaId ?? "";
+
+  for (const entry of sorted) {
+    const qualifications =
+      entry.qualifications?.filter((qualification) => qualification.required > 0) ??
+      [];
+
+    if (qualifications.length > 0) {
+      for (const qualification of qualifications) {
+        if (
+          resolveRemainingQualificationNeed(
+            entry,
+            qualification.qualificationId,
+            existingRows
+          ) > 0
+        ) {
+          return {
+            serviceHourId: entry.serviceHourId,
+            qualificationId: qualification.qualificationId,
+          };
+        }
+      }
+      continue;
+    }
+
+    if (resolveRemainingStaffingNeed(entry, existingRows) > 0) {
+      return {
+        serviceHourId: entry.serviceHourId,
+        qualificationId: presetQualificationForServiceHour(
+          staffingRules,
+          areaId,
+          entry.serviceHourId
+        ),
+      };
+    }
+  }
+
+  return null;
 }
 
 function sortStaffingEntriesChronologically(
@@ -107,10 +219,24 @@ function sortStaffingEntriesChronologically(
 export function resolveStaffingEntryForBulkPrefill(
   staffingEntries: readonly TagAreaHeaderStaffingEntry[],
   serviceHours: readonly AreaServiceHourRef[],
-  existingRows: readonly BulkStaffingRowDemandRef[] = []
+  existingRows: readonly BulkStaffingRowDemandRef[] = [],
+  options?: {
+    staffingRules?: readonly LocationAreaStaffing[];
+    areaId?: string;
+  }
 ): TagAreaHeaderStaffingEntry | null {
-  const sorted = sortStaffingEntriesChronologically(staffingEntries, serviceHours);
-  return staffingEntryForNewBulkRow(sorted, existingRows);
+  const openDemand = resolveNextOpenStaffingDemand(
+    staffingEntries,
+    serviceHours,
+    existingRows,
+    options
+  );
+  if (!openDemand) return null;
+  return (
+    staffingEntries.find(
+      (entry) => entry.serviceHourId === openDemand.serviceHourId
+    ) ?? null
+  );
 }
 
 export type OpenDemandShiftPrefill = {
@@ -127,32 +253,38 @@ export function resolveOpenDemandShiftPrefill(input: {
   serviceHours: readonly AreaServiceHourRef[];
   assignmentPresets: readonly AreaCalendarAssignmentPreset[];
   staffingRules: readonly LocationAreaStaffing[];
+  existingRows?: readonly BulkStaffingRowDemandRef[];
 }): OpenDemandShiftPrefill | null {
-  const openEntry = resolveStaffingEntryForBulkPrefill(
+  const openDemand = resolveNextOpenStaffingDemand(
     input.staffingEntries,
-    input.serviceHours
+    input.serviceHours,
+    input.existingRows ?? [],
+    {
+      staffingRules: input.staffingRules,
+      areaId: input.areaId,
+    }
   );
-  if (!openEntry || openEntry.assigned >= openEntry.required) {
+  if (!openDemand) {
     return null;
   }
 
   let demand = personalbedarfDemandTimesForEntry(
-    openEntry.serviceHourId,
+    openDemand.serviceHourId,
     input.serviceHours,
     input.assignmentPresets,
     input.staffingRules,
     input.areaId
   );
 
-  if (!demand && openEntry.serviceHourId) {
+  if (!demand && openDemand.serviceHourId) {
     const hourTimes = personalbedarfTimesForServiceHour(
       input.serviceHours,
-      openEntry.serviceHourId
+      openDemand.serviceHourId
     );
     if (hourTimes) {
       demand = {
         ...hourTimes,
-        serviceHourId: openEntry.serviceHourId,
+        serviceHourId: openDemand.serviceHourId,
       };
     }
   }
@@ -179,11 +311,13 @@ export function resolveOpenDemandShiftPrefill(input: {
   }
 
   const qualificationId =
+    openDemand.qualificationId ||
     presetQualificationForServiceHour(
       input.staffingRules,
       input.areaId,
       demand.serviceHourId
-    ) || "";
+    ) ||
+    "";
 
   return { presetId, startTime, endTime, qualificationId };
 }
@@ -234,20 +368,34 @@ export type BulkShiftCurrentRowCandidate = {
   id: string;
   existingShiftId?: string;
   demandServiceHourId?: string;
+  qualificationId?: string;
 };
 
 /** Erste noch nicht gespeicherte Zeile für den aktuellen Personalbedarf. */
 export function resolveCurrentBulkShiftRowId(
   rows: readonly BulkShiftCurrentRowCandidate[],
-  staffingEntries: readonly TagAreaHeaderStaffingEntry[]
+  staffingEntries: readonly TagAreaHeaderStaffingEntry[],
+  serviceHours: readonly AreaServiceHourRef[] = [],
+  options?: {
+    staffingRules?: readonly LocationAreaStaffing[];
+    areaId?: string;
+  }
 ): string | null {
   const unsavedRows = rows.filter((row) => !row.existingShiftId);
   if (unsavedRows.length === 0) return null;
 
-  const targetEntry = staffingEntryForNewBulkRow(staffingEntries, rows);
-  if (targetEntry) {
+  const openDemand = resolveNextOpenStaffingDemand(
+    staffingEntries,
+    serviceHours,
+    rows,
+    options
+  );
+  if (openDemand) {
     const demandMatch = unsavedRows.find(
-      (row) => row.demandServiceHourId === targetEntry.serviceHourId
+      (row) =>
+        row.demandServiceHourId === openDemand.serviceHourId &&
+        (!openDemand.qualificationId ||
+          row.qualificationId === openDemand.qualificationId)
     );
     if (demandMatch) return demandMatch.id;
   }

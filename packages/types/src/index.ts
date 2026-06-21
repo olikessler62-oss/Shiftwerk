@@ -113,6 +113,8 @@ export interface Organization {
   allow_retroactive_compensation_entries: boolean;
   /** Schichtbestätigung durch Mitarbeiter (Default aus). */
   shift_confirmation_enabled: boolean;
+  /** MA-Krankmeldung wird sofort genehmigt (Default an). */
+  auto_approve_sick_absence: boolean;
   /** Editierbarer Hinweistext für Mitarbeiter-Antworten. */
   shift_confirmation_disclaimer: string | null;
   created_at: string;
@@ -274,6 +276,16 @@ export interface LocationAreaStaffing {
   required_count: number;
 }
 
+/** Temporärer Personalbedarf für ein konkretes Kalenderdatum */
+export interface LocationAreaStaffingOverride {
+  id: string;
+  location_area_id: string;
+  shift_date: string;
+  service_hour_id: string;
+  qualification_id: string;
+  required_count: number;
+}
+
 /** Schichtvorlage pro Bereich (Kurzwahl beim Zuweisen) */
 export interface AreaShiftTemplate {
   id: string;
@@ -329,6 +341,7 @@ export interface Shift {
   requested_at: string | null;
   pending_since: string | null;
   pending_reminder_sent_at: string | null;
+  employee_dismissed_at?: string | null;
 }
 
 export interface ShiftConfirmationEvent {
@@ -405,6 +418,22 @@ export interface ConfirmationWeekItem {
 export interface ConfirmationWeekResponse {
   items: ConfirmationWeekItem[];
   organizationDisclaimer: string | null;
+  /** Vom Admin stornierte Schichten — erscheinen in der Glocke/Anfragen-Liste. */
+  canceledByManagerItems: EmployeeShiftCanceledNotificationItem[];
+}
+
+/** Storno-Hinweis für Mitarbeiter (Glocke / Anfragen-Tab). */
+export interface EmployeeShiftCanceledNotificationItem {
+  shiftId: string;
+  shiftDate: string;
+  startsAt: string;
+  endsAt: string;
+  canceledAt: string;
+  locationName: string;
+  areaName: string;
+  templateName: string | null;
+  title: string;
+  message: string;
 }
 
 /** Anzeige-Metadaten für Mitarbeiter-Wochenplan (alle Schichten, nicht nur offene Bestätigungen). */
@@ -415,6 +444,8 @@ export interface EmployeeWeekShiftDisplayItem {
   templateName: string | null;
   templateColor: string | null;
   jobName: string | null;
+  /** Wer die Schicht abgesagt/storniert hat (nur bei confirmation_status canceled). */
+  cancelledBy?: ShiftRequestActorRole;
 }
 
 export interface ConfirmationRespondItem {

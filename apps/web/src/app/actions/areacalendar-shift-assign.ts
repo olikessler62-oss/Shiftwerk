@@ -36,6 +36,7 @@ export type AreaCalendarShiftAssignEmployee = {
   id: string;
   full_name: string;
   color: string | null;
+  weekly_hours: number | null;
   last_shift_date: string | null;
   availabilities: AreaCalendarEmployeeAvailabilityEntry[];
 };
@@ -180,6 +181,7 @@ export async function fetchAreaCalendarShiftAssignEmployees(
           id: profile.id,
           full_name: profile.full_name,
           color: profile.color,
+          weekly_hours: profile.weekly_hours,
           last_shift_date: lastShiftDates[profile.id] ?? null,
           availabilities: (availabilityByProfile.get(profile.id) ?? [])
             .slice()

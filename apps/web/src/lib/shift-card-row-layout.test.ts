@@ -106,8 +106,74 @@ describe("shift-card-row-layout", () => {
       availableBodyHeightPx,
     );
 
-    expect(layouts.get("large")!.heightPx).toBe(requiredLarge);
-    expect(layouts.get("small")!.heightPx).toBe(200);
+    expect(layouts.get("small")!.heightPx).toBeGreaterThan(
+      AREA_ROW_MIN_HEIGHT_PX,
+    );
+    expect(layouts.get("large")!.heightPx).toBe(
+      availableBodyHeightPx - layouts.get("small")!.heightPx,
+    );
+    expect(totalAssignedRowHeightPx(areas, layouts)).toBe(availableBodyHeightPx);
+  });
+
+  it("phase 2 gives each shift area proportional height when viewport is tight", () => {
+    const areas = [
+      { id: "restaurant" },
+      { id: "kitchen" },
+      { id: "bar" },
+    ];
+    const maxShifts = new Map([
+      ["restaurant", 12],
+      ["kitchen", 2],
+      ["bar", 2],
+    ]);
+    const availableBodyHeightPx = 900;
+
+    const layouts = computeAreaRowLayouts(
+      areas,
+      new Set(["restaurant", "kitchen", "bar"]),
+      maxShifts,
+      availableBodyHeightPx,
+    );
+
+    expect(layouts.get("kitchen")!.heightPx).toBeGreaterThan(
+      AREA_ROW_MIN_HEIGHT_PX,
+    );
+    expect(layouts.get("bar")!.heightPx).toBeGreaterThan(
+      AREA_ROW_MIN_HEIGHT_PX,
+    );
+    expect(layouts.get("restaurant")!.heightPx).toBeGreaterThan(
+      layouts.get("kitchen")!.heightPx,
+    );
+    expect(totalAssignedRowHeightPx(areas, layouts)).toBe(availableBodyHeightPx);
+  });
+
+  it("T6: phase 2 distributes height proportionally among shift areas", () => {
+    const areas = [
+      { id: "dominant" },
+      { id: "small" },
+      { id: "empty" },
+    ];
+    const maxShifts = new Map([
+      ["dominant", 12],
+      ["small", 2],
+      ["empty", 0],
+    ]);
+    const availableBodyHeightPx = 300;
+
+    const layouts = computeAreaRowLayouts(
+      areas,
+      new Set(["dominant", "small", "empty"]),
+      maxShifts,
+      availableBodyHeightPx,
+    );
+
+    expect(layouts.get("empty")!.heightPx).toBe(AREA_ROW_MIN_HEIGHT_PX);
+    expect(layouts.get("small")!.heightPx).toBeGreaterThanOrEqual(
+      AREA_ROW_MIN_HEIGHT_PX,
+    );
+    expect(layouts.get("dominant")!.heightPx).toBeGreaterThan(
+      layouts.get("small")!.heightPx,
+    );
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(availableBodyHeightPx);
   });
 
@@ -129,34 +195,6 @@ describe("shift-card-row-layout", () => {
     );
     expect(layouts.get("bar")!.heightPx).toBe(AREA_ROW_MIN_HEIGHT_PX);
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(700);
-  });
-
-  it("T6: phase 2 keeps dominant shift area and shrinks others to minimum", () => {
-    const areas = [
-      { id: "dominant" },
-      { id: "small" },
-      { id: "empty" },
-    ];
-    const maxShifts = new Map([
-      ["dominant", 12],
-      ["small", 2],
-      ["empty", 0],
-    ]);
-    const availableBodyHeightPx = 300;
-
-    const layouts = computeAreaRowLayouts(
-      areas,
-      new Set(["dominant", "small", "empty"]),
-      maxShifts,
-      availableBodyHeightPx,
-    );
-
-    expect(layouts.get("small")!.heightPx).toBe(AREA_ROW_MIN_HEIGHT_PX);
-    expect(layouts.get("empty")!.heightPx).toBe(AREA_ROW_MIN_HEIGHT_PX);
-    expect(layouts.get("dominant")!.heightPx).toBe(
-      availableBodyHeightPx - AREA_ROW_MIN_HEIGHT_PX * 2,
-    );
-    expect(totalAssignedRowHeightPx(areas, layouts)).toBe(availableBodyHeightPx);
   });
 
   it("T7: scroll decision uses stack fit in assigned row height", () => {

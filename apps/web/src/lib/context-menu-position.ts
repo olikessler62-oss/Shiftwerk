@@ -21,7 +21,7 @@ export const AREA_SHIFT_CONTEXT_MENU_WIDTH_PX = Math.round(
 );
 
 export const PLANNING_CONTEXT_MENU_SURFACE_CLASS =
-  "fixed z-[100] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg";
+  "fixed z-[210] overflow-hidden rounded-lg border border-border bg-surface py-1 shadow-lg";
 
 export type ContextMenuPoint = {
   x: number;

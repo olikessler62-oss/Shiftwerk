@@ -4,6 +4,7 @@ import {
   DAYTIMES_HEADER_IMAGE_HEIGHT_PX,
 } from "@/components/areacalendar/daytimes-header-image";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
+import { isTagAreaHeaderStaffingHeaderAlertBadge } from "@/lib/tag-area-header-staffing-display";
 import { PLANNING_CLOSED_DAY_CELL_BG } from "@/lib/planning-calendar-layout";
 import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
@@ -46,6 +47,8 @@ type StaffingRowProps = {
   headerTooltip?: ReactNode;
   /** Zugeklappter Tag — Bedarf als „!“ statt unleserlichem Text. */
   dayCollapsed?: boolean;
+  onStaffingHeaderMenu?: (event: React.MouseEvent) => void;
+  staffingHeaderMenuOpen?: boolean;
   className?: string;
 };
 
@@ -70,10 +73,16 @@ export function TagAreaHeaderStrip({
     overlayBackgroundColor ??
     (noServiceHoursLabel ? PLANNING_CLOSED_DAY_CELL_BG : undefined);
 
+  const headerAlertBadge =
+    !noServiceHoursLabel &&
+    rowProps.entries.length > 0 &&
+    isTagAreaHeaderStaffingHeaderAlertBadge(rowProps.entries);
+
   return (
     <div
       className={cn(
-        "absolute inset-x-0 top-0 z-20 overflow-hidden border-b border-border",
+        "absolute inset-x-0 top-0 overflow-visible border-b border-border",
+        headerAlertBadge ? "z-40" : "z-30",
         resolvedBackgroundColor ? undefined : "bg-background",
         className
       )}

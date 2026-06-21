@@ -59,3 +59,21 @@ export function resolvePlanningEmployeeJobsTooltipLabel(
     .filter((name): name is string => Boolean(name?.trim()))
     .join(", ");
 }
+
+export function resolvePlanningEmployeeJobsTooltipLabelFromMap(
+  employeeId: string,
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>,
+  qualificationNameById: ReadonlyMap<string, string>,
+  qualificationSortOrder: ReadonlyMap<string, number>
+): string {
+  const record: Record<string, string[]> = {};
+  profileQualificationIds.forEach((qualificationIds, profileId) => {
+    record[profileId] = [...qualificationIds];
+  });
+  return resolvePlanningEmployeeJobsTooltipLabel(
+    employeeId,
+    record,
+    qualificationNameById,
+    qualificationSortOrder
+  );
+}

@@ -23,6 +23,7 @@ import {
   groupCommunicationHubData,
   groupCommunicationShiftsByArea,
   shouldShowGroupedEmployeeName,
+  groupedEmployeeListNameLabel,
   type CommunicationHubCategory,
   type CommunicationSwapRequestRow,
 } from "@/lib/communication-hub";
@@ -708,8 +709,18 @@ export function CommunicationResponsesTab({
                           </span>
                         </label>
                       ) : null}
-                      <span className={cn(CELL_CLASS, "font-medium text-foreground")}>
-                        {item.showEmployeeName ? shift.employeeName : null}
+                      <span
+                        className={cn(
+                          CELL_CLASS,
+                          item.showEmployeeName
+                            ? "font-medium text-foreground"
+                            : "text-muted"
+                        )}
+                      >
+                        {groupedEmployeeListNameLabel(
+                          shift.employeeName,
+                          item.showEmployeeName
+                        )}
                       </span>
                       <span className={cn(CELL_CLASS, "text-muted")}>
                         {weekday}, {label}

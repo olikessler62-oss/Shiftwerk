@@ -6,16 +6,25 @@ import {
   SHIFT_PAST_CONFIRM_ALREADY_CONFIRMED_ERROR,
   SHIFT_PAST_CONFIRM_NOT_PAST_ERROR,
 } from "@schichtwerk/database";
-import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import type { ShiftConfirmationStatus, ShiftRequestActorRole } from "@schichtwerk/types";
 import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
+
+export function resolvePlanningShiftCancelActor(input: {
+  id: string;
+  cancelActors?: ReadonlyMap<string, ShiftRequestActorRole>;
+  cancelledBy?: ShiftRequestActorRole;
+}): ShiftRequestActorRole | undefined {
+  return input.cancelledBy ?? input.cancelActors?.get(input.id);
+}
 
 export function shouldDisplayShiftOnPlanningCalendar(input: {
   id: string;
   confirmationStatus?: ShiftConfirmationStatus | null;
-  cancelActors?: ReadonlyMap<string, "employee" | "manager">;
+  cancelActors?: ReadonlyMap<string, ShiftRequestActorRole>;
+  cancelledBy?: ShiftRequestActorRole;
 }): boolean {
   if (input.confirmationStatus !== "canceled") return true;
-  return input.cancelActors?.get(input.id) !== "manager";
+  return resolvePlanningShiftCancelActor(input) !== "manager";
 }
 
 export function canCancelShift(input: {

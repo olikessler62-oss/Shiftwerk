@@ -63,6 +63,8 @@ function createBaseInput(
       {
         id: "emp-1",
         full_name: "Anna",
+        color: null,
+        weekly_hours: 40,
         last_shift_date: "2026-06-01",
         availabilities: [
           { weekday: 1, start_time: "08:00", end_time: "12:00" },
@@ -71,6 +73,8 @@ function createBaseInput(
       {
         id: "emp-2",
         full_name: "Ben",
+        color: null,
+        weekly_hours: 40,
         last_shift_date: null,
         availabilities: [
           { weekday: 1, start_time: "08:00", end_time: "12:00" },
@@ -85,6 +89,7 @@ function createBaseInput(
     areaQualifications: [{ id: "qual-1", name: "Kellner" }],
     areaExistingAssignments: [],
     locationDayAssignments: [],
+    weekShifts: [],
     emptyEmployeeId: EMPTY_EMPLOYEE_ID,
     createEmptyRow: () => ({
       id: "row-1",

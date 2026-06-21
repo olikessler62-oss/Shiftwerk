@@ -52,12 +52,10 @@ export async function POST(request: Request) {
       items: parsed.items,
     });
 
-    if (result.updatedShifts.length > 0) {
-      revalidateAreaCalendarShiftsAfterChange({
-        organizationId: organization.id,
-        shifts: result.updatedShifts,
-      });
-    }
+    revalidateAreaCalendarShiftsAfterChange({
+      organizationId: organization.id,
+      shifts: result.updatedShifts,
+    });
 
     return mobileApiJsonResponse(request, {
       ok: true,

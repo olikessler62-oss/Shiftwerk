@@ -13,6 +13,7 @@ import {
 } from "@/lib/calendar-interaction-ui";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import {
+  dashboardShiftCardTrackWidthPx,
   PLANNING_CELL_HEIGHT_PX,
   PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX,
 } from "@/lib/planning-calendar-layout";
@@ -33,6 +34,7 @@ import {
   type PlanningShiftJobContext,
 } from "@/lib/planning-shift-card-display";
 import {
+  planningShiftSegmentMaxWidthPx,
   planningShiftSegmentShowsEmployeeStrip,
   planningShiftSegmentTouchesDayBorder,
   type PlanningShiftDisplaySegment,
@@ -78,6 +80,10 @@ type Props = {
   onShiftContextMenu?: (shiftId: string, event: React.MouseEvent) => void;
   /** Breite rechts freilassen — nur aufgeklappte Tage (Tag-Grenze erkennbar). */
   trailingLayoutInsetPx?: number;
+  /** Linksklick auf freien Zellbereich neben Schichtkarten — neue Schicht. */
+  onEmptyAreaClick?: () => void;
+  emptyAreaDisabled?: boolean;
+  emptyAreaLabel?: string;
   shiftJobContext: PlanningShiftJobContext;
   employeeHighlighted?: boolean;
   absenceConflictShiftIds?: ReadonlySet<string>;
@@ -96,6 +102,9 @@ export function DashboardCellShiftRow({
   onShiftClick,
   onShiftContextMenu,
   trailingLayoutInsetPx = PLANNING_EXPANDED_DAY_CELL_LAYOUT_INSET_PX,
+  onEmptyAreaClick,
+  emptyAreaDisabled = false,
+  emptyAreaLabel,
   shiftJobContext,
   employeeHighlighted = false,
   absenceConflictShiftIds,
@@ -109,7 +118,6 @@ export function DashboardCellShiftRow({
   const touchesDayBorder = segments.some((segment) =>
     planningShiftSegmentTouchesDayBorder(segment.part)
   );
-  const effectiveTrailingInsetPx = touchesDayBorder ? 0 : trailingLayoutInsetPx;
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -117,38 +125,59 @@ export function DashboardCellShiftRow({
 
     function updateWidth() {
       if (!container) return;
-      setContainerWidthPx(Math.max(0, container.clientWidth - effectiveTrailingInsetPx));
+      setContainerWidthPx(Math.max(0, container.clientWidth));
     }
 
     updateWidth();
     const observer = new ResizeObserver(updateWidth);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [effectiveTrailingInsetPx, segments.length]);
+  }, [segments.length]);
+
+  const layoutWidthPx = useMemo(() => {
+    if (containerWidthPx <= 0) return 0;
+    return Math.max(
+      0,
+      containerWidthPx -
+        (touchesDayBorder ? 0 : trailingLayoutInsetPx)
+    );
+  }, [containerWidthPx, touchesDayBorder, trailingLayoutInsetPx]);
+
+  const shiftTrackWidthPx = useMemo(
+    () =>
+      Math.min(
+        dashboardShiftCardTrackWidthPx(containerWidthPx),
+        layoutWidthPx
+      ),
+    [containerWidthPx, layoutWidthPx]
+  );
 
   const widthPerSegmentPx = useMemo(() => {
     const count = segments.length;
-    if (count === 0 || containerWidthPx <= 0) return 0;
+    if (count === 0 || shiftTrackWidthPx <= 0) return 0;
     const gaps = Math.max(0, count - 1) * PLANNING_EXPANDED_SHIFT_CELL_GAP_PX;
-    return Math.max(0, (containerWidthPx - gaps) / count);
-  }, [containerWidthPx, segments.length]);
+    return Math.max(0, (shiftTrackWidthPx - gaps) / count);
+  }, [shiftTrackWidthPx, segments.length]);
+
+  const leftSegments = useMemo(
+    () => segments.filter((segment) => segment.part !== "overnight-start"),
+    [segments]
+  );
+  const rightSegments = useMemo(
+    () => segments.filter((segment) => segment.part === "overnight-start"),
+    [segments]
+  );
 
   if (segments.length === 0) return null;
 
-  return (
-    <div
-      ref={containerRef}
-      className="flex w-full min-w-0 flex-1 items-stretch"
-      style={{
-        minHeight: PLANNING_CELL_HEIGHT_PX,
-        gap: PLANNING_EXPANDED_SHIFT_CELL_GAP_PX,
-      }}
-    >
-      {segments.map((segment) => {
+  function renderSegment(segment: PlanningShiftDisplaySegment) {
         const { shift, part } = segment;
         const segmentKey = `${shift.id}:${part}`;
         const isSelected = selectedShiftId === shift.id;
-        const cardWidthPx = widthPerSegmentPx;
+        const cardWidthPx = Math.min(
+          widthPerSegmentPx,
+          planningShiftSegmentMaxWidthPx(shiftTrackWidthPx, part)
+        );
         const showAnyText = cardWidthPx >= MIN_WIDTH_FOR_TIME_PX;
         const showTitle = cardWidthPx >= MIN_WIDTH_FOR_TITLE_PX;
         const stripWidthPx = resolveStripWidthPx(cardWidthPx);
@@ -211,10 +240,10 @@ export function DashboardCellShiftRow({
             content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
             contentClassName={shiftCardTooltipContentClassName}
             className={cn(
-              "inline-flex min-w-0 flex-1",
-              part === "overnight-start" && "ml-auto",
+              "inline-flex h-full min-h-0 min-w-0 shrink-0",
               employeeHighlighted && "relative z-10 overflow-visible"
             )}
+            style={{ width: cardWidthPx, maxWidth: cardWidthPx }}
             placement={{
               anchorLeftToTriggerCenter: true,
               gapPx: 2,
@@ -223,12 +252,14 @@ export function DashboardCellShiftRow({
           >
             <div
               className={cn(
-                "flex h-full min-h-0 w-full min-w-0 flex-1",
+                "flex h-full min-h-0 w-full min-w-0 shrink-0",
                 segmentBorderRadiusClass(part)
               )}
               style={{
                 boxShadow: cardBoxShadow,
                 minHeight: PLANNING_CELL_HEIGHT_PX,
+                width: cardWidthPx,
+                maxWidth: cardWidthPx,
               }}
             >
               <button
@@ -255,7 +286,7 @@ export function DashboardCellShiftRow({
                   );
                 }}
                 className={cn(
-                  "relative flex min-h-0 min-w-0 flex-1 overflow-hidden text-left text-black transition disabled:opacity-50",
+                  "relative flex h-full w-full min-h-0 min-w-0 overflow-hidden text-left text-black transition disabled:opacity-50",
                   SHIFT_CARD_INTERACTIVE_CLASS,
                   showsPointerCursor
                     ? "cursor-pointer hover:opacity-90"
@@ -315,7 +346,30 @@ export function DashboardCellShiftRow({
             </div>
           </Tooltip>
         );
-      })}
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex w-full min-w-0 flex-1 items-stretch"
+      style={{
+        minHeight: PLANNING_CELL_HEIGHT_PX,
+        gap: PLANNING_EXPANDED_SHIFT_CELL_GAP_PX,
+      }}
+    >
+      {leftSegments.map(renderSegment)}
+      {onEmptyAreaClick ? (
+        <button
+          type="button"
+          disabled={emptyAreaDisabled}
+          onClick={onEmptyAreaClick}
+          className="min-w-0 flex-1 self-stretch border-0 bg-transparent p-0 disabled:cursor-default enabled:cursor-pointer enabled:hover:bg-primary/5"
+          aria-label={emptyAreaLabel}
+        />
+      ) : (
+        <div className="min-w-0 flex-1 self-stretch" aria-hidden />
+      )}
+      {rightSegments.map(renderSegment)}
     </div>
   );
 }

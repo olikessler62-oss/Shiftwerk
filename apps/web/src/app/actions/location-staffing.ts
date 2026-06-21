@@ -13,6 +13,10 @@ import type {
   LocationAreaStaffing,
   Qualification,
 } from "@schichtwerk/types";
+import {
+  resolveServiceHourForStaffingWindow,
+  serviceWeekdayForDate,
+} from "@/lib/location-staffing-client";
 
 export type LocationStaffingActionResult =
   | {
@@ -81,6 +85,15 @@ function serviceHourHasStaffing(
   return staffing.some(
     (rule) => rule.service_hour_id === serviceHourId && rule.required_count > 0
   );
+}
+
+function revalidateCalendarStaffingPaths() {
+  try {
+    revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
+  } catch {
+    /* Cache-Revalidierung darf Speichern nicht fehlschlagen lassen */
+  }
 }
 
 export async function fetchLocationStaffingEditor(
@@ -329,7 +342,7 @@ export async function copyLocationStaffingFromArea(input: {
       ),
     ]);
 
-    revalidatePath("/dashboard");
+    revalidateCalendarStaffingPaths();
     return { ok: true, staffing, serviceHours, qualifications };
   } catch (e) {
     return {
@@ -422,11 +435,7 @@ export async function saveServiceHourStaffing(input: {
         input.locationId
       ),
     ]);
-    try {
-      revalidatePath("/dashboard");
-    } catch {
-      /* Cache-Revalidierung darf Speichern nicht fehlschlagen lassen */
-    }
+    revalidateCalendarStaffingPaths();
     return { ok: true, serviceHourId: hour.id, staffing, serviceHours };
   } catch (e) {
     return {
@@ -454,7 +463,7 @@ export async function deleteServiceHourStaffing(input: {
       input.locationId
     );
 
-    revalidatePath("/dashboard");
+    revalidateCalendarStaffingPaths();
     const staffing = await hourCheck.db.listLocationAreaStaffingForArea(
       hourCheck.hour.location_area_id,
       input.locationId
@@ -464,6 +473,117 @@ export async function deleteServiceHourStaffing(input: {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Löschen fehlgeschlagen",
+    };
+  }
+}
+
+export async function saveTemporaryAreaStaffing(input: {
+  locationId: string;
+  locationAreaId: string;
+  dates: string[];
+  serviceHourId?: string;
+  window: { start_time: string; end_time: string };
+  rules: {
+    qualification_id: string;
+    required_count: number;
+  }[];
+}): Promise<LocationStaffingActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const areaCheck = await assertLocationArea(
+      organizationId,
+      input.locationId,
+      input.locationAreaId
+    );
+    if (!areaCheck.ok) return areaCheck;
+
+    if (input.dates.length === 0) {
+      return { ok: false, error: "Kein Datum ausgewählt" };
+    }
+
+    const windowCheck = validateServiceHoursInput([
+      {
+        weekday: serviceWeekdayForDate(input.dates[0]),
+        start_time: input.window.start_time,
+        end_time: input.window.end_time,
+      },
+    ]);
+    if (!windowCheck.ok) return windowCheck;
+
+    const uniqueDates = [...new Set(input.dates)].sort();
+    if (uniqueDates.length === 0) {
+      return { ok: false, error: "Kein Datum ausgewählt" };
+    }
+
+    const db = areaCheck.db;
+    const organizationQualifications = await db.listQualifications(organizationId);
+    const areaTemplateEntries = await db.listAreaQualificationTemplatesForArea(
+      input.locationAreaId,
+      input.locationId
+    );
+    const selectableQualifications = qualificationsForArea(
+      areaTemplateEntries.map((entry) => entry.qualification),
+      organizationQualifications
+    );
+    const qualIds = new Set(
+      selectableQualifications.map((qualification) => qualification.id)
+    );
+    const validated = validateServiceHourStaffingRulesInput(input.rules, qualIds);
+    if (!validated.ok) return validated;
+
+    let serviceHours = await db.listLocationAreaServiceHoursForArea(
+      input.locationAreaId,
+      input.locationId
+    );
+
+    for (const date of uniqueDates) {
+      const weekday = serviceWeekdayForDate(date);
+      const resolvedHourId = resolveServiceHourForStaffingWindow(
+        serviceHours,
+        input.locationAreaId,
+        date,
+        input.window.start_time,
+        input.window.end_time,
+        { referenceServiceHourId: input.serviceHourId }
+      );
+      let hour = resolvedHourId
+        ? serviceHours.find((entry) => entry.id === resolvedHourId)
+        : undefined;
+      if (!hour) {
+        hour = await db.ensureLocationAreaServiceHour(
+          input.locationAreaId,
+          input.locationId,
+          {
+            weekday,
+            start_time: input.window.start_time,
+            end_time: input.window.end_time,
+          }
+        );
+        serviceHours = await db.listLocationAreaServiceHoursForArea(
+          input.locationAreaId,
+          input.locationId
+        );
+      }
+
+      await db.replaceLocationAreaStaffingOverridesForServiceHourDate(
+        input.locationAreaId,
+        input.locationId,
+        date,
+        hour.id,
+        validated.data
+      );
+    }
+
+    revalidateCalendarStaffingPaths();
+    const staffing = await db.listLocationAreaStaffingForArea(
+      input.locationAreaId,
+      input.locationId
+    );
+    return { ok: true, staffing };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Speichern fehlgeschlagen",
     };
   }
 }

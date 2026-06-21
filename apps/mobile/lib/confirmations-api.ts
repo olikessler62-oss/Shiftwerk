@@ -40,3 +40,12 @@ export async function cancelConfirmationShift(
     body: JSON.stringify({ shiftId }),
   });
 }
+
+export async function dismissCanceledShift(
+  shiftId: string
+): Promise<{ ok: true }> {
+  return fetchMobileApi<{ ok: true }>("/api/mobile/confirmations/dismiss", {
+    method: "POST",
+    body: JSON.stringify({ shiftId }),
+  });
+}

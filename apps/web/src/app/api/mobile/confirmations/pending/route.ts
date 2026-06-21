@@ -17,18 +17,28 @@ export async function OPTIONS(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const { userId, organization, db } = await requireMobileApiEmployee(request);
+    const { userId, organization, adminDb } = await requireMobileApiEmployee(request);
     const timeZone = resolveOrganizationTimeZone(organization);
     const fromDate = organizationTodayISO(timeZone);
 
-    const response = await db.listEmployeePendingConfirmationItems(
-      userId,
-      organization.id,
-      fromDate,
-      organization.shift_confirmation_disclaimer
-    );
+    const [response, canceledByManagerItems] = await Promise.all([
+      adminDb.listEmployeePendingConfirmationItems(
+        userId,
+        organization.id,
+        fromDate,
+        organization.shift_confirmation_disclaimer
+      ),
+      adminDb.listEmployeeManagerCanceledShiftNotifications({
+        employeeId: userId,
+        organizationId: organization.id,
+        fromDate,
+      }),
+    ]);
 
-    return mobileApiJsonResponse(request, response);
+    return mobileApiJsonResponse(request, {
+      ...response,
+      canceledByManagerItems,
+    });
   } catch (error) {
     if (error instanceof MobileApiError) {
       return mobileApiJsonResponse(

@@ -5,6 +5,7 @@ import {
   countQualificationCoverage,
   computeBulkStaffingHeaderEntries,
   formatStaffingEntryTooltipContent,
+  mapAssignmentQualificationIds,
   staffingAssignmentsForPlanningAreaDay,
   type DemandWindowRef,
   type StaffingAssignmentRef,
@@ -108,6 +109,35 @@ describe("countQualificationCoverage", () => {
 
     expect(counts.get(qualKoch)).toBe(1);
     expect(counts.get(qualKellner)).toBe(1);
+  });
+
+  it("counts all explicit qualification rows even when demand is already met", () => {
+    const assignments: StaffingAssignmentRef[] = [
+      {
+        startTime: "12:00",
+        endTime: "16:00",
+        employeeId: "emp-1",
+        qualificationId: qualKoch,
+      },
+      {
+        startTime: "12:00",
+        endTime: "16:00",
+        employeeId: "emp-2",
+        qualificationId: qualKoch,
+      },
+    ];
+    const qualRules = staffingRules.filter(
+      (rule) => rule.service_hour_id === hourEvening
+    );
+
+    const counts = countQualificationCoverage(
+      assignments,
+      qualRules,
+      new Map()
+    );
+
+    expect(counts.get(qualKoch)).toBe(2);
+    expect(counts.get(qualKellner)).toBe(0);
   });
 
   it("infers qualification from profile when row has no explicit function", () => {
@@ -444,5 +474,28 @@ describe("buildStaffingQualificationBreakdown", () => {
     );
 
     expect(breakdown.map((item) => item.name)).toEqual(["Koch", "Kellner"]);
+  });
+});
+
+describe("mapAssignmentQualificationIds", () => {
+  it("assigns one qualification per shift when employee has both", () => {
+    const profileQualificationIds = new Map([
+      ["emp-1", new Set([qualKellner, qualKoch])],
+    ]);
+
+    const mapping = mapAssignmentQualificationIds(
+      [
+        {
+          startTime: "18:00",
+          endTime: "22:00",
+          employeeId: "emp-1",
+          qualificationId: qualKoch,
+        },
+      ],
+      staffingRules.filter((rule) => rule.service_hour_id === hourEvening),
+      profileQualificationIds
+    );
+
+    expect(mapping.get(0)).toBe(qualKoch);
   });
 });

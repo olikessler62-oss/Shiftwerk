@@ -17,6 +17,7 @@ import type {
   Location,
   LocationArea,
   LocationAreaStaffing,
+  LocationAreaStaffingOverride,
   LocationAreaServiceHour,
   UserRole,
   Organization,
@@ -589,6 +590,21 @@ export interface SchichtwerkDatabase {
     serviceHourId: string,
     locationId: string
   ): Promise<void>;
+  listLocationAreaStaffingOverrides(
+    locationId: string,
+    from: string,
+    to: string
+  ): Promise<LocationAreaStaffingOverride[]>;
+  replaceLocationAreaStaffingOverridesForServiceHourDate(
+    locationAreaId: string,
+    locationId: string,
+    shiftDate: string,
+    serviceHourId: string,
+    rules: {
+      qualification_id: string;
+      required_count: number;
+    }[]
+  ): Promise<void>;
   listAreaShiftTemplatesWithBreaksForArea(
     locationAreaId: string,
     locationId: string
@@ -810,6 +826,28 @@ export interface SchichtwerkDatabase {
     recipientProfileId: string
   ): Promise<void>;
 
+  insertManagerNotifications(
+    organizationId: string,
+    rows: {
+      recipient_profile_id: string;
+      type: string;
+      title: string;
+      body: string;
+      payload: Record<string, unknown>;
+    }[]
+  ): Promise<void>;
+
+  insertNotificationOutboxEntries(
+    organizationId: string,
+    rows: {
+      recipient_profile_id: string;
+      channel: import("@schichtwerk/types").NotificationOutboxChannel;
+      template_key: string;
+      payload: Record<string, unknown>;
+      simulated: boolean;
+    }[]
+  ): Promise<void>;
+
   listNotificationOutboxEntries(
     organizationId: string,
     options?: { limit?: number }
@@ -833,6 +871,14 @@ export interface SchichtwerkDatabase {
     fromDate: string,
     organizationDisclaimer: string | null
   ): Promise<import("@schichtwerk/types").ConfirmationWeekResponse>;
+
+  listEmployeeManagerCanceledShiftNotifications(input: {
+    employeeId: string;
+    organizationId: string;
+    fromDate: string;
+  }): Promise<
+    import("@schichtwerk/types").EmployeeShiftCanceledNotificationItem[]
+  >;
 
   getEmployeeConfirmationShiftItem(
     employeeId: string,
@@ -863,6 +909,12 @@ export interface SchichtwerkDatabase {
     employeeId: string;
   }>;
 
+  dismissCanceledShiftFromEmployeeView(input: {
+    organizationId: string;
+    shiftId: string;
+    employeeId: string;
+  }): Promise<{ shiftDate: string }>;
+
   confirmPastShiftAsManager(input: {
     organizationId: string;
     shiftId: string;
@@ -888,7 +940,20 @@ export interface SchichtwerkDatabase {
 
   resetOrganizationOperationalData(organizationId: string): Promise<void>;
 
-  resetOrganizationShiftData(organizationId: string): Promise<void>;
+  resetOrganizationShiftData(
+    organizationId: string,
+    options?: { deleteShifts?: boolean }
+  ): Promise<void>;
+
+  saveOrganizationShiftSnapshot(organizationId: string): Promise<number>;
+
+  restoreOrganizationShiftSnapshot(organizationId: string): Promise<number>;
+
+  clearOrganizationShiftSnapshot(organizationId: string): Promise<void>;
+
+  getOrganizationShiftSnapshotMeta(
+    organizationId: string
+  ): Promise<{ savedAt: string; shiftCount: number } | null>;
 
   // —— Absence requests ——
   listOrganizationAbsences(

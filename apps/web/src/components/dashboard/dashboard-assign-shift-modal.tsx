@@ -78,6 +78,7 @@ function planningAssignPresetEmployeeStub(
     id: preset.id,
     full_name: preset.full_name,
     color: preset.color,
+    weekly_hours: null,
     last_shift_date: null,
     availabilities: [],
   };
@@ -188,6 +189,20 @@ export function DashboardAssignShiftModal({
         ? areaStaffingQualificationOptions(staffingRules, areaId, qualifications)
         : [],
     [areaId, staffingRules, qualifications]
+  );
+  const qualificationNameById = useMemo(
+    () => new Map(qualifications.map((qualification) => [qualification.id, qualification.name])),
+    [qualifications]
+  );
+  const qualificationSortOrder = useMemo(
+    () =>
+      new Map(
+        qualifications.map((qualification) => [
+          qualification.id,
+          qualification.sort_order,
+        ])
+      ),
+    [qualifications]
   );
 
   const demandServiceHourId = useMemo(() => {
@@ -477,12 +492,14 @@ export function DashboardAssignShiftModal({
   );
 
   const dismissMessagePrompt = useCallback(() => {
+    let shouldCloseAssignModal = false;
     setMessagePrompt((current) => {
-      if (current?.closeAssignModalOnDismiss) {
-        onClose();
-      }
+      shouldCloseAssignModal = Boolean(current?.closeAssignModalOnDismiss);
       return null;
     });
+    if (shouldCloseAssignModal) {
+      queueMicrotask(onClose);
+    }
   }, [onClose]);
 
   const finishAssign = useCallback(
@@ -524,7 +541,7 @@ export function DashboardAssignShiftModal({
         return;
       }
 
-      onClose();
+      queueMicrotask(onClose);
     },
     [assignRestOfWeekDays, onAssign, onClose, availabilityNotice, t]
   );
@@ -589,7 +606,7 @@ export function DashboardAssignShiftModal({
     <div
       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4"
       role="presentation"
-      onMouseDown={(event) => {
+      onClick={(event) => {
         if (
           event.target === event.currentTarget &&
           !busy &&
@@ -725,6 +742,9 @@ export function DashboardAssignShiftModal({
               }
               onApplyAvailability={handleApplyAvailability}
               weekdayLabelStyle="long"
+              profileQualificationIds={profileQualificationIds}
+              qualificationNameById={qualificationNameById}
+              qualificationSortOrder={qualificationSortOrder}
             />
             {availabilityNotice.visible ? (
               <p className={ADD_SHIFT_AVAILABILITY_NOTICE_CLASS}>

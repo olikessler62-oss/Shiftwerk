@@ -15,6 +15,8 @@ import { cancelShiftAsManager, confirmPastShiftAsManager, submitCommunicationCon
 import { isPastCalendarDate, toISODate, startOfWeek, parseISODate } from "@/lib/dates";
 import { usePlanningEmployeeListContextMenu } from "@/lib/use-planning-employee-list-context-menu";
 import { DashboardCalendarGrid } from "@/components/dashboard/dashboard-calendar-grid";
+import { CalendarStaffingEditModal } from "@/components/planning/calendar-staffing-edit-modal";
+import { buildCalendarStaffingEditorData } from "@/lib/calendar-staffing-editor-data";
 import { PlanningEmployeeListContextMenu } from "@/components/planning/planning-employee-list-context-menu";
 import { DashboardHeaderPlacement } from "@/components/dashboard/dashboard-header-placement";
 import { useDashboardAppSidebarContent } from "@/components/dashboard/dashboard-app-sidebar-slot";
@@ -62,6 +64,7 @@ import {
   computeBulkStaffingHeaderEntries,
   staffingAssignmentsForPlanningAreaDay,
 } from "@/lib/bulk-staffing-header";
+import { mergeStaffingRulesWithOverridesForAreaDate } from "@/lib/staffing-rules-with-overrides";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
 import { resolveOpenDemandShiftPrefill } from "@/lib/bulk-shift-staffing";
 import { isPlanningWeekAtEarliest } from "@schichtwerk/database";
@@ -74,6 +77,7 @@ import { organizationTodayISO } from "@schichtwerk/database";
 import {
   weeklyHoursByEmployeeIdFromEmployees,
   weeklyHoursCheckShiftFromPlanningShift,
+  shiftAssignWeekShiftsFromPlanningShifts,
 } from "@/lib/weekly-hours-check-shifts";
 import {
   useEffectiveShiftConfirmationEnabled,
@@ -185,6 +189,7 @@ import type {
   Location,
   LocationArea,
   LocationAreaStaffing,
+  LocationAreaStaffingOverride,
   Profile,
   ProfileRecurringAvailability,
   Qualification,
@@ -220,6 +225,7 @@ type Props = {
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   serviceHours: AreaServiceHourRef[];
   staffingRules: LocationAreaStaffing[];
+  staffingOverrides?: LocationAreaStaffingOverride[];
   qualifications: Qualification[];
   profileQualificationIds: Record<string, string[]>;
   readOnlyWeek?: boolean;
@@ -239,6 +245,21 @@ type CellContextMenuState = {
   employeeId: string;
   date: string;
   shiftId?: string;
+};
+
+type StaffingHeaderContextMenuState = {
+  x: number;
+  y: number;
+  areaId: string;
+  date: string;
+  initialServiceHourId?: string;
+};
+
+type StaffingEditDialogState = {
+  mode: "temporary" | "permanent";
+  areaId: string;
+  anchorDate: string;
+  initialServiceHourId?: string;
 };
 
 const PLANNING_CELL_CONTEXT_MENU_ITEM_HEIGHT_PX = 36;
@@ -320,6 +341,7 @@ export function DashboardView({
   areaShiftTemplates,
   serviceHours,
   staffingRules,
+  staffingOverrides = [],
   qualifications,
   profileQualificationIds: profileQualificationIdsRecord,
   readOnlyWeek = false,
@@ -350,12 +372,22 @@ export function DashboardView({
     null
   );
   const [picker, setPicker] = useState<Picker | null>(null);
+  const closeAssignModal = useCallback(() => {
+    setPicker(null);
+    setSelectedEmployeeId("");
+    setQualificationId("");
+    setNote("");
+  }, []);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [qualificationId, setQualificationId] = useState("");
   const [qualificationManuallySelected, setQualificationManuallySelected] =
     useState(false);
   const [cellContextMenu, setCellContextMenu] =
     useState<CellContextMenuState | null>(null);
+  const [staffingHeaderContextMenu, setStaffingHeaderContextMenu] =
+    useState<StaffingHeaderContextMenuState | null>(null);
+  const [staffingEditDialog, setStaffingEditDialog] =
+    useState<StaffingEditDialogState | null>(null);
   const {
     menu: employeeListContextMenu,
     menuRef: employeeListContextMenuRef,
@@ -401,6 +433,9 @@ export function DashboardView({
   const cellContextMenuRef = useRef<HTMLDivElement>(null);
   const skipCellContextMenuCloseRef = useRef(false);
   const cellContextMenuOpenedAtRef = useRef(0);
+  const staffingHeaderContextMenuRef = useRef<HTMLDivElement>(null);
+  const skipStaffingHeaderContextMenuCloseRef = useRef(false);
+  const staffingHeaderContextMenuOpenedAtRef = useRef(0);
   const [selectedPresetId, setSelectedPresetId] = useState("");
   const [startTime, setStartTime] = useState("00:00");
   const [endTime, setEndTime] = useState("00:00");
@@ -415,6 +450,7 @@ export function DashboardView({
       Boolean(bulkShiftDialog) ||
       Boolean(shiftDeleteConfirmId) ||
       Boolean(shiftCancelConfirm) ||
+      Boolean(staffingEditDialog) ||
       communicationOpen
   );
   useAppShellWaitCursorActive(communicationBusy);
@@ -518,6 +554,7 @@ export function DashboardView({
           id: shift.id,
           confirmationStatus: shift.confirmationStatus,
           cancelActors: communicationCancelActorsMap,
+          cancelledBy: shift.displayState?.openCancellation?.cancelledBy,
         })
       ),
     [visibleShifts, communicationCancelActorsMap]
@@ -846,7 +883,12 @@ export function DashboardView({
       map.set(
         date,
         computeBulkStaffingHeaderEntries({
-          staffingRules,
+          staffingRules: mergeStaffingRulesWithOverridesForAreaDate(
+            staffingRules,
+            staffingOverrides,
+            selectedAreaId,
+            date
+          ),
           areaId: selectedAreaId,
           dateISO: date,
           serviceHours,
@@ -873,6 +915,7 @@ export function DashboardView({
     calendarDisplayShifts,
     visibleEmployeeIds,
     staffingRules,
+    staffingOverrides,
     serviceHours,
     assignmentPresets,
     qualifications,
@@ -974,6 +1017,11 @@ export function DashboardView({
     [calendarPlanningShifts]
   );
 
+  const weekShiftsForAssignment = useMemo(
+    () => shiftAssignWeekShiftsFromPlanningShifts(visibleLocationShifts),
+    [visibleLocationShifts]
+  );
+
   const weeklyHoursByEmployeeId = useMemo(
     () => weeklyHoursByEmployeeIdFromEmployees(employees),
     [employees]
@@ -1073,6 +1121,16 @@ export function DashboardView({
   const selectedLocationName = useMemo(
     () => locations.find((location) => location.id === selectedLocationId)?.name ?? "",
     [locations, selectedLocationId]
+  );
+
+  const selectedLocation = useMemo(
+    () => locations.find((location) => location.id === selectedLocationId) ?? null,
+    [locations, selectedLocationId]
+  );
+
+  const selectedArea = useMemo(
+    () => areas.find((area) => area.id === selectedAreaId) ?? null,
+    [areas, selectedAreaId]
   );
 
   const pushPlanungQuery = useCallback(
@@ -1442,10 +1500,6 @@ export function DashboardView({
       return { ok: true, warnings: result.warnings };
     }
 
-    setPicker(null);
-    setSelectedEmployeeId("");
-    setQualificationId("");
-    setNote("");
     return { ok: true };
   }
 
@@ -1468,9 +1522,7 @@ export function DashboardView({
       return { ok: false, error: translateActionError(result.error, t) };
     }
 
-    setPicker(null);
-    setSelectedEmployeeId("");
-    setQualificationId("");
+    closeAssignModal();
     router.refresh();
     return { ok: true };
   }
@@ -1600,6 +1652,44 @@ export function DashboardView({
     [openCellContextMenuAt, shiftsByCellDisplay, absences]
   );
 
+  const handleStaffingHeaderContextMenu = useCallback(
+    (date: string, clientX: number, clientY: number) => {
+      if (!selectedAreaId || readOnlyWeek || isPastShiftDate(date)) return;
+      const entries = dailyStaffingByDate.get(date) ?? [];
+      if (entries.length === 0) return;
+      setCellContextMenu(null);
+      staffingHeaderContextMenuOpenedAtRef.current = performance.now();
+      setStaffingHeaderContextMenu({
+        x: clientX,
+        y: clientY,
+        areaId: selectedAreaId,
+        date,
+        initialServiceHourId: entries[0]?.serviceHourId,
+      });
+    },
+    [selectedAreaId, dailyStaffingByDate, readOnlyWeek]
+  );
+
+  const openStaffingEditDialog = useCallback(
+    (mode: StaffingEditDialogState["mode"]) => {
+      if (!staffingHeaderContextMenu) return;
+      skipStaffingHeaderContextMenuCloseRef.current = true;
+      setStaffingEditDialog({
+        mode,
+        areaId: staffingHeaderContextMenu.areaId,
+        anchorDate: staffingHeaderContextMenu.date,
+        initialServiceHourId: staffingHeaderContextMenu.initialServiceHourId,
+      });
+      setStaffingHeaderContextMenu(null);
+    },
+    [staffingHeaderContextMenu]
+  );
+
+  const handleStaffingEditSaved = useCallback(() => {
+    setStaffingEditDialog(null);
+    router.refresh();
+  }, [router]);
+
   const handleShiftContextMenu = useCallback(
     (
       employeeId: string,
@@ -1719,6 +1809,63 @@ export function DashboardView({
     };
   }, [cellContextMenu]);
 
+  useEffect(() => {
+    if (!staffingHeaderContextMenu) return;
+
+    function closeMenu() {
+      setStaffingHeaderContextMenu(null);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu();
+    }
+
+    function onMouseMove(event: MouseEvent) {
+      if (
+        performance.now() - staffingHeaderContextMenuOpenedAtRef.current < 200
+      ) {
+        return;
+      }
+      const menu = staffingHeaderContextMenuRef.current;
+      if (!menu) return;
+      if (
+        distanceFromPointToMenu(event.clientX, event.clientY, menu) >
+        CONTEXT_MENU_CLOSE_DISTANCE_PX
+      ) {
+        closeMenu();
+      }
+    }
+
+    function onDocumentContextMenu() {
+      if (skipStaffingHeaderContextMenuCloseRef.current) {
+        skipStaffingHeaderContextMenuCloseRef.current = false;
+        return;
+      }
+      closeMenu();
+    }
+
+    function onDocumentClick() {
+      if (skipStaffingHeaderContextMenuCloseRef.current) {
+        skipStaffingHeaderContextMenuCloseRef.current = false;
+        return;
+      }
+      closeMenu();
+    }
+
+    document.addEventListener("click", onDocumentClick);
+    document.addEventListener("contextmenu", onDocumentContextMenu);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("scroll", closeMenu, true);
+    return () => {
+      document.removeEventListener("click", onDocumentClick);
+      document.removeEventListener("contextmenu", onDocumentContextMenu);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [staffingHeaderContextMenu]);
+
   const handleContextAssignSingle = useCallback(() => {
     if (!cellContextMenu) return;
     skipCellContextMenuCloseRef.current = true;
@@ -1794,10 +1941,10 @@ export function DashboardView({
         return;
       }
       setShiftDeleteConfirmId(null);
-      setPicker(null);
+      closeAssignModal();
       router.refresh();
     });
-  }, [shiftDeleteConfirmId, router, t]);
+  }, [shiftDeleteConfirmId, closeAssignModal, router, t]);
 
   const handleContextCancelShift = useCallback(() => {
     if (!cellContextMenu) return;
@@ -2025,6 +2172,14 @@ export function DashboardView({
     ]
   );
 
+  const clampedStaffingHeaderContextMenuPosition = useClampedContextMenuPosition(
+    staffingHeaderContextMenu != null,
+    staffingHeaderContextMenu?.x ?? 0,
+    staffingHeaderContextMenu?.y ?? 0,
+    staffingHeaderContextMenuRef,
+    [staffingHeaderContextMenu]
+  );
+
   const contextMenuShift = cellContextMenu?.shiftId
     ? shiftsById.get(cellContextMenu.shiftId)
     : undefined;
@@ -2234,6 +2389,8 @@ export function DashboardView({
             onCellContextMenu={handleCellContextMenu}
             onShiftContextMenu={handleShiftContextMenu}
             onEmployeeRowContextMenu={handleEmployeeRowContextMenu}
+            onStaffingHeaderContextMenu={handleStaffingHeaderContextMenu}
+            staffingHeaderContextMenuOpen={staffingHeaderContextMenu != null}
             selectedAreaId={selectedAreaId}
             selectedAreaName={selectedAreaName}
             serviceHours={serviceHours}
@@ -2358,6 +2515,59 @@ export function DashboardView({
           />
         ) : null}
 
+        {staffingHeaderContextMenu ? (
+          <div
+            ref={staffingHeaderContextMenuRef}
+            className={PLANNING_CONTEXT_MENU_SURFACE_CLASS}
+            style={{
+              left: clampedStaffingHeaderContextMenuPosition.x,
+              top: clampedStaffingHeaderContextMenuPosition.y,
+              width: DASHBOARD_CELL_CONTEXT_MENU_WIDTH_PX,
+            }}
+            role="menu"
+            aria-label={t("calendarStaffing.contextMenuAria")}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle"
+              onClick={() => openStaffingEditDialog("temporary")}
+            >
+              {t("calendarStaffing.contextTemporary")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle"
+              onClick={() => openStaffingEditDialog("permanent")}
+            >
+              {t("calendarStaffing.contextPermanent")}
+            </button>
+          </div>
+        ) : null}
+
+        {staffingEditDialog && selectedLocation && selectedArea ? (
+          <CalendarStaffingEditModal
+            mode={staffingEditDialog.mode}
+            location={selectedLocation}
+            area={selectedArea}
+            anchorDate={staffingEditDialog.anchorDate}
+            weekDates={dates}
+            shiftTemplates={templatesForArea}
+            editorData={buildCalendarStaffingEditorData(
+              staffingEditDialog.areaId,
+              serviceHours,
+              staffingRules,
+              qualifications
+            )}
+            staffingOverrides={staffingOverrides}
+            initialServiceHourId={staffingEditDialog.initialServiceHourId}
+            onClose={() => setStaffingEditDialog(null)}
+            onSaved={handleStaffingEditSaved}
+          />
+        ) : null}
+
         {picker ? (
           <DashboardAssignShiftModal
             date={picker.date}
@@ -2406,12 +2616,7 @@ export function DashboardView({
               };
             })()}
             onAssign={handleAssign}
-            onClose={() => {
-              setPicker(null);
-              setSelectedEmployeeId("");
-              setQualificationId("");
-              setNote("");
-            }}
+            onClose={closeAssignModal}
           />
         ) : null}
 
@@ -2480,6 +2685,7 @@ export function DashboardView({
               locationAreaId: shift.location_area_id,
             }))}
           weekDates={dates}
+          weekShifts={weekShiftsForAssignment}
           onClose={() => setBulkShiftDialog(null)}
           onSaved={handleBulkShiftSaved}
         />

@@ -60,6 +60,10 @@ type Props = {
   cachedShiftTemplates?: AreaShiftTemplateWithBreaks[];
   onClose: () => void;
   onCacheUpdate: (areaId: string, hours: LocationAreaServiceHour[]) => void;
+  onShiftTemplatesCacheUpdate?: (
+    areaId: string,
+    templates: AreaShiftTemplateWithBreaks[]
+  ) => void;
 };
 
 const serviceHoursEntryGridClass = () =>
@@ -217,6 +221,7 @@ export function LocationServiceHoursPanelModal({
   cachedShiftTemplates,
   onClose,
   onCacheUpdate,
+  onShiftTemplatesCacheUpdate,
 }: Props) {
   const t = useTranslations();
   const { locale } = useLocale();
@@ -255,9 +260,7 @@ export function LocationServiceHoursPanelModal({
       cachedHours !== undefined
         ? Promise.resolve({ ok: true as const, hours: cachedHours })
         : fetchLocationAreaServiceHours(location.id, area.id),
-      cachedShiftTemplates !== undefined
-        ? Promise.resolve({ ok: true as const, templates: cachedShiftTemplates })
-        : fetchAreaShiftTemplates(location.id, area.id),
+      fetchAreaShiftTemplates(location.id, area.id),
       fetchLocationServiceHourSources(location.id, area.id),
     ]).then(([hoursResult, templatesResult, sourcesResult]) => {
       if (cancelled) return;
@@ -265,6 +268,7 @@ export function LocationServiceHoursPanelModal({
       const templates =
         templatesResult.ok === true ? (templatesResult.templates ?? []) : [];
       setShiftTemplates(templates);
+      onShiftTemplatesCacheUpdate?.(area.id, templates);
 
       if (sourcesResult.ok) {
         const sources = sourcesResult.sources ?? [];
@@ -296,9 +300,9 @@ export function LocationServiceHoursPanelModal({
   }, [
     area.id,
     cachedHours,
-    cachedShiftTemplates,
     location.id,
     onCacheUpdate,
+    onShiftTemplatesCacheUpdate,
     syncEntriesFromHours,
   ]);
 

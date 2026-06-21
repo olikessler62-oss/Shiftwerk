@@ -13,6 +13,7 @@ export {
   absenceRangeForShiftConflict,
   absenceRequestToRange,
   validateOpenEndedSickOnly,
+  canRejectAbsenceType,
   addDaysISO,
   type AbsenceRange,
 } from "./absence-validation";
@@ -21,6 +22,12 @@ export {
   absenceDeleteShiftConflictRangeFromRequest,
   wouldDeletingAbsenceConflictWithFutureShifts,
 } from "./absence-delete-shift-validation";
+export {
+  buildManagerAbsenceSubmittedNotification,
+  buildEmployeeAbsenceReviewNotification,
+  absenceTypeLabelDe,
+  formatAbsenceEndLabel,
+} from "./absence-notifications";
 export {
   createDatabase,
   SupabaseSchichtwerkDatabase,
@@ -31,6 +38,7 @@ export {
   isCompensationSurchargeTrigger,
   isCompensationSurchargeUnit,
   validateNewProfileCompensationSurcharge,
+  formatCompensationSurchargeStorageError,
   COMPENSATION_SURCHARGE_TRIGGERS,
   COMPENSATION_SURCHARGE_UNITS,
   type CompensationSurchargeTypeUniquenessInput,
@@ -316,6 +324,10 @@ export {
   type ShiftStaffingQualificationStatus,
 } from "./shift-staffing-qualification";
 export {
+  resolveEmployeeShiftJobLabel,
+  type EmployeeShiftJobLabelInput,
+} from "./shift-employee-job-label";
+export {
   employeeMeetsStaffingDemandQualification,
   hasStaffingDemandForShiftWindow,
   restWeekStaffingDemandEligible,
@@ -442,6 +454,7 @@ export {
   type ShiftOpenForEmployeeResponse,
 } from "./shift-confirmation-respond";
 export {
+  buildEmployeeShiftCanceledByManagerNotification,
   buildManagerShiftCanceledNotification,
   canCancelShiftByConfirmationStatus,
   isShiftCancellableConfirmationStatus,
@@ -452,6 +465,7 @@ export {
   SHIFT_CANCEL_BLOCKED_ERROR_PREFIX,
   SHIFT_CANCEL_NOT_OWNER_ERROR,
   SHIFT_CANCEL_PAST_ERROR,
+  SHIFT_DISMISS_NOT_CANCELED_ERROR,
   SHIFT_CANCELLABLE_CONFIRMATION_STATUSES,
   type ShiftCancellableConfirmationStatus,
 } from "./shift-cancellation";

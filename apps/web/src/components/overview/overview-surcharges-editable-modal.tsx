@@ -62,6 +62,7 @@ import {
 import { formatSurchargeAmountLabel } from "@/lib/profile-compensation-calculation";
 import { formatDateLabel } from "@/lib/profile-hourly-rate-display";
 import {
+  assignableCompensationSurchargeTypesForEmployeeProfile,
   formatProfileSurchargeLabel,
   formatSurchargeTriggerLabel,
   resolveProfileSurchargeAmount,
@@ -254,16 +255,14 @@ export function OverviewSurchargesEditableModal({
   }, [createEmployeeId, rates, serverToday, surcharges]);
 
   const availableSurchargeTypes = useMemo(() => {
-    if (!createEmployeeId) return [];
-    const openTypeIds = new Set(
-      surcharges
-        .filter(
-          (entry) => entry.profile_id === createEmployeeId && entry.valid_to === null
-        )
-        .map((entry) => entry.surcharge_type_id)
-    );
-    return surchargeTypes.filter((type) => !openTypeIds.has(type.id));
-  }, [createEmployeeId, surchargeTypes, surcharges]);
+    if (!createEmployeeId || !serverToday) return [];
+    return assignableCompensationSurchargeTypesForEmployeeProfile({
+      types: surchargeTypes,
+      surchargeEntries: surcharges,
+      profileId: createEmployeeId,
+      serverToday,
+    });
+  }, [createEmployeeId, surchargeTypes, surcharges, serverToday]);
 
   const selectedEntryMutable =
     !!selectedEntry &&

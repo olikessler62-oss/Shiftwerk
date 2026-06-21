@@ -6,6 +6,8 @@ export type BulkStaffingTableRow = {
   serviceHourId: string;
   /** null = reine Überschrift ohne Job-Zeile (kein Speed-Button). */
   qualificationId: string | null;
+  /** Schichtvorlage (z. B. Frühschicht), falls Zeiten einer Vorlage entsprechen. */
+  shiftLabel: string;
   timeLabel: string;
   hasFormattedTimeRange: boolean;
   required: number;
@@ -41,12 +43,13 @@ export function buildBulkStaffingTableRows(
           key: `${entry.serviceHourId}:${qualification.qualificationId}`,
           serviceHourId: entry.serviceHourId,
           qualificationId: qualification.qualificationId,
+          shiftLabel: entry.shiftTemplateLabel?.trim() ?? "",
           timeLabel: entry.timeLabel ?? entry.label,
           hasFormattedTimeRange: Boolean(entry.timeLabel),
           required: qualification.required,
           qualificationName: qualification.name,
           assigned: qualification.assigned,
-          totalAssigned: entry.assigned,
+          totalAssigned: qualification.assigned,
           met: qualification.assigned >= qualification.required,
         });
       }
@@ -56,6 +59,7 @@ export function buildBulkStaffingTableRows(
       key: entry.serviceHourId,
       serviceHourId: entry.serviceHourId,
       qualificationId: null,
+      shiftLabel: entry.shiftTemplateLabel?.trim() ?? "",
       timeLabel: entry.timeLabel ?? entry.label,
       hasFormattedTimeRange: Boolean(entry.timeLabel),
       required: entry.required,

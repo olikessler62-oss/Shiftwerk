@@ -16,6 +16,11 @@ const RESEND_CLOSE_CONFIRMATION_STATUSES = [
   "expired",
   "rejected",
 ] as const;
+/** Beim Zurücksetzen auf „Geplant“ auch abgeschlossene Bestätigungen schließen. */
+const RESET_TO_PROPOSED_CLOSE_CONFIRMATION_STATUSES = [
+  ...RESEND_CLOSE_CONFIRMATION_STATUSES,
+  "approved",
+] as const;
 
 export function lifecycleStatusForConfirmationStatus(
   confirmationStatus: ShiftConfirmationStatus | undefined | null
@@ -279,7 +284,7 @@ export async function syncShiftRequestsAfterAssignConfirmationStatus(input: {
       input.organizationId,
       input.shiftId,
       input.now,
-      RESEND_CLOSE_CONFIRMATION_STATUSES
+      RESET_TO_PROPOSED_CLOSE_CONFIRMATION_STATUSES
     );
     return;
   }
@@ -310,7 +315,7 @@ export async function syncShiftRequestsForSuperadminStatus(input: {
         input.organizationId,
         input.shiftId,
         input.now,
-        RESEND_CLOSE_CONFIRMATION_STATUSES
+        RESET_TO_PROPOSED_CLOSE_CONFIRMATION_STATUSES
       );
       return;
     case "requested":

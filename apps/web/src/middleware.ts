@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createDatabase } from "@schichtwerk/database";
+import { applyPlanningNoStoreHeaders } from "@/lib/planning-cache-control";
 import { updateSession } from "@/lib/supabase/middleware";
 
 const MANAGER_ROUTES = [
@@ -25,6 +26,9 @@ export async function middleware(request: NextRequest) {
 
   if (!isProtected) return response;
 
+  const withPlanningCacheHeaders = (res: NextResponse) =>
+    applyPlanningNoStoreHeaders(res);
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -45,7 +49,7 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(url);
+    return withPlanningCacheHeaders(NextResponse.redirect(url));
   }
 
   const role = await db.getProfileRole(user.id);
@@ -53,10 +57,10 @@ export async function middleware(request: NextRequest) {
   if (role === "basic") {
     const url = request.nextUrl.clone();
     url.pathname = "/app-only";
-    return NextResponse.redirect(url);
+    return withPlanningCacheHeaders(NextResponse.redirect(url));
   }
 
-  return response;
+  return withPlanningCacheHeaders(response);
 }
 
 export const config = {

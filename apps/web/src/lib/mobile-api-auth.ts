@@ -54,6 +54,38 @@ export async function requireMobileApiEmployee(request: Request) {
   };
 }
 
+/** Mobile API auth without shift-confirmation gate (e.g. absences). */
+export async function requireMobileApiEmployeeProfile(request: Request) {
+  const accessToken = readBearerToken(request);
+  if (!accessToken) {
+    throw new MobileApiError(401, "Unauthorized");
+  }
+
+  const db = createDatabase(createClientWithAccessToken(accessToken));
+  const user = await db.authGetUser();
+  if (!user) {
+    throw new MobileApiError(401, "Unauthorized");
+  }
+
+  const profile = await db.getProfileById(user.id);
+  if (!profile) {
+    throw new MobileApiError(403, "Profil nicht gefunden.");
+  }
+
+  const organization = await db.getOrganization(profile.organization_id);
+  if (!organization) {
+    throw new MobileApiError(403, "Organisation nicht gefunden.");
+  }
+
+  return {
+    userId: user.id,
+    profile,
+    organization,
+    db,
+    adminDb: createDatabase(createAdminClient()),
+  };
+}
+
 export function isIsoDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }

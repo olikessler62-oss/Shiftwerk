@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { resetOrganizationDatabase } from "@/app/actions/db-reset";
+import { resetOrganizationShifts } from "@/app/actions/superadmin-shifts";
 import { NotificationOutboxModal } from "@/components/settings/notification-outbox-modal";
 import { SuperadminEmployeesSection } from "@/components/settings/superadmin-employees-section";
 import { SuperadminOrganizationSection } from "@/components/settings/superadmin-organization-section";
@@ -30,23 +32,37 @@ type SuperadminTab = "simulation" | "shifts";
 
 export function SuperadminModal({ onClose }: Props) {
   const t = useTranslations();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<SuperadminTab>("simulation");
   const [notificationOutboxOpen, setNotificationOutboxOpen] = useState(false);
   const [dbResetConfirmOpen, setDbResetConfirmOpen] = useState(false);
+  const [shiftsResetConfirmOpen, setShiftsResetConfirmOpen] = useState(false);
+  const [deleteAllShiftsOnReset, setDeleteAllShiftsOnReset] = useState(false);
   const [dbResetError, setDbResetError] = useState<string | null>(null);
+  const [shiftsResetError, setShiftsResetError] = useState<string | null>(null);
   const [orgHasChanges, setOrgHasChanges] = useState(false);
   const [orgSavePending, setOrgSavePending] = useState(false);
   const orgSaveRef = useRef<() => void>(() => {});
   const [dbResetPending, startDbResetTransition] = useTransition();
+  const [shiftsResetPending, startShiftsResetTransition] = useTransition();
+
+  const actionPending = dbResetPending || shiftsResetPending;
 
   const overlayOpen =
-    notificationOutboxOpen || dbResetConfirmOpen || dbResetPending;
+    notificationOutboxOpen ||
+    dbResetConfirmOpen ||
+    shiftsResetConfirmOpen ||
+    actionPending;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Escape" || dbResetPending) return;
+      if (e.key !== "Escape" || actionPending) return;
       if (dbResetConfirmOpen) {
         setDbResetConfirmOpen(false);
+        return;
+      }
+      if (shiftsResetConfirmOpen) {
+        setShiftsResetConfirmOpen(false);
         return;
       }
       if (notificationOutboxOpen) return;
@@ -54,7 +70,13 @@ export function SuperadminModal({ onClose }: Props) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dbResetConfirmOpen, dbResetPending, notificationOutboxOpen, onClose]);
+  }, [
+    actionPending,
+    dbResetConfirmOpen,
+    shiftsResetConfirmOpen,
+    notificationOutboxOpen,
+    onClose,
+  ]);
 
   function handleDbResetConfirm() {
     setDbResetError(null);
@@ -67,16 +89,36 @@ export function SuperadminModal({ onClose }: Props) {
     });
   }
 
+  function handleShiftsResetConfirm() {
+    setShiftsResetError(null);
+    startShiftsResetTransition(async () => {
+      const result = await resetOrganizationShifts({
+        deleteAllShifts: deleteAllShiftsOnReset,
+      });
+      if (!result.ok) {
+        setShiftsResetError(
+          result.error
+            ? `${t(result.errorKey)} ${result.error}`
+            : t(result.errorKey)
+        );
+        setShiftsResetConfirmOpen(false);
+        return;
+      }
+      setShiftsResetConfirmOpen(false);
+      router.refresh();
+    });
+  }
+
   return (
     <div
       className={areaCalendarModalBackdropClass()}
       role="presentation"
-      aria-busy={dbResetPending}
+      aria-busy={actionPending}
       onMouseDown={(event) => {
         if (
           event.target === event.currentTarget &&
           !overlayOpen &&
-          !dbResetPending
+          !actionPending
         ) {
           onClose();
         }
@@ -95,7 +137,7 @@ export function SuperadminModal({ onClose }: Props) {
           className={cn(
             settingsModalDialogClass(),
             overlayOpen ? "pointer-events-none" : undefined,
-            dbResetPending && "[&_*]:cursor-wait"
+            actionPending && "[&_*]:cursor-wait"
           )}
         >
           <div
@@ -122,7 +164,7 @@ export function SuperadminModal({ onClose }: Props) {
                     type="button"
                     role="tab"
                     aria-selected={selected}
-                    disabled={dbResetPending}
+                    disabled={actionPending}
                     onClick={() => setActiveTab(tab)}
                     className={cn(
                       "border-b-2 px-3 py-2 text-sm font-semibold transition-colors",
@@ -146,6 +188,7 @@ export function SuperadminModal({ onClose }: Props) {
             )}
           >
             {dbResetError ? <Alert variant="error">{dbResetError}</Alert> : null}
+            {shiftsResetError ? <Alert variant="error">{shiftsResetError}</Alert> : null}
 
             {activeTab === "simulation" ? (
               <>
@@ -153,24 +196,53 @@ export function SuperadminModal({ onClose }: Props) {
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted">
                     {t("nav.superadminActionsTitle")}
                   </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={dbResetPending}
-                      onClick={() => setNotificationOutboxOpen(true)}
-                    >
-                      {t("nav.notificationOutbox")}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={dbResetPending}
-                      className="text-destructive hover:bg-destructive/5 hover:text-destructive"
-                      onClick={() => setDbResetConfirmOpen(true)}
-                    >
-                      {t("nav.dbReset")}
-                    </Button>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={actionPending}
+                        onClick={() => setNotificationOutboxOpen(true)}
+                      >
+                        {t("nav.notificationOutbox")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={actionPending}
+                        className="text-destructive hover:bg-destructive/5 hover:text-destructive"
+                        onClick={() => setDbResetConfirmOpen(true)}
+                      >
+                        {t("nav.dbReset")}
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label
+                        className="flex items-center gap-2 text-sm text-foreground"
+                      >
+                        <input
+                          type="checkbox"
+                          className="size-4 rounded border-border"
+                          checked={deleteAllShiftsOnReset}
+                          disabled={actionPending}
+                          onChange={(event) =>
+                            setDeleteAllShiftsOnReset(event.target.checked)
+                          }
+                        />
+                        <span>{t("nav.shiftsResetDeleteAllShifts")}</span>
+                      </label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={actionPending}
+                        className="text-destructive hover:bg-destructive/5 hover:text-destructive"
+                        onClick={() => setShiftsResetConfirmOpen(true)}
+                      >
+                        {shiftsResetPending
+                          ? t("nav.shiftsResetPending")
+                          : t("nav.shiftsReset")}
+                      </Button>
+                    </div>
                   </div>
                 </section>
 
@@ -179,7 +251,7 @@ export function SuperadminModal({ onClose }: Props) {
                     {t("nav.superadminOrganizationTitle")}
                   </p>
                   <SuperadminOrganizationSection
-                    disabled={dbResetPending}
+                    disabled={actionPending}
                     onSaveStateChange={({ hasChanges, pending, save }) => {
                       setOrgHasChanges(hasChanges);
                       setOrgSavePending(pending);
@@ -192,22 +264,22 @@ export function SuperadminModal({ onClose }: Props) {
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted">
                     {t("nav.superadminEmployeesTitle")}
                   </p>
-                  <SuperadminEmployeesSection disabled={dbResetPending} />
+                  <SuperadminEmployeesSection disabled={actionPending} />
                 </section>
               </>
             ) : (
-              <SuperadminShiftsSection disabled={dbResetPending} />
+              <SuperadminShiftsSection disabled={actionPending} />
             )}
           </div>
 
           <div className={settingsModalFooterClass()}>
-            <Button type="button" variant="outline" disabled={dbResetPending} onClick={onClose}>
+            <Button type="button" variant="outline" disabled={actionPending} onClick={onClose}>
               {t("common.close")}
             </Button>
             {activeTab === "simulation" ? (
               <Button
                 type="button"
-                disabled={dbResetPending || orgSavePending || !orgHasChanges}
+                disabled={actionPending || orgSavePending || !orgHasChanges}
                 onClick={() => orgSaveRef.current()}
               >
                 {t("common.save")}
@@ -225,7 +297,7 @@ export function SuperadminModal({ onClose }: Props) {
             className={settingsNestedModalOverlayClass()}
             role="presentation"
             onMouseDown={(event) => {
-              if (event.target === event.currentTarget && !dbResetPending) {
+              if (event.target === event.currentTarget && !actionPending) {
                 setDbResetConfirmOpen(false);
               }
             }}
@@ -250,7 +322,7 @@ export function SuperadminModal({ onClose }: Props) {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={dbResetPending}
+                  disabled={actionPending}
                   onClick={() => setDbResetConfirmOpen(false)}
                 >
                   {t("common.cancel")}
@@ -258,10 +330,60 @@ export function SuperadminModal({ onClose }: Props) {
                 <Button
                   type="button"
                   variant="danger"
-                  disabled={dbResetPending}
+                  disabled={actionPending}
                   onClick={handleDbResetConfirm}
                 >
                   {dbResetPending ? t("nav.dbResetPending") : t("nav.dbReset")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {shiftsResetConfirmOpen ? (
+          <div
+            className={settingsNestedModalOverlayClass()}
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget && !actionPending) {
+                setShiftsResetConfirmOpen(false);
+              }
+            }}
+          >
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="superadmin-shifts-reset-title"
+              className={settingsConfirmDialogClass()}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <h3
+                id="superadmin-shifts-reset-title"
+                className="text-base font-semibold text-foreground"
+              >
+                {t("nav.shiftsResetConfirmTitle")}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                {deleteAllShiftsOnReset
+                  ? t("nav.shiftsResetConfirmBodyDeleteShifts")
+                  : t("nav.shiftsResetConfirmBodyKeepShifts")}
+              </p>
+              <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={actionPending}
+                  onClick={() => setShiftsResetConfirmOpen(false)}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  disabled={actionPending}
+                  onClick={handleShiftsResetConfirm}
+                >
+                  {shiftsResetPending ? t("nav.shiftsResetPending") : t("nav.shiftsReset")}
                 </Button>
               </div>
             </div>

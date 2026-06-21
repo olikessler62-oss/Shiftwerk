@@ -43,8 +43,9 @@ export function ShiftTemplateColorCombobox({
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const closeCombobox = () => setOpen(false);
-  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef]);
+  useComboboxCloseOnPointerDistance(open, closeCombobox, [rootRef, listRef]);
 
   return (
     <div ref={rootRef} className="relative">
@@ -81,6 +82,7 @@ export function ShiftTemplateColorCombobox({
 
       {open && !disabled ? (
         <ul
+          ref={listRef}
           role="listbox"
           aria-label={ariaLabel}
           className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-border bg-surface p-2 shadow-lg"

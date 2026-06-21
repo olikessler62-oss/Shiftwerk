@@ -52,6 +52,7 @@ import {
   type AreaCalendarAssignmentPreset,
 } from "@/lib/areacalendar-assignment-presets";
 import { formatDayHeader } from "@/lib/planning-utils";
+import { resolvePlanningEmployeeJobsTooltipLabelFromMap } from "@/lib/planning-employee-availability-tooltip";
 import { validateAreaCalendarShiftServiceHours } from "@/lib/service-hours-shift-validation";
 import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
 import {
@@ -60,6 +61,10 @@ import {
   useShiftAssignAvailabilityNotice,
 } from "@/lib/shift-assign-availability-notice";
 import { isShiftAssignWeeklyHoursExceededError } from "@/lib/shift-assign-blocking-errors";
+import {
+  filterEmployeesWithinWeeklyHoursForShift,
+  type ShiftAssignWeekShiftRef,
+} from "@/lib/shift-weekly-hours-validation-client";
 import {
   formatAvailabilityTimeRange,
   weekdayLabel,
@@ -160,6 +165,7 @@ type EmployeeAvailabilityHintProps = {
   anchorEl: HTMLElement | null;
   tooltipRef: RefObject<HTMLDivElement | null>;
   weekdayLabelStyle: WeekdayLabelStyle;
+  jobsLabel?: string;
 };
 
 function EmployeeAvailabilityHint({
@@ -168,6 +174,7 @@ function EmployeeAvailabilityHint({
   anchorEl,
   tooltipRef,
   weekdayLabelStyle,
+  jobsLabel,
 }: EmployeeAvailabilityHintProps) {
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
@@ -193,7 +200,7 @@ function EmployeeAvailabilityHint({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [anchorEl, tooltipRef, availabilities, employeeName, localeKey, t]);
+  }, [anchorEl, tooltipRef, availabilities, employeeName, jobsLabel, localeKey, t]);
 
   return createPortal(
     <div
@@ -224,6 +231,16 @@ function EmployeeAvailabilityHint({
           ))}
         </ul>
       )}
+      {jobsLabel !== undefined ? (
+        <>
+          <p className="mb-1.5 mt-3 text-xs font-semibold text-foreground">
+            {t("profiles.panelQualifications")}
+          </p>
+          <p className="text-xs text-foreground">
+            {jobsLabel.trim() ? jobsLabel : t("profiles.emptyQualifications")}
+          </p>
+        </>
+      ) : null}
     </div>,
     document.body
   );
@@ -378,6 +395,9 @@ type EmployeeComboboxProps = {
   triggerClassName?: string;
   rootClassName?: string;
   weekdayLabelStyle?: WeekdayLabelStyle;
+  profileQualificationIds?: ReadonlyMap<string, ReadonlySet<string>>;
+  qualificationNameById?: ReadonlyMap<string, string>;
+  qualificationSortOrder?: ReadonlyMap<string, number>;
 };
 
 function availabilitiesForWeekday(
@@ -424,6 +444,9 @@ export function AreaCalendarShiftEmployeeCombobox({
   triggerClassName,
   rootClassName,
   weekdayLabelStyle = "short",
+  profileQualificationIds,
+  qualificationNameById,
+  qualificationSortOrder,
 }: EmployeeComboboxProps) {
   const [open, setOpen] = useState(false);
   const [hintAvailabilities, setHintAvailabilities] = useState<
@@ -431,6 +454,7 @@ export function AreaCalendarShiftEmployeeCombobox({
   >(null);
   const [hintAnchorEl, setHintAnchorEl] = useState<HTMLElement | null>(null);
   const [hintEmployeeName, setHintEmployeeName] = useState("");
+  const [hintEmployeeId, setHintEmployeeId] = useState("");
   const [availabilityMenuAnchor, setAvailabilityMenuAnchor] =
     useState<MousePoint | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -455,10 +479,12 @@ export function AreaCalendarShiftEmployeeCombobox({
     (
       availabilities: AreaCalendarEmployeeAvailabilityEntry[],
       anchorEl: HTMLElement,
-      employeeName: string
+      employeeName: string,
+      employeeId: string
     ) => {
       setHintAnchorEl(anchorEl);
       setHintEmployeeName(employeeName);
+      setHintEmployeeId(employeeId);
       setHintAvailabilities(availabilities);
     },
     []
@@ -468,7 +494,30 @@ export function AreaCalendarShiftEmployeeCombobox({
     setHintAvailabilities(null);
     setHintAnchorEl(null);
     setHintEmployeeName("");
+    setHintEmployeeId("");
   }, []);
+
+  const hintJobsLabel = useMemo(() => {
+    if (
+      !hintEmployeeId ||
+      !profileQualificationIds ||
+      !qualificationNameById ||
+      !qualificationSortOrder
+    ) {
+      return undefined;
+    }
+    return resolvePlanningEmployeeJobsTooltipLabelFromMap(
+      hintEmployeeId,
+      profileQualificationIds,
+      qualificationNameById,
+      qualificationSortOrder
+    );
+  }, [
+    hintEmployeeId,
+    profileQualificationIds,
+    qualificationNameById,
+    qualificationSortOrder,
+  ]);
 
   const closeAvailabilityMenu = useCallback(() => {
     setAvailabilityMenuAnchor(null);
@@ -535,6 +584,7 @@ export function AreaCalendarShiftEmployeeCombobox({
         id: EMPTY_EMPLOYEE_ID,
         full_name: emptyLabel,
         color: null,
+        weekly_hours: null,
         last_shift_date: null,
         availabilities: [],
       } satisfies AreaCalendarShiftAssignEmployee,
@@ -564,7 +614,7 @@ export function AreaCalendarShiftEmployeeCombobox({
           if (!canShowSelectedEmployeeHint || open || !selected || !triggerRef.current) {
             return;
           }
-          showHint(dayAvailabilities, triggerRef.current, selected.full_name);
+          showHint(dayAvailabilities, triggerRef.current, selected.full_name, selected.id);
         }}
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
@@ -610,7 +660,8 @@ export function AreaCalendarShiftEmployeeCombobox({
                       showHint(
                         availabilitiesForWeekday(employee, weekday),
                         event.currentTarget,
-                        employee.full_name
+                        employee.full_name,
+                        employee.id
                       );
                     }}
                     onClick={() => {
@@ -637,6 +688,7 @@ export function AreaCalendarShiftEmployeeCombobox({
           anchorEl={hintAnchorEl}
           tooltipRef={hintTooltipRef}
           weekdayLabelStyle={weekdayLabelStyle}
+          jobsLabel={hintJobsLabel}
         />
       ) : null}
       {availabilityMenuAnchor ? (
@@ -936,6 +988,7 @@ type AddShiftModalProps = {
   profileQualificationIds?: Record<string, string[]>;
   areaExistingAssignments: AreaCalendarAssignmentTimeWindow[];
   weekDates: readonly string[];
+  weekShifts: readonly ShiftAssignWeekShiftRef[];
   onClose: () => void;
   onSaved?: () => void;
 };
@@ -962,6 +1015,7 @@ export function AreaCalendarAddShiftModal({
   profileQualificationIds = {},
   areaExistingAssignments,
   weekDates,
+  weekShifts,
   onClose,
   onSaved,
 }: AddShiftModalProps) {
@@ -995,6 +1049,14 @@ export function AreaCalendarAddShiftModal({
   const profileQualificationIdsMap = useMemo(
     () => buildProfileQualificationIdsMap(profileQualificationIds),
     [profileQualificationIds]
+  );
+  const qualificationNameById = useMemo(
+    () => new Map(qualifications.map((qualification) => [qualification.id, qualification.name])),
+    [qualifications]
+  );
+  const qualificationSortOrder = useMemo(
+    () => new Map(qualifications.map((qualification) => [qualification.id, qualification.sort_order])),
+    [qualifications]
   );
   const staffingEntries = useMemo(() => {
     if (simplePlanning || !dialog.areaId || staffingRules.length === 0) {
@@ -1080,27 +1142,33 @@ export function AreaCalendarAddShiftModal({
 
   const timesComplete = areAreaCalendarShiftTimesComplete(startTime, endTime);
 
-  const matchingEmployees = useMemo(
-    () =>
-      filterAreaCalendarShiftAssignEmployeesByWindowWithoutOverlap(
-        employees,
-        weekday,
-        startTime,
-        endTime,
-        dialog.date,
-        areaExistingAssignments,
-        timeZone
-      ),
-    [
+  const matchingEmployees = useMemo(() => {
+    const byWindow = filterAreaCalendarShiftAssignEmployeesByWindowWithoutOverlap(
       employees,
       weekday,
       startTime,
       endTime,
       dialog.date,
       areaExistingAssignments,
+      timeZone
+    );
+    return filterEmployeesWithinWeeklyHoursForShift(byWindow, {
+      weekShifts,
+      shiftDate: dialog.date,
+      startTime,
+      endTime,
       timeZone,
-    ]
-  );
+    });
+  }, [
+    employees,
+    weekday,
+    startTime,
+    endTime,
+    dialog.date,
+    areaExistingAssignments,
+    timeZone,
+    weekShifts,
+  ]);
 
   const availabilityNotice = useShiftAssignAvailabilityNotice({
     weekday,
@@ -1537,6 +1605,9 @@ export function AreaCalendarAddShiftModal({
               disabled={loadingEmployees || saving}
               onApplyAvailability={handleApplyAvailability}
               weekdayLabelStyle="long"
+              profileQualificationIds={profileQualificationIdsMap}
+              qualificationNameById={qualificationNameById}
+              qualificationSortOrder={qualificationSortOrder}
             />
             {!wishFulfilled ? (
               <p className="mt-1 text-xs text-muted">

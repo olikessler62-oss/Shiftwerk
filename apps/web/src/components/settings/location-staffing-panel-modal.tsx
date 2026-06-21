@@ -70,6 +70,10 @@ type Props = {
     staffing: LocationAreaStaffing[],
     serviceHours: LocationAreaServiceHour[]
   ) => void;
+  onShiftTemplatesCacheUpdate?: (
+    areaId: string,
+    templates: AreaShiftTemplateWithBreaks[]
+  ) => void;
 };
 
 type FormMode = null | "create" | "edit" | "bulk-edit";
@@ -82,6 +86,7 @@ export function LocationStaffingPanelModal({
   cachedShiftTemplates,
   onClose,
   onCacheUpdate,
+  onShiftTemplatesCacheUpdate,
 }: Props) {
   const t = useTranslations();
   const matrixRef = useRef<LocationAreaStaffingMatrixHandle>(null);
@@ -116,9 +121,7 @@ export function LocationStaffingPanelModal({
 
     void Promise.all([
       fetchLocationStaffingEditor(location.id, area.id),
-      cachedShiftTemplates !== undefined
-        ? Promise.resolve({ ok: true as const, templates: cachedShiftTemplates })
-        : fetchAreaShiftTemplates(location.id, area.id),
+      fetchAreaShiftTemplates(location.id, area.id),
       fetchLocationStaffingSources(location.id, area.id),
     ]).then(([editorResult, templatesResult, sourcesResult]) => {
       if (cancelled) return;
@@ -134,6 +137,7 @@ export function LocationStaffingPanelModal({
 
       const shiftTemplates =
         templatesResult.ok === true ? (templatesResult.templates ?? []) : [];
+      onShiftTemplatesCacheUpdate?.(area.id, shiftTemplates);
 
       if (!editorResult.ok) {
         setErrorMessage(editorResult.error);
@@ -166,9 +170,9 @@ export function LocationStaffingPanelModal({
     };
   }, [
     area.id,
-    cachedShiftTemplates,
     location.id,
     onCacheUpdate,
+    onShiftTemplatesCacheUpdate,
   ]);
 
   useLayoutEffect(() => {

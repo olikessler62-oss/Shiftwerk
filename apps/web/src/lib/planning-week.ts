@@ -2,6 +2,24 @@ import { redirect } from "next/navigation";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
 import { resolvePlanningWeekStart } from "@schichtwerk/database";
 
+export type PlanningPagePathname = "/bereich-kalender" | "/dashboard";
+
+/** Woche, Standort und Bereich beim Wechsel zwischen Planungsseiten erhalten. */
+export const PLANNING_PRESERVED_QUERY_KEYS = ["week", "location", "area"] as const;
+
+export function buildPlanningPageUrl(
+  pathname: PlanningPagePathname,
+  searchParams: URLSearchParams
+): string {
+  const params = new URLSearchParams();
+  for (const key of PLANNING_PRESERVED_QUERY_KEYS) {
+    const value = searchParams.get(key);
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
 export function planningWeekStartFromParam(weekParam: string | undefined): string {
   if (!weekParam) {
     return toISODate(startOfWeek(new Date()));

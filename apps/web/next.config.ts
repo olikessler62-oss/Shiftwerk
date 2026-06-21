@@ -14,6 +14,12 @@ const nextConfig: NextConfig = {
     "@schichtwerk/ui-tokens",
     "@schichtwerk/api-client",
   ],
+  experimental: {
+    staleTimes: {
+      dynamic: 0,
+      static: 180,
+    },
+  },
 };
 
 export default nextConfig;

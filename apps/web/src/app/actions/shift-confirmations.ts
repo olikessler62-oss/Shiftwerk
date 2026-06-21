@@ -1,9 +1,7 @@
 "use server";
 
-import { revalidatePath, revalidateTag } from "next/cache";
 import {
-  areaCalendarShiftsCacheTag,
-  weekStartsForShiftCacheInvalidation,
+  revalidateAreaCalendarShiftCacheTags,
 } from "@/lib/cached-areacalendar-shifts";
 import { getDatabase } from "@/lib/db";
 import { runShiftConfirmationPendingJobSafe } from "@/lib/run-shift-confirmation-pending-job";
@@ -46,16 +44,11 @@ function revalidateConfirmationPaths(input: {
   locationId?: string;
   weekStart: string;
 }) {
-  revalidatePath("/dashboard");
-  revalidatePath("/bereich-kalender");
-
-  if (!input.locationId) return;
-
-  for (const weekStart of weekStartsForShiftCacheInvalidation(input.weekStart)) {
-    revalidateTag(
-      areaCalendarShiftsCacheTag(input.organizationId, input.locationId, weekStart)
-    );
-  }
+  revalidateAreaCalendarShiftCacheTags({
+    organizationId: input.organizationId,
+    locationId: input.locationId,
+    weekStarts: [input.weekStart],
+  });
 }
 
 async function sendConfirmationForEmployee(input: {
@@ -615,13 +608,11 @@ export async function cancelShiftAsManager(
       actorRole: "manager",
     });
 
-    revalidatePath("/dashboard");
-    revalidatePath("/bereich-kalender");
-    if (result.locationId) {
-      for (const weekStart of weekStartsForShiftCacheInvalidation(result.shiftDate)) {
-        revalidateTag(areaCalendarShiftsCacheTag(organizationId, result.locationId, weekStart));
-      }
-    }
+    revalidateAreaCalendarShiftCacheTags({
+      organizationId,
+      locationId: result.locationId,
+      weekStarts: [result.shiftDate],
+    });
 
     return { ok: true };
   } catch (e) {
@@ -699,16 +690,16 @@ export async function cancelShiftsAsManager(shiftIds: string[]): Promise<
       }
     }
 
-    revalidatePath("/dashboard");
-    revalidatePath("/bereich-kalender");
     for (const [locationId, dates] of touchedDates) {
       if (!locationId) continue;
-      for (const shiftDate of dates) {
-        for (const weekStart of weekStartsForShiftCacheInvalidation(shiftDate)) {
-          revalidateTag(areaCalendarShiftsCacheTag(organizationId, locationId, weekStart));
-        }
-      }
+      revalidateAreaCalendarShiftCacheTags({
+        organizationId,
+        locationId,
+        weekStarts: [...dates],
+      });
     }
+
+    revalidateAreaCalendarShiftCacheTags({ organizationId });
 
     if (canceledCount === 0) {
       return { ok: false, error: errors[0] ?? "Stornieren fehlgeschlagen." };

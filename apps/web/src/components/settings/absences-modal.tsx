@@ -348,7 +348,9 @@ export function AbsencesModal({ profiles, onClose }: Props) {
         setErrorMessage(
           result.error === "OVERLAP"
             ? t("settings.absences.validation.overlap")
-            : result.error
+            : result.error === "SICK_CANNOT_REJECT"
+              ? t("settings.absences.validation.sickCannotReject")
+              : result.error
         );
         return;
       }
@@ -382,6 +384,7 @@ export function AbsencesModal({ profiles, onClose }: Props) {
     selected.status !== "rejected" &&
     selected.status !== "cancelled";
   const canReviewSelected = selected?.status === "pending";
+  const canRejectSelected = canReviewSelected && selected?.type !== "sick";
   const canCloseSickSelected =
     selected?.status === "approved" && selected.is_open_ended;
 
@@ -641,12 +644,14 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                             disabled={pending}
                             onClick={() => handleReview(true)}
                           />
-                          <SettingsIconActionButton
-                            label={t("settings.absences.reject")}
-                            icon={<CloseIcon />}
-                            disabled={pending}
-                            onClick={() => handleReview(false)}
-                          />
+                          {canRejectSelected ? (
+                            <SettingsIconActionButton
+                              label={t("settings.absences.reject")}
+                              icon={<CloseIcon />}
+                              disabled={pending}
+                              onClick={() => handleReview(false)}
+                            />
+                          ) : null}
                         </>
                       ) : null}
                       {canCloseSickSelected ? (

@@ -278,6 +278,8 @@ export function OverviewAbsencesEditableModal({
 
   const canEditSelected = selectedAbsence ? canEditAbsence(selectedAbsence) : false;
   const canReviewSelected = selectedAbsence?.status === "pending";
+  const canRejectSelected =
+    canReviewSelected && selectedAbsence?.type !== "sick";
   const canCloseSickSelected =
     selectedAbsence?.status === "approved" && selectedAbsence.is_open_ended;
 
@@ -403,7 +405,9 @@ export function OverviewAbsencesEditableModal({
         setErrorMessage(
           result.error === "OVERLAP"
             ? t("settings.absences.validation.overlap")
-            : result.error
+            : result.error === "SICK_CANNOT_REJECT"
+              ? t("settings.absences.validation.sickCannotReject")
+              : result.error
         );
         return;
       }
@@ -714,12 +718,14 @@ export function OverviewAbsencesEditableModal({
                             disabled={pending}
                             onClick={() => handleReview(true)}
                           />
-                          <SettingsIconActionButton
-                            label={t("settings.absences.reject")}
-                            icon={<CloseIcon />}
-                            disabled={pending}
-                            onClick={() => handleReview(false)}
-                          />
+                          {canRejectSelected ? (
+                            <SettingsIconActionButton
+                              label={t("settings.absences.reject")}
+                              icon={<CloseIcon />}
+                              disabled={pending}
+                              onClick={() => handleReview(false)}
+                            />
+                          ) : null}
                         </>
                       ) : null}
                       {canCloseSickSelected ? (

@@ -5,6 +5,7 @@ import {
   findOverlappingAbsence,
   isDateWithinAbsenceRange,
   validateAbsenceDateOrder,
+  canRejectAbsenceType,
 } from "./absence-validation";
 
 describe("validateAbsenceDateOrder", () => {
@@ -123,5 +124,16 @@ describe("absenceRangeForShiftConflict", () => {
       start_date: "2026-06-01",
       end_date: "2026-09-03",
     });
+  });
+});
+
+describe("canRejectAbsenceType", () => {
+  it("disallows rejecting sick leave", () => {
+    expect(canRejectAbsenceType("sick")).toBe(false);
+  });
+
+  it("allows rejecting vacation and other", () => {
+    expect(canRejectAbsenceType("vacation")).toBe(true);
+    expect(canRejectAbsenceType("other")).toBe(true);
   });
 });

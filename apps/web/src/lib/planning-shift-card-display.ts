@@ -47,6 +47,8 @@ export function resolvePlanningShiftJobsLabel(
   shift: PlanningShift,
   context: PlanningShiftJobContext
 ): string {
+  if (shift.jobName?.trim()) return shift.jobName.trim();
+
   const areaId = shift.location_area_id ?? context.defaultAreaId ?? "";
   if (!areaId) return "";
 

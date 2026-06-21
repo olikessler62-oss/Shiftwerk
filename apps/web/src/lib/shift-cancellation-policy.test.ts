@@ -42,6 +42,24 @@ describe("shouldDisplayShiftOnPlanningCalendar", () => {
     ).toBe(false);
   });
 
+  it("hides manager-canceled shifts when cancelledBy comes from displayState", () => {
+    expect(
+      shouldDisplayShiftOnPlanningCalendar({
+        id: "manager-canceled",
+        confirmationStatus: "canceled",
+        cancelledBy: "manager",
+      })
+    ).toBe(false);
+
+    expect(
+      shouldDisplayShiftOnPlanningCalendar({
+        id: "employee-canceled",
+        confirmationStatus: "canceled",
+        cancelledBy: "employee",
+      })
+    ).toBe(true);
+  });
+
   it("shows non-canceled shifts regardless of cancel actor", () => {
     expect(
       shouldDisplayShiftOnPlanningCalendar({

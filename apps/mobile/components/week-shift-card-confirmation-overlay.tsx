@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import type { ShiftConfirmationStatus, ShiftRequestActorRole } from "@schichtwerk/types";
 import {
   SHIFT_CONFIRMATION_OVERLAY_OPACITY,
   shiftConfirmationShowsOverlay,
@@ -9,12 +9,14 @@ import { shiftConfirmationStatusShortLabel } from "@/lib/shift-confirmation-labe
 
 type WeekShiftCardConfirmationOverlayProps = {
   status: ShiftConfirmationStatus;
+  cancelledBy?: ShiftRequestActorRole;
   badgeFontSize?: number;
   isPastDay?: boolean;
 };
 
 export function WeekShiftCardConfirmationOverlay({
   status,
+  cancelledBy,
   badgeFontSize = 9,
   isPastDay = false,
 }: WeekShiftCardConfirmationOverlayProps) {
@@ -42,7 +44,7 @@ export function WeekShiftCardConfirmationOverlay({
           ]}
           numberOfLines={1}
         >
-          {shiftConfirmationStatusShortLabel(status)}
+          {shiftConfirmationStatusShortLabel(status, cancelledBy)}
         </Text>
       </View>
     </>

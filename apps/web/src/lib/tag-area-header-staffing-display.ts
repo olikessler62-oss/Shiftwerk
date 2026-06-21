@@ -16,6 +16,9 @@ export type StaffingHeaderSegment = {
   /** Kombiniert für Breitenmessung (Legacy / Tooltip). */
   measureText: string;
   understaffed: boolean;
+  overstaffed: boolean;
+  /** Genug Schichten, aber Funktionen passen nicht zum Bedarf. */
+  assignmentMismatch: boolean;
   assigned: number;
   required: number;
 };
@@ -27,7 +30,7 @@ export type StaffingHeaderDisplay =
       level: "full-schicht" | "counts-only";
       segments: StaffingHeaderSegment[];
     }
-  | { mode: "indicator"; allMet: boolean };
+  | { mode: "indicator"; allMet: boolean; hasOverstaffed: boolean };
 
 const STAFFING_GAUGE_LABEL_FONT =
   '500 9px Inter, ui-sans-serif, system-ui, sans-serif';
@@ -55,34 +58,117 @@ export function formatStaffingCount(
   return `${assigned}/${required}`;
 }
 
+/** Mehr Einsätze als Bedarf (gesamt oder je Funktion im Fenster). */
+export function isTagAreaHeaderStaffingEntryOverstaffed(
+  entry: TagAreaHeaderStaffingEntry
+): boolean {
+  if (
+    entry.qualifications?.some(
+      (qualification) =>
+        qualification.required > 0 &&
+        qualification.assigned > qualification.required
+    )
+  ) {
+    return true;
+  }
+  return entry.required > 0 && entry.assigned > entry.required;
+}
+
+/** Mindestens eine Funktion im Fenster nicht gedeckt (wie Personalbedarf-Tabelle). */
+export function isTagAreaHeaderStaffingEntryUnderstaffed(
+  entry: TagAreaHeaderStaffingEntry
+): boolean {
+  const qualifications =
+    entry.qualifications?.filter((qualification) => qualification.required > 0) ??
+    [];
+  if (qualifications.length > 0) {
+    return qualifications.some(
+      (qualification) => qualification.assigned < qualification.required
+    );
+  }
+  return entry.required > 0 && entry.assigned < entry.required;
+}
+
+export function isTagAreaHeaderStaffingUnderstaffed(
+  entries: readonly TagAreaHeaderStaffingEntry[]
+): boolean {
+  return entries.some(isTagAreaHeaderStaffingEntryUnderstaffed);
+}
+
+/** Unterbesetzt, aber Schichtanzahl im Fenster deckt Gesamtbedarf (falsche Funktionen). */
+export function isTagAreaHeaderStaffingEntryAssignmentMismatch(
+  entry: TagAreaHeaderStaffingEntry
+): boolean {
+  return (
+    isTagAreaHeaderStaffingEntryUnderstaffed(entry) &&
+    entry.required > 0 &&
+    entry.assigned >= entry.required
+  );
+}
+
+export function isTagAreaHeaderStaffingAssignmentMismatch(
+  entries: readonly TagAreaHeaderStaffingEntry[]
+): boolean {
+  return entries.some(isTagAreaHeaderStaffingEntryAssignmentMismatch);
+}
+
+export function isTagAreaHeaderStaffingOverstaffed(
+  entries: readonly TagAreaHeaderStaffingEntry[]
+): boolean {
+  return entries.some(isTagAreaHeaderStaffingEntryOverstaffed);
+}
+
+/** Überbesetzung oder falsche Funktionen — Badge auf der Datum/Bedarf-Grenze. */
+export function isTagAreaHeaderStaffingHeaderAlertBadge(
+  entries: readonly TagAreaHeaderStaffingEntry[]
+): boolean {
+  return (
+    isTagAreaHeaderStaffingOverstaffed(entries) ||
+    isTagAreaHeaderStaffingAssignmentMismatch(entries)
+  );
+}
+
+/** Schichtanzahl im Fenster vs. Gesamtbedarf (nicht nur gemappte Funktions-Zählung). */
+export function gaugeCountsForTagAreaHeaderStaffingEntry(
+  entry: TagAreaHeaderStaffingEntry
+): { assigned: number; required: number } {
+  return { assigned: entry.assigned, required: entry.required };
+}
+
 function overlayTimeLabel(entry: TagAreaHeaderStaffingEntry): string {
   return resolveCalendarStaffingTimeLabel(entry);
 }
 
 function segmentWithTime(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment {
   const timeText = overlayTimeLabel(entry);
-  const countText = formatStaffingCount(entry.assigned, entry.required);
+  const { assigned, required } = gaugeCountsForTagAreaHeaderStaffingEntry(entry);
+  const countText = formatStaffingCount(assigned, required);
   return {
     serviceHourId: entry.serviceHourId,
     timeText,
     countText,
     measureText: `${timeText}: ${countText}`,
-    understaffed: entry.assigned < entry.required,
-    assigned: entry.assigned,
-    required: entry.required,
+    understaffed: isTagAreaHeaderStaffingEntryUnderstaffed(entry),
+    overstaffed: isTagAreaHeaderStaffingEntryOverstaffed(entry),
+    assignmentMismatch: isTagAreaHeaderStaffingEntryAssignmentMismatch(entry),
+    assigned,
+    required,
   };
 }
 
 function segmentCountsOnly(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment {
-  const countText = formatStaffingCount(entry.assigned, entry.required);
+  const { assigned, required } = gaugeCountsForTagAreaHeaderStaffingEntry(entry);
+  const countText = formatStaffingCount(assigned, required);
   return {
     serviceHourId: entry.serviceHourId,
     timeText: null,
     countText,
     measureText: countText,
-    understaffed: entry.assigned < entry.required,
-    assigned: entry.assigned,
-    required: entry.required,
+    understaffed: isTagAreaHeaderStaffingEntryUnderstaffed(entry),
+    overstaffed: isTagAreaHeaderStaffingEntryOverstaffed(entry),
+    assignmentMismatch: isTagAreaHeaderStaffingEntryAssignmentMismatch(entry),
+    assigned,
+    required,
   };
 }
 
@@ -137,9 +223,8 @@ export function resolveStaffingHeaderDisplay(
   if (entries.length === 0) return { mode: "empty" };
 
   const width = Math.max(0, availableWidth - STAFFING_HEADER_WIDTH_SAFETY_PX);
-  const hasUnderstaffed = entries.some(
-    (entry) => entry.assigned < entry.required
-  );
+  const hasUnderstaffed = isTagAreaHeaderStaffingUnderstaffed(entries);
+  const hasOverstaffed = isTagAreaHeaderStaffingOverstaffed(entries);
 
   const fullSegments = entries.map((entry) => segmentWithTime(entry));
   if (measureGaugeRow(fullSegments, true) <= width) {
@@ -159,5 +244,5 @@ export function resolveStaffingHeaderDisplay(
     };
   }
 
-  return { mode: "indicator", allMet: !hasUnderstaffed };
+  return { mode: "indicator", allMet: !hasUnderstaffed, hasOverstaffed };
 }

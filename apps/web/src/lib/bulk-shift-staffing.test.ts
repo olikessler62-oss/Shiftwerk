@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   resolveAddShiftFormInitialValues,
   resolveCurrentBulkShiftRowId,
+  resolveNextOpenStaffingDemand,
   resolveOpenDemandShiftPrefill,
   resolveStaffingEntryForBulkPrefill,
+  isStaffingFullyCovered,
 } from "./bulk-shift-staffing";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
@@ -39,17 +41,51 @@ describe("resolveCurrentBulkShiftRowId", () => {
           id: "saved",
           existingShiftId: "shift-1",
           demandServiceHourId: "morning",
+          qualificationId: "qual-kellner",
         },
         {
           id: "current",
           demandServiceHourId: "morning",
+          qualificationId: "qual-kellner",
         },
         {
           id: "later",
           demandServiceHourId: "afternoon",
+          qualificationId: "qual-kellner",
         },
       ],
-      staffingEntries
+      [
+        {
+          serviceHourId: "morning",
+          required: 2,
+          assigned: 1,
+          qualifications: [
+            {
+              qualificationId: "qual-kellner",
+              name: "Kellner/in",
+              assigned: 1,
+              required: 2,
+            },
+          ],
+        },
+        staffingEntries[1]!,
+      ],
+      [
+        {
+          id: "morning",
+          location_area_id: "area-1",
+          weekday: 0,
+          start_time: "08:00:00",
+          end_time: "10:00:00",
+        },
+        {
+          id: "afternoon",
+          location_area_id: "area-1",
+          weekday: 0,
+          start_time: "12:00:00",
+          end_time: "15:00:00",
+        },
+      ]
     );
 
     expect(currentId).toBe("current");
@@ -168,6 +204,7 @@ describe("resolveOpenDemandShiftPrefill", () => {
   const serviceHourFrueh = "sh-frueh";
   const serviceHourSpat = "sh-spat";
   const qualKellner = "qual-kellner";
+  const qualKoch = "qual-koch";
 
   const presets: AreaCalendarAssignmentPreset[] = [
     {
@@ -219,6 +256,24 @@ describe("resolveOpenDemandShiftPrefill", () => {
       required_count: 1,
     },
   ];
+
+  function staffingEntryWithQualifications(
+    serviceHourId: string,
+    qualifications: TagAreaHeaderStaffingEntry["qualifications"],
+    required = 0,
+    assigned = 0
+  ): TagAreaHeaderStaffingEntry {
+    return {
+      serviceHourId,
+      assigned,
+      required,
+      qualificationName: "Mixed",
+      timeLabel: serviceHourId,
+      hasFormattedTimeRange: true,
+      met: false,
+      qualifications,
+    };
+  }
 
   function staffingEntry(
     serviceHourId: string,
@@ -286,6 +341,120 @@ describe("resolveOpenDemandShiftPrefill", () => {
     });
 
     expect(result).toBeNull();
+  });
+
+  it("prefills the next open qualification within the same time window", () => {
+    const result = resolveOpenDemandShiftPrefill({
+      areaId,
+      staffingEntries: [
+        staffingEntryWithQualifications(serviceHourFrueh, [
+          {
+            qualificationId: qualKellner,
+            name: "Kellner/in",
+            assigned: 2,
+            required: 2,
+          },
+          {
+            qualificationId: qualKoch,
+            name: "Koch",
+            assigned: 0,
+            required: 1,
+          },
+        ]),
+      ],
+      serviceHours,
+      assignmentPresets: presets,
+      staffingRules: [
+        ...staffingRules,
+        {
+          id: "rule-koch",
+          location_area_id: areaId,
+          service_hour_id: serviceHourFrueh,
+          qualification_id: qualKoch,
+          required_count: 1,
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      presetId: "preset-frueh",
+      startTime: "08:00",
+      endTime: "10:00",
+      qualificationId: qualKoch,
+    });
+  });
+});
+
+describe("resolveNextOpenStaffingDemand", () => {
+  it("returns the next open qualification chronologically", () => {
+    const demand = resolveNextOpenStaffingDemand(
+      [
+        {
+          serviceHourId: "morning",
+          label: "morning",
+          required: 3,
+          assigned: 2,
+          qualifications: [
+            {
+              qualificationId: "qual-kellner",
+              name: "Kellner/in",
+              assigned: 2,
+              required: 2,
+            },
+            {
+              qualificationId: "qual-koch",
+              name: "Koch",
+              assigned: 0,
+              required: 1,
+            },
+          ],
+        },
+      ],
+      [
+        {
+          id: "morning",
+          location_area_id: "area-1",
+          weekday: 0,
+          start_time: "08:00:00",
+          end_time: "10:00:00",
+        },
+      ],
+      []
+    );
+
+    expect(demand).toEqual({
+      serviceHourId: "morning",
+      qualificationId: "qual-koch",
+    });
+  });
+});
+
+describe("isStaffingFullyCovered", () => {
+  it("requires every qualification row to be covered", () => {
+    expect(
+      isStaffingFullyCovered([
+        {
+          serviceHourId: "morning",
+          label: "morning",
+          required: 3,
+          assigned: 2,
+          qualifications: [
+            {
+              qualificationId: "qual-kellner",
+              name: "Kellner/in",
+              assigned: 2,
+              required: 2,
+            },
+            {
+              qualificationId: "qual-koch",
+              name: "Koch",
+              assigned: 0,
+              required: 1,
+            },
+          ],
+        },
+      ])
+    ).toBe(false);
   });
 });
 

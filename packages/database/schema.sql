@@ -319,6 +319,20 @@ create index location_area_staffing_service_hour_id_idx
 create index location_area_staffing_qualification_id_idx
   on public.location_area_staffing (qualification_id);
 
+-- Temporärer Personalbedarf pro Kalenderdatum
+create table public.location_area_staffing_overrides (
+  id uuid primary key default gen_random_uuid(),
+  location_area_id uuid not null references public.location_areas (id) on delete cascade,
+  shift_date date not null,
+  service_hour_id uuid not null references public.location_area_service_hours (id) on delete cascade,
+  qualification_id uuid not null references public.qualifications (id) on delete restrict,
+  required_count int not null check (required_count >= 0),
+  unique (location_area_id, shift_date, service_hour_id, qualification_id)
+);
+
+create index location_area_staffing_overrides_area_date_idx
+  on public.location_area_staffing_overrides (location_area_id, shift_date);
+
 -- Schichtvorlagen pro Bereich (optional, nur Zuweisungs-Kurzwahl)
 create table public.area_shift_templates (
   id uuid primary key default gen_random_uuid(),
@@ -383,7 +397,8 @@ create table public.shifts (
   lifecycle_status public.shift_lifecycle_status not null default 'confirmed',
   requested_at timestamptz,
   pending_since timestamptz,
-  pending_reminder_sent_at timestamptz
+  pending_reminder_sent_at timestamptz,
+  employee_dismissed_at timestamptz
 );
 
 create index shifts_area_shift_template_id_idx on public.shifts (area_shift_template_id);
@@ -398,6 +413,10 @@ create index shifts_confirmation_status_idx
 
 create index shifts_lifecycle_status_idx
   on public.shifts (organization_id, lifecycle_status, shift_date);
+
+create index shifts_employee_dismissed_at_idx
+  on public.shifts (employee_id, employee_dismissed_at)
+  where employee_dismissed_at is null;
 
 create or replace function public.count_shifts_conflicting_with_absence_ranges(
   p_organization_id uuid,
@@ -458,6 +477,20 @@ alter table public.shifts_archive enable row level security;
 
 create policy "shifts_archive_deny_clients"
   on public.shifts_archive for all
+  to authenticated
+  using (false)
+  with check (false);
+
+create table if not exists public.organization_superadmin_shift_snapshots (
+  organization_id uuid primary key references public.organizations (id) on delete cascade,
+  shifts jsonb not null default '[]'::jsonb,
+  saved_at timestamptz not null default now()
+);
+
+alter table public.organization_superadmin_shift_snapshots enable row level security;
+
+create policy "organization_superadmin_shift_snapshots_deny_clients"
+  on public.organization_superadmin_shift_snapshots for all
   to authenticated
   using (false)
   with check (false);
@@ -1031,6 +1064,14 @@ begin
   delete from public.shifts_archive
   where organization_id = p_organization_id;
 
+  delete from public.location_area_staffing_overrides
+  where location_area_id in (
+    select la.id
+    from public.location_areas la
+    inner join public.locations l on l.id = la.location_id
+    where l.organization_id = p_organization_id
+  );
+
   delete from public.profile_recurring_availability
   where organization_id = p_organization_id;
 
@@ -1229,6 +1270,15 @@ begin
   set weekly_hours = 40
   where organization_id = p_organization_id;
 
+  delete from public.location_area_staffing
+  where location_area_id in (
+    select la.id
+    from public.location_areas la
+    inner join public.locations l on l.id = la.location_id
+    where l.organization_id = p_organization_id
+      and lower(la.name) in ('restaurant', 'küche', 'bar')
+  );
+
   insert into public.location_area_staffing (
     location_area_id,
     service_hour_id,
@@ -1269,6 +1319,135 @@ end;
 $$;
 
 grant execute on function public.reset_organization_shift_data(uuid) to service_role;
+
+create or replace function public.save_organization_shift_snapshot(p_organization_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_shifts jsonb;
+  v_count integer;
+begin
+  if not exists (
+    select 1 from public.organizations where id = p_organization_id
+  ) then
+    raise exception 'organization not found';
+  end if;
+
+  select
+    coalesce(
+      jsonb_agg(
+        jsonb_build_object(
+          'employee_id', s.employee_id,
+          'area_shift_template_id', s.area_shift_template_id,
+          'location_id', s.location_id,
+          'location_area_id', s.location_area_id,
+          'shift_date', s.shift_date,
+          'starts_at', s.starts_at,
+          'ends_at', s.ends_at,
+          'notes', s.notes,
+          'confirmation_status', s.confirmation_status,
+          'confirmation_status_updated_at', s.confirmation_status_updated_at,
+          'lifecycle_status', s.lifecycle_status,
+          'requested_at', s.requested_at,
+          'pending_since', s.pending_since,
+          'pending_reminder_sent_at', s.pending_reminder_sent_at,
+          'employee_dismissed_at', s.employee_dismissed_at
+        )
+        order by s.shift_date, s.starts_at
+      ),
+      '[]'::jsonb
+    ),
+    count(*)::integer
+  into v_shifts, v_count
+  from public.shifts s
+  where s.organization_id = p_organization_id;
+
+  insert into public.organization_superadmin_shift_snapshots (
+    organization_id,
+    shifts,
+    saved_at
+  )
+  values (p_organization_id, v_shifts, now())
+  on conflict (organization_id) do update
+  set shifts = excluded.shifts,
+      saved_at = excluded.saved_at;
+
+  return v_count;
+end;
+$$;
+
+create or replace function public.restore_organization_shift_snapshot(p_organization_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  with snapshot as (
+    select shifts
+    from public.organization_superadmin_shift_snapshots
+    where organization_id = p_organization_id
+  ),
+  inserted as (
+    insert into public.shifts (
+      organization_id,
+      employee_id,
+      area_shift_template_id,
+      location_id,
+      location_area_id,
+      shift_date,
+      starts_at,
+      ends_at,
+      notes,
+      confirmation_status,
+      confirmation_status_updated_at,
+      lifecycle_status,
+      requested_at,
+      pending_since,
+      pending_reminder_sent_at,
+      employee_dismissed_at
+    )
+    select
+      p_organization_id,
+      (elem->>'employee_id')::uuid,
+      (elem->>'area_shift_template_id')::uuid,
+      (elem->>'location_id')::uuid,
+      (elem->>'location_area_id')::uuid,
+      (elem->>'shift_date')::date,
+      (elem->>'starts_at')::timestamptz,
+      (elem->>'ends_at')::timestamptz,
+      elem->>'notes',
+      (elem->>'confirmation_status')::public.shift_confirmation_status,
+      coalesce(
+        (elem->>'confirmation_status_updated_at')::timestamptz,
+        now()
+      ),
+      coalesce(
+        (elem->>'lifecycle_status')::public.shift_lifecycle_status,
+        'confirmed'::public.shift_lifecycle_status
+      ),
+      (elem->>'requested_at')::timestamptz,
+      (elem->>'pending_since')::timestamptz,
+      (elem->>'pending_reminder_sent_at')::timestamptz,
+      (elem->>'employee_dismissed_at')::timestamptz
+    from snapshot
+    cross join lateral jsonb_array_elements(snapshot.shifts) as elem
+    where jsonb_array_length(snapshot.shifts) > 0
+    returning 1
+  )
+  select count(*)::integer into v_count from inserted;
+
+  return coalesce(v_count, 0);
+end;
+$$;
+
+grant execute on function public.save_organization_shift_snapshot(uuid) to service_role;
+grant execute on function public.restore_organization_shift_snapshot(uuid) to service_role;
 
 create or replace function public.replace_location_area_staffing_for_service_hour(
   p_service_hour_id uuid,
@@ -1359,6 +1538,7 @@ alter table public.roles enable row level security;
 alter table public.locations enable row level security;
 alter table public.location_areas enable row level security;
 alter table public.location_area_staffing enable row level security;
+alter table public.location_area_staffing_overrides enable row level security;
 alter table public.location_area_service_hours enable row level security;
 alter table public.area_shift_templates enable row level security;
 alter table public.area_shift_template_breaks enable row level security;
@@ -1722,6 +1902,40 @@ create policy "location_area_staffing_write_manager"
     )
   );
 
+-- Location area staffing overrides (temporary per calendar date)
+create policy "location_area_staffing_overrides_select_org"
+  on public.location_area_staffing_overrides for select
+  using (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (select organization_id from private.current_profile())
+    )
+  );
+
+create policy "location_area_staffing_overrides_write_manager"
+  on public.location_area_staffing_overrides for all
+  using (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  )
+  with check (
+    location_area_id in (
+      select la.id from public.location_areas la
+      join public.locations l on l.id = la.location_id
+      where l.organization_id in (
+        select organization_id from private.current_profile()
+        where permission_level in ('admin', 'manager')
+      )
+    )
+  );
+
 -- Area shift templates
 create policy "area_shift_templates_select_org"
   on public.area_shift_templates for select
@@ -2000,6 +2214,17 @@ create policy "shift_confirmation_events_select_manager"
     organization_id in (
       select organization_id from private.current_profile()
       where permission_level in ('admin', 'manager')
+    )
+  );
+
+create policy "shift_confirmation_events_select_own_shifts"
+  on public.shift_confirmation_events for select
+  using (
+    exists (
+      select 1
+      from public.shifts s
+      where s.id = shift_id
+        and s.employee_id = auth.uid()
     )
   );
 

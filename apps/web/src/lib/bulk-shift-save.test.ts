@@ -4,6 +4,7 @@ import {
   isSaveableNewBulkShiftRow,
   listCompleteBulkShiftRowsForAssign,
   resolveBulkShiftSaveIntent,
+  shouldIncludeShiftInBulkEditExistingRows,
 } from "./bulk-shift-save";
 
 const completeNewRow = {
@@ -19,6 +20,17 @@ const existingRow = {
   id: "existing-row",
   existingShiftId: "shift-1",
 };
+
+describe("shouldIncludeShiftInBulkEditExistingRows", () => {
+  it("excludes canceled shifts from editable existing rows", () => {
+    expect(
+      shouldIncludeShiftInBulkEditExistingRows({ confirmationStatus: "canceled" })
+    ).toBe(false);
+    expect(
+      shouldIncludeShiftInBulkEditExistingRows({ confirmationStatus: "confirmed" })
+    ).toBe(true);
+  });
+});
 
 describe("isSaveableNewBulkShiftRow", () => {
   it("accepts complete rows without existingShiftId", () => {

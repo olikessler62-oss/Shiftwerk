@@ -2,6 +2,7 @@
 
 import { TagAreaHeaderStaffingOverlay } from "@/components/areacalendar/tag-area-header-staffing-overlay";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
+import { isTagAreaHeaderStaffingHeaderAlertBadge } from "@/lib/tag-area-header-staffing-display";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -14,6 +15,10 @@ type StaffingRowProps = {
   headerTooltip?: ReactNode;
   /** Zugeklappter Tag — Bedarf als „!“, ohne Servicezeit als „×“. */
   dayCollapsed?: boolean;
+  /** Linksklick/Rechtsklick: Personalbedarf-Kontextmenü (Servicezeiten-Rand + Füllanzeigen). */
+  onStaffingHeaderMenu?: (event: React.MouseEvent) => void;
+  /** Tooltips unterdrücken, solange das Personalbedarf-Kontextmenü offen ist. */
+  staffingHeaderMenuOpen?: boolean;
   className?: string;
 };
 
@@ -26,23 +31,42 @@ function TagAreaServiceHoursSideTooltip({
   content,
   side,
   widthPx,
+  onMenuOpen,
+  suppressOpen,
 }: {
   content: ReactNode;
   side: "left" | "right";
   widthPx: number;
+  onMenuOpen?: (event: React.MouseEvent) => void;
+  suppressOpen?: boolean;
 }) {
   if (widthPx <= 0) return null;
+
+  const handleMenuOpen = onMenuOpen
+    ? (event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onMenuOpen(event);
+      }
+    : undefined;
 
   return (
     <div
       className={cn(
         "pointer-events-auto absolute inset-y-0 z-[5]",
-        side === "left" ? "left-0" : "right-0"
+        side === "left" ? "left-0" : "right-0",
+        handleMenuOpen && "cursor-pointer"
       )}
       style={{ width: widthPx }}
+      onClick={handleMenuOpen}
+      onContextMenu={handleMenuOpen}
     >
-      <Tooltip content={content} className="flex h-full w-full min-h-0 min-w-0">
-        <span className="block h-full w-full cursor-default" aria-hidden />
+      <Tooltip
+        content={content}
+        suppressOpen={suppressOpen}
+        className="flex h-full w-full min-h-0 min-w-0"
+      >
+        <span className="block h-full w-full" aria-hidden />
       </Tooltip>
     </div>
   );
@@ -54,6 +78,8 @@ export function TagAreaHeaderStaffingRow({
   noServiceHoursLabel,
   headerTooltip,
   dayCollapsed = false,
+  onStaffingHeaderMenu,
+  staffingHeaderMenuOpen = false,
   className,
 }: StaffingRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
@@ -62,6 +88,8 @@ export function TagAreaHeaderStaffingRow({
   const [sideInsets, setSideInsets] = useState<SideInsets | null>(null);
 
   const showStaffingOverlay = !noServiceHoursLabel && entries.length > 0;
+  const headerAlertBadge =
+    showStaffingOverlay && isTagAreaHeaderStaffingHeaderAlertBadge(entries);
   const showServiceHoursSideTooltips =
     Boolean(headerTooltip) && showStaffingOverlay;
 
@@ -130,7 +158,7 @@ export function TagAreaHeaderStaffingRow({
   return (
     <div
       ref={rowRef}
-      className={cn("relative flex h-full w-full min-w-0", className)}
+        className={cn("relative flex h-full w-full min-w-0 overflow-visible", className)}
     >
       {showServiceHoursSideTooltips ? (
         <>
@@ -138,17 +166,22 @@ export function TagAreaHeaderStaffingRow({
             content={headerTooltip}
             side="left"
             widthPx={sideInsets?.left ?? 0}
+            onMenuOpen={onStaffingHeaderMenu}
+            suppressOpen={staffingHeaderMenuOpen}
           />
           <TagAreaServiceHoursSideTooltip
             content={headerTooltip}
             side="right"
             widthPx={sideInsets?.right ?? 0}
+            onMenuOpen={onStaffingHeaderMenu}
+            suppressOpen={staffingHeaderMenuOpen}
           />
         </>
       ) : null}
       <div
         className={cn(
-          "relative z-10 flex h-full w-full min-w-0 items-center justify-center px-1",
+          "relative flex h-full w-full min-w-0 items-stretch justify-center overflow-visible px-1",
+          headerAlertBadge && "z-[50]",
           showServiceHoursSideTooltips && "pointer-events-none"
         )}
       >
@@ -157,7 +190,7 @@ export function TagAreaHeaderStaffingRow({
             headerTooltip ? (
               <Tooltip content={headerTooltip} className="pointer-events-auto shrink-0">
                 <span
-                  className="shrink-0 cursor-default text-2xl font-bold leading-none text-black"
+                  className="shrink-0 self-center cursor-default text-2xl font-bold leading-none text-black"
                   aria-label={noServiceHoursLabel}
                 >
                   ×
@@ -165,7 +198,7 @@ export function TagAreaHeaderStaffingRow({
               </Tooltip>
             ) : (
               <span
-                className="shrink-0 text-2xl font-bold leading-none text-black"
+                className="shrink-0 self-center text-2xl font-bold leading-none text-black"
                 aria-label={noServiceHoursLabel}
               >
                 ×
@@ -173,12 +206,12 @@ export function TagAreaHeaderStaffingRow({
             )
           ) : headerTooltip ? (
             <Tooltip content={headerTooltip} className="pointer-events-auto shrink-0">
-              <span className="shrink-0 cursor-default whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black">
+              <span className="shrink-0 self-center cursor-default whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black">
                 {noServiceHoursLabel}
               </span>
             </Tooltip>
           ) : (
-            <span className="shrink-0 whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black">
+            <span className="shrink-0 self-center whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black">
               {noServiceHoursLabel}
             </span>
           )
@@ -190,9 +223,12 @@ export function TagAreaHeaderStaffingRow({
                   `${entry.serviceHourId}:${entry.assigned}/${entry.required}`
               )
               .join("|")}
+            className="self-stretch min-h-0 w-full"
             entries={entries}
             dayCollapsed={dayCollapsed}
             interactiveClusterRef={clusterRef}
+            onStaffingHeaderMenu={onStaffingHeaderMenu}
+            staffingHeaderMenuOpen={staffingHeaderMenuOpen}
           />
         ) : null}
       </div>

@@ -22,8 +22,11 @@ import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedAreaCalendarShifts } from "@/lib/cached-areacalendar-shifts";
 import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data";
 import { resolveDashboardEmployeesForShifts } from "@/lib/dashboard-page-employees";
+import { resolvePlanningShiftJobLabels } from "@/lib/planning-shift-job-label";
 import { hasSettingsModalSearchParam } from "@/lib/settings-modal-navigation";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
+
+export const dynamic = "force-dynamic";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
@@ -118,7 +121,7 @@ export default async function DashboardPage({
 
   const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
 
-  const [areas, areaShiftTemplates, serviceHours, shiftRows, staffingRules] =
+  const [areas, areaShiftTemplates, serviceHours, shiftRows, staffingRules, staffingOverrides] =
     selectedLocationId
       ? await Promise.all([
           db.listLocationAreas(selectedLocationId),
@@ -134,8 +137,11 @@ export default async function DashboardPage({
             to
           ),
           db.listLocationAreaStaffing(selectedLocationId).catch(() => []),
+          db
+            .listLocationAreaStaffingOverrides(selectedLocationId, from, to)
+            .catch(() => []),
         ])
-      : [[], [], [], [], []];
+      : [[], [], [], [], [], []];
 
   const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
 
@@ -193,6 +199,21 @@ export default async function DashboardPage({
     shifts.push(planningShift);
   }
 
+  const qualificationNameById = new Map(
+    qualifications.map((qualification) => [qualification.id, qualification.name])
+  );
+  const shiftJobLabels = resolvePlanningShiftJobLabels({
+    shifts: locationShifts,
+    serviceHours,
+    staffingRules,
+    profileQualificationIds,
+    qualificationNameById,
+    countryCode: organization.country_code,
+  });
+  for (const shift of locationShifts) {
+    shift.jobName = shiftJobLabels.get(shift.id) ?? null;
+  }
+
   const planningEmployees = await resolveDashboardEmployeesForShifts(
     employees,
     shifts,
@@ -241,6 +262,7 @@ export default async function DashboardPage({
       areaShiftTemplates={areaShiftTemplates}
       serviceHours={serviceHours}
       staffingRules={staffingRules}
+      staffingOverrides={staffingOverrides}
       qualifications={qualifications}
       profileQualificationIds={profileQualificationIds}
       readOnlyWeek={readOnlyWeek}

@@ -13,6 +13,7 @@ import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
 import { formatDayHeader } from "@/lib/planning-utils";
 import {
+  groupedEmployeeListNameLabel,
   shouldShowGroupedEmployeeName,
 } from "@/lib/communication-hub";
 import {
@@ -286,12 +287,15 @@ export function CommunicationSendTab({
                   <span
                     className={cn(
                       CELL_CLASS,
-                      rowSelectionInactive
+                      rowSelectionInactive || !showEmployeeName
                         ? "text-muted"
                         : "font-medium text-foreground"
                     )}
                   >
-                    {showEmployeeName ? row.employeeName : null}
+                    {groupedEmployeeListNameLabel(
+                      row.employeeName,
+                      showEmployeeName
+                    )}
                   </span>
                   <span className={cn(CELL_CLASS, "text-muted")}>
                     {weekday}, {label}

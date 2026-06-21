@@ -1181,6 +1181,7 @@ export function LocationsModal({
               refreshList();
             }}
             onCacheUpdate={handleServiceHoursCacheUpdate}
+            onShiftTemplatesCacheUpdate={handleShiftTemplatesCacheUpdate}
           />
         )}
         {detailPanel === "staffing" && selectedLocation && selectedArea && (
@@ -1207,6 +1208,7 @@ export function LocationsModal({
               refreshStaffingCache(selectedLocation.id, selectedArea.id);
             }}
             onCacheUpdate={handleStaffingCacheUpdate}
+            onShiftTemplatesCacheUpdate={handleShiftTemplatesCacheUpdate}
           />
         )}
         {detailPanel === "shiftTemplates" && selectedLocation && selectedArea && (

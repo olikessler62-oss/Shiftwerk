@@ -23,6 +23,7 @@ import {
   CALENDAR_TODAY_DAY_HEADER_BADGE_CLASS,
 } from "@/lib/calendar-day-header-styles";
 import { formatDayHeader, weeklySummary } from "@/lib/planning-utils";
+import { shiftAssignWeekShiftsFromAreaCalendarCards } from "@/lib/weekly-hours-check-shifts";
 import {
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
@@ -42,6 +43,7 @@ import { translateActionError } from "@/lib/translate-action-error";
 import {
   AREA_DAY_CONTEXT_MENU_WIDTH_PX,
   AREA_SHIFT_CONTEXT_MENU_WIDTH_PX,
+  DASHBOARD_CELL_CONTEXT_MENU_WIDTH_PX,
   PLANNING_CONTEXT_MENU_SURFACE_CLASS,
   useClampedContextMenuPosition,
 } from "@/lib/context-menu-position";
@@ -111,10 +113,15 @@ import {
 } from "@/lib/shift-confirmation-simulation-context";
 import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
 import { useAppShellModalLockActive } from "@/lib/app-shell-modal-lock";
+import { CalendarStaffingEditModal } from "@/components/planning/calendar-staffing-edit-modal";
+import { buildCalendarStaffingEditorData } from "@/lib/calendar-staffing-editor-data";
+import { mergeStaffingRulesWithOverridesForAreaDate } from "@/lib/staffing-rules-with-overrides";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import type {
   AreaShiftTemplateWithBreaks,
+  Location,
   LocationArea,
+  LocationAreaStaffingOverride,
 } from "@schichtwerk/types";
 import {
   hasStaffingRequirementInCalendar,
@@ -134,6 +141,7 @@ import {
   areaCalendarAssignmentPresetsForArea,
 } from "@/lib/areacalendar-assignment-presets";
 import { computeBulkStaffingHeaderEntries } from "@/lib/bulk-staffing-header";
+import { isTagAreaHeaderStaffingHeaderAlertBadge } from "@/lib/tag-area-header-staffing-display";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { CALENDAR_INTERACTION_SURFACE_CLASS, clearDocumentTextSelection } from "@/lib/calendar-interaction-ui";
 import { cn } from "@/lib/cn";
@@ -182,6 +190,8 @@ type Props = {
   qualifications: Qualification[];
   profileQualificationIds: Record<string, string[]>;
   fullStaffingRules: LocationAreaStaffing[];
+  staffingOverrides?: LocationAreaStaffingOverride[];
+  selectedLocation: Location | null;
   shiftCompensation: AreaCalendarShiftCompensationByKey;
   profiles: Profile[];
   reassignShiftRequest?: AreaCalendarShiftCard | null;
@@ -319,6 +329,21 @@ type ShiftContextMenuState = ShiftContextMenuOpenContext & {
   x: number;
   y: number;
   shift: AreaCalendarShiftCard;
+};
+
+type StaffingHeaderContextMenuState = {
+  x: number;
+  y: number;
+  areaId: string;
+  date: string;
+  initialServiceHourId?: string;
+};
+
+type StaffingEditDialogState = {
+  mode: "temporary" | "permanent";
+  areaId: string;
+  anchorDate: string;
+  initialServiceHourId?: string;
 };
 
 const ASSIGN_SHIFT_CONTEXT_MENU_HEIGHT_PX = 40;
@@ -463,6 +488,8 @@ export function AreaCalendar({
   qualifications,
   profileQualificationIds: profileQualificationIdsRecord,
   fullStaffingRules,
+  staffingOverrides = [],
+  selectedLocation,
   shiftCompensation,
   profiles,
   reassignShiftRequest,
@@ -492,6 +519,11 @@ export function AreaCalendar({
         ? pickFirstAreaCalendarShiftPerEmployeeDay(shifts)
         : shifts,
     [shifts, simpleCalendarFirstShiftOnly]
+  );
+
+  const weekShiftsForAssignment = useMemo(
+    () => shiftAssignWeekShiftsFromAreaCalendarCards(shifts),
+    [shifts]
   );
 
   const profileQualificationIds = useMemo(() => {
@@ -657,17 +689,25 @@ export function AreaCalendar({
     date: string;
     action: "bulk" | "add";
   } | null>(null);
+  const [staffingHeaderContextMenu, setStaffingHeaderContextMenu] =
+    useState<StaffingHeaderContextMenuState | null>(null);
+  const [staffingEditDialog, setStaffingEditDialog] =
+    useState<StaffingEditDialogState | null>(null);
   useAppShellModalLockActive(
     Boolean(addShiftDialog) ||
       Boolean(bulkShiftDialog) ||
       Boolean(shiftDeleteConfirm) ||
       Boolean(shiftCancelConfirm) ||
-      Boolean(noServiceHoursConfirm)
+      Boolean(noServiceHoursConfirm) ||
+      Boolean(staffingEditDialog)
   );
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const shiftContextMenuRef = useRef<HTMLDivElement>(null);
+  const staffingHeaderContextMenuRef = useRef<HTMLDivElement>(null);
   const skipContextMenuCloseRef = useRef(false);
   const skipShiftContextMenuCloseRef = useRef(false);
+  const skipStaffingHeaderContextMenuCloseRef = useRef(false);
+  const staffingHeaderContextMenuOpenedAtRef = useRef(0);
 
   const clampedAreaDayContextMenuPosition = useClampedContextMenuPosition(
     contextMenu != null,
@@ -683,6 +723,25 @@ export function AreaCalendar({
     shiftContextMenu?.y ?? 0,
     shiftContextMenuRef,
     [shiftContextMenu, shiftConfirmationEnabled]
+  );
+
+  const clampedStaffingHeaderContextMenuPosition = useClampedContextMenuPosition(
+    staffingHeaderContextMenu != null,
+    staffingHeaderContextMenu?.x ?? 0,
+    staffingHeaderContextMenu?.y ?? 0,
+    staffingHeaderContextMenuRef,
+    [staffingHeaderContextMenu]
+  );
+
+  const rulesForAreaDate = useCallback(
+    (areaId: string, dateISO: string) =>
+      mergeStaffingRulesWithOverridesForAreaDate(
+        fullStaffingRules,
+        staffingOverrides,
+        areaId,
+        dateISO
+      ),
+    [fullStaffingRules, staffingOverrides]
   );
 
   const clearLayoutAreaTimer = useCallback(() => {
@@ -901,6 +960,55 @@ export function AreaCalendar({
       document.removeEventListener("scroll", closeMenu, true);
     };
   }, [shiftContextMenu]);
+
+  useEffect(() => {
+    if (!staffingHeaderContextMenu) return;
+
+    function closeMenu() {
+      setStaffingHeaderContextMenu(null);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenu();
+    }
+
+    function onMouseMove(event: MouseEvent) {
+      if (
+        performance.now() - staffingHeaderContextMenuOpenedAtRef.current < 200
+      ) {
+        return;
+      }
+      const menu = staffingHeaderContextMenuRef.current;
+      if (!menu) return;
+      if (
+        distanceFromPointToMenu(event.clientX, event.clientY, menu) >
+        CONTEXT_MENU_CLOSE_DISTANCE_PX
+      ) {
+        closeMenu();
+      }
+    }
+
+    function onDocumentClick() {
+      if (skipStaffingHeaderContextMenuCloseRef.current) {
+        skipStaffingHeaderContextMenuCloseRef.current = false;
+        return;
+      }
+      closeMenu();
+    }
+
+    document.addEventListener("click", onDocumentClick);
+    document.addEventListener("contextmenu", closeMenu);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("scroll", closeMenu, true);
+    return () => {
+      document.removeEventListener("click", onDocumentClick);
+      document.removeEventListener("contextmenu", closeMenu);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [staffingHeaderContextMenu]);
 
   const bindShiftContextMenu = useCallback(
     (openContext: ShiftContextMenuOpenContext) =>
@@ -1276,6 +1384,26 @@ export function AreaCalendar({
     },
     [handleAreaDayAssignInteraction]
   );
+
+  const openStaffingEditDialog = useCallback(
+    (mode: StaffingEditDialogState["mode"]) => {
+      if (!staffingHeaderContextMenu) return;
+      skipStaffingHeaderContextMenuCloseRef.current = true;
+      setStaffingEditDialog({
+        mode,
+        areaId: staffingHeaderContextMenu.areaId,
+        anchorDate: staffingHeaderContextMenu.date,
+        initialServiceHourId: staffingHeaderContextMenu.initialServiceHourId,
+      });
+      setStaffingHeaderContextMenu(null);
+    },
+    [staffingHeaderContextMenu]
+  );
+
+  const handleStaffingEditSaved = useCallback(() => {
+    setStaffingEditDialog(null);
+    router.refresh();
+  }, [router]);
 
   const handleAreaDayCellClick = useCallback(
     (
@@ -2368,7 +2496,7 @@ export function AreaCalendar({
                       const isPastWorkDayCell =
                         showDayCellContent && isPastAreaWorkDay;
                       const headerStaffing = computeBulkStaffingHeaderEntries({
-                        staffingRules: fullStaffingRules,
+                        staffingRules: rulesForAreaDate(area.id, date),
                         areaId: area.id,
                         dateISO: date,
                         serviceHours,
@@ -2392,6 +2520,8 @@ export function AreaCalendar({
                         dayShifts.some(
                           (shift) => shift.employeeId === highlightedEmployeeId
                         );
+                      const cellStaffingHeaderAlertBadge =
+                        isTagAreaHeaderStaffingHeaderAlertBadge(headerStaffing);
 
                       return (
                         <div
@@ -2402,7 +2532,9 @@ export function AreaCalendar({
                           )}
                           className={cn(
                             "relative z-10 flex min-h-0 flex-col overflow-hidden",
-                            cellHasHighlightedShift && "overflow-visible",
+                            (cellHasHighlightedShift ||
+                              cellStaffingHeaderAlertBadge) &&
+                              "overflow-visible",
                             showDayCellContent ? "p-2" : undefined,
                             dayColumnDivider(dayIndex),
                             !isLastRow && ROW_DIVIDER_CLASS
@@ -2441,7 +2573,11 @@ export function AreaCalendar({
                             <>
                               <TagAreaHeaderStrip
                                 key={`${area.id}:${date}:${dayShifts.map((shift) => shift.id).join(",")}`}
-                                className={cellHasHighlightedShift ? "z-10" : undefined}
+                                className={cn(
+                                  (cellHasHighlightedShift ||
+                                    cellStaffingHeaderAlertBadge) &&
+                                    "z-40"
+                                )}
                                 showDaytimesGradient
                                 dayCollapsed={!isDayActive}
                                 entries={headerStaffing}
@@ -2456,6 +2592,27 @@ export function AreaCalendar({
                                   date,
                                   showNoServiceHoursInHeader
                                 )}
+                                staffingHeaderMenuOpen={
+                                  staffingHeaderContextMenu != null
+                                }
+                                onStaffingHeaderMenu={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  if (isPastShiftDate(date)) return;
+                                  if (headerStaffing.length === 0) return;
+                                  setContextMenu(null);
+                                  setShiftContextMenu(null);
+                                  staffingHeaderContextMenuOpenedAtRef.current =
+                                    performance.now();
+                                  setStaffingHeaderContextMenu({
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                    areaId: area.id,
+                                    date,
+                                    initialServiceHourId:
+                                      headerStaffing[0]?.serviceHourId,
+                                  });
+                                }}
                                 overlayBackgroundColor={
                                   isPastWorkDayCell
                                     ? PAST_TAG_AREA_OVERLAY_BG
@@ -2838,6 +2995,64 @@ export function AreaCalendar({
         </div>
       ) : null}
 
+      {staffingHeaderContextMenu ? (
+        <div
+          ref={staffingHeaderContextMenuRef}
+          className={PLANNING_CONTEXT_MENU_SURFACE_CLASS}
+          style={{
+            left: clampedStaffingHeaderContextMenuPosition.x,
+            top: clampedStaffingHeaderContextMenuPosition.y,
+            width: DASHBOARD_CELL_CONTEXT_MENU_WIDTH_PX,
+          }}
+          role="menu"
+          aria-label={t("calendarStaffing.contextMenuAria")}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle"
+            onClick={() => openStaffingEditDialog("temporary")}
+          >
+            {t("calendarStaffing.contextTemporary")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="w-full cursor-pointer px-3 py-1.5 text-left text-sm text-foreground hover:bg-subtle"
+            onClick={() => openStaffingEditDialog("permanent")}
+          >
+            {t("calendarStaffing.contextPermanent")}
+          </button>
+        </div>
+      ) : null}
+
+      {staffingEditDialog &&
+      selectedLocation &&
+      areas.some((entry) => entry.id === staffingEditDialog.areaId) ? (
+        <CalendarStaffingEditModal
+          mode={staffingEditDialog.mode}
+          location={selectedLocation}
+          area={areas.find((entry) => entry.id === staffingEditDialog.areaId)!}
+          anchorDate={staffingEditDialog.anchorDate}
+          weekDates={dates}
+          shiftTemplates={areaShiftTemplatesForArea(
+            staffingEditDialog.areaId,
+            areaShiftTemplates
+          )}
+          editorData={buildCalendarStaffingEditorData(
+            staffingEditDialog.areaId,
+            serviceHours,
+            fullStaffingRules,
+            qualifications
+          )}
+          staffingOverrides={staffingOverrides}
+          initialServiceHourId={staffingEditDialog.initialServiceHourId}
+          onClose={() => setStaffingEditDialog(null)}
+          onSaved={handleStaffingEditSaved}
+        />
+      ) : null}
+
       {shiftDeleteConfirm ? (
         <AreaCalendarShiftDeleteConfirmModal
           pending={deleteShiftPending}
@@ -2955,6 +3170,7 @@ export function AreaCalendar({
                   }))
           }
           weekDates={dates}
+          weekShifts={weekShiftsForAssignment}
           onClose={() => setAddShiftDialog(null)}
           onSaved={handleShiftSaved}
         />
@@ -3006,6 +3222,7 @@ export function AreaCalendar({
               locationAreaId: shift.locationAreaId,
             }))}
           weekDates={dates}
+          weekShifts={weekShiftsForAssignment}
           onClose={() => setBulkShiftDialog(null)}
           onSaved={handleShiftSaved}
         />

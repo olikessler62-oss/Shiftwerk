@@ -181,6 +181,18 @@ export function shouldShowGroupedEmployeeName(
   };
 }
 
+/** Fortsetzung in gruppierten Mitarbeiter-Spalten (gleicher MA wie Zeile darüber). */
+export const GROUPED_EMPLOYEE_LIST_NAME_CONTINUATION = '"';
+
+export function groupedEmployeeListNameLabel(
+  employeeName: string,
+  showEmployeeName: boolean
+): string {
+  return showEmployeeName
+    ? employeeName
+    : GROUPED_EMPLOYEE_LIST_NAME_CONTINUATION;
+}
+
 function compareShiftStartTimes(a: string, b: string): number {
   return a.slice(0, 5).localeCompare(b.slice(0, 5));
 }

@@ -28,6 +28,7 @@ import {
 } from "@/lib/planning-utils";
 import { TagAreaHeaderStaffingRow } from "@/components/areacalendar/tag-area-header-strip";
 import { buildTagAreaServiceHoursHeaderTooltip } from "@/components/areacalendar/tag-area-header-service-hours-tooltip";
+import { isTagAreaHeaderStaffingHeaderAlertBadge } from "@/lib/tag-area-header-staffing-display";
 import { DashboardWeeklySummaryFooter } from "@/components/dashboard/dashboard-weekly-summary-footer";
 import { TagAreaFooterStrip } from "@/components/areacalendar/tag-area-footer-strip";
 import {
@@ -154,6 +155,12 @@ type Props = {
     clientX: number,
     clientY: number
   ) => void;
+  onStaffingHeaderContextMenu?: (
+    date: string,
+    clientX: number,
+    clientY: number
+  ) => void;
+  staffingHeaderContextMenuOpen?: boolean;
   selectedAreaId: string | null;
   selectedAreaName?: string;
   serviceHours: readonly AreaServiceHourRef[];
@@ -221,6 +228,8 @@ export function DashboardCalendarGrid({
   onCellContextMenu,
   onShiftContextMenu,
   onEmployeeRowContextMenu,
+  onStaffingHeaderContextMenu,
+  staffingHeaderContextMenuOpen = false,
   selectedAreaId,
   selectedAreaName = "",
   serviceHours,
@@ -389,6 +398,10 @@ export function DashboardCalendarGrid({
           const isToday = date === todayISO;
           const isPastDay = isPastCalendarDate(date, todayISO);
           const mutedHeader = !dayHasServiceHours[dayIndex];
+          const staffingEntries = dailyStaffingByDate?.get(date) ?? [];
+          const staffingHeaderAlertBadge =
+            staffingEntries.length > 0 &&
+            isTagAreaHeaderStaffingHeaderAlertBadge(staffingEntries);
 
           return (
             <div
@@ -396,6 +409,7 @@ export function DashboardCalendarGrid({
               className={cn(
                 "sticky top-0 z-40",
                 CALENDAR_DAY_HEADER_CELL_CLASS,
+                staffingHeaderAlertBadge && "overflow-visible",
                 !showStaffingHeaderRow && PLANNING_HEADER_ROW_BORDER_CLASS,
                 mutedHeader ? CALENDAR_DAY_HEADER_MUTED_CLASS : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
                 dayHeaderColumnDivider(dayIndex, dates.length)
@@ -455,6 +469,9 @@ export function DashboardCalendarGrid({
           ? dates.map((date, dayIndex) => {
               const mutedHeader = !dayHasServiceHours[dayIndex];
               const staffingEntries = dailyStaffingByDate?.get(date) ?? [];
+              const staffingHeaderAlertBadge =
+                staffingEntries.length > 0 &&
+                isTagAreaHeaderStaffingHeaderAlertBadge(staffingEntries);
               const showNoServiceHoursInHeader = !dayHasServiceHours[dayIndex];
               const headerTooltip =
                 selectedAreaId && selectedAreaName
@@ -475,7 +492,8 @@ export function DashboardCalendarGrid({
                 <div
                   key={`staffing-header-${date}`}
                   className={cn(
-                    "sticky z-40 flex min-h-0 items-center justify-center overflow-hidden border-t border-slate-300",
+                    "sticky flex min-h-0 items-center justify-center overflow-visible border-t border-slate-300",
+                    staffingHeaderAlertBadge ? "z-[41]" : "z-40",
                     PLANNING_HEADER_ROW_BORDER_CLASS,
                     showNoServiceHoursInHeader
                       ? undefined
@@ -503,6 +521,20 @@ export function DashboardCalendarGrid({
                     }
                     headerTooltip={headerTooltip}
                     dayCollapsed={!layoutActiveDayDates.has(date)}
+                    staffingHeaderMenuOpen={staffingHeaderContextMenuOpen}
+                    onStaffingHeaderMenu={
+                      onStaffingHeaderContextMenu
+                        ? (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onStaffingHeaderContextMenu(
+                              date,
+                              event.clientX,
+                              event.clientY
+                            );
+                          }
+                        : undefined
+                    }
                   />
                 </div>
               );
@@ -743,6 +775,9 @@ export function DashboardCalendarGrid({
                       absenceConflictShiftIds={absenceConflictShiftIds}
                       swapRequestShiftIds={swapRequestShiftIds}
                       shiftConfirmationEnabled={shiftConfirmationEnabled}
+                      onEmptyAreaClick={openNewShiftInCell}
+                      emptyAreaDisabled={!canOpenNewShiftInCell}
+                      emptyAreaLabel={emptyAreaLabel}
                     />
                   ) : null;
 

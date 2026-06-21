@@ -6,6 +6,7 @@ import {
   absenceRequestToRange,
   absenceDeleteShiftConflictRangeFromRequest,
   findOverlappingAbsence,
+  canRejectAbsenceType,
   validateAbsenceDateOrder,
   validateOpenEndedSickOnly,
   wouldDeletingAbsenceConflictWithFutureShifts,
@@ -14,6 +15,7 @@ import {
 import type { AbsenceRequest, AbsenceType, RequestStatus } from "@schichtwerk/types";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
+import { notifyEmployeeOfAbsenceReview } from "@/lib/absence-notifications";
 
 export type AbsenceDraft = {
   employee_id: string;
@@ -401,6 +403,10 @@ export async function reviewAbsenceRequest(
     const absence = absences.find((entry) => entry.id === id);
     if (!absence) return { ok: false, error: "NOT_FOUND" };
 
+    if (!approve && !canRejectAbsenceType(absence.type)) {
+      return { ok: false, error: "SICK_CANNOT_REJECT" };
+    }
+
     if (approve) {
       const baseline = await listOverlapBaseline(organizationId, absence.employee_id);
       const candidate = absenceRequestToRange(absence);
@@ -420,6 +426,24 @@ export async function reviewAbsenceRequest(
       reviewed_by: userId,
       reported_by: absence.reported_by,
     });
+
+    const employeeProfile = await db.getProfileById(absence.employee_id);
+    if (employeeProfile) {
+      try {
+        await notifyEmployeeOfAbsenceReview(db, {
+          organizationId,
+          employeeProfile,
+          absenceId: absence.id,
+          type: absence.type,
+          startDate: absence.start_date,
+          endDate: absence.end_date,
+          isOpenEnded: absence.is_open_ended,
+          approved: approve,
+        });
+      } catch (notifyError) {
+        console.error("Push-Benachrichtigung an Mitarbeiter fehlgeschlagen:", notifyError);
+      }
+    }
 
     revalidatePath("/dashboard");
     revalidatePath("/bereich-kalender");

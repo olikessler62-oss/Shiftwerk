@@ -44,8 +44,18 @@ export function resolveShiftLifecycleFromLegacy(
 }
 
 export function resolveLifecycleFromInput(input: ShiftDisplayInput): ShiftLifecycleStatus {
+  const fromConfirmation = resolveShiftLifecycleFromLegacy(input.confirmationStatus);
+
+  if (input.lifecycle === "confirmed" || input.lifecycle === "cancelled") {
+    return input.lifecycle;
+  }
+
+  if (fromConfirmation === "confirmed" || fromConfirmation === "cancelled") {
+    return fromConfirmation;
+  }
+
   if (input.lifecycle) return input.lifecycle;
-  return resolveShiftLifecycleFromLegacy(input.confirmationStatus);
+  return fromConfirmation;
 }
 
 function sortRequestsNewestFirst(
@@ -94,6 +104,7 @@ export function resolveLegacyConfirmationStatusFromModel(input: {
   if (!latestConfirmation) return "proposed";
 
   if (latestConfirmation.status === "rejected") return "rejected";
+  if (latestConfirmation.status === "approved") return "confirmed";
   if (latestConfirmation.status === "expired") return "pending";
   if (latestConfirmation.status === "pending") {
     const sentAt = latestConfirmation.sent_at ?? requestedAt;
@@ -124,6 +135,35 @@ export function resolveLegacyConfirmationStatusFromLegacyFields(input: {
   return confirmationStatus;
 }
 
+const TERMINAL_LEGACY_CONFIRMATION_STATUSES = new Set<ShiftConfirmationStatus>([
+  "confirmed",
+  "rejected",
+  "canceled",
+]);
+
+function resolveLegacyConfirmationStatus(input: {
+  legacyFromModel: ShiftConfirmationStatus;
+  legacyFromFields?: ShiftConfirmationStatus;
+  hasRequests: boolean;
+}): ShiftConfirmationStatus {
+  if (
+    input.legacyFromFields &&
+    TERMINAL_LEGACY_CONFIRMATION_STATUSES.has(input.legacyFromFields)
+  ) {
+    return input.legacyFromFields;
+  }
+
+  if (
+    input.legacyFromFields === "proposed" &&
+    input.legacyFromModel === "confirmed"
+  ) {
+    return "proposed";
+  }
+
+  if (input.hasRequests) return input.legacyFromModel;
+  return input.legacyFromFields ?? input.legacyFromModel;
+}
+
 export function resolveShiftCardDisplayState(
   input: ShiftDisplayInput,
   now: Date = new Date()
@@ -145,10 +185,11 @@ export function resolveShiftCardDisplayState(
     now,
   });
 
-  const legacyConfirmationStatus =
-    input.requests !== undefined
-      ? legacyFromModel
-      : (legacyFromFields ?? legacyFromModel);
+  const legacyConfirmationStatus = resolveLegacyConfirmationStatus({
+    legacyFromModel,
+    legacyFromFields,
+    hasRequests: input.requests !== undefined,
+  });
 
   const state: ShiftCardDisplayState = {
     shiftId: input.shiftId,
@@ -159,7 +200,8 @@ export function resolveShiftCardDisplayState(
   if (
     latestConfirmation &&
     OPEN_CONFIRMATION_STATUSES.has(latestConfirmation.status) &&
-    latestConfirmation.sent_at
+    latestConfirmation.sent_at &&
+    !TERMINAL_LEGACY_CONFIRMATION_STATUSES.has(legacyConfirmationStatus)
   ) {
     state.openConfirmation = {
       requestId: latestConfirmation.id,
@@ -171,7 +213,8 @@ export function resolveShiftCardDisplayState(
   if (
     latestConfirmation &&
     (latestConfirmation.status === "approved" ||
-      latestConfirmation.status === "rejected")
+      latestConfirmation.status === "rejected") &&
+    legacyConfirmationStatus !== "proposed"
   ) {
     state.lastConfirmation = {
       requestId: latestConfirmation.id,

@@ -6,6 +6,7 @@
 -- Resets profile hourly rates: 15,60 EUR (open-ended) for every profile.
 -- Resets profile weekly_hours: 40 for every profile.
 -- Resets staffing for Restaurant, Küche, and Bar per dev defaults.
+-- Clears location_area_staffing_overrides for the organization.
 
 create or replace function public.reset_organization_shift_data(p_organization_id uuid)
 returns void
@@ -58,6 +59,14 @@ begin
 
   delete from public.shifts_archive
   where organization_id = p_organization_id;
+
+  delete from public.location_area_staffing_overrides
+  where location_area_id in (
+    select la.id
+    from public.location_areas la
+    inner join public.locations l on l.id = la.location_id
+    where l.organization_id = p_organization_id
+  );
 
   delete from public.profile_recurring_availability
   where organization_id = p_organization_id;
@@ -256,6 +265,15 @@ begin
   update public.profiles
   set weekly_hours = 40
   where organization_id = p_organization_id;
+
+  delete from public.location_area_staffing
+  where location_area_id in (
+    select la.id
+    from public.location_areas la
+    inner join public.locations l on l.id = la.location_id
+    where l.organization_id = p_organization_id
+      and lower(la.name) in ('restaurant', 'küche', 'bar')
+  );
 
   insert into public.location_area_staffing (
     location_area_id,

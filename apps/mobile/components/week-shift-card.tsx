@@ -242,6 +242,7 @@ export function WeekShiftCard({
         )}
         <WeekShiftCardConfirmationOverlay
           status={shift.confirmation_status}
+          cancelledBy={display?.cancelledBy}
           badgeFontSize={sizing?.badgeFontSize}
           isPastDay={isPastDay}
         />

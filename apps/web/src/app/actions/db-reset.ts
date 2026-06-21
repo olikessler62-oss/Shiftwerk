@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidateAreaCalendarShiftCacheTags } from "@/lib/cached-areacalendar-shifts";
 import { getAdminDatabase } from "@/lib/db";
 import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
 import { signOut } from "@/app/actions/sign-out";
@@ -16,6 +17,7 @@ export async function resetOrganizationDatabase(): Promise<DbResetActionResult> 
     }
     const admin = getAdminDatabase();
     await admin.resetOrganizationOperationalData(organizationId);
+    revalidateAreaCalendarShiftCacheTags({ organizationId });
     await signOut();
     return { ok: true };
   } catch (error) {

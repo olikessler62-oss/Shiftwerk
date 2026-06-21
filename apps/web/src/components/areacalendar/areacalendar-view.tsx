@@ -7,6 +7,7 @@ import type {
   Location,
   LocationArea,
   LocationAreaStaffing,
+  LocationAreaStaffingOverride,
   Profile,
   ProfileRecurringAvailability,
   Qualification,
@@ -62,6 +63,7 @@ type Props = {
   areas: LocationArea[];
   staffingRules: StaffingRule[];
   fullStaffingRules: LocationAreaStaffing[];
+  staffingOverrides?: LocationAreaStaffingOverride[];
   serviceHours: AreaServiceHourRef[];
   shifts: AreaCalendarShiftCard[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
@@ -86,6 +88,7 @@ export function AreaCalendarView({
   areas,
   staffingRules,
   fullStaffingRules,
+  staffingOverrides = [],
   serviceHours,
   shifts,
   areaShiftTemplates,
@@ -142,6 +145,7 @@ export function AreaCalendarView({
           id: shift.id,
           confirmationStatus: shift.confirmationStatus,
           cancelActors: communicationCancelActorsMap,
+          cancelledBy: shift.displayState?.openCancellation?.cancelledBy,
         })
       ),
     [visibleShifts, communicationCancelActorsMap]
@@ -286,6 +290,8 @@ export function AreaCalendarView({
               qualifications={qualifications}
               profileQualificationIds={profileQualificationIds}
               fullStaffingRules={fullStaffingRules}
+              staffingOverrides={staffingOverrides}
+              selectedLocation={selectedLocation}
               shiftCompensation={shiftCompensation}
               profiles={profiles}
               reassignShiftRequest={reassignShiftRequest}

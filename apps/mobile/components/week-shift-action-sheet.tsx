@@ -26,11 +26,14 @@ type WeekShiftActionSheetProps = {
   context: WeekShiftActionContext | null;
   needsResponse: boolean;
   canCancel: boolean;
+  canDismiss: boolean;
   draft?: ConfirmationDecision;
   canceling: boolean;
+  dismissing: boolean;
   onClose: () => void;
   onToggleDraft: (shiftId: string, decision: ConfirmationDecision) => void;
   onCancel: (shiftId: string) => void;
+  onDismiss: (shiftId: string) => void;
 };
 
 function formatShiftTime(value: string): string {
@@ -60,11 +63,14 @@ export function WeekShiftActionSheet({
   context,
   needsResponse,
   canCancel,
+  canDismiss,
   draft,
   canceling,
+  dismissing,
   onClose,
   onToggleDraft,
   onCancel,
+  onDismiss,
 }: WeekShiftActionSheetProps) {
   if (!context) {
     return null;
@@ -74,7 +80,10 @@ export function WeekShiftActionSheet({
   const templateLabel = display?.templateName ?? null;
   const timeLabel = `${formatShiftTime(shift.starts_at)} – ${formatShiftTime(shift.ends_at)}`;
   const metaLabel = buildMetaLabel(display, confirmation);
-  const statusLabel = shiftConfirmationStatusLabel(shift.confirmation_status);
+  const statusLabel = shiftConfirmationStatusLabel(
+    shift.confirmation_status,
+    display?.cancelledBy
+  );
 
   return (
     <Modal
@@ -149,6 +158,20 @@ export function WeekShiftActionSheet({
                   <ActivityIndicator color={colors.destructive} />
                 ) : (
                   <Text style={styles.cancelButtonText}>Schicht absagen</Text>
+                )}
+              </Pressable>
+            ) : null}
+
+            {canDismiss && !needsResponse ? (
+              <Pressable
+                style={styles.dismissButton}
+                disabled={dismissing}
+                onPress={() => onDismiss(shift.id)}
+              >
+                {dismissing ? (
+                  <ActivityIndicator color={colors.foreground} />
+                ) : (
+                  <Text style={styles.dismissButtonText}>Aus Plan entfernen</Text>
                 )}
               </Pressable>
             ) : null}
@@ -257,6 +280,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: colors.destructive,
+  },
+  dismissButton: {
+    minHeight: 44,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.background,
+  },
+  dismissButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.foreground,
   },
   secondaryButton: {
     minHeight: 44,
