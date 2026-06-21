@@ -6,7 +6,16 @@
       "outputs": []
     },
     "@schichtwerk/web#build": {
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**"],
+      "env": [
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        "NEXT_PUBLIC_SITE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_SECRET_KEY",
+        "SUPERADMIN_EMAILS",
+        "CRON_SECRET"
+      ]
     },
     "dev": {
       "cache": false,
