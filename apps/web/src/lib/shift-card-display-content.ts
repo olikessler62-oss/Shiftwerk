@@ -6,6 +6,7 @@ import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment
 import { resolveShiftTemplateNameForAssignment } from "@/lib/areacalendar-assignment-presets";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
+import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 
 export type ShiftCardDisplayInput = {
   employeeName: string;

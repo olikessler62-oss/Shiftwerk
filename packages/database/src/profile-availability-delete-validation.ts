@@ -1,4 +1,5 @@
-import type { EmployeeShiftRecord, ProfileRecurringAvailability } from "@schichtwerk/types";
+import type { ProfileRecurringAvailability } from "@schichtwerk/types";
+import type { EmployeeShiftRecord } from "./interface";
 import { serviceWeekdayForShiftDate } from "./shift-service-hours";
 import {
   employeeMatchesShiftAvailability,

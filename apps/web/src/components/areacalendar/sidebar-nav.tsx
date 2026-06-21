@@ -19,8 +19,8 @@ import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharge
 import { useOrgFeatures } from "@/lib/org-features-provider";
 import {
   buildPlanningPageUrl,
-  type PlanningPagePathname,
 } from "@/lib/planning-week";
+import { useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
 import { useSuperadminModal } from "@/components/settings/superadmin-modal-context";
 
 const NAV_LINKS_AFTER_PLANNING = [
@@ -220,7 +220,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     { labelKey: "nav.planningNotifyStaff" },
   ] as const;
 
-  function handlePageNav(pathname: PlanningPagePathname) {
+  function handlePageNav(pathname: string) {
     beginMainNavPending({ kind: "page", pathname });
     onNavigate?.();
   }

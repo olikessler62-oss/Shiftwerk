@@ -62,7 +62,7 @@ import {
 } from "@/lib/location-staffing-client";
 import {
   computeBulkStaffingHeaderEntries,
-  staffingAssignmentsForPlanningAreaDay,
+  staffingAssignmentsForAreaDay,
 } from "@/lib/bulk-staffing-header";
 import { mergeStaffingRulesWithOverridesForAreaDate } from "@/lib/staffing-rules-with-overrides";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
@@ -867,11 +867,6 @@ export function DashboardView({
     [calendarPlanningShifts, simpleCalendarFirstShiftOnly]
   );
 
-  const visibleEmployeeIds = useMemo(
-    () => new Set(employees.map((employee) => employee.id)),
-    [employees]
-  );
-
   const dailyStaffingByDate = useMemo(() => {
     const map = new Map<
       string,
@@ -892,11 +887,10 @@ export function DashboardView({
           areaId: selectedAreaId,
           dateISO: date,
           serviceHours,
-          assignments: staffingAssignmentsForPlanningAreaDay(
-            calendarDisplayShifts,
+          assignments: staffingAssignmentsForAreaDay(
+            locationShifts,
             date,
-            selectedAreaId,
-            visibleEmployeeIds
+            selectedAreaId
           ),
           assignmentPresets,
           qualifications,
@@ -912,8 +906,7 @@ export function DashboardView({
     showStaffingHeaderRow,
     selectedAreaId,
     dates,
-    calendarDisplayShifts,
-    visibleEmployeeIds,
+    locationShifts,
     staffingRules,
     staffingOverrides,
     serviceHours,

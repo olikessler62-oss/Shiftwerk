@@ -243,7 +243,6 @@ export function DashboardCellShiftRow({
               "inline-flex h-full min-h-0 min-w-0 shrink-0",
               employeeHighlighted && "relative z-10 overflow-visible"
             )}
-            style={{ width: cardWidthPx, maxWidth: cardWidthPx }}
             placement={{
               anchorLeftToTriggerCenter: true,
               gapPx: 2,

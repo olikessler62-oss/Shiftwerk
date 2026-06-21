@@ -492,7 +492,7 @@ export function DashboardCalendarGrid({
                 <div
                   key={`staffing-header-${date}`}
                   className={cn(
-                    "sticky flex min-h-0 items-center justify-center overflow-visible border-t border-slate-300",
+                    "relative sticky flex min-h-0 items-stretch justify-center overflow-visible border-t border-slate-300",
                     staffingHeaderAlertBadge ? "z-[41]" : "z-40",
                     PLANNING_HEADER_ROW_BORDER_CLASS,
                     showNoServiceHoursInHeader
@@ -513,6 +513,10 @@ export function DashboardCalendarGrid({
                   }}
                 >
                   <TagAreaHeaderStaffingRow
+                    className={cn(
+                      "h-full min-h-0",
+                      staffingHeaderAlertBadge && "relative z-[50]"
+                    )}
                     entries={staffingEntries}
                     noServiceHoursLabel={
                       showNoServiceHoursInHeader

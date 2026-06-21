@@ -23,11 +23,11 @@ function shiftPreferencePlacementKey(input: ShiftPreferenceDimensionInput): stri
   ].join("|");
 }
 
-export function findProfileShiftPreferenceDuplicate(
-  existing: readonly ShiftPreferenceComparable[],
+export function findProfileShiftPreferenceDuplicate<T extends ShiftPreferenceComparable>(
+  existing: readonly T[],
   input: ShiftPreferenceDimensionInput,
   excludeId?: string
-): ShiftPreferenceComparable | undefined {
+): T | undefined {
   const inputHasTime = shiftPreferenceHasTimeDimension(input);
   const inputPlacementKey = shiftPreferencePlacementKey(input);
 

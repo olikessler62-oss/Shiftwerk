@@ -161,7 +161,7 @@ function formatTime(time: string): string {
 }
 
 export function serviceHourIdsForAreaOnDate(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaId: string,
   dateISO: string
 ): Set<string> {
@@ -179,7 +179,7 @@ export function serviceHourIdsForAreaOnDate(
 }
 
 export function findServiceHourIdForShift(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaId: string,
   dateISO: string,
   startTime: string,
@@ -362,7 +362,7 @@ export function staffingQualificationLabelsForHour(
 }
 
 export function isAreaOpenOnWeekday(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaId: string,
   weekday: number
 ): boolean {
@@ -374,7 +374,7 @@ export function isAreaOpenOnWeekday(
 }
 
 export function isStaffingDayEnabled(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaId: string,
   weekday: number
 ): boolean {
@@ -410,7 +410,7 @@ export function isAreaOpenOnDate(
 }
 
 export function isAnyAreaOpenOnDate(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaIds: readonly string[],
   dateISO: string
 ): boolean {
@@ -445,7 +445,7 @@ export type StaffingRule = {
 };
 
 export function areaHasServiceHours(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaId: string
 ): boolean {
   return serviceHours.some((hour) => hour.location_area_id === areaId);
@@ -468,7 +468,7 @@ export function areaHasStaffingRequirementOnDate(
   rules: StaffingRule[],
   areaId: string,
   dateISO: string,
-  serviceHours: AreaServiceHourRef[]
+  serviceHours: readonly AreaServiceHourRef[]
 ): boolean {
   const hourIds = serviceHourIdsForAreaOnDate(serviceHours, areaId, dateISO);
   if (hourIds.size === 0) return false;
@@ -485,7 +485,7 @@ export function areaHasStaffingRequirementInWeek(
   rules: StaffingRule[],
   areaId: string,
   dates: readonly string[],
-  serviceHours: AreaServiceHourRef[]
+  serviceHours: readonly AreaServiceHourRef[]
 ): boolean {
   return dates.some(
     (date) =>
@@ -496,7 +496,7 @@ export function areaHasStaffingRequirementInWeek(
 
 /** Öffnungsstatus im Bereich-Kalender: Servicezeit oder Schichten im Bereich. */
 export function isAreaOpenInCalendar(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaId: string,
   dateISO: string,
   hasShiftsInAreaOnDate: boolean
@@ -509,7 +509,7 @@ export function isAreaOpenInCalendar(
 
 /** Mindestens ein Bereich geöffnet (Bereich-Kalender). */
 export function isAnyAreaOpenInCalendar(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaIds: readonly string[],
   dateISO: string,
   hasShiftsOnDate: boolean
@@ -524,14 +524,14 @@ export function hasStaffingRequirementInCalendar(
   rules: StaffingRule[],
   areaIds: readonly string[],
   dateISO: string,
-  serviceHours: AreaServiceHourRef[]
+  serviceHours: readonly AreaServiceHourRef[]
 ): boolean {
   return hasStaffingRequirementOnDate(rules, areaIds, dateISO, serviceHours);
 }
 
 /** Vergangener Arbeitstag (Mo–So oder Feiertag) für einen Bereich. */
 export function isPastAreaWorkDayCell(
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   areaId: string,
   dateISO: string,
   isManualAssignmentDay: boolean
@@ -576,7 +576,7 @@ export function tagAreaHeaderStaffingEntriesInCalendar(
   rules: StaffingRule[],
   areaId: string,
   dateISO: string,
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   assignedShifts: { startTime: string; endTime: string }[],
   options: {
     formatLabel?: (hour: ServiceHourStaffingRef) => string;
@@ -598,7 +598,7 @@ export function hasStaffingRequirementOnDate(
   rules: StaffingRule[],
   areaIds: readonly string[],
   dateISO: string,
-  serviceHours: AreaServiceHourRef[]
+  serviceHours: readonly AreaServiceHourRef[]
 ): boolean {
   for (const areaId of areaIds) {
     if (areaHasStaffingRequirementOnDate(rules, areaId, dateISO, serviceHours)) {
@@ -612,7 +612,7 @@ export function requiredStaffForAreaOnDate(
   rules: StaffingRule[],
   areaId: string,
   dateISO: string,
-  serviceHours: AreaServiceHourRef[]
+  serviceHours: readonly AreaServiceHourRef[]
 ): number {
   const hourIds = serviceHourIdsForAreaOnDate(serviceHours, areaId, dateISO);
   if (hourIds.size === 0) return 0;
@@ -671,7 +671,7 @@ export function tagAreaHeaderStaffingEntries(
   rules: StaffingRule[],
   areaId: string,
   dateISO: string,
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   assignedShifts: { startTime: string; endTime: string }[],
   options: {
     formatLabel?: (hour: ServiceHourStaffingRef) => string;
@@ -818,18 +818,16 @@ export function findServiceHourByWeekdayAndWindow(
   weekday: number,
   startTime: string,
   endTime: string,
-  serviceHours: readonly {
-    id: string;
-    weekday: number;
-    start_time: string;
-    end_time: string;
-  }[]
-) {
+  serviceHours: readonly AreaServiceHourRef[]
+): AreaServiceHourRef | undefined {
   const start = serviceHourTimeFieldValue(startTime);
   const end = serviceHourTimeFieldValue(endTime);
   return serviceHours.find(
     (hour) =>
       hour.weekday === weekday &&
+      hour.id != null &&
+      hour.start_time != null &&
+      hour.end_time != null &&
       serviceHourTimeFieldValue(hour.start_time) === start &&
       serviceHourTimeFieldValue(hour.end_time) === end
   );
@@ -860,7 +858,7 @@ export function resolveServiceHourForStaffingWindow(
         reference.end_time ?? "",
         serviceHours
       );
-      if (equivalent) return equivalent.id;
+      if (equivalent?.id) return equivalent.id;
     }
   }
 
@@ -870,7 +868,7 @@ export function resolveServiceHourForStaffingWindow(
     endTime,
     serviceHours
   );
-  if (exact) return exact.id;
+  if (exact?.id) return exact.id;
 
   return findServiceHourIdForShift(
     serviceHours,

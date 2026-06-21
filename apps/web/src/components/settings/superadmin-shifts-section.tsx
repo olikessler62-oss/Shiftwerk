@@ -48,7 +48,7 @@ export function SuperadminShiftsSection({ disabled = false }: Props) {
 
   const loadSnapshotMeta = useCallback(async () => {
     const result = await getSuperadminShiftSnapshotMeta();
-    if ("ok" in result && result.ok === false) {
+    if ("ok" in result) {
       setSnapshotMeta(null);
       return;
     }

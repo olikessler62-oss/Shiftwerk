@@ -290,7 +290,7 @@ export async function patchMobileAbsence(
       reviewed_by: absence.reviewed_by,
       reported_by: absence.reported_by,
     });
-    return { ok: true, id: absenceId };
+    return { ok: true, id: absenceId, status: "cancelled" };
   }
 
   if (absence.type !== "sick") {
@@ -329,7 +329,7 @@ export async function patchMobileAbsence(
       reviewed_by: absence.reviewed_by,
       reported_by: absence.reported_by,
     });
-    return { ok: true, id: absenceId };
+    return { ok: true, id: absenceId, status: "approved" };
   }
 
   if (body.action === "extend") {
@@ -356,7 +356,7 @@ export async function patchMobileAbsence(
       reviewed_by: absence.reviewed_by,
       reported_by: absence.reported_by,
     });
-    return { ok: true, id: absenceId };
+    return { ok: true, id: absenceId, status: absence.status };
   }
 
   return fail("INVALID_ACTION");

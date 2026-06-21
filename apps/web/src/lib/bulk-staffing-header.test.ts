@@ -6,6 +6,7 @@ import {
   computeBulkStaffingHeaderEntries,
   formatStaffingEntryTooltipContent,
   mapAssignmentQualificationIds,
+  staffingAssignmentsForAreaDay,
   staffingAssignmentsForPlanningAreaDay,
   type DemandWindowRef,
   type StaffingAssignmentRef,
@@ -227,6 +228,51 @@ describe("allocateAssignmentsToDemandWindows", () => {
 
     expect(allocation.get(hourFrueh)).toEqual([0, 1]);
     expect(allocation.get(hourMittel)).toEqual([2]);
+  });
+});
+
+describe("staffingAssignmentsForAreaDay", () => {
+  it("counts all area shifts on the date", () => {
+    const assignments = staffingAssignmentsForAreaDay(
+      [
+        {
+          shift_date: "2026-06-15",
+          location_area_id: "area-restaurant",
+          employee_id: "emp-a",
+          startTime: "08:00",
+          endTime: "10:00",
+        },
+        {
+          shift_date: "2026-06-15",
+          location_area_id: "area-restaurant",
+          employee_id: "emp-hidden",
+          startTime: "12:00",
+          endTime: "15:00",
+        },
+        {
+          shift_date: "2026-06-15",
+          location_area_id: "area-bar",
+          employee_id: "emp-a",
+          startTime: "08:00",
+          endTime: "10:00",
+        },
+      ],
+      "2026-06-15",
+      "area-restaurant"
+    );
+
+    expect(assignments).toEqual([
+      {
+        startTime: "08:00",
+        endTime: "10:00",
+        employeeId: "emp-a",
+      },
+      {
+        startTime: "12:00",
+        endTime: "15:00",
+        employeeId: "emp-hidden",
+      },
+    ]);
   });
 });
 

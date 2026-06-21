@@ -59,7 +59,7 @@ export function shiftHoursFromWindow(startTime: string, endTime: string): number
 
 export function employeeWeekHours(
   employeeId: string,
-  shifts: PlanningShiftRef[]
+  shifts: readonly PlanningShiftRef[]
 ): number {
   let total = 0;
   for (const shift of shifts) {

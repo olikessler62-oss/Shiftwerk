@@ -8,7 +8,10 @@ import {
   type AreaCalendarAssignmentPreset,
 } from "@/lib/areacalendar-assignment-presets";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
-import { isTagAreaHeaderStaffingEntryOverstaffed } from "@/lib/tag-area-header-staffing-display";
+import {
+  isTagAreaHeaderStaffingEntryOverstaffed,
+  isTagAreaHeaderStaffingEntryUnderstaffed,
+} from "@/lib/tag-area-header-staffing-display";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
@@ -31,17 +34,9 @@ export function isStaffingFullyCovered(
 ): boolean {
   if (entries.length === 0) return false;
 
-  return entries.every((entry) => {
-    const qualifications =
-      entry.qualifications?.filter((qualification) => qualification.required > 0) ??
-      [];
-    if (qualifications.length > 0) {
-      return qualifications.every(
-        (qualification) => qualification.assigned >= qualification.required
-      );
-    }
-    return entry.assigned >= entry.required;
-  });
+  return entries.every(
+    (entry) => !isTagAreaHeaderStaffingEntryUnderstaffed(entry)
+  );
 }
 
 export function staffingDemandExceeded(

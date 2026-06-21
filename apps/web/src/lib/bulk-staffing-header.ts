@@ -203,12 +203,23 @@ export function staffingAssignmentsForPlanningAreaDay(
   areaId: string,
   visibleEmployeeIds: ReadonlySet<string>
 ): StaffingAssignmentRef[] {
+  return staffingAssignmentsForAreaDay(shifts, dateISO, areaId).filter(
+    (assignment) =>
+      assignment.employeeId != null &&
+      visibleEmployeeIds.has(assignment.employeeId)
+  );
+}
+
+/** Alle Schichten eines Bereichs/Tags für Personalbedarf-Zählung (wie Bereich-Kalender). */
+export function staffingAssignmentsForAreaDay(
+  shifts: readonly PlanningStaffingShiftRef[],
+  dateISO: string,
+  areaId: string
+): StaffingAssignmentRef[] {
   return shifts
     .filter(
       (shift) =>
-        shift.shift_date === dateISO &&
-        shift.location_area_id === areaId &&
-        visibleEmployeeIds.has(shift.employee_id)
+        shift.shift_date === dateISO && shift.location_area_id === areaId
     )
     .map((shift) => ({
       startTime: shift.startTime,

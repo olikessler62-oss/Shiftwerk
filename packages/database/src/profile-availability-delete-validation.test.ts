@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { EmployeeShiftRecord, ProfileRecurringAvailability } from "@schichtwerk/types";
+import type { ProfileRecurringAvailability } from "@schichtwerk/types";
+import type { EmployeeShiftRecord } from "./interface";
 import {
   PROFILE_AVAILABILITY_DELETE_SHIFT_CONFLICT_ERROR,
   isShiftRelevantForAvailabilityChange,

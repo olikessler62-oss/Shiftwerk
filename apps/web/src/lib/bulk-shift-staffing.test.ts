@@ -456,6 +456,33 @@ describe("isStaffingFullyCovered", () => {
       ])
     ).toBe(false);
   });
+
+  it("is not covered when headcount matches but roles differ", () => {
+    expect(
+      isStaffingFullyCovered([
+        {
+          serviceHourId: "lunch",
+          label: "lunch",
+          required: 2,
+          assigned: 2,
+          qualifications: [
+            {
+              qualificationId: "qual-koch",
+              name: "Koch",
+              assigned: 2,
+              required: 1,
+            },
+            {
+              qualificationId: "qual-spuel",
+              name: "Spülkraft",
+              assigned: 0,
+              required: 1,
+            },
+          ],
+        },
+      ])
+    ).toBe(false);
+  });
 });
 
 describe("resolveAddShiftFormInitialValues", () => {

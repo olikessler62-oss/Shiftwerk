@@ -265,6 +265,7 @@ export async function createProfileRecurringAvailability(input: {
         start_time: parsedTimes.start_time,
         end_time: parsedTimes.end_time,
         sort_order: existing.length,
+        created_at: new Date().toISOString(),
       },
     ];
 

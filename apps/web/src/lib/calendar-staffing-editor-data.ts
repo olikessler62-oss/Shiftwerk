@@ -18,7 +18,17 @@ export function buildCalendarStaffingEditorData(
   qualifications: readonly Qualification[]
 ): CalendarStaffingEditorData {
   const areaServiceHours: LocationAreaServiceHour[] = serviceHours
-    .filter((hour) => hour.location_area_id === areaId)
+    .filter(
+      (hour): hour is AreaServiceHourRef & {
+        id: string;
+        start_time: string;
+        end_time: string;
+      } =>
+        hour.location_area_id === areaId &&
+        hour.id != null &&
+        hour.start_time?.trim() != null &&
+        hour.end_time?.trim() != null
+    )
     .map((hour) => ({
       id: hour.id,
       location_area_id: hour.location_area_id,
