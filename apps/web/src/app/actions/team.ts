@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { validateProfileFullNameUniqueness } from "@schichtwerk/database";
+import { getPublicSiteUrl } from "@/lib/auth-callback";
 import { getAdminDatabase, getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 
@@ -48,14 +49,13 @@ export async function inviteEmployee(
     });
     if (!nameCheck.ok) return nameCheck;
 
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+    const siteUrl = getPublicSiteUrl();
 
     const { data: invited, error: inviteError } = await admin.authInviteUserByEmail(
       email,
       {
         full_name: fullName,
-        redirectTo: `${siteUrl}/auth/callback?next=/app-only`,
+        redirectTo: `${siteUrl}/auth/callback?next=/reset-password`,
       }
     );
 

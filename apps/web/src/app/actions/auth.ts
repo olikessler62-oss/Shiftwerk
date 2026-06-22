@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { getPublicSiteUrl } from "@/lib/auth-callback";
 import { getAdminDatabase, getDatabase } from "@/lib/db";
 import {
   getIndustryTemplate,
@@ -85,7 +86,7 @@ export async function signOut() {
 }
 
 function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  return getPublicSiteUrl();
 }
 
 function passwordResetRedirectTo(): string {
