@@ -1,6 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View, ActivityIndicator } from "react-native";
 import type {
   ConfirmationDecision,
   ConfirmationWeekItem,
@@ -10,12 +10,13 @@ import type {
 import { shiftConfirmationShowsOverlay } from "@schichtwerk/ui-tokens";
 import { WeekShiftCardConfirmationOverlay } from "@/components/week-shift-card-confirmation-overlay";
 import type { WeekShiftActionContext } from "@/components/week-shift-action-sheet";
-import { useWeekPlanLayout } from "@/lib/responsive-layout";
+import { isEmployeeDismissableShift } from "@/lib/employee-shift-dismiss";
 import {
   SHIFT_CARD_CONTENT_INSET_RIGHT_RATIO,
   WEEK_PLAN_PAST,
   resolveShiftCardContentTextColor,
 } from "@/lib/week-plan-theme";
+import { useWeekPlanLayout } from "@/lib/responsive-layout";
 import { colors, radius, spacing, buildShiftCardLinearGradient } from "@schichtwerk/ui-tokens";
 
 const SHIFT_CARD_BORDER_RADIUS = radius.lg / 2;
@@ -55,6 +56,8 @@ type WeekShiftCardProps = {
   height?: number;
   isPastDay?: boolean;
   onPress: (context: WeekShiftActionContext) => void;
+  onDismiss?: (shiftId: string) => void;
+  dismissing?: boolean;
 };
 
 type ShiftCardSizing = {
@@ -150,6 +153,8 @@ export function WeekShiftCard({
   height,
   isPastDay = false,
   onPress,
+  onDismiss,
+  dismissing = false,
 }: WeekShiftCardProps) {
   const layout = useWeekPlanLayout();
   const [cardWidth, setCardWidth] = useState(0);
@@ -169,6 +174,8 @@ export function WeekShiftCard({
   const templateLabel = display?.templateName ?? null;
   const shiftTimeLabel = `${formatShiftTime(shift.starts_at)} – ${formatShiftTime(shift.ends_at)}`;
   const showsOverlay = shiftConfirmationShowsOverlay(shift.confirmation_status);
+  const canDismiss = isEmployeeDismissableShift(shift, display) && onDismiss != null;
+  const cardDisabled = isPastDay && !canDismiss;
   const sizing = height != null ? scaleShiftCardForHeight(height) : null;
   const shiftGradient = useMemo(
     () =>
@@ -199,8 +206,8 @@ export function WeekShiftCard({
           marginBottom: 0,
         },
       ]}
-      disabled={isPastDay}
-      accessibilityState={{ disabled: isPastDay }}
+      disabled={cardDisabled}
+      accessibilityState={{ disabled: cardDisabled }}
       onPress={() =>
         onPress({
           shift,
@@ -217,6 +224,7 @@ export function WeekShiftCard({
           isPastDay && styles.cardPast,
           draft === "confirm" && styles.cardDraftConfirm,
           draft === "reject" && styles.cardDraftReject,
+          canDismiss && styles.cardWithDismissAction,
           height != null && {
             flex: 1,
             paddingVertical: sizing!.paddingVertical,
@@ -245,6 +253,11 @@ export function WeekShiftCard({
           cancelledBy={display?.cancelledBy}
           badgeFontSize={sizing?.badgeFontSize}
           isPastDay={isPastDay}
+          showDismiss={canDismiss}
+          dismissing={dismissing}
+          onDismiss={
+            canDismiss ? () => onDismiss!(shift.id) : undefined
+          }
         />
         <View
           style={[
@@ -368,6 +381,8 @@ export function WeekShiftCard({
 const styles = StyleSheet.create({
   cardShell: {
     marginBottom: spacing.sm,
+    flex: 1,
+    minHeight: 0,
   },
   cardShellCompact: {
     marginBottom: spacing.xs,
@@ -407,6 +422,9 @@ const styles = StyleSheet.create({
   cardCompact: {
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.sm,
+  },
+  cardWithDismissAction: {
+    paddingBottom: spacing.md + 4,
   },
   cardBody: {
     alignItems: "stretch",

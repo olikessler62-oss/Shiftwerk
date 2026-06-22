@@ -16,6 +16,8 @@ type WeekDaySlotProps = {
   slotHeight: number;
   drafts: Record<string, ConfirmationDecision>;
   onShiftPress: (context: WeekShiftActionContext) => void;
+  onDismissShift: (shiftId: string) => void;
+  dismissingShiftId?: string | null;
 };
 
 export function WeekDaySlot({
@@ -23,6 +25,8 @@ export function WeekDaySlot({
   slotHeight,
   drafts,
   onShiftPress,
+  onDismissShift,
+  dismissingShiftId = null,
 }: WeekDaySlotProps) {
   const layout = useWeekPlanLayout();
   const isPastDay = isPastDateISO(day.dateISO);
@@ -84,6 +88,8 @@ export function WeekDaySlot({
                 draft={drafts[shift.id]}
                 isPastDay={isPastDay}
                 onPress={onShiftPress}
+                onDismiss={onDismissShift}
+                dismissing={dismissingShiftId === shift.id}
                 compact={layout.shiftCardCompact}
                 height={cardHeight}
               />

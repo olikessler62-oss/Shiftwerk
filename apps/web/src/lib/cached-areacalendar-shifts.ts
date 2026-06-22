@@ -1,8 +1,8 @@
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { createDatabase } from "@schichtwerk/database";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
-import { createClient } from "@/lib/supabase/server";
 import { createClientWithAccessToken } from "@/lib/supabase/access-token";
+import { getServerAuthSession } from "@/lib/server-manager-session";
 
 /** Fallback-TTL: nur falls Tag-Revalidation einmal nicht greift. */
 export const AREA_CALENDAR_SHIFTS_CACHE_REVALIDATE_SECONDS = 30;
@@ -119,10 +119,7 @@ export async function getCachedAreaCalendarShifts(
   from: string,
   to: string
 ) {
-  const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const session = await getServerAuthSession();
   if (!session?.access_token) {
     return [];
   }

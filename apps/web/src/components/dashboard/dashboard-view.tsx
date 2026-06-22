@@ -534,6 +534,19 @@ export function DashboardView({
     [visibleShifts, communicationCancelActorsMap]
   );
 
+  const staffingCalendarShifts = useMemo(
+    () =>
+      visibleLocationShifts.filter((shift) =>
+        shouldDisplayShiftOnPlanningCalendar({
+          id: shift.id,
+          confirmationStatus: shift.confirmationStatus,
+          cancelActors: communicationCancelActorsMap,
+          cancelledBy: shift.displayState?.openCancellation?.cancelledBy,
+        })
+      ),
+    [visibleLocationShifts, communicationCancelActorsMap]
+  );
+
   const shiftsByDate = useMemo(() => {
     const map = new Map<string, number>();
     for (const shift of calendarPlanningShifts) {
@@ -862,7 +875,7 @@ export function DashboardView({
           dateISO: date,
           serviceHours,
           assignments: staffingAssignmentsForAreaDay(
-            locationShifts,
+            staffingCalendarShifts,
             date,
             selectedAreaId
           ),
@@ -880,7 +893,7 @@ export function DashboardView({
     showStaffingHeaderRow,
     selectedAreaId,
     dates,
-    locationShifts,
+    staffingCalendarShifts,
     staffingRules,
     staffingOverrides,
     serviceHours,

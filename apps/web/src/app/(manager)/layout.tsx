@@ -2,11 +2,10 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/areacalendar/app-shell";
 import { LocaleProvider } from "@/i18n/locale-provider";
 import { getServerLocale } from "@/i18n/server";
-import { getDatabase } from "@/lib/db";
 import { OrgFeaturesProvider } from "@/lib/org-features-provider";
 import { SimpleCalendarDisplayProvider } from "@/lib/simple-calendar-display-context";
 import { ShiftConfirmationSimulationProvider } from "@/lib/shift-confirmation-simulation-context";
-import { loadManagerOrganization } from "@/lib/manager";
+import { getManagerSession } from "@/lib/server-manager-session";
 import { isSuperadminDeveloperForEmails } from "@/lib/superadmin-access";
 
 export const dynamic = "force-dynamic";
@@ -18,20 +17,14 @@ export default async function ManagerLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const db = await getDatabase();
-  const user = await db.authGetUser();
+  const session = await getManagerSession();
 
-  if (!user) redirect("/login");
+  if (!session) redirect("/login");
 
-  const profile = await db.getProfileById(user.id);
+  const { user, profile, organization } = session;
 
-  if (!profile || profile.role === "basic") redirect("/app-only");
+  if (profile.role === "basic") redirect("/app-only");
 
-  const orgName = await db.getOrganizationName(profile.organization_id);
-  const organization = await loadManagerOrganization(
-    profile.organization_id,
-    orgName
-  );
   const locale = await getServerLocale();
 
   const superadminEnabled = isSuperadminDeveloperForEmails([
@@ -45,7 +38,7 @@ export default async function ManagerLayout({
         <SimpleCalendarDisplayProvider>
           <ShiftConfirmationSimulationProvider>
             <AppShell
-              orgName={organization.name || orgName || undefined}
+              orgName={organization.name || undefined}
               userName={profile.full_name}
               role={profile.role}
               superadminEnabled={superadminEnabled}

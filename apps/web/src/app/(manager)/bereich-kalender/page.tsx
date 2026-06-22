@@ -5,7 +5,7 @@ import {
   shiftTimeFromTimestamp,
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
-import { loadManagerOrganization } from "@/lib/manager";
+import { getManagerSession } from "@/lib/server-manager-session";
 import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/areacalendar-assignment-presets";
 import { AreaCalendarView } from "@/components/areacalendar/areacalendar-view";
@@ -46,18 +46,11 @@ export default async function BereichKalenderPage({
     rollen,
     area: areaParam,
   } = await searchParams;
-  const db = await getDatabase();
-  const user = await db.authGetUser();
-  if (!user) redirect("/login");
 
-  const orgId = await db.getProfileOrganizationId(user.id);
-  if (!orgId) redirect("/login");
+  const session = await getManagerSession();
+  if (!session) redirect("/login");
 
-  const orgName = await db.getOrganizationName(orgId);
-  const organization = await loadManagerOrganization(orgId, orgName);
-  const managerNotifications = organization.shift_confirmation_enabled
-    ? await db.listManagerNotificationsForRecipient(user.id, { limit: 50 })
-    : [];
+  const { user, organization, organizationId: orgId } = session;
   const timeZone = resolveOrganizationTimeZone(organization);
 
   const weekStart = redirectIfPlanningWeekClamped("/bereich-kalender", week, {
@@ -73,6 +66,8 @@ export default async function BereichKalenderPage({
   const from = dates[0];
   const to = dates[6];
 
+  const db = await getDatabase();
+
   let [
     qualifications,
     compensationSurchargeTypes,
@@ -82,6 +77,7 @@ export default async function BereichKalenderPage({
     profileQualificationIdsMap,
     absences,
     recurringAvailability,
+    managerNotifications,
   ] = await Promise.all([
     db.listQualifications(orgId),
     db.listCompensationSurchargeTypes(orgId),
@@ -89,8 +85,15 @@ export default async function BereichKalenderPage({
     db.listOrganizationProfiles(orgId),
     db.listLocationsForAreaCalendar(orgId, from, to),
     db.listProfileQualificationIdsByOrganization(orgId),
-    db.listOrganizationAbsences(orgId, { statuses: ["approved"] }),
+    db.listOrganizationAbsences(orgId, {
+      statuses: ["approved"],
+      overlappingFrom: from,
+      overlappingTo: to,
+    }),
     db.listOrganizationRecurringAvailability(orgId),
+    organization.shift_confirmation_enabled
+      ? db.listManagerNotificationsForRecipient(user.id, { limit: 50 })
+      : Promise.resolve([]),
   ]);
 
   if (!roles.length) {

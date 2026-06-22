@@ -5,7 +5,7 @@ import {
 } from "@/lib/dates";
 import { getDatabase } from "@/lib/db";
 import { getOrgFeatures } from "@/lib/org-features";
-import { loadManagerOrganization } from "@/lib/manager";
+import { getManagerSession } from "@/lib/server-manager-session";
 import { isPastWeek } from "@/lib/planning-readonly";
 import { resolveOrganizationTimeZone } from "@schichtwerk/database";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
@@ -55,19 +55,11 @@ export default async function DashboardPage({
     location: locationParam,
     area: areaParam,
   } = params;
-  const db = await getDatabase();
 
-  const user = await db.authGetUser();
-  if (!user) redirect("/login");
+  const session = await getManagerSession();
+  if (!session) redirect("/login");
 
-  const orgId = await db.getProfileOrganizationId(user.id);
-  if (!orgId) redirect("/login");
-
-  const orgName = await db.getOrganizationName(orgId);
-  const organization = await loadManagerOrganization(orgId, orgName);
-  const managerNotifications = organization.shift_confirmation_enabled
-    ? await db.listManagerNotificationsForRecipient(user.id, { limit: 50 })
-    : [];
+  const { user, organization, organizationId: orgId } = session;
   const orgFeatures = getOrgFeatures(organization);
   const timeZone = resolveOrganizationTimeZone(organization);
 
@@ -85,6 +77,8 @@ export default async function DashboardPage({
   const loadSettingsModalsData =
     SETTINGS_MODALS_ON_CURRENT_PAGE && hasSettingsModalSearchParam(params);
 
+  const db = await getDatabase();
+
   const [
     employees,
     recurringAvailability,
@@ -95,10 +89,15 @@ export default async function DashboardPage({
     settingsRoles,
     settingsProfiles,
     settingsCompensationSurchargeTypes,
+    managerNotifications,
   ] = await Promise.all([
     db.listPlanningEmployees(orgId),
     db.listOrganizationRecurringAvailability(orgId),
-    db.listOrganizationAbsences(orgId, { statuses: ["approved"] }),
+    db.listOrganizationAbsences(orgId, {
+      statuses: ["approved"],
+      overlappingFrom: from,
+      overlappingTo: to,
+    }),
     db.listLocations(orgId),
     db.listQualifications(orgId),
     db.listProfileQualificationIdsByOrganization(orgId),
@@ -116,6 +115,9 @@ export default async function DashboardPage({
       : Promise.resolve([]),
     loadSettingsModalsData
       ? db.listCompensationSurchargeTypes(orgId)
+      : Promise.resolve([]),
+    organization.shift_confirmation_enabled
+      ? db.listManagerNotificationsForRecipient(user.id, { limit: 50 })
       : Promise.resolve([]),
   ]);
 

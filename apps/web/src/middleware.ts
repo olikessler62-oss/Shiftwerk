@@ -17,7 +17,7 @@ const MANAGER_ROUTES = [
 ];
 
 export async function middleware(request: NextRequest) {
-  const response = await updateSession(request);
+  const { response, user: sessionUser } = await updateSession(request);
 
   const { pathname } = request.nextUrl;
   const isProtected = MANAGER_ROUTES.some(
@@ -28,6 +28,13 @@ export async function middleware(request: NextRequest) {
 
   const withPlanningCacheHeaders = (res: NextResponse) =>
     applyPlanningNoStoreHeaders(res);
+
+  if (!sessionUser) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("redirect", pathname);
+    return withPlanningCacheHeaders(NextResponse.redirect(url));
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -43,16 +50,7 @@ export async function middleware(request: NextRequest) {
   );
 
   const db = createDatabase(supabase);
-  const user = await db.authGetUser();
-
-  if (!user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("redirect", pathname);
-    return withPlanningCacheHeaders(NextResponse.redirect(url));
-  }
-
-  const role = await db.getProfileRole(user.id);
+  const role = await db.getProfileRole(sessionUser.id);
 
   if (role === "basic") {
     const url = request.nextUrl.clone();

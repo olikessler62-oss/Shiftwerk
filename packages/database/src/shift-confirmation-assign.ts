@@ -12,6 +12,7 @@ export type ShiftConfirmationAssignPatch = {
   requested_at?: string | null;
   pending_since?: string | null;
   pending_reminder_sent_at?: string | null;
+  employee_dismissed_at?: string | null;
 };
 
 export const SHIFT_CONFIRMATION_ASSIGN_GATE_ERROR =
@@ -79,6 +80,21 @@ export function resolveConfirmationAssignPatch(input: {
     pending_reminder_sent_at: null,
   };
 
+  const reactivateCanceledShift = (): ShiftConfirmationAssignPatch =>
+    input.shiftConfirmationEnabled
+      ? {
+          confirmation_status: "proposed",
+          confirmation_status_updated_at: now,
+          employee_dismissed_at: null,
+          ...clearedPending,
+        }
+      : {
+          confirmation_status: "confirmed",
+          confirmation_status_updated_at: now,
+          employee_dismissed_at: null,
+          ...clearedPending,
+        };
+
   if (!input.shiftConfirmationEnabled) {
     if (!input.existing) {
       return {
@@ -86,6 +102,9 @@ export function resolveConfirmationAssignPatch(input: {
         confirmation_status_updated_at: now,
         ...clearedPending,
       };
+    }
+    if (input.existing.confirmation_status === "canceled") {
+      return reactivateCanceledShift();
     }
     return {};
   }
@@ -98,6 +117,11 @@ export function resolveConfirmationAssignPatch(input: {
     };
   }
 
+  const currentStatus = input.existing.confirmation_status ?? "confirmed";
+  if (currentStatus === "canceled") {
+    return reactivateCanceledShift();
+  }
+
   const planChanged = isShiftConfirmationSnapshotStale(
     buildShiftConfirmationSnapshot(input.existing),
     input.next
@@ -107,7 +131,6 @@ export function resolveConfirmationAssignPatch(input: {
     return {};
   }
 
-  const currentStatus = input.existing.confirmation_status ?? "confirmed";
   if (!shouldResetConfirmationToProposed(currentStatus)) {
     return {};
   }

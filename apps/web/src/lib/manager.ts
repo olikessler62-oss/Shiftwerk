@@ -1,6 +1,7 @@
 import { getDatabase } from "@/lib/db";
 import { getOrgFeatures, type OrgFeatures } from "@/lib/org-features";
 import type { Organization, Profile, RolePermissionLevel } from "@schichtwerk/types";
+import { getManagerSession } from "@/lib/server-manager-session";
 
 const MANAGER_ROLES: RolePermissionLevel[] = ["admin", "manager"];
 
@@ -37,35 +38,22 @@ export async function loadManagerOrganization(
 }
 
 export async function requireManager(): Promise<ManagerContext> {
-  const db = await getDatabase();
-  const user = await db.authGetUser();
+  const session = await getManagerSession();
 
-  if (!user) {
+  if (!session) {
     throw new Error("Nicht angemeldet");
   }
 
-  const profile = await db.getManagerProfile(user.id);
-
-  if (!profile) {
-    throw new Error("Profil nicht gefunden");
-  }
-
-  if (!MANAGER_ROLES.includes(profile.role)) {
+  if (!MANAGER_ROLES.includes(session.profile.role)) {
     throw new Error("Keine Berechtigung");
   }
 
-  const orgName = await db.getOrganizationName(profile.organization_id);
-  const organization = await loadManagerOrganization(
-    profile.organization_id,
-    orgName
-  );
-
   return {
-    userId: user.id,
-    profile,
-    organizationId: profile.organization_id,
-    organization,
-    orgFeatures: getOrgFeatures(organization),
+    userId: session.user.id,
+    profile: session.profile,
+    organizationId: session.organizationId,
+    organization: session.organization,
+    orgFeatures: session.orgFeatures,
   };
 }
 

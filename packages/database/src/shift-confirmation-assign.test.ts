@@ -125,4 +125,25 @@ describe("resolveConfirmationAssignPatch", () => {
     });
     expect(patch).toEqual({});
   });
+
+  it("reactivates canceled shift even when plan is unchanged", () => {
+    const patch = resolveConfirmationAssignPatch({
+      shiftConfirmationEnabled: true,
+      existing: { ...baseShift, confirmation_status: "canceled" },
+      next: baseShift,
+    });
+    expect(patch.confirmation_status).toBe("proposed");
+    expect(patch.employee_dismissed_at).toBeNull();
+    expect(patch.requested_at).toBeNull();
+  });
+
+  it("reactivates canceled shift to confirmed when feature disabled", () => {
+    const patch = resolveConfirmationAssignPatch({
+      shiftConfirmationEnabled: false,
+      existing: { ...baseShift, confirmation_status: "canceled" },
+      next: baseShift,
+    });
+    expect(patch.confirmation_status).toBe("confirmed");
+    expect(patch.employee_dismissed_at).toBeNull();
+  });
 });

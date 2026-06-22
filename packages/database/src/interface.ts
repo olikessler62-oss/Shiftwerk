@@ -966,6 +966,9 @@ export interface SchichtwerkDatabase {
     options?: {
       statuses?: import("@schichtwerk/types").RequestStatus[];
       employeeId?: string;
+      /** Nur Abwesenheiten, die diesen Zeitraum überlappen (z. B. Planungswoche). */
+      overlappingFrom?: string;
+      overlappingTo?: string;
     }
   ): Promise<AbsenceRequest[]>;
 

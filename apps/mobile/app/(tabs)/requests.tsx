@@ -107,7 +107,7 @@ function CanceledNotificationRow({
         {dismissing ? (
           <ActivityIndicator color={colors.foreground} />
         ) : (
-          <Text style={styles.dismissButtonText}>Aus Liste entfernen</Text>
+          <Text style={styles.dismissButtonText}>Entfernen</Text>
         )}
       </Pressable>
     </View>

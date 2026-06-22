@@ -13,6 +13,7 @@ import type {
   Shift,
 } from "@schichtwerk/types";
 import { shiftConfirmationStatusLabel } from "@/lib/shift-confirmation-labels";
+import { isEmployeeDismissableShift } from "@/lib/employee-shift-dismiss";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 
 export type WeekShiftActionContext = {
@@ -84,6 +85,7 @@ export function WeekShiftActionSheet({
     shift.confirmation_status,
     display?.cancelledBy
   );
+  const showDismiss = isEmployeeDismissableShift(shift, display);
 
   return (
     <Modal
@@ -111,6 +113,20 @@ export function WeekShiftActionSheet({
           ) : null}
 
           <View style={styles.actions}>
+            {showDismiss ? (
+              <Pressable
+                style={styles.dismissButtonPrimary}
+                disabled={dismissing}
+                onPress={() => onDismiss(shift.id)}
+              >
+                {dismissing ? (
+                  <ActivityIndicator color={colors.foreground} />
+                ) : (
+                  <Text style={styles.dismissButtonPrimaryText}>Entfernen</Text>
+                )}
+              </Pressable>
+            ) : null}
+
             {needsResponse ? (
               <>
                 <Pressable
@@ -158,20 +174,6 @@ export function WeekShiftActionSheet({
                   <ActivityIndicator color={colors.destructive} />
                 ) : (
                   <Text style={styles.cancelButtonText}>Schicht absagen</Text>
-                )}
-              </Pressable>
-            ) : null}
-
-            {canDismiss && !needsResponse ? (
-              <Pressable
-                style={styles.dismissButton}
-                disabled={dismissing}
-                onPress={() => onDismiss(shift.id)}
-              >
-                {dismissing ? (
-                  <ActivityIndicator color={colors.foreground} />
-                ) : (
-                  <Text style={styles.dismissButtonText}>Aus Plan entfernen</Text>
                 )}
               </Pressable>
             ) : null}
@@ -293,6 +295,20 @@ const styles = StyleSheet.create({
   dismissButtonText: {
     fontSize: 15,
     fontWeight: "600",
+    color: colors.foreground,
+  },
+  dismissButtonPrimary: {
+    minHeight: 44,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.background,
+  },
+  dismissButtonPrimaryText: {
+    fontSize: 15,
+    fontWeight: "700",
     color: colors.foreground,
   },
   secondaryButton: {

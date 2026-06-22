@@ -9,6 +9,7 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { isShiftDateInPast } from "@schichtwerk/database";
+import { isEmployeeDismissableShift } from "@/lib/employee-shift-dismiss";
 import { isOpenEmployeeConfirmationShift } from "@/lib/open-confirmation-shift";
 import type { ConfirmationDecision, ConfirmationWeekItem, EmployeeWeekShiftDisplayItem, Shift } from "@schichtwerk/types";
 import { WeekNavHeader } from "@/components/week-nav-header";
@@ -162,7 +163,8 @@ export default function WeekScreen() {
   );
 
   const shiftCanDismiss = useCallback(
-    (shift: Shift) => shift.confirmation_status === "canceled",
+    (shift: Shift, display?: EmployeeWeekShiftDisplayItem) =>
+      isEmployeeDismissableShift(shift, display),
     []
   );
 
@@ -247,6 +249,7 @@ export default function WeekScreen() {
       setActionSheetContext(null);
       setRefreshing(true);
       await load();
+      await refreshPendingConfirmations();
     } catch (error) {
       showAppAlert(
         "Entfernen fehlgeschlagen",
@@ -340,6 +343,8 @@ export default function WeekScreen() {
                     slotHeight={daySlotHeight}
                     drafts={drafts}
                     onShiftPress={setActionSheetContext}
+                    onDismissShift={(shiftId) => void handleDismissShift(shiftId)}
+                    dismissingShiftId={dismissingShiftId}
                   />
                 </View>
               ))
@@ -387,7 +392,10 @@ export default function WeekScreen() {
           }
           canDismiss={
             actionSheetContext
-              ? shiftCanDismiss(actionSheetContext.shift)
+              ? shiftCanDismiss(
+                  actionSheetContext.shift,
+                  actionSheetContext.display
+                )
               : false
           }
           draft={

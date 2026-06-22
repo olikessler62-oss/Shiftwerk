@@ -1,4 +1,10 @@
-import { StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { ShiftConfirmationStatus, ShiftRequestActorRole } from "@schichtwerk/types";
 import {
   SHIFT_CONFIRMATION_OVERLAY_OPACITY,
@@ -6,12 +12,16 @@ import {
 } from "@schichtwerk/ui-tokens";
 import { resolveShiftCardStatusBadgeTextColor } from "@/lib/week-plan-theme";
 import { shiftConfirmationStatusShortLabel } from "@/lib/shift-confirmation-labels";
+import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 
 type WeekShiftCardConfirmationOverlayProps = {
   status: ShiftConfirmationStatus;
   cancelledBy?: ShiftRequestActorRole;
   badgeFontSize?: number;
   isPastDay?: boolean;
+  showDismiss?: boolean;
+  dismissing?: boolean;
+  onDismiss?: () => void;
 };
 
 export function WeekShiftCardConfirmationOverlay({
@@ -19,6 +29,9 @@ export function WeekShiftCardConfirmationOverlay({
   cancelledBy,
   badgeFontSize = 9,
   isPastDay = false,
+  showDismiss = false,
+  dismissing = false,
+  onDismiss,
 }: WeekShiftCardConfirmationOverlayProps) {
   if (!shiftConfirmationShowsOverlay(status)) {
     return null;
@@ -47,6 +60,24 @@ export function WeekShiftCardConfirmationOverlay({
           {shiftConfirmationStatusShortLabel(status, cancelledBy)}
         </Text>
       </View>
+      {showDismiss && onDismiss ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Stornierte Schicht entfernen"
+          disabled={dismissing}
+          onPress={onDismiss}
+          style={[
+            styles.dismissBar,
+            dismissing && styles.dismissBarDisabled,
+          ]}
+        >
+          {dismissing ? (
+            <ActivityIndicator color={colors.foreground} size="small" />
+          ) : (
+            <Text style={styles.dismissBarText}>Entfernen</Text>
+          )}
+        </Pressable>
+      ) : null}
     </>
   );
 }
@@ -73,5 +104,29 @@ const styles = StyleSheet.create({
   badgeText: {
     fontWeight: "400",
     includeFontPadding: false,
+  },
+  dismissBar: {
+    position: "absolute",
+    left: spacing.sm,
+    right: spacing.sm,
+    bottom: spacing.xs,
+    zIndex: 10,
+    minHeight: 28,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  dismissBarDisabled: {
+    opacity: 0.65,
+  },
+  dismissBarText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.foreground,
   },
 });

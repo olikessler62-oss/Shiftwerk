@@ -3985,7 +3985,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at"
+        "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, lifecycle_status, requested_at, pending_since, pending_reminder_sent_at"
       )
       .eq("id", id)
       .eq("organization_id", organizationId)
@@ -4077,6 +4077,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       requested_at?: string | null;
       pending_since?: string | null;
       pending_reminder_sent_at?: string | null;
+      employee_dismissed_at?: string | null;
     }
   ) {
     const { area_shift_template_id, ...rest } = row;
@@ -4204,6 +4205,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     options?: {
       statuses?: import("@schichtwerk/types").RequestStatus[];
       employeeId?: string;
+      overlappingFrom?: string;
+      overlappingTo?: string;
     }
   ) {
     let query = this.client
@@ -4219,6 +4222,14 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }
     if (options?.employeeId) {
       query = query.eq("employee_id", options.employeeId);
+    }
+    if (options?.overlappingTo) {
+      query = query.lte("start_date", options.overlappingTo);
+    }
+    if (options?.overlappingFrom) {
+      query = query.or(
+        `end_date.gte.${options.overlappingFrom},end_date.is.null`
+      );
     }
 
     const { data, error } = await query;
@@ -5689,7 +5700,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error(SHIFT_CANCEL_NOT_OWNER_ERROR);
     }
 
-    if (shift.confirmation_status !== "canceled") {
+    if (shift.confirmation_status !== "canceled" && shift.lifecycle_status !== "cancelled") {
       throw new Error(SHIFT_DISMISS_NOT_CANCELED_ERROR);
     }
 
@@ -5700,7 +5711,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("id", input.shiftId)
       .eq("organization_id", input.organizationId)
       .eq("employee_id", input.employeeId)
-      .eq("confirmation_status", "canceled")
       .is("employee_dismissed_at", null)
       .select("id")
       .maybeSingle();
