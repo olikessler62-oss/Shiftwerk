@@ -39,14 +39,13 @@ import {
 } from "@/lib/planning-shift-card";
 import { resolveNarrowDayColumnWidthsPx } from "@/lib/day-column-width";
 import {
-  createPlanningActiveDayDates,
   PLANNING_CALENDAR_LAYOUT_ANIMATION_DELAY_MS,
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT,
   PLANNING_EMPLOYEE_ROW_HEIGHT,
   planningCalendarMinWidth,
   planningGridTemplateColumns,
-  resolvePlanningLayoutDayDates,
+  resolveDashboardExpandedDayDates,
 } from "@/lib/planning-calendar-layout";
 import { CALENDAR_DAY_HEADER_ROW_HEIGHT } from "@/lib/calendar-day-header-styles";
 import { resolveLocationServiceDayTimeline } from "@/lib/shift-card-cell-layout";
@@ -55,6 +54,7 @@ import {
   hasServiceHoursOnDate,
   isAreaOpenOnDate,
   findServiceHourIdForShift,
+  serviceWeekdayForDate,
   weekdayLabelFromIndex,
   type AreaServiceHourRef,
 } from "@/lib/location-staffing-client";
@@ -513,12 +513,6 @@ export function DashboardView({
     [dates, serviceHours, serviceHourAreaIds]
   );
 
-  const currentWeekStart = useMemo(
-    () => toISODate(startOfWeek(new Date())),
-    [todayISO]
-  );
-  const isCurrentWeek = weekStart === currentWeekStart;
-
   const locallyRemovedShiftsScopeKey = `${weekStart}:${selectedLocationId ?? ""}:${selectedAreaId ?? ""}`;
   const { removedIds, markRemoved, unmarkRemoved } = useLocallyRemovedShifts(
     locallyRemovedShiftsScopeKey
@@ -627,29 +621,15 @@ export function DashboardView({
     ]
   );
 
-  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(() =>
-    createPlanningActiveDayDates(
-      dates,
-      serviceHourAreaIds,
-      serviceHours,
-      shiftsByDate,
-      { simplePlanning, todayISO }
-    )
+  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(
+    () => new Set()
   );
   const [layoutActiveDayDates, setLayoutActiveDayDates] = useState<Set<string>>(
-    () =>
-      createPlanningActiveDayDates(
-        dates,
-        serviceHourAreaIds,
-        serviceHours,
-        shiftsByDate,
-        { simplePlanning, todayISO }
-      )
+    () => new Set()
   );
   const layoutDayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const planningLayoutScopeRef = useRef<string | null>(null);
-  const currentWeekDayExpansionRef = useRef<Set<string>>(new Set());
-  const hasInitializedCurrentWeekDayLayoutRef = useRef(false);
+  const userExpandedNoServiceWeekdaysRef = useRef<Set<number>>(new Set());
   const [isPlanningCalendarVisible, setIsPlanningCalendarVisible] =
     useState(false);
   const [layoutTransitionEnabled, setLayoutTransitionEnabled] = useState(false);
@@ -688,37 +668,22 @@ export function DashboardView({
   );
 
   useLayoutEffect(() => {
+    if (calendarLayer !== null && !calendarLayer.ready) {
+      return;
+    }
+
     const scopeKey = `${weekStart}:${selectedLocationId ?? ""}:${selectedAreaId ?? ""}`;
     if (planningLayoutScopeRef.current === scopeKey) {
       return;
     }
     planningLayoutScopeRef.current = scopeKey;
 
-    const isFirstCurrentWeekView =
-      weekStart === currentWeekStart &&
-      !hasInitializedCurrentWeekDayLayoutRef.current;
-    const nextDays = resolvePlanningLayoutDayDates(
+    const nextDays = resolveDashboardExpandedDayDates(
       dates,
-      serviceHourAreaIds,
-      serviceHours,
+      dayHasServiceHours,
       shiftsByDate,
-      {
-        weekStart,
-        currentWeekStart,
-        todayISO,
-        savedCurrentWeekExpansion: isFirstCurrentWeekView
-          ? null
-          : currentWeekDayExpansionRef.current,
-        isFirstCurrentWeekView,
-        simplePlanning,
-      }
+      userExpandedNoServiceWeekdaysRef.current
     );
-    if (weekStart === currentWeekStart) {
-      if (isFirstCurrentWeekView) {
-        hasInitializedCurrentWeekDayLayoutRef.current = true;
-      }
-      currentWeekDayExpansionRef.current = new Set(nextDays);
-    }
     setActiveDayDates(nextDays);
     setLayoutTransitionEnabled(false);
     syncLayoutDaysImmediate(nextDays);
@@ -726,32 +691,42 @@ export function DashboardView({
   }, [
     dates,
     weekStart,
-    currentWeekStart,
-    todayISO,
     selectedLocationId,
     selectedAreaId,
+    dayHasServiceHours,
     serviceHourAreaIds,
     serviceHours,
     shiftsByDate,
     simplePlanning,
     syncLayoutDaysImmediate,
+    calendarLayer?.ready,
   ]);
 
   const toggleDayActive = useCallback(
     (date: string, active: boolean) => {
+      const dayIndex = dates.indexOf(date);
+      const hasService =
+        dayIndex >= 0 ? dayHasServiceHours[dayIndex] ?? false : false;
+      const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
+      if (!hasService && !hasShifts) {
+        const weekday = serviceWeekdayForDate(date);
+        if (active) {
+          userExpandedNoServiceWeekdaysRef.current.add(weekday);
+        } else {
+          userExpandedNoServiceWeekdaysRef.current.delete(weekday);
+        }
+      }
+
       setLayoutTransitionEnabled(true);
       setActiveDayDates((prev) => {
         const next = new Set(prev);
         if (active) next.add(date);
         else next.delete(date);
-        if (isCurrentWeek) {
-          currentWeekDayExpansionRef.current = new Set(next);
-        }
         scheduleLayoutDays(next);
         return next;
       });
     },
-    [isCurrentWeek, scheduleLayoutDays]
+    [dates, dayHasServiceHours, shiftsByDate, scheduleLayoutDays]
   );
 
   const dayUsesWideColumn = useMemo(
@@ -773,10 +748,8 @@ export function DashboardView({
     ]
   );
 
-  const fillColumnsEqually = useMemo(
-    () => !dayUsesWideColumn.some(Boolean),
-    [dayUsesWideColumn]
-  );
+  /** Zugeklappte Tage: Mindestbreite statt 1fr — auch wenn alle Tage zugeklappt sind. */
+  const fillColumnsEqually = false;
 
   const narrowDayColumnWidthsPx = useMemo(
     () => resolveNarrowDayColumnWidthsPx(dates, holidayNames, intlLocale),

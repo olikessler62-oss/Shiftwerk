@@ -1,15 +1,9 @@
 import { TagAreaHeaderStaffingRow } from "@/components/areacalendar/tag-area-header-staffing-row";
-import {
-  DaytimesHeaderImage,
-  DAYTIMES_HEADER_IMAGE_HEIGHT_PX,
-} from "@/components/areacalendar/daytimes-header-image";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import { isTagAreaHeaderStaffingHeaderAlertBadge } from "@/lib/tag-area-header-staffing-display";
 import { PLANNING_CLOSED_DAY_CELL_BG } from "@/lib/planning-calendar-layout";
 import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
-
-export { DAYTIMES_HEADER_IMAGE_SRC, DAYTIMES_HEADER_IMAGE_HEIGHT_PX } from "@/components/areacalendar/daytimes-header-image";
 
 export function TagAreaHeaderTooltipContent({
   title,
@@ -55,14 +49,12 @@ type StaffingRowProps = {
 export { TagAreaHeaderStaffingRow } from "@/components/areacalendar/tag-area-header-staffing-row";
 
 type Props = StaffingRowProps & {
-  showDaytimesGradient: boolean;
   overlayBackgroundColor?: string;
   style?: React.CSSProperties;
 };
 
-/** Tag-Bereich-Header: Tageszeit-Verlauf (2px oben) + Personalbedarf-Overlay. */
+/** Tag-Bereich-Header: Personalbedarf-Overlay. */
 export function TagAreaHeaderStrip({
-  showDaytimesGradient,
   overlayBackgroundColor,
   className,
   style,
@@ -93,9 +85,6 @@ export function TagAreaHeaderStrip({
           : undefined),
       }}
     >
-      {showDaytimesGradient ? (
-        <DaytimesHeaderImage className="absolute inset-x-0 top-0" />
-      ) : null}
       <TagAreaHeaderStaffingRow
         className="relative z-[1]"
         noServiceHoursLabel={noServiceHoursLabel}

@@ -10,6 +10,15 @@ export const SHIFT_CARD_TIME_BANDS = [
 export const SHIFT_CARD_TIME_GRADIENT_OPACITY = 0.4;
 export const SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX = 6;
 
+/**
+ * UX-Experiment: Tageszeit-Farbverläufe auf Schichtkarten (Dashboard, Bereich-Kalender, Mobile).
+ * `false` = weiße Karten; Status-Overlays (requested, canceled, …) bleiben aktiv.
+ */
+export const SHIFT_CARD_TIME_GRADIENT_ENABLED = false;
+
+const SHIFT_CARD_PLAIN_WHITE_GRADIENT_CSS =
+  "linear-gradient(to right, #ffffff 0%, #ffffff 100%)";
+
 const MINUTES_PER_DAY = 24 * 60;
 
 type Rgb = readonly [number, number, number];
@@ -142,6 +151,10 @@ export function buildShiftCardTimeGradientCss(
   endTime: string,
   opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY
 ): string {
+  if (!SHIFT_CARD_TIME_GRADIENT_ENABLED) {
+    return SHIFT_CARD_PLAIN_WHITE_GRADIENT_CSS;
+  }
+
   const stops = buildShiftCardGradientStops(startTime, endTime);
   if (stops.length === 1) {
     const color = toRgba(stops[0]!.color, opacity);
@@ -165,6 +178,10 @@ export function buildShiftCardLinearGradient(
   endTime: string,
   opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY
 ): ShiftCardLinearGradient {
+  if (!SHIFT_CARD_TIME_GRADIENT_ENABLED) {
+    return { colors: ["#ffffff", "#ffffff"], locations: [0, 1] };
+  }
+
   const stops = buildShiftCardGradientStops(startTime, endTime);
   if (stops.length === 1) {
     const color = toRgba(stops[0]!.color, opacity);

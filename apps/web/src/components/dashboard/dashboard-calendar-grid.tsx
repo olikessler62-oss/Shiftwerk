@@ -48,6 +48,7 @@ import {
   PLANNING_ROW_DIVIDER_CLASS,
   PLANNING_STAFF_COLUMN_BOTTOM_EDGE_CLASS,
   PLANNING_CLOSED_DAY_CELL_BG,
+  DASHBOARD_CELL_FREE_PLUS_ENABLED,
   resolvePlanningCellBackground,
 } from "@/lib/planning-calendar-layout";
 import type { TagAreaHeaderStaffingEntry, AreaServiceHourRef } from "@/lib/location-staffing-client";
@@ -673,6 +674,10 @@ export function DashboardCalendarGrid({
                   onOpenPicker(emp.id, date, shiftId);
                 const canOpenNewShiftInCell =
                   !pending && canAssign && !dayReadOnly;
+                const showCellFreePlus =
+                  DASHBOARD_CELL_FREE_PLUS_ENABLED &&
+                  !isPastDay &&
+                  !isNoServiceDay;
                 const openNewShiftInCell = () =>
                   onRequestPlanningDayAssign(emp.id, date, "picker");
                 const emptyAreaLabel = t("dashboard.addShiftTitle");
@@ -727,7 +732,9 @@ export function DashboardCalendarGrid({
                           event.clientY
                         );
                       }}
-                      onEmptyAreaClick={openNewShiftInCell}
+                      onEmptyAreaClick={
+                        showCellFreePlus ? openNewShiftInCell : undefined
+                      }
                       emptyAreaDisabled={!canOpenNewShiftInCell}
                       emptyAreaLabel={emptyAreaLabel}
                     />
@@ -779,7 +786,9 @@ export function DashboardCalendarGrid({
                       absenceConflictShiftIds={absenceConflictShiftIds}
                       swapRequestShiftIds={swapRequestShiftIds}
                       shiftConfirmationEnabled={shiftConfirmationEnabled}
-                      onEmptyAreaClick={openNewShiftInCell}
+                      onEmptyAreaClick={
+                        showCellFreePlus ? openNewShiftInCell : undefined
+                      }
                       emptyAreaDisabled={!canOpenNewShiftInCell}
                       emptyAreaLabel={emptyAreaLabel}
                     />
@@ -908,7 +917,7 @@ export function DashboardCalendarGrid({
                           <div
                             className={
                               isPastDay
-                                ? PLANNING_CELL_BLOCKED_INFO_PANEL_CLASS
+                                ? "flex min-h-0 flex-1 items-center justify-center text-xs font-medium text-rose-700"
                                 : PLANNING_CELL_ABSENT_ACTIVE_PANEL_CLASS
                             }
                             style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
@@ -922,7 +931,9 @@ export function DashboardCalendarGrid({
                           >
                             {t("dashboard.cellNoAvailability")}
                           </div>
-                        ) : isPastDay || isNoServiceDay ? (
+                        ) : isPastDay ||
+                          isNoServiceDay ||
+                          !showCellFreePlus ? (
                           <div
                             aria-hidden
                             className="min-h-0 flex-1"

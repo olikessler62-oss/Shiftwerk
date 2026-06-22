@@ -63,9 +63,9 @@ export type AreaCalendarShiftCard = {
 const DASHBOARD_SHIFT_CARD_CLASS =
   "relative flex shrink-0 overflow-hidden rounded";
 
-/** Kompakter, dunklerer Schatten — passt in {@link shiftCardListItemHeightPx}. */
+/** Kompakter Schatten — hebt weiße Karten vom leicht grauen Zellhintergrund ab. */
 export const AREA_CALENDAR_SHIFT_CARD_BOX_SHADOW =
-  "0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.07)";
+  "0 1px 2px rgba(0, 0, 0, 0.32), 0 2px 4px rgba(0, 0, 0, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.12)";
 
 const DASHBOARD_SHIFT_CARD_MARKER_MIN_HEIGHT_PX =
   16 + SHIFT_CARD_EXTRA_HEIGHT_PX;

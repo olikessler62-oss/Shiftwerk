@@ -1,6 +1,6 @@
 import { isPastCalendarDate } from "@/lib/dates";
 import { narrowDayColumnGridTrack } from "@/lib/day-column-width";
-import { isAnyAreaOpenInCalendar } from "@/lib/location-staffing-client";
+import { isAnyAreaOpenInCalendar, serviceWeekdayForDate } from "@/lib/location-staffing-client";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import {
   computeCollapsedDayColumnLineWidthPx,
@@ -15,9 +15,9 @@ export const PLANNING_CELL_INFO_LABEL_PANEL_CLASS =
   "rounded-lg bg-slate-100 text-xs text-slate-500";
 export const PLANNING_CELL_BLOCKED_INFO_PANEL_CLASS =
   "flex min-h-0 flex-1 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500";
-/** Abwesenheit in aktuellen/künftigen Tagen (hervorgehoben). */
+/** Abwesenheit in aktuellen/künftigen Tagen — nur Textfarbe, kein Hintergrund. */
 export const PLANNING_CELL_ABSENT_ACTIVE_PANEL_CLASS =
-  "flex min-h-0 flex-1 items-center justify-center rounded-lg bg-rose-50 text-xs font-medium text-rose-700";
+  "flex min-h-0 flex-1 items-center justify-center text-xs font-medium text-rose-700";
 /** Legende: keine Verfügbarkeit (slate-400). */
 export const PLANNING_LEGEND_NO_AVAILABILITY_DOT_COLOR = "#94a3b8";
 /** Legende: Abwesenheit in aktuellen/künftigen Tagen. */
@@ -53,8 +53,14 @@ export const PLANNING_DAY_FOOTER_ROW_HEIGHT_PX = 36;
 export const PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX =
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX + PLANNING_DAY_FOOTER_ROW_HEIGHT_PX;
 export const PLANNING_STAFF_COLUMN_WIDTH_PX = 200;
+/** Aktuelle/künftige Tage — leicht grau, damit weiße Schichtkarten minimal abheben. */
+export const PLANNING_ACTIVE_DAY_CELL_BG = "#f8fafc";
+/** Header-/Footer-Overlay in aktiven Tag-Bereich-Zellen (Bereich-Kalender). */
+export const PLANNING_ACTIVE_DAY_OVERLAY_BG = "#f6f7f9";
 export const PLANNING_PAST_DAY_CELL_BG = "#f3f6f9";
 export const PLANNING_CLOSED_DAY_CELL_BG = "#e6edf2";
+/** UX-Experiment: „+ / frei“ in leeren aktuellen/künftigen Dashboard-Zellen ausblenden. */
+export const DASHBOARD_CELL_FREE_PLUS_ENABLED = false;
 export const PLANNING_OPEN_DAY_COLUMN_WIDTH = "minmax(110px, 1fr)";
 export const PLANNING_EQUAL_FILL_DAY_COLUMN_WIDTH = "minmax(0, 1fr)";
 export const PLANNING_CALENDAR_LAYOUT_ANIMATION_DELAY_MS = 120;
@@ -183,13 +189,7 @@ export function resolvePlanningLayoutDayDates(
   }
 
   if (options.isFirstCurrentWeekView) {
-    const expanded = new Set<string>();
-    for (const date of openDays) {
-      if (!isPastCalendarDate(date, options.todayISO)) {
-        expanded.add(date);
-      }
-    }
-    return expanded;
+    return new Set(dates);
   }
 
   if (options.savedCurrentWeekExpansion) {
@@ -203,6 +203,32 @@ export function resolvePlanningLayoutDayDates(
   }
 
   return openDays;
+}
+
+/**
+ * Dashboard: Tage mit Servicezeiten (oder Schichten) aufgeklappt; Tage ohne Service
+ * initial zugeklappt. Per Wochentag merken, wenn Nutzer einen solchen Tag aufklappt.
+ */
+export function resolveDashboardExpandedDayDates(
+  dates: readonly string[],
+  dayHasServiceHours: readonly boolean[],
+  shiftsByDate: ReadonlyMap<string, number>,
+  userExpandedNoServiceWeekdays: ReadonlySet<number>
+): Set<string> {
+  const expanded = new Set<string>();
+  for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
+    const date = dates[dayIndex]!;
+    const hasService = dayHasServiceHours[dayIndex] ?? false;
+    const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
+    if (hasService || hasShifts) {
+      expanded.add(date);
+      continue;
+    }
+    if (userExpandedNoServiceWeekdays.has(serviceWeekdayForDate(date))) {
+      expanded.add(date);
+    }
+  }
+  return expanded;
 }
 
 export function resolvePlanningCellBackground(
@@ -221,5 +247,5 @@ export function resolvePlanningCellBackground(
   if (isPast) {
     return PLANNING_PAST_DAY_CELL_BG;
   }
-  return undefined;
+  return PLANNING_ACTIVE_DAY_CELL_BG;
 }

@@ -25,8 +25,12 @@ import {
 import { formatDayHeader, weeklySummary } from "@/lib/planning-utils";
 import { shiftAssignWeekShiftsFromAreaCalendarCards } from "@/lib/weekly-hours-check-shifts";
 import {
+  PLANNING_ACTIVE_DAY_CELL_BG,
+  PLANNING_ACTIVE_DAY_OVERLAY_BG,
+  PLANNING_CLOSED_DAY_CELL_BG,
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
+  PLANNING_PAST_DAY_CELL_BG,
   TAG_AREA_HEADER_STRIP_HEIGHT,
 } from "@/lib/planning-calendar-layout";
 import { DashboardWeeklySummaryFooter } from "@/components/dashboard/dashboard-weekly-summary-footer";
@@ -240,8 +244,7 @@ function calendarMinWidth(
 
 const HOUR_GRID_LINE_OPACITY = 35;
 
-/** Vergangene Tag-Bereich-Zellen (Arbeitstag). */
-const PAST_TAG_AREA_CELL_BG = "#f3f6f9";
+/** Vergangene Tag-Bereich-Zellen (Arbeitstag) — Overlay leicht abgesetzt. */
 const PAST_TAG_AREA_OVERLAY_BG = "#eff3f7";
 const PAST_TAG_AREA_HOUR_LINE_COLOR = "#eef2f6";
 
@@ -261,16 +264,11 @@ const CALENDAR_GRID_LAYOUT_TRANSITION_CLASS =
 const CALENDAR_CELL_CONTENT_TRANSITION_CLASS =
   "transition-opacity duration-[280ms] ease-in-out";
 
-/** Bereichszeile bei inaktiver Bereichs-Checkbox — Höhe kommt aus areaRowLayouts. */
-
 /** Einfache Planung ohne Bereiche — Overlay-Schlüssel für Kalenderzellen. */
 const SIMPLE_PLANNING_AREA_ID = "";
 
 /** Tag-Bereich-Footer-Streifen-Höhe. */
 const TAG_AREA_FOOTER_STRIP_HEIGHT = "22px";
-
-/** Geschlossener Bereich × Tag (kein Arbeitstag laut Arbeitszeit / Feiertag). */
-const CLOSED_AREA_DAY_BG = "#e6edf2";
 
 /** Erste Spalte (Header-Ecke + Bereichsnamen). */
 const AREA_COLUMN_BG_CLASS = "bg-calendar-active-header";
@@ -404,8 +402,9 @@ function clampContextMenuPosition(
   };
 }
 
-function createActiveAreaIds(areas: LocationArea[]): Set<string> {
-  return new Set(areas.map((area) => area.id));
+function createInitialActiveAreaIds(areas: readonly LocationArea[]): Set<string> {
+  const firstAreaId = areas[0]?.id;
+  return firstAreaId ? new Set([firstAreaId]) : new Set();
 }
 
 function createActiveDayDates(
@@ -639,14 +638,14 @@ export function AreaCalendar({
     [dates, serviceHours, areaIds]
   );
 
-  const [activeAreaIds, setActiveAreaIds] = useState<Set<string>>(() =>
-    createActiveAreaIds(areas)
+  const [activeAreaIds, setActiveAreaIds] = useState<Set<string>>(
+    () => createInitialActiveAreaIds(areas)
   );
   const [activeDayDates, setActiveDayDates] = useState<Set<string>>(() =>
     createActiveDayDates(dates, areaIds, serviceHours, shifts)
   );
   const [layoutActiveAreaIds, setLayoutActiveAreaIds] = useState<Set<string>>(
-    () => createActiveAreaIds(areas)
+    () => createInitialActiveAreaIds(areas)
   );
   const [layoutActiveDayDates, setLayoutActiveDayDates] = useState<Set<string>>(
     () => createActiveDayDates(dates, areaIds, serviceHours, shifts)
@@ -837,7 +836,7 @@ export function AreaCalendar({
     }
     calendarLayoutScopeRef.current = scopeKey;
 
-    const nextAreas = createActiveAreaIds(areas);
+    const nextAreas = createInitialActiveAreaIds(areas);
     const nextDays = resolveCalendarLayoutDayDates(
       dates,
       areaIds,
@@ -1229,9 +1228,10 @@ export function AreaCalendar({
     (areaId: string, active: boolean) => {
       setLayoutTransitionEnabled(true);
       setActiveAreaIds((prev) => {
-        const next = new Set(prev);
-        if (active) next.add(areaId);
-        else next.delete(areaId);
+        const next = active ? new Set([areaId]) : new Set(prev);
+        if (!active) {
+          next.delete(areaId);
+        }
         scheduleLayoutAreas(next);
         return next;
       });
@@ -2250,7 +2250,13 @@ export function AreaCalendar({
                       dayColumnDivider(dayIndex),
                       ROW_DIVIDER_CLASS
                     )}
-                    style={{ gridColumn: dayIndex + 2, gridRow: 2 }}
+                    style={{
+                      gridColumn: dayIndex + 2,
+                      gridRow: 2,
+                      backgroundColor: dayReadOnly
+                        ? PLANNING_PAST_DAY_CELL_BG
+                        : PLANNING_ACTIVE_DAY_CELL_BG,
+                    }}
                     onContextMenu={(event) => {
                       if (dayReadOnly) return;
                       event.preventDefault();
@@ -2389,11 +2395,13 @@ export function AreaCalendar({
                     gridColumn: dayIndex + 2,
                     gridRow: `2 / ${footerStatsGridRow}`,
                     ...(!dayShowsHourGrid(dayIndex)
-                      ? { backgroundColor: CLOSED_AREA_DAY_BG }
-                      : undefined),
-                    ...(dayShowsHourGrid(dayIndex)
-                      ? hourGridStyleByDate.get(date)
-                      : undefined),
+                      ? { backgroundColor: PLANNING_CLOSED_DAY_CELL_BG }
+                      : {
+                          backgroundColor: isPastCalendarDate(date, todayISO)
+                            ? PLANNING_PAST_DAY_CELL_BG
+                            : PLANNING_ACTIVE_DAY_CELL_BG,
+                          ...hourGridStyleByDate.get(date),
+                        }),
                   }}
                 />
               ))}
@@ -2478,9 +2486,14 @@ export function AreaCalendar({
                       const isDayActive = layoutActiveDayDates.has(date);
                       const isCheckboxDayActive = activeDayDates.has(date);
                       const showOpenDayCell =
-                        isLayoutAreaExpanded && isDayActive && isOpen;
+                        isAreaActive &&
+                        isLayoutAreaExpanded &&
+                        isDayActive &&
+                        isOpen;
                       const showInactivePreviewCell =
-                        (!isLayoutAreaExpanded || !isDayActive) &&
+                        isAreaActive &&
+                        isLayoutAreaExpanded &&
+                        !isDayActive &&
                         dayHasScheduleActivity[dayIndex] &&
                         isOpen;
                       const showDayCellContent =
@@ -2563,10 +2576,12 @@ export function AreaCalendar({
                             gridColumn: dayIndex + 2,
                             gridRow,
                             ...(isPastWorkDayCell
-                              ? { backgroundColor: PAST_TAG_AREA_CELL_BG }
+                              ? { backgroundColor: PLANNING_PAST_DAY_CELL_BG }
                               : !showDayCellContent && !showNoServiceHoursLabel
-                                ? { backgroundColor: CLOSED_AREA_DAY_BG }
-                                : undefined),
+                                ? { backgroundColor: PLANNING_CLOSED_DAY_CELL_BG }
+                                : showDayCellContent
+                                  ? { backgroundColor: PLANNING_ACTIVE_DAY_CELL_BG }
+                                  : undefined),
                           }}
                         >
                           {showDayCellContent ? (
@@ -2578,7 +2593,6 @@ export function AreaCalendar({
                                     cellStaffingHeaderAlertBadge) &&
                                     "z-40"
                                 )}
-                                showDaytimesGradient
                                 dayCollapsed={!isDayActive}
                                 entries={headerStaffing}
                                 noServiceHoursLabel={
@@ -2616,21 +2630,18 @@ export function AreaCalendar({
                                 overlayBackgroundColor={
                                   isPastWorkDayCell
                                     ? PAST_TAG_AREA_OVERLAY_BG
-                                    : undefined
+                                    : PLANNING_ACTIVE_DAY_OVERLAY_BG
                                 }
                                 style={{ height: TAG_AREA_HEADER_STRIP_HEIGHT }}
                               />
                               <div
                                 data-areacalendar-area-cell-footer
-                                className={cn(
-                                  "absolute inset-x-0 bottom-0 z-30 flex items-center justify-center overflow-hidden border-t border-border px-1",
-                                  isPastWorkDayCell ? undefined : "bg-background"
-                                )}
+                                className="absolute inset-x-0 bottom-0 z-30 flex items-center justify-center overflow-hidden border-t border-border px-1"
                                 style={{
                                   height: TAG_AREA_FOOTER_STRIP_HEIGHT,
-                                  ...(isPastWorkDayCell
-                                    ? { backgroundColor: PAST_TAG_AREA_OVERLAY_BG }
-                                    : undefined),
+                                  backgroundColor: isPastWorkDayCell
+                                    ? PAST_TAG_AREA_OVERLAY_BG
+                                    : PLANNING_ACTIVE_DAY_OVERLAY_BG,
                                 }}
                               >
                                 {dayShifts.length > 0 ? (() => {
@@ -2663,10 +2674,13 @@ export function AreaCalendar({
                                   paddingBottom: TAG_AREA_FOOTER_STRIP_HEIGHT,
                                   ...(isPastWorkDayCell
                                     ? {
-                                        backgroundColor: PAST_TAG_AREA_CELL_BG,
+                                        backgroundColor: PLANNING_PAST_DAY_CELL_BG,
                                         ...pastHourGridStyleByDate.get(date),
                                       }
-                                    : undefined),
+                                    : {
+                                        backgroundColor: PLANNING_ACTIVE_DAY_CELL_BG,
+                                        ...hourGridStyleByDate.get(date),
+                                      }),
                                 }}
                               >
                                 {showOpenDayCell ? (
@@ -2755,9 +2769,11 @@ export function AreaCalendar({
                               </div>
                             </>
                           ) : null}
-                          {!dayHasServiceHours[dayIndex] ? (
+                          {!isAreaActive
+                            ? null
+                            : !dayHasServiceHours[dayIndex]
+                              ? (
                             <TagAreaHeaderStrip
-                              showDaytimesGradient={false}
                               dayCollapsed={!isDayActive}
                               entries={[]}
                               noServiceHoursLabel={t("areaCalendar.noServiceHours")}
@@ -2774,15 +2790,18 @@ export function AreaCalendar({
                                 top: 0,
                               }}
                             />
-                          ) : showNoServiceHoursLabel ? (
+                              )
+                              : showNoServiceHoursLabel
+                                ? (
                             <ClosedAreaNoServiceHoursLabel
                               label={t("areaCalendar.noServiceHours")}
                             />
-                          ) : null}
+                                  )
+                                : null}
                         </div>
                       );
                     })}
-                    {areaOvernightSpans.length > 0 ? (
+                    {isAreaActive && areaOvernightSpans.length > 0 ? (
                       <AreaCalendarAreaRowOvernightOverlay
                         areaId={area.id}
                         spans={areaOvernightSpans}

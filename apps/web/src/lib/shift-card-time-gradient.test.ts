@@ -3,6 +3,7 @@ import {
   buildShiftCardGradientStops,
   buildShiftCardTimeGradientCss,
   parseClockTimeToMinutes,
+  SHIFT_CARD_TIME_GRADIENT_ENABLED,
 } from "@schichtwerk/ui-tokens";
 
 describe("shift-card-time-gradient", () => {
@@ -25,9 +26,14 @@ describe("shift-card-time-gradient", () => {
       .reduce((sum, stop) => sum + stop.durationMinutes, 0);
 
     expect(yellowMinutes).toBeGreaterThan(totalMinutes * 0.5);
-    expect(buildShiftCardTimeGradientCss("08:00", "17:00")).toContain(
-      "linear-gradient(to right"
-    );
+
+    const gradientCss = buildShiftCardTimeGradientCss("08:00", "17:00");
+    if (SHIFT_CARD_TIME_GRADIENT_ENABLED) {
+      expect(gradientCss).toContain("linear-gradient(to right");
+      expect(gradientCss).not.toContain("#ffffff");
+    } else {
+      expect(gradientCss).toContain("#ffffff");
+    }
   });
 
   it("handles overnight shifts", () => {
