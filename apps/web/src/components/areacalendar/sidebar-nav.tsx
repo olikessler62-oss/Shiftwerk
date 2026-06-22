@@ -23,10 +23,6 @@ import {
 import { useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
 import { useSuperadminModal } from "@/components/settings/superadmin-modal-context";
 
-const NAV_LINKS_AFTER_PLANNING = [
-  { href: "/berichte", labelKey: "nav.reports" },
-] as const;
-
 function buildOverviewLinks(includeQualifications: boolean) {
   return [
     {
@@ -70,7 +66,6 @@ function buildOverviewLinks(includeQualifications: boolean) {
   ] as const;
 }
 
-const PLANNING_SECTION_ID = "planung";
 const OVERVIEW_SECTION_ID = "uebersicht";
 const SETTINGS_SECTION_ID = "einstellungen";
 
@@ -89,9 +84,6 @@ const subLinkClass = (active: boolean) =>
       ? "border-l-primary bg-primary/5 font-medium text-foreground"
       : "border-l-transparent text-muted hover:bg-primary/5 hover:text-foreground"
   );
-
-const subLinkButtonClass =
-  "block w-full rounded-lg border-l-2 border-l-transparent py-2 pl-[calc(2rem-2px)] pr-3 text-left text-sm text-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
 const settingsSubLinkClass = subLinkClass;
 
@@ -139,16 +131,9 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     sonderzuschlaegeOpen ||
     abwesenheitenOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    [PLANNING_SECTION_ID]: areaCalendarActive,
     [OVERVIEW_SECTION_ID]: overviewActive,
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
-
-  useEffect(() => {
-    if (areaCalendarActive) {
-      setExpanded((prev) => ({ ...prev, [PLANNING_SECTION_ID]: true }));
-    }
-  }, [areaCalendarActive]);
 
   useEffect(() => {
     if (overviewActive) {
@@ -162,7 +147,6 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     }
   }, [settingsModalOpen]);
 
-  const planningExpanded = expanded[PLANNING_SECTION_ID] ?? false;
   const overviewExpanded = expanded[OVERVIEW_SECTION_ID] ?? false;
   const settingsExpanded = expanded[SETTINGS_SECTION_ID] ?? false;
 
@@ -209,17 +193,6 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     },
   ];
 
-  const planningPrimaryActions = [
-    { labelKey: "nav.planningApplyPreviousWeek" },
-    { labelKey: "nav.planningCreateEmpty" },
-  ] as const;
-
-  const planningExportActions = [
-    { labelKey: "nav.planningExportPdf" },
-    { labelKey: "nav.planningExportExcel" },
-    { labelKey: "nav.planningNotifyStaff" },
-  ] as const;
-
   function handlePageNav(pathname: string) {
     beginMainNavPending({ kind: "page", pathname });
     onNavigate?.();
@@ -258,77 +231,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
         {t("nav.dashboard")}
       </Link>
 
-      <div>
-        <div
-          className={cn(
-            navItemClass(areaCalendarActive || planningExpanded),
-            "flex items-center justify-between gap-1 pr-1"
-          )}
-        >
-          <Link
-            href={areaCalendarHref}
-            onClick={() => handlePageNav("/bereich-kalender")}
-            className="min-w-0 flex-1"
-          >
-            {t("nav.planning")}
-          </Link>
-          <button
-            type="button"
-            onClick={() => toggleSection(PLANNING_SECTION_ID)}
-            aria-expanded={planningExpanded}
-            aria-label={t("nav.planning")}
-            className="shrink-0 rounded p-1 text-muted hover:bg-primary/5 hover:text-foreground"
-          >
-            <Chevron open={planningExpanded} />
-          </button>
-        </div>
-
-        <div
-          className={cn(
-            "grid transition-[grid-template-rows] duration-200 ease-out",
-            planningExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-          )}
-        >
-          <div className="overflow-hidden">
-            {planningPrimaryActions.map((item, index) => (
-              <button
-                key={item.labelKey}
-                type="button"
-                disabled
-                className={cn(subLinkButtonClass, index === 0 && "mt-0.5")}
-              >
-                {t(item.labelKey)}
-              </button>
-            ))}
-            <div
-              className="mx-3 my-1 border-t border-border"
-              role="separator"
-              aria-hidden
-            />
-            {planningExportActions.map((item) => (
-              <button
-                key={item.labelKey}
-                type="button"
-                disabled
-                className={subLinkButtonClass}
-              >
-                {t(item.labelKey)}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {NAV_LINKS_AFTER_PLANNING.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          onClick={() => handlePageNav(item.href)}
-          className={navItemClass(pathname === item.href)}
-        >
-          {t(item.labelKey)}
-        </Link>
-      ))}
+      <Link
+        href={areaCalendarHref}
+        onClick={() => handlePageNav("/bereich-kalender")}
+        className={navItemClass(areaCalendarActive)}
+      >
+        {t("nav.planning")}
+      </Link>
 
       <div>
         <button
