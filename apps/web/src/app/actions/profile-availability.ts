@@ -4,9 +4,6 @@ import { revalidatePath } from "next/cache";
 import {
   DEFAULT_COUNTRY_CODE,
   collectEmployeeWeeklyHoursConflicts,
-  evaluateProfileAvailabilityWeeklyLimits,
-  formatAvailabilityExceedsTargetError,
-  formatLegalWeeklyHoursExceededError,
   isoWeekStartFromShiftDate,
   organizationTodayISO,
   parseAvailabilityTimeRange,
@@ -43,7 +40,7 @@ export type ProfileAvailabilityActionResult =
       profile?: Profile;
       weeklyHoursConflicts?: ProfileWeeklyHoursConflictRow[];
     }
-  | { ok: false; error: string; requiresConfirmation?: boolean };
+  | { ok: false; error: string };
 
 async function loadAvailabilityChangeContext(
   db: Awaited<ReturnType<typeof getDatabase>>,
@@ -64,48 +61,6 @@ async function loadAvailabilityChangeContext(
     todayISO,
     futureShifts: await db.listShiftsForEmployeeFromDate(profileId, todayISO),
   };
-}
-
-function validateProjectedAvailabilityWeeklyLimits(input: {
-  availabilities: readonly ProfileRecurringAvailability[];
-  weeklyHoursTarget: number | null;
-  countryCode: string;
-  allowAvailabilityExceedsTarget?: boolean;
-}): { ok: true } | { ok: false; error: string; requiresConfirmation?: boolean } {
-  const evaluation = evaluateProfileAvailabilityWeeklyLimits({
-    availabilities: input.availabilities,
-    weeklyHoursTarget: input.weeklyHoursTarget,
-    countryCode: input.countryCode,
-  });
-
-  const legalViolation = evaluation.violations.find(
-    (violation) => violation.kind === "availability_exceeds_legal"
-  );
-  if (legalViolation) {
-    return {
-      ok: false,
-      error: formatLegalWeeklyHoursExceededError({
-        hours: legalViolation.hours,
-        legalMax: legalViolation.legalMax,
-      }),
-    };
-  }
-
-  const targetViolation = evaluation.violations.find(
-    (violation) => violation.kind === "availability_exceeds_target"
-  );
-  if (targetViolation && !input.allowAvailabilityExceedsTarget) {
-    return {
-      ok: false,
-      error: formatAvailabilityExceedsTargetError({
-        hours: targetViolation.hours,
-        targetHours: targetViolation.targetHours,
-      }),
-      requiresConfirmation: true,
-    };
-  }
-
-  return { ok: true };
 }
 
 export async function fetchProfileRecurringAvailability(
@@ -232,7 +187,6 @@ export async function createProfileRecurringAvailability(input: {
   weekday: number;
   start_time: string;
   end_time: string;
-  allowAvailabilityExceedsTarget?: boolean;
 }): Promise<ProfileAvailabilityActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -255,32 +209,6 @@ export async function createProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
-    const projected: ProfileRecurringAvailability[] = [
-      ...existing,
-      {
-        id: "projected",
-        organization_id: organizationId,
-        profile_id: input.profileId,
-        weekday: weekdayResult.weekday,
-        start_time: parsedTimes.start_time,
-        end_time: parsedTimes.end_time,
-        sort_order: existing.length,
-        created_at: new Date().toISOString(),
-      },
-    ];
-
-    const changeContext = await loadAvailabilityChangeContext(
-      db,
-      organizationId,
-      input.profileId
-    );
-    const weeklyLimitCheck = validateProjectedAvailabilityWeeklyLimits({
-      availabilities: projected,
-      weeklyHoursTarget: profile.weekly_hours,
-      countryCode: changeContext.countryCode,
-      allowAvailabilityExceedsTarget: input.allowAvailabilityExceedsTarget,
-    });
-    if (!weeklyLimitCheck.ok) return weeklyLimitCheck;
 
     await db.insertProfileRecurringAvailability(organizationId, input.profileId, {
       weekday: input.weekday,
@@ -305,7 +233,6 @@ export async function updateProfileRecurringAvailability(input: {
   weekday: number;
   start_time: string;
   end_time: string;
-  allowAvailabilityExceedsTarget?: boolean;
 }): Promise<ProfileAvailabilityActionResult> {
   try {
     const { organizationId } = await requireManager();
@@ -355,13 +282,6 @@ export async function updateProfileRecurringAvailability(input: {
       organizationId,
       input.profileId
     );
-    const weeklyLimitCheck = validateProjectedAvailabilityWeeklyLimits({
-      availabilities: availabilityAfterChange,
-      weeklyHoursTarget: profile.weekly_hours,
-      countryCode: changeContext.countryCode,
-      allowAvailabilityExceedsTarget: input.allowAvailabilityExceedsTarget,
-    });
-    if (!weeklyLimitCheck.ok) return weeklyLimitCheck;
 
     const conflictCheck = wouldChangingAvailabilitySlotConflictWithActiveShifts({
       slotBeforeChange,

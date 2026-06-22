@@ -580,7 +580,7 @@ export const en = {
     weeklyHoursHint:
       "Target hours per week for planning. Leave empty for default 40 h. Legal maximum: {legalMax} h.",
     availabilityWeeklyHoursSummary:
-      "Total availability: {availability} h/week · Target: {target} h · Legal maximum: {legalMax} h.",
+      "Total availability: {availability} h/week · Target weekly hours: {target} h.",
     availabilityExceedsTarget:
       "Availability allows {hours} h/week — above the target of {targetHours} h.",
     availabilityExceedsTargetConfirm:

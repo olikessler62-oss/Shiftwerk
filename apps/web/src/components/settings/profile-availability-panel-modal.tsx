@@ -18,8 +18,10 @@ import { isLegalWeeklyHoursLimitError } from "@/lib/profile-weekly-hours-blockin
 import { useOrganization } from "@/lib/org-features-provider";
 import { fetchProfileShiftPreferences } from "@/app/actions/profile-shift-preferences";
 import {
-  evaluateProfileAvailabilityWeeklyLimits,
+  resolveLegalMaxWeeklyWorkingHours,
+  resolveProfileWeeklyHoursTarget,
   sortProfileRecurringAvailabilityBySchedule,
+  sumProfileAvailabilityMaxWeeklyHours,
 } from "@schichtwerk/database";
 import {
   formatAvailabilityTimeRange,
@@ -144,22 +146,11 @@ export function ProfileAvailabilityPanelModal({
     ProfileWeeklyHoursConflictRow[] | null
   >(null);
 
-  const weeklyLimits = useMemo(
-    () =>
-      evaluateProfileAvailabilityWeeklyLimits({
-        availabilities: profileAvailabilities,
-        weeklyHoursTarget: profile.weekly_hours,
-        countryCode: organization.country_code,
-      }),
-    [organization.country_code, profile.weekly_hours, profileAvailabilities]
-  );
-
-  const legalViolation = weeklyLimits.violations.find(
-    (violation) => violation.kind === "availability_exceeds_legal"
-  );
-  const targetViolation = weeklyLimits.violations.find(
-    (violation) => violation.kind === "availability_exceeds_target"
-  );
+  const weeklyLimits = useMemo(() => {
+    const availabilityHours = sumProfileAvailabilityMaxWeeklyHours(profileAvailabilities);
+    const targetHours = resolveProfileWeeklyHoursTarget(profile.weekly_hours);
+    return { availabilityHours, targetHours };
+  }, [profile.weekly_hours, profileAvailabilities]);
 
   const applyList = useCallback(
     (list: ProfileRecurringAvailability[]) => {
@@ -438,7 +429,7 @@ export function ProfileAvailabilityPanelModal({
               />
               <p className="mt-1 text-xs leading-snug text-muted">
                 {t("profiles.weeklyHoursHint", {
-                  legalMax: weeklyLimits.legalMax,
+                  legalMax: resolveLegalMaxWeeklyWorkingHours(organization.country_code),
                 })}
               </p>
             </div>
@@ -458,23 +449,8 @@ export function ProfileAvailabilityPanelModal({
             {t("profiles.availabilityWeeklyHoursSummary", {
               availability: weeklyLimits.availabilityHours,
               target: weeklyLimits.targetHours,
-              legalMax: weeklyLimits.legalMax,
             })}
           </p>
-          {legalViolation ? (
-            <Alert variant="error">
-              {t("profiles.availabilityExceedsLegalWarning", {
-                legalMax: legalViolation.legalMax,
-              })}
-            </Alert>
-          ) : targetViolation ? (
-            <Alert variant="info">
-              {t("profiles.availabilityExceedsTargetWarning", {
-                availability: targetViolation.hours,
-                target: targetViolation.targetHours,
-              })}
-            </Alert>
-          ) : null}
         </div>
 
         <div className="min-h-0 bg-background px-4 py-3">

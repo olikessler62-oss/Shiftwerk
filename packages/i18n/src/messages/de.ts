@@ -580,7 +580,7 @@ export const de = {
     weeklyHoursHint:
       "Soll-Wochenstunden für die Planung. Leer lassen = Standard 40 Std. Gesetzliches Maximum: {legalMax} Std.",
     availabilityWeeklyHoursSummary:
-      "Verfügbarkeiten gesamt: {availability} Std./Woche · Soll: {target} Std. · Gesetzliches Maximum: {legalMax} Std.",
+      "Verfügbarkeiten gesamt: {availability} Std./Woche · Soll-Wochenstunden: {target} Std.",
     availabilityExceedsTarget:
       "Verfügbarkeiten erlauben {hours} Std./Woche — über dem Soll von {targetHours} Std.",
     availabilityExceedsTargetConfirm:
