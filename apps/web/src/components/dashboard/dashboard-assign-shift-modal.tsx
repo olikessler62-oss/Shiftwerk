@@ -4,15 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchAreaCalendarShiftAssignEmployees } from "@/app/actions/areacalendar-shift-assign";
 import {
   ADD_SHIFT_AVAILABILITY_NOTICE_CLASS,
-  ADD_SHIFT_MODAL_MAX_WIDTH_CLASS,
   AreaCalendarQualificationCombobox,
   AreaCalendarShiftEmployeeCombobox,
   AreaCalendarShiftTypeCombobox,
   DASHBOARD_COMBO_EMPTY_LABEL,
 } from "@/components/areacalendar/areacalendar-add-shift-modal";
+import { PlanningSidePanel } from "@/components/planning/planning-side-panel";
 import {
-  MODAL_SCROLLBAR_CLASS,
-  SETTINGS_MODAL_TITLE_CLASS,
   areaCalendarAlertDialogClass,
   areaCalendarNestedModalOverlayClass,
   settingsModalFooterClass,
@@ -21,8 +19,6 @@ import {
   Alert,
   Button,
   Checkbox,
-  CloseIcon,
-  IconButton,
   LabelMuted,
   Textarea,
   TimeInput,
@@ -603,55 +599,67 @@ export function DashboardAssignShiftModal({
     : `${areaName} · ${dayHeader.weekday}, ${dayHeader.label}`;
 
   return (
-    <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4"
-      role="presentation"
-      onClick={(event) => {
-        if (
-          event.target === event.currentTarget &&
-          !busy &&
-          !messagePrompt &&
-          !outsideServiceHoursConfirm
-        ) {
-          onClose();
+    <>
+      <PlanningSidePanel
+        title={
+          hasExistingShift
+            ? t("areaCalendar.editShift")
+            : t("areaCalendar.addShiftTitle")
         }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="planning-assign-shift-title"
-        className={cn(
-          "relative z-[111] flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
-          ADD_SHIFT_MODAL_MAX_WIDTH_CLASS,
-          MODAL_SCROLLBAR_CLASS
-        )}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div>
-            <h3
-              id="planning-assign-shift-title"
-              className={SETTINGS_MODAL_TITLE_CLASS}
-            >
-              {hasExistingShift
-                ? t("areaCalendar.editShift")
-                : t("areaCalendar.addShiftTitle")}
-            </h3>
-            <p className="mt-0.5 text-sm text-muted">{subtitle}</p>
+        subtitle={subtitle}
+        titleId="planning-assign-shift-title"
+        onClose={onClose}
+        closeDisabled={busy}
+        closeAriaLabel={t("common.close")}
+        dismissOnBackdrop={
+          !busy && !messagePrompt && !outsideServiceHoursConfirm
+        }
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+            {showAssignRestOfWeekDaysOption ? (
+              <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
+                <Checkbox
+                  checked={assignRestOfWeekDays}
+                  disabled={busy || dayReadOnly}
+                  onChange={(event) =>
+                    setAssignRestOfWeekDays(event.target.checked)
+                  }
+                  className="mt-0.5 shrink-0"
+                />
+                <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
+              </label>
+            ) : (
+              <span />
+            )}
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={onClose}
+              >
+                {t("common.cancel")}
+              </Button>
+              {!dayReadOnly ? (
+                <Button
+                  type="button"
+                  disabled={
+                    busy ||
+                    !canAssign ||
+                    !timesComplete ||
+                    !selectedEmployeeId ||
+                    loadingEmployees
+                  }
+                  onClick={handleOk}
+                >
+                  {t("common.ok")}
+                </Button>
+              ) : null}
+            </div>
           </div>
-          <IconButton
-            size="sm"
-            onClick={onClose}
-            disabled={busy}
-            aria-label={t("common.close")}
-            className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
-          >
-            <CloseIcon className="h-[18px] w-[18px]" />
-          </IconButton>
-        </div>
-
-        <div className="space-y-4 px-5 py-4">
+        }
+      >
+        <div className="space-y-4">
           {dayReadOnly ? (
             <p className="text-xs text-muted">{t("dashboard.readOnlyDay")}</p>
           ) : null}
@@ -779,50 +787,7 @@ export function DashboardAssignShiftModal({
             />
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
-          {showAssignRestOfWeekDaysOption ? (
-            <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
-              <Checkbox
-                checked={assignRestOfWeekDays}
-                disabled={busy || dayReadOnly}
-                onChange={(event) =>
-                  setAssignRestOfWeekDays(event.target.checked)
-                }
-                className="mt-0.5 shrink-0"
-              />
-              <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
-            </label>
-          ) : (
-            <span />
-          )}
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={onClose}
-            >
-              {t("common.cancel")}
-            </Button>
-            {!dayReadOnly ? (
-              <Button
-                type="button"
-                disabled={
-                  busy ||
-                  !canAssign ||
-                  !timesComplete ||
-                  !selectedEmployeeId ||
-                  loadingEmployees
-                }
-                onClick={handleOk}
-              >
-                {t("common.ok")}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </div>
+      </PlanningSidePanel>
 
       {messagePrompt ? (
         <div
@@ -925,6 +890,6 @@ export function DashboardAssignShiftModal({
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }

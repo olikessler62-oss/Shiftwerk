@@ -373,7 +373,7 @@ function shiftContextMenuHeightPx(
 }
 
 /** Kontextmenü: Single-Schicht vorübergehend ausgeblendet (Logik bleibt erhalten). */
-const SHOW_ASSIGN_SHIFT_CONTEXT_MENU_ITEM = false;
+const SHOW_ASSIGN_SHIFT_CONTEXT_MENU_ITEM = true;
 
 function distanceFromPointToMenu(
   clientX: number,

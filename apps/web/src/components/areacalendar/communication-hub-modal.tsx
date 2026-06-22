@@ -2,26 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
-import { Button, CloseIcon, IconButton } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
   countCommunicationActionItems,
-  groupCommunicationHubData,
   resolveCommunicationOpenCategory,
   resolveDefaultCommunicationHubCategory,
   type CommunicationOpenOptions,
   type CommunicationSwapRequestRow,
 } from "@/lib/communication-hub";
 import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
+import { PlanningRightSidePanel } from "@/components/planning/planning-side-panel";
 import { CommunicationResponsesTab } from "./communication-responses-tab";
-import {
-  SETTINGS_MODAL_TITLE_CLASS,
-  settingsModalBackdropClass,
-  settingsModalBodyPaddingClass,
-  settingsModalDialogClass,
-  settingsModalHeaderPaddingClass,
-} from "@/components/settings/settings-list-ui";
 
 import type { AbsenceRequest, LocationArea } from "@schichtwerk/types";
 
@@ -96,99 +89,62 @@ export function CommunicationHubModal({
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && !busy) onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
-
   return (
-    <div
-      className={cn(
-        settingsModalBackdropClass(),
-        busy && "cursor-wait [&_*]:cursor-wait"
-      )}
-      role="presentation"
-      aria-busy={busy}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onClose();
-      }}
+    <PlanningRightSidePanel
+      size="wide"
+      title={t("shiftConfirmation.communication.title")}
+      subtitleNode={
+        locationName ? (
+          <p className="mt-0.5 truncate font-semibold text-base text-[#0f766e]">
+            {locationName}
+          </p>
+        ) : undefined
+      }
+      titleId="communication-hub-title"
+      onClose={onClose}
+      closeDisabled={busy}
+      closeAriaLabel={t("common.close")}
+      dismissOnBackdrop={!busy}
+      panelClassName={cn(busy && "cursor-wait [&_*]:cursor-wait")}
+      bodyClassName="flex min-h-0 flex-col gap-4 overflow-hidden"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="communication-hub-title"
-        className={cn(settingsModalDialogClass(), "max-w-6xl")}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div
-          className={cn(
-            settingsModalHeaderPaddingClass(),
-            "flex items-start justify-between gap-3 border-b border-border"
-          )}
-        >
-          <div className="min-w-0">
-            <h2 id="communication-hub-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("shiftConfirmation.communication.title")}
-            </h2>
-            {locationName ? (
-              <p className="mt-0.5 truncate font-semibold text-base text-[#0f766e]">
-                {locationName}
-              </p>
-            ) : null}
+      {!shiftConfirmationEnabled ? (
+        <div className="space-y-3 py-4">
+          <p className="text-sm text-muted">
+            {t("shiftConfirmation.communication.disabledHint")}
+          </p>
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t("common.cancel")}
+            </Button>
           </div>
-          <IconButton
-            type="button"
-            aria-label={t("common.close")}
-            onClick={onClose}
-            disabled={busy}
-          >
-            <CloseIcon />
-          </IconButton>
         </div>
-
-        <div className={cn(settingsModalBodyPaddingClass(), "flex min-h-0 flex-col gap-4")}>
-          {!shiftConfirmationEnabled ? (
-            <div className="space-y-3 py-4">
-              <p className="text-sm text-muted">
-                {t("shiftConfirmation.communication.disabledHint")}
-              </p>
-              <div className="flex justify-end">
-                <Button type="button" variant="outline" onClick={onClose}>
-                  {t("common.cancel")}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <CommunicationResponsesTab
-              key={`responses-${initialCategory}-${initialOptions?.preselectedShiftIds?.join(",") ?? ""}`}
-              weekStart={weekStart}
-              locationId={locationId}
-              areas={areas}
-              shifts={shifts}
-              absences={absences}
-              swapRequests={swapRequests}
-              cancelActors={cancelActors}
-              todayISO={todayISO}
-              weeklyHoursByEmployeeId={weeklyHoursByEmployeeId}
-              weeklyHoursCheckShifts={weeklyHoursCheckShifts}
-              initialCategory={initialCategory}
-              initialPreselectedShiftIds={initialOptions?.preselectedShiftIds}
-              onClose={onClose}
-              onReassign={(shift) => {
-                onClose();
-                onReassign(shift);
-              }}
-              onBusyChange={setBusy}
-              onLocalShiftRemoved={onLocalShiftRemoved}
-              onLocalShiftRestore={onLocalShiftRestore}
-            />
-          )}
-        </div>
-      </div>
-    </div>
+      ) : (
+        <CommunicationResponsesTab
+          key={`responses-${initialCategory}-${initialOptions?.preselectedShiftIds?.join(",") ?? ""}`}
+          weekStart={weekStart}
+          locationId={locationId}
+          areas={areas}
+          shifts={shifts}
+          absences={absences}
+          swapRequests={swapRequests}
+          cancelActors={cancelActors}
+          todayISO={todayISO}
+          weeklyHoursByEmployeeId={weeklyHoursByEmployeeId}
+          weeklyHoursCheckShifts={weeklyHoursCheckShifts}
+          initialCategory={initialCategory}
+          initialPreselectedShiftIds={initialOptions?.preselectedShiftIds}
+          onClose={onClose}
+          onReassign={(shift) => {
+            onClose();
+            onReassign(shift);
+          }}
+          onBusyChange={setBusy}
+          onLocalShiftRemoved={onLocalShiftRemoved}
+          onLocalShiftRestore={onLocalShiftRestore}
+        />
+      )}
+    </PlanningRightSidePanel>
   );
 }
 

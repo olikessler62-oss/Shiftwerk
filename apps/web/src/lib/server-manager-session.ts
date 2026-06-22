@@ -15,16 +15,16 @@ export type ManagerSession = {
 
 const loadCachedManagerOrganization = cache(loadManagerOrganization);
 
-/** Ein Supabase-Client und ein Auth-User pro Request (Layout + Page teilen). */
-export const getServerAuthUser = cache(async () => {
-  const db = await getDatabase();
-  return db.authGetUser();
-});
-
-/** Session aus Cookies — kein Auth-Server-Roundtrip (für Schicht-Cache etc.). */
+/** Session aus Cookies — Middleware validiert JWT; kein zweiter Auth-Server-Roundtrip. */
 export const getServerAuthSession = cache(async () => {
   const db = await getDatabase();
   return db.authGetSession();
+});
+
+/** User aus der lokalen Session (getUser nur in der Middleware). */
+export const getServerAuthUser = cache(async () => {
+  const session = await getServerAuthSession();
+  return session?.user ?? null;
 });
 
 /**
@@ -38,11 +38,7 @@ export const getManagerSession = cache(async (): Promise<ManagerSession | null> 
   const profile = await db.getProfileById(user.id);
   if (!profile) return null;
 
-  const orgName = await db.getOrganizationName(profile.organization_id);
-  const organization = await loadCachedManagerOrganization(
-    profile.organization_id,
-    orgName
-  );
+  const organization = await loadCachedManagerOrganization(profile.organization_id);
 
   return {
     user,

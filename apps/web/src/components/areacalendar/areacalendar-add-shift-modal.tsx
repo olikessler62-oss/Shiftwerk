@@ -12,12 +12,11 @@ import {
 import { assignShiftWithTimes } from "@/app/actions/shifts";
 import { resolveShiftTemplateStoredColor } from "@schichtwerk/database";
 import {
-  MODAL_SCROLLBAR_CLASS,
-  SETTINGS_MODAL_TITLE_CLASS,
   areaCalendarAlertDialogClass,
   areaCalendarNestedModalOverlayClass,
   settingsModalFooterClass,
 } from "@/components/settings/settings-list-ui";
+import { PlanningSidePanel } from "@/components/planning/planning-side-panel";
 import { cn } from "@/lib/cn";
 import {
   Alert,
@@ -25,8 +24,6 @@ import {
   Checkbox,
   CheckIcon,
   ChevronDownIcon,
-  CloseIcon,
-  IconButton,
   LabelMuted,
   TimeInput,
   tooltipContentClassName,
@@ -1495,55 +1492,62 @@ export function AreaCalendarAddShiftModal({
   }, [selectedEmployee, weekday]);
 
   return (
-    <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (
-          event.target === event.currentTarget &&
+    <>
+      <PlanningSidePanel
+        title={t("areaCalendar.addShiftTitle")}
+        subtitle={
+          simplePlanning
+            ? `${dayHeader.weekday}, ${dayHeader.label}`
+            : `${areaName} · ${dayHeader.weekday}, ${dayHeader.label}`
+        }
+        titleId="areacalendar-add-shift-title"
+        onClose={onClose}
+        closeDisabled={saving}
+        closeAriaLabel={t("common.close")}
+        dismissOnBackdrop={
           !saving &&
           !outsideServiceHoursConfirm &&
           !availabilityConflictPrompt &&
           !weeklyHoursAlertMessage
-        ) {
-          onClose();
         }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="areacalendar-add-shift-title"
-        className={cn(
-          "relative z-[111] flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
-          ADD_SHIFT_MODAL_MAX_WIDTH_CLASS,
-          MODAL_SCROLLBAR_CLASS
-        )}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div>
-            <h3 id="areacalendar-add-shift-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("areaCalendar.addShiftTitle")}
-            </h3>
-            <p className="mt-0.5 text-sm text-muted">
-              {simplePlanning
-                ? `${dayHeader.weekday}, ${dayHeader.label}`
-                : `${areaName} · ${dayHeader.weekday}, ${dayHeader.label}`}
-            </p>
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+            {showAssignRestOfWeekDaysOption ? (
+              <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
+                <Checkbox
+                  checked={assignRestOfWeekDays}
+                  disabled={saving}
+                  onChange={(event) =>
+                    setAssignRestOfWeekDays(event.target.checked)
+                  }
+                  className="mt-0.5 shrink-0"
+                />
+                <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
+              </label>
+            ) : (
+              <span />
+            )}
+            <div className="flex shrink-0 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                disabled={saving}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleOk()}
+                disabled={saving}
+              >
+                {t("common.ok")}
+              </Button>
+            </div>
           </div>
-          <IconButton
-            size="sm"
-            onClick={onClose}
-            disabled={saving}
-            aria-label={t("common.close")}
-            className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
-          >
-            <CloseIcon className="h-[18px] w-[18px]" />
-          </IconButton>
-        </div>
-
-        <div className="space-y-4 px-5 py-4">
+        }
+      >
+        <div className="space-y-4">
           {error ? <Alert variant="error">{error}</Alert> : null}
           {complianceNotice ? (
             <Alert variant="info">{complianceNotice}</Alert>
@@ -1621,33 +1625,7 @@ export function AreaCalendarAddShiftModal({
             ) : null}
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
-          {showAssignRestOfWeekDaysOption ? (
-            <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
-              <Checkbox
-                checked={assignRestOfWeekDays}
-                disabled={saving}
-                onChange={(event) =>
-                  setAssignRestOfWeekDays(event.target.checked)
-                }
-                className="mt-0.5 shrink-0"
-              />
-              <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
-            </label>
-          ) : (
-            <span />
-          )}
-          <div className="flex shrink-0 gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-              {t("common.cancel")}
-            </Button>
-            <Button type="button" onClick={() => void handleOk()} disabled={saving}>
-              {t("common.ok")}
-            </Button>
-          </div>
-        </div>
-      </div>
+      </PlanningSidePanel>
 
       {outsideServiceHoursConfirm ? (
         <div
@@ -1777,6 +1755,6 @@ export function AreaCalendarAddShiftModal({
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }

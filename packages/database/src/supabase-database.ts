@@ -5712,6 +5712,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("organization_id", input.organizationId)
       .eq("employee_id", input.employeeId)
       .is("employee_dismissed_at", null)
+      .or("confirmation_status.eq.canceled,lifecycle_status.eq.cancelled")
       .select("id")
       .maybeSingle();
 

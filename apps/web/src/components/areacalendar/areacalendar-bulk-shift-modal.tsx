@@ -18,17 +18,14 @@ import {
   type AreaCalendarAddShiftDialogState,
   type AreaCalendarBulkShiftDialogState,
 } from "@/components/areacalendar/areacalendar-add-shift-modal";
+import { PlanningSidePanel } from "@/components/planning/planning-side-panel";
 import {
   BULK_SHIFT_LIST_SCROLL_CLASS,
-  SETTINGS_MODAL_TITLE_CLASS,
   SettingsPrimaryActionButton,
   areaCalendarAlertDialogClass,
-  areaCalendarModalBackdropClass,
-  areaCalendarModalDialogClass,
   areaCalendarNestedModalOverlayClass,
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
-  settingsModalHeaderPaddingClass,
   settingsIndicatorCellClass,
   settingsResponsiveTableWrapClass,
   settingsStickyIndicatorHeaderClass,
@@ -37,7 +34,6 @@ import {
   Button,
   Alert,
   Checkbox,
-  CloseIcon,
   IconButton,
   PlusIcon,
   TimeInput,
@@ -2712,50 +2708,32 @@ export function AreaCalendarBulkShiftModal({
   const modalBusy = loading || saving;
 
   return (
-    <div
-      className={cn(areaCalendarModalBackdropClass(), modalBusy && "cursor-wait")}
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving && !prompt) {
-          onClose();
+    <>
+      <PlanningSidePanel
+        size="wide"
+        title={
+          dialog.focusShiftId
+            ? t("areaCalendar.editShift")
+            : t("areaCalendar.bulkShiftTitle")
         }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="areacalendar-bulk-shift-title"
-        className={cn(
-          areaCalendarModalDialogClass("5xl"),
-          "select-none [&_input]:select-text",
-          modalBusy && "cursor-wait",
-          modalBusy && "[&_*]:!cursor-wait"
-        )}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div
-          className={cn(
-            "flex items-start justify-between gap-3 border-b border-border",
-            settingsModalHeaderPaddingClass()
-          )}
-        >
-          <div className="min-w-0 flex-1">
-            <h3 id="areacalendar-bulk-shift-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {dialog.focusShiftId
-                ? t("areaCalendar.editShift")
-                : t("areaCalendar.bulkShiftTitle")}
-            </h3>
-            <p className="mt-0.5 font-semibold text-[#0f766e]">
-              <span className="text-base">
-                {locationName} / {areaName}
-              </span>
-              <span className="text-lg">
-                {" "}
-                – {dayHeader.weekday}, {dayHeader.label}
-              </span>
-            </p>
-          </div>
-          {staffingTableRows.length > 0 ? (
+        subtitleNode={
+          <p className="mt-0.5 font-semibold text-[#0f766e]">
+            <span className="text-base">
+              {locationName} / {areaName}
+            </span>
+            <span className="text-lg">
+              {" "}
+              – {dayHeader.weekday}, {dayHeader.label}
+            </span>
+          </p>
+        }
+        titleId="areacalendar-bulk-shift-title"
+        onClose={onClose}
+        closeDisabled={saving || modalLocked}
+        closeAriaLabel={t("common.close")}
+        dismissOnBackdrop={!saving && !prompt}
+        headerAside={
+          staffingTableRows.length > 0 ? (
             <BulkShiftStaffingTable
               rows={staffingTableRows}
               locale={locale}
@@ -2763,19 +2741,53 @@ export function AreaCalendarBulkShiftModal({
               onSpeedAdd={performStaffingSpeedAdd}
               speedActionsDisabled={loading || saving}
             />
-          ) : null}
-          <IconButton
-            size="sm"
-            onClick={onClose}
-            disabled={saving || modalLocked}
-            aria-label={t("common.close")}
-            className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
-          >
-            <CloseIcon className="h-[18px] w-[18px]" />
-          </IconButton>
-        </div>
-
-        <div className={cn("min-h-0 flex-1 overflow-hidden", settingsModalBodyPaddingClass())}>
+          ) : undefined
+        }
+        panelClassName={cn(
+          "select-none [&_input]:select-text",
+          modalBusy && "cursor-wait [&_*]:!cursor-wait"
+        )}
+        bodyClassName={cn(
+          "overflow-hidden",
+          settingsModalBodyPaddingClass()
+        )}
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+            {showAssignRestOfWeekDaysOption ? (
+              <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
+                <Checkbox
+                  checked={assignRestOfWeekDays}
+                  disabled={saving || modalLocked}
+                  onChange={(event) =>
+                    setAssignRestOfWeekDays(event.target.checked)
+                  }
+                  className="mt-0.5 shrink-0"
+                />
+                <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
+              </label>
+            ) : (
+              <span />
+            )}
+            <div className="flex shrink-0 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                disabled={saving || modalLocked}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleOk()}
+                disabled={loading || saving || !!prompt}
+              >
+                {t("common.ok")}
+              </Button>
+            </div>
+          </div>
+        }
+      >
           {assignmentPresets.length === 0 ? (
             <Alert variant="info" className="mb-4">
               {t("areaCalendar.noShiftTemplatesForArea")}
@@ -2905,43 +2917,7 @@ export function AreaCalendarBulkShiftModal({
               </span>
             ) : null}
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
-          {showAssignRestOfWeekDaysOption ? (
-            <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
-              <Checkbox
-                checked={assignRestOfWeekDays}
-                disabled={saving || modalLocked}
-                onChange={(event) =>
-                  setAssignRestOfWeekDays(event.target.checked)
-                }
-                className="mt-0.5 shrink-0"
-              />
-              <span>{t("areaCalendar.assignRestOfWeekDays")}</span>
-            </label>
-          ) : (
-            <span />
-          )}
-          <div className="flex shrink-0 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={saving || modalLocked}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleOk()}
-              disabled={loading || saving || !!prompt}
-            >
-              {t("common.ok")}
-            </Button>
-          </div>
-        </div>
-      </div>
+      </PlanningSidePanel>
 
       {prompt && promptMessage ? (
         <div
@@ -3019,6 +2995,6 @@ export function AreaCalendarBulkShiftModal({
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }

@@ -7,6 +7,7 @@ import type { Location, LocationArea } from "@schichtwerk/types";
 import { HeaderPillSelect } from "@/components/ui/header-placement-select";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { writePlanningLocationCookie } from "@/lib/planning-location-preference";
 
 type Props = {
   locations: Location[];
@@ -56,6 +57,7 @@ export function DashboardHeaderPlacement({
   );
 
   function onLocationChange(locationId: string) {
+    writePlanningLocationCookie(locationId);
     const params = new URLSearchParams(searchParams.toString());
     params.set("location", locationId);
     startLocationTransition(() => {

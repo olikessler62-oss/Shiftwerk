@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { signIn } from "@/app/actions/auth";
-import { Alert, Button, Field, Input } from "@/components/ui";
+import { Alert } from "@/components/ui";
+import { LoginForm } from "@/app/login/login-form";
 
 export default async function LoginPage({
   searchParams,
@@ -31,23 +31,7 @@ export default async function LoginPage({
           </Alert>
         )}
 
-        <form action={signIn} className="space-y-4">
-          <Field label="E-Mail" htmlFor="email">
-            <Input id="email" name="email" type="email" required autoComplete="email" />
-          </Field>
-          <Field label="Passwort" htmlFor="password">
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-            />
-          </Field>
-          <Button type="submit" className="w-full">
-            Anmelden
-          </Button>
-        </form>
+        <LoginForm />
 
         <p className="mt-4 text-center text-sm">
           <Link href="/forgot-password" className="font-medium text-primary">
