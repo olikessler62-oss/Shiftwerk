@@ -17,13 +17,15 @@ export async function fetchOverviewCompensation(): Promise<FetchOverviewCompensa
   try {
     const { organizationId } = await requireManager();
     const db = await getDatabase();
-    const [orgProfiles, rates, serverToday] = await Promise.all([
-      db.listOrganizationProfiles(organizationId),
+    const [planningEmployees, rates, serverToday] = await Promise.all([
+      db.listPlanningEmployees(organizationId),
       db.listAllOrganizationProfileHourlyRates(organizationId),
       db.getServerDateIso(),
     ]);
 
-    const profileById = new Map(orgProfiles.map((profile) => [profile.id, profile]));
+    const profileById = new Map(
+      planningEmployees.map((profile) => [profile.id, profile])
+    );
     for (const rate of rates) {
       if (profileById.has(rate.profile_id)) continue;
       const profile = await db.getProfileById(rate.profile_id);

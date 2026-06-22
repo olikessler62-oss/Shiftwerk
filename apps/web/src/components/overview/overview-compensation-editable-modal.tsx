@@ -50,6 +50,7 @@ import {
   buildOverviewCompensationEmployeeJumpOptions,
   countOverviewCompensationEmployees,
   firstOverviewCompensationRowIdForEmployee,
+  isOverviewCompensationPlaceholderRow,
 } from "@/lib/overview-compensation-display";
 import {
   formatAmountLabel,
@@ -223,7 +224,12 @@ export function OverviewCompensationEditableModal({
   }, [rows, selectedRateId]);
 
   const selectedRate = selectedRateId ? (rateById.get(selectedRateId) ?? null) : null;
-  const tableSelectedEmployeeId = selectedRate?.profile_id ?? null;
+  const selectedRow = useMemo(
+    () => (selectedRateId ? rows.find((row) => row.id === selectedRateId) ?? null : null),
+    [rows, selectedRateId]
+  );
+  const tableSelectedEmployeeId =
+    selectedRow?.employeeId ?? selectedRate?.profile_id ?? null;
   const createEmployeeId = jumpSelectedEmployeeId || tableSelectedEmployeeId || null;
 
   const createEmployeeRates = useMemo(
@@ -487,6 +493,7 @@ export function OverviewCompensationEditableModal({
                           {rows.map((row) => {
                             const isSelected = row.id === selectedRateId;
                             const rate = row.rate;
+                            const isPlaceholder = isOverviewCompensationPlaceholderRow(row);
                             return (
                               <tr
                                 key={row.id}
@@ -507,7 +514,11 @@ export function OverviewCompensationEditableModal({
                                   window.getSelection()?.removeAllRanges();
                                   setSelectedRateId(row.id);
                                   setJumpSelectedEmployeeId(row.employeeId);
-                                  setFormMode({ type: "edit", rate });
+                                  if (isPlaceholder) {
+                                    setFormMode({ type: "create" });
+                                  } else if (rate) {
+                                    setFormMode({ type: "edit", rate });
+                                  }
                                   setConfirmRemove(false);
                                   setConfirmBulkRemove(false);
                                   setErrorMessage(null);
@@ -543,22 +554,32 @@ export function OverviewCompensationEditableModal({
                                     className: "whitespace-nowrap tabular-nums",
                                   })}
                                 >
-                                  {formatAmountLabel(rate.amount, rate.currency, locale)}
+                                  {rate
+                                    ? formatAmountLabel(rate.amount, rate.currency, locale)
+                                    : "—"}
                                 </td>
                                 <td className={settingsDataCellClass(isSelected)}>
-                                  {formatDateLabel(rate.valid_from, locale)}
-                                  {row.isCurrentRate ? (
-                                    <span className="ml-1 text-muted">
-                                      ({t("profiles.hourlyRateOpen")})
+                                  {rate ? (
+                                    <>
+                                      {formatDateLabel(rate.valid_from, locale)}
+                                      {row.isCurrentRate ? (
+                                        <span className="ml-1 text-muted">
+                                          ({t("profiles.hourlyRateOpen")})
+                                        </span>
+                                      ) : null}
+                                    </>
+                                  ) : (
+                                    <span className="text-muted">
+                                      {t("profiles.noHourlyRate")}
                                     </span>
-                                  ) : null}
+                                  )}
                                 </td>
                                 <td
                                   className={settingsDataCellClass(isSelected, {
                                     className: "max-w-[8rem] truncate text-muted",
                                   })}
                                 >
-                                  {rate.created_by_name
+                                  {rate?.created_by_name
                                     ? truncateLabel(rate.created_by_name, 18)
                                     : "—"}
                                 </td>
@@ -567,7 +588,7 @@ export function OverviewCompensationEditableModal({
                                   checkbox={
                                     <SettingsListRowCheckbox
                                       checked={bulkSelection.isChecked(row.id)}
-                                      disabled={pending}
+                                      disabled={pending || isPlaceholder}
                                       ariaLabel={t("common.selectRow")}
                                       className="mx-0"
                                       onChange={() => bulkSelection.toggle(row.id)}
@@ -576,7 +597,7 @@ export function OverviewCompensationEditableModal({
                                   deleteButton={
                                     <SettingsListRowDeleteButton
                                       label={t("profiles.delete")}
-                                      disabled={pending}
+                                      disabled={pending || isPlaceholder}
                                       onClick={() => {
                                         setSelectedRateId(row.id);
                                         setJumpSelectedEmployeeId(row.employeeId);
