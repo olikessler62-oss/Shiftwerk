@@ -8,7 +8,7 @@ import { SimpleCalendarDisplayProvider } from "@/lib/simple-calendar-display-con
 import { ShiftConfirmationSimulationProvider } from "@/lib/shift-confirmation-simulation-context";
 import { DashboardAppSidebarSlotProvider } from "@/components/dashboard/dashboard-app-sidebar-slot";
 import { loadManagerOrganization } from "@/lib/manager";
-import { isSuperadminDeveloperEmail } from "@/lib/superadmin-access";
+import { isSuperadminDeveloperForEmails } from "@/lib/superadmin-access";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -35,7 +35,10 @@ export default async function ManagerLayout({
   );
   const locale = await getServerLocale();
 
-  const superadminEnabled = isSuperadminDeveloperEmail(profile.email);
+  const superadminEnabled = isSuperadminDeveloperForEmails([
+    profile.email,
+    user.email,
+  ]);
 
   return (
     <LocaleProvider initialLocale={locale}>

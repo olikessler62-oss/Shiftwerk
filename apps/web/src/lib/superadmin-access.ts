@@ -1,3 +1,4 @@
+import { getDatabase } from "@/lib/db";
 import { requireManager, type ManagerContext } from "@/lib/manager";
 
 function parseSuperadminEmails(raw: string | undefined): Set<string> {
@@ -10,19 +11,36 @@ function parseSuperadminEmails(raw: string | undefined): Set<string> {
   );
 }
 
-const superadminEmails = parseSuperadminEmails(process.env.SUPERADMIN_EMAILS);
+/** Liest SUPERADMIN_EMAILS bei jedem Aufruf — wichtig für Vercel Runtime-Env. */
+function getSuperadminEmailAllowlist(): Set<string> {
+  return parseSuperadminEmails(process.env.SUPERADMIN_EMAILS);
+}
 
 export function isSuperadminDeveloperEmail(
   email: string | null | undefined
 ): boolean {
-  if (!email || superadminEmails.size === 0) return false;
-  return superadminEmails.has(email.trim().toLowerCase());
+  if (!email) return false;
+  const allowlist = getSuperadminEmailAllowlist();
+  if (allowlist.size === 0) return false;
+  return allowlist.has(email.trim().toLowerCase());
+}
+
+export function isSuperadminDeveloperForEmails(
+  emails: (string | null | undefined)[]
+): boolean {
+  const allowlist = getSuperadminEmailAllowlist();
+  if (allowlist.size === 0) return false;
+  return emails.some(
+    (email) => email && allowlist.has(email.trim().toLowerCase())
+  );
 }
 
 export async function requireSuperadminDeveloper(): Promise<ManagerContext> {
   const ctx = await requireManager();
+  const db = await getDatabase();
+  const authUser = await db.authGetUser();
 
-  if (!isSuperadminDeveloperEmail(ctx.profile.email)) {
+  if (!isSuperadminDeveloperForEmails([ctx.profile.email, authUser?.email])) {
     throw new Error("Keine Berechtigung");
   }
 
