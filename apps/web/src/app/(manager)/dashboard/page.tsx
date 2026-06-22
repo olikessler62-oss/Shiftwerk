@@ -1,8 +1,9 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getManagerSession } from "@/lib/server-manager-session";
-import { DashboardPageContent } from "@/components/dashboard/dashboard-page-content";
-import { DashboardLoadingSkeleton } from "@/components/dashboard/dashboard-loading-skeleton";
+import { DashboardCalendarProvider } from "@/components/dashboard/dashboard-calendar-context";
+import { DashboardPageShell } from "@/components/dashboard/dashboard-page-shell";
+import { DashboardCalendarLayer } from "@/components/dashboard/dashboard-calendar-layer";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +29,11 @@ export default async function DashboardPage({
   const params = await searchParams;
 
   return (
-    <Suspense fallback={<DashboardLoadingSkeleton />}>
-      <DashboardPageContent params={params} />
-    </Suspense>
+    <DashboardCalendarProvider>
+      <DashboardPageShell params={params} />
+      <Suspense fallback={null}>
+        <DashboardCalendarLayer params={params} />
+      </Suspense>
+    </DashboardCalendarProvider>
   );
 }

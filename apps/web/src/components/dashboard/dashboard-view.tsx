@@ -15,6 +15,7 @@ import { cancelShiftAsManager, confirmPastShiftAsManager, submitCommunicationCon
 import { isPastCalendarDate, toISODate, startOfWeek, parseISODate } from "@/lib/dates";
 import { usePlanningEmployeeListContextMenu } from "@/lib/use-planning-employee-list-context-menu";
 import { DashboardCalendarGrid } from "@/components/dashboard/dashboard-calendar-grid";
+import { useDashboardCalendarLayer } from "@/components/dashboard/dashboard-calendar-context";
 import { CalendarStaffingEditModal } from "@/components/planning/calendar-staffing-edit-modal";
 import { buildCalendarStaffingEditorData } from "@/lib/calendar-staffing-editor-data";
 import { PlanningEmployeeListContextMenu } from "@/components/planning/planning-employee-list-context-menu";
@@ -324,27 +325,44 @@ function timeFieldValue(time: string): string {
 export function DashboardView({
   weekStart,
   dates,
-  employees,
-  shifts,
-  locationShifts,
+  employees: employeesFromProps,
+  shifts: shiftsFromProps,
+  locationShifts: locationShiftsFromProps,
   recurringAvailability,
   absences,
-  communicationSwapRequests = [],
-  communicationCancelActors = {},
+  communicationSwapRequests: communicationSwapRequestsFromProps = [],
+  communicationCancelActors: communicationCancelActorsFromProps = {},
   locations,
   selectedLocationId,
-  areas,
-  selectedAreaId,
-  areaShiftTemplates,
-  serviceHours,
-  staffingRules,
-  staffingOverrides = [],
+  areas: areasFromProps,
+  selectedAreaId: selectedAreaIdFromProps,
+  areaShiftTemplates: areaShiftTemplatesFromProps,
+  serviceHours: serviceHoursFromProps,
+  staffingRules: staffingRulesFromProps,
+  staffingOverrides: staffingOverridesFromProps = [],
   qualifications,
   profileQualificationIds: profileQualificationIdsRecord,
   readOnlyWeek = false,
   managerNotifications = [],
   settingsModals,
 }: Props) {
+  const calendarLayer = useDashboardCalendarLayer();
+  const calendarPending = calendarLayer !== null && !calendarLayer.ready;
+  const layer = calendarLayer?.data;
+
+  const employees = layer?.employees ?? employeesFromProps;
+  const shifts = layer?.shifts ?? shiftsFromProps;
+  const locationShifts = layer?.locationShifts ?? locationShiftsFromProps;
+  const areas = layer?.areas ?? areasFromProps;
+  const selectedAreaId = layer?.selectedAreaId ?? selectedAreaIdFromProps;
+  const areaShiftTemplates = layer?.areaShiftTemplates ?? areaShiftTemplatesFromProps;
+  const serviceHours = layer?.serviceHours ?? serviceHoursFromProps;
+  const staffingRules = layer?.staffingRules ?? staffingRulesFromProps;
+  const staffingOverrides = layer?.staffingOverrides ?? staffingOverridesFromProps;
+  const communicationSwapRequests =
+    layer?.communicationSwapRequests ?? communicationSwapRequestsFromProps;
+  const communicationCancelActors =
+    layer?.communicationCancelActors ?? communicationCancelActorsFromProps;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -2326,6 +2344,13 @@ export function DashboardView({
             APP_SHELL_CONTENT_OFFSET_CLASS
           )}
         >
+          {calendarPending ? (
+            <div
+              className="min-h-[320px] animate-pulse rounded-xl bg-muted/50 md:min-h-[480px]"
+              aria-busy="true"
+              aria-live="polite"
+            />
+          ) : (
           <DashboardCalendarGrid
             dates={dates}
             employees={calendarEmployees}
@@ -2384,6 +2409,7 @@ export function DashboardView({
             swapRequestShiftIds={swapRequestShiftIds}
             shiftConfirmationEnabled={shiftConfirmationEnabled}
           />
+          )}
         </main>
 
         {cellContextMenu ? (
