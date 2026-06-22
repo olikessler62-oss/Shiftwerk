@@ -19,9 +19,6 @@ import { CalendarStaffingEditModal } from "@/components/planning/calendar-staffi
 import { buildCalendarStaffingEditorData } from "@/lib/calendar-staffing-editor-data";
 import { PlanningEmployeeListContextMenu } from "@/components/planning/planning-employee-list-context-menu";
 import { DashboardHeaderPlacement } from "@/components/dashboard/dashboard-header-placement";
-import { useDashboardAppSidebarContent } from "@/components/dashboard/dashboard-app-sidebar-slot";
-import { DashboardShiftTemplateSidebarList } from "@/components/dashboard/dashboard-shift-template-sidebar-list";
-import { DashboardAvailabilityLegendSidebar } from "@/components/dashboard/dashboard-availability-legend-sidebar";
 import {
   DashboardAssignShiftModal,
   type DashboardShiftActionResult,
@@ -479,29 +476,6 @@ export function DashboardView({
     () => areaCalendarAssignmentPresetsForArea(templatesForArea),
     [templatesForArea]
   );
-
-  const planningAppSidebarContent = useMemo(
-    () => (
-      <div className="space-y-4">
-        {!simplePlanning ? (
-          <DashboardShiftTemplateSidebarList
-            presets={assignmentPresets}
-            emptyLabel={t("areaCalendar.noShiftTemplatesForArea")}
-            locale={locale}
-          />
-        ) : null}
-        <DashboardAvailabilityLegendSidebar
-          title={t("dashboard.legendAvailability")}
-          availableLabel={t("dashboard.legendAvailable")}
-          noAvailabilityLabel={t("dashboard.legendNoAvailability")}
-          absentLabel={t("dashboard.legendAbsent")}
-        />
-      </div>
-    ),
-    [simplePlanning, assignmentPresets, locale, t]
-  );
-
-  useDashboardAppSidebarContent(planningAppSidebarContent);
 
   const serviceHourAreaIds = useMemo(
     () => (selectedAreaId ? [selectedAreaId] : areas.map((area) => area.id)),

@@ -15,7 +15,6 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { IconButton } from "@/components/ui";
 import { AppShellBrandHeader } from "@/components/brand/app-shell-brand-header";
-import { DashboardAppSidebarSlotMount } from "@/components/dashboard/dashboard-app-sidebar-slot";
 import { cn } from "@/lib/cn";
 import { useTranslations } from "@/i18n/locale-provider";
 import { SidebarNav } from "./sidebar-nav";
@@ -28,12 +27,10 @@ import {
   AppShellMainNavPendingProvider,
 } from "@/lib/app-shell-main-nav-pending";
 import {
-  APP_SHELL_CONTENT_OFFSET_CLASS,
   APP_SHELL_CONTENT_COLUMN_CLASS,
   APP_SHELL_MAIN_CLASS,
   APP_SHELL_ROOT_CLASS,
   APP_SHELL_SIDEBAR_CLASS,
-  APP_SHELL_SIDEBAR_SLOT_CLASS,
 } from "@/lib/app-shell-layout";
 import {
   AppShellControlsGuard,
@@ -109,7 +106,6 @@ export function AppShell({
 }: AppShellProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const showAppSidebarSlot = pathname.startsWith("/dashboard");
   const isAreaCalendar = pathname.startsWith("/bereich-kalender");
   const menuButtonRef = useRef<HTMLDivElement>(null);
   const menuPanelRef = useRef<HTMLDivElement>(null);
@@ -152,7 +148,6 @@ export function AppShell({
             orgName={orgName}
             open={open}
             setOpen={setOpen}
-            showAppSidebarSlot={showAppSidebarSlot}
             brandHeaderAlignContentStart={isAreaCalendar}
             menuButtonRef={menuButtonRef}
             menuPanelRef={menuPanelRef}
@@ -171,7 +166,6 @@ function AppShellLayout({
   orgName,
   open,
   setOpen,
-  showAppSidebarSlot,
   brandHeaderAlignContentStart,
   menuButtonRef,
   menuPanelRef,
@@ -182,7 +176,6 @@ function AppShellLayout({
   orgName?: string;
   open: boolean;
   setOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
-  showAppSidebarSlot: boolean;
   brandHeaderAlignContentStart: boolean;
   menuButtonRef: RefObject<HTMLDivElement | null>;
   menuPanelRef: RefObject<HTMLDivElement | null>;
@@ -287,17 +280,6 @@ function AppShellLayout({
               </div>
             }
           />
-
-          {showAppSidebarSlot ? (
-            <div
-              className={cn(
-                APP_SHELL_SIDEBAR_SLOT_CLASS,
-                APP_SHELL_CONTENT_OFFSET_CLASS
-              )}
-            >
-              <DashboardAppSidebarSlotMount />
-            </div>
-          ) : null}
         </div>
 
         <div className={APP_SHELL_CONTENT_COLUMN_CLASS}>

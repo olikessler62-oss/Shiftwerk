@@ -6,7 +6,6 @@ import { getDatabase } from "@/lib/db";
 import { OrgFeaturesProvider } from "@/lib/org-features-provider";
 import { SimpleCalendarDisplayProvider } from "@/lib/simple-calendar-display-context";
 import { ShiftConfirmationSimulationProvider } from "@/lib/shift-confirmation-simulation-context";
-import { DashboardAppSidebarSlotProvider } from "@/components/dashboard/dashboard-app-sidebar-slot";
 import { loadManagerOrganization } from "@/lib/manager";
 import { isSuperadminDeveloperForEmails } from "@/lib/superadmin-access";
 
@@ -45,16 +44,14 @@ export default async function ManagerLayout({
       <OrgFeaturesProvider organization={organization}>
         <SimpleCalendarDisplayProvider>
           <ShiftConfirmationSimulationProvider>
-            <DashboardAppSidebarSlotProvider>
-              <AppShell
-                orgName={organization.name || orgName || undefined}
-                userName={profile.full_name}
-                role={profile.role}
-                superadminEnabled={superadminEnabled}
-              >
-                {children}
-              </AppShell>
-            </DashboardAppSidebarSlotProvider>
+            <AppShell
+              orgName={organization.name || orgName || undefined}
+              userName={profile.full_name}
+              role={profile.role}
+              superadminEnabled={superadminEnabled}
+            >
+              {children}
+            </AppShell>
           </ShiftConfirmationSimulationProvider>
         </SimpleCalendarDisplayProvider>
       </OrgFeaturesProvider>
