@@ -358,6 +358,10 @@ export async function deleteProfile(id: string): Promise<ProfileActionResult> {
       return { ok: false, error: "Profil nicht gefunden" };
     }
 
+    if (!existing.is_active) {
+      return { ok: false, error: "Das Profil ist bereits inaktiv." };
+    }
+
     await db.deactivateEmployee(organizationId, id);
 
     const profile = await db.getProfileById(id);

@@ -1021,6 +1021,48 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (error) throw new Error(error.message);
   }
 
+  async hardDeleteOrganizationProfile(
+    organizationId: string,
+    profileId: string
+  ): Promise<void> {
+    const { data: profile, error: profileError } = await this.client
+      .from(T.profiles)
+      .select("id, organization_id")
+      .eq("id", profileId)
+      .maybeSingle();
+    if (profileError) throw new Error(profileError.message);
+    if (!profile || profile.organization_id !== organizationId) {
+      throw new Error("Profil nicht gefunden");
+    }
+
+    const { error: deletionEventsError } = await this.client
+      .from(T.shiftDeletionEvents)
+      .delete()
+      .eq("deleted_by", profileId);
+    if (deletionEventsError) throw new Error(deletionEventsError.message);
+
+    const { error: batchesSentByError } = await this.client
+      .from(T.confirmationRequestBatches)
+      .delete()
+      .eq("sent_by", profileId);
+    if (batchesSentByError) throw new Error(batchesSentByError.message);
+
+    try {
+      await this.authDeleteUser(profileId);
+    } catch (authError) {
+      const { error: profileDeleteError } = await this.client
+        .from(T.profiles)
+        .delete()
+        .eq("id", profileId)
+        .eq("organization_id", organizationId);
+      if (profileDeleteError) {
+        const message =
+          authError instanceof Error ? authError.message : String(authError);
+        throw new Error(profileDeleteError.message ?? message);
+      }
+    }
+  }
+
   async listQualifications(organizationId: string) {
     const { data, error } = await this.client
       .from(T.qualifications)

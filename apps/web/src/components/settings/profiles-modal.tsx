@@ -226,6 +226,7 @@ export function ProfilesModal({
   );
   const [displayedProfileId, setDisplayedProfileId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [confirmDeleteProfile, setConfirmDeleteProfile] = useState(false);
   const [profileFormMode, setProfileFormMode] = useState<ProfileFormMode>(null);
   const [detailPanel, setDetailPanel] = useState<DetailPanel>(null);
@@ -553,6 +554,7 @@ export function ProfilesModal({
   function handleDeleteProfile() {
     if (!selectedProfile) return;
     setErrorMessage(null);
+    setSuccessMessage(null);
     startTransition(async () => {
       const result = await deleteProfile(selectedProfile.id);
       if (!result.ok) {
@@ -563,22 +565,10 @@ export function ProfilesModal({
         setProfileList((prev) =>
           prev.map((p) => (p.id === result.profile!.id ? result.profile! : p))
         );
+        setSuccessMessage(
+          t("profiles.deactivated", { name: result.profile.full_name })
+        );
       }
-      setQualificationsCache((prev) => {
-        const next = { ...prev };
-        delete next[selectedProfile.id];
-        return next;
-      });
-      setAvailabilityCache((prev) => {
-        const next = { ...prev };
-        delete next[selectedProfile.id];
-        return next;
-      });
-      setCompensationCache((prev) => {
-        const next = { ...prev };
-        delete next[selectedProfile.id];
-        return next;
-      });
       setConfirmDeleteProfile(false);
       refreshProfiles();
     });
@@ -622,6 +612,12 @@ export function ProfilesModal({
               {t("profiles.title")}
             </h2>
           </div>
+
+          {successMessage && (
+            <div className="mx-4 mt-3 shrink-0">
+              <Alert variant="info">{successMessage}</Alert>
+            </div>
+          )}
 
           {errorMessage && (
             <div className="mx-4 mt-3 shrink-0">
@@ -758,14 +754,16 @@ export function ProfilesModal({
                           <td className={settingsListRowDeleteCellClass(isSelected)}>
                             <SettingsListRowDeleteButton
                               label={t("profiles.delete")}
-                              disabled={pending}
+                              disabled={pending || !item.is_active}
                               showTooltip={false}
                               onClick={() => {
+                                if (!item.is_active) return;
                                 selectProfile(item.id);
                                 setConfirmDeleteProfile(true);
                                 setProfileFormMode(null);
                                 setDetailPanel(null);
                                 setErrorMessage(null);
+                                setSuccessMessage(null);
                               }}
                             />
                           </td>
@@ -873,6 +871,9 @@ export function ProfilesModal({
         {confirmDeleteProfile && selectedProfile && (
           <DeleteConfirmModal
             name={selectedProfile.full_name}
+            confirmMessage={t("profiles.confirmDeactivate", {
+              name: selectedProfile.full_name,
+            })}
             pending={pending}
             onCancel={() => setConfirmDeleteProfile(false)}
             onConfirm={handleDeleteProfile}

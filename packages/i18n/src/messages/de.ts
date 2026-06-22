@@ -85,6 +85,13 @@ export const de = {
     superadminEmployeeMobileHint:
       "Mobile: Absage/Tausch nur mit Rolle Mitarbeiter und aktiver Org-Schichtbestätigung.",
     superadminEmployeeEmpty: "Keine Profile vorhanden.",
+    superadminDeleteEmployees: "Mitarbeiter endgültig löschen",
+    superadminDeleteEmployeesTitle: "Mitarbeiter endgültig löschen",
+    superadminDeleteEmployeesHint:
+      "Löscht Profil, Schichten, Stammdaten und den Supabase-Login unwiderruflich.",
+    superadminDeleteEmployeesConfirm:
+      "Soll {name} wirklich unwiderruflich gelöscht werden? Alle Schichten, Stammdaten und der Login werden entfernt.",
+    superadminDeleteEmployeesDeleted: "„{name}\" wurde endgültig gelöscht.",
     superadminEmployeeSaving: "Speichert…",
     superadminEmployeeSaveError: "Speichern fehlgeschlagen.",
     superadminEmployeeLoadError: "Profile konnten nicht geladen werden.",
@@ -237,6 +244,8 @@ export const de = {
       resetShiftsFailed: "Daten-Reset fehlgeschlagen.",
       saveShiftSnapshotFailed: "Schichten konnten nicht gespeichert werden.",
       loadShiftSnapshotFailed: "Schicht-Speicherstand konnte nicht geladen werden.",
+      deleteProfileFailed: "Mitarbeiter konnte nicht gelöscht werden.",
+      cannotDeleteSelf: "Das eigene Profil kann hier nicht gelöscht werden.",
     },
   },
   calendarStaffing: {
@@ -551,7 +560,11 @@ export const de = {
     selectProfileHint: "Profil in der linken Liste auswählen.",
     new: "Neu",
     edit: "Ändern",
-    delete: "Löschen",
+    delete: "Deaktivieren",
+    confirmDeactivate:
+      "Soll {name} wirklich deaktiviert werden? Das Profil bleibt in der Liste, ist aber inaktiv und nicht mehr planbar.",
+    deactivated: "„{name}\" wurde deaktiviert.",
+    alreadyInactive: "Das Profil ist bereits inaktiv.",
     createTitle: "Profil anlegen",
     editTitle: "Profil bearbeiten",
     enterName: "Bitte einen Namen eingeben.",

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { resetOrganizationDatabase } from "@/app/actions/db-reset";
 import { resetOrganizationShifts } from "@/app/actions/superadmin-shifts";
 import { NotificationOutboxModal } from "@/components/settings/notification-outbox-modal";
+import { SuperadminDeleteEmployeesModal } from "@/components/settings/superadmin-delete-employees-modal";
 import { SuperadminEmployeesSection } from "@/components/settings/superadmin-employees-section";
 import { SuperadminOrganizationSection } from "@/components/settings/superadmin-organization-section";
 import { SuperadminShiftsSection } from "@/components/settings/superadmin-shifts-section";
@@ -35,6 +36,7 @@ export function SuperadminModal({ onClose }: Props) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<SuperadminTab>("simulation");
   const [notificationOutboxOpen, setNotificationOutboxOpen] = useState(false);
+  const [deleteEmployeesOpen, setDeleteEmployeesOpen] = useState(false);
   const [dbResetConfirmOpen, setDbResetConfirmOpen] = useState(false);
   const [shiftsResetConfirmOpen, setShiftsResetConfirmOpen] = useState(false);
   const [deleteAllShiftsOnReset, setDeleteAllShiftsOnReset] = useState(false);
@@ -50,6 +52,7 @@ export function SuperadminModal({ onClose }: Props) {
 
   const overlayOpen =
     notificationOutboxOpen ||
+    deleteEmployeesOpen ||
     dbResetConfirmOpen ||
     shiftsResetConfirmOpen ||
     actionPending;
@@ -66,6 +69,7 @@ export function SuperadminModal({ onClose }: Props) {
         return;
       }
       if (notificationOutboxOpen) return;
+      if (deleteEmployeesOpen) return;
       onClose();
     }
     window.addEventListener("keydown", onKey);
@@ -74,6 +78,7 @@ export function SuperadminModal({ onClose }: Props) {
     actionPending,
     dbResetConfirmOpen,
     shiftsResetConfirmOpen,
+    deleteEmployeesOpen,
     notificationOutboxOpen,
     onClose,
   ]);
@@ -211,6 +216,15 @@ export function SuperadminModal({ onClose }: Props) {
                         variant="outline"
                         disabled={actionPending}
                         className="text-destructive hover:bg-destructive/5 hover:text-destructive"
+                        onClick={() => setDeleteEmployeesOpen(true)}
+                      >
+                        {t("nav.superadminDeleteEmployees")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={actionPending}
+                        className="text-destructive hover:bg-destructive/5 hover:text-destructive"
                         onClick={() => setDbResetConfirmOpen(true)}
                       >
                         {t("nav.dbReset")}
@@ -290,6 +304,10 @@ export function SuperadminModal({ onClose }: Props) {
 
         {notificationOutboxOpen ? (
           <NotificationOutboxModal onClose={() => setNotificationOutboxOpen(false)} />
+        ) : null}
+
+        {deleteEmployeesOpen ? (
+          <SuperadminDeleteEmployeesModal onClose={() => setDeleteEmployeesOpen(false)} />
         ) : null}
 
         {dbResetConfirmOpen ? (

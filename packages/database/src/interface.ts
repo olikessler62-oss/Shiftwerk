@@ -233,6 +233,11 @@ export interface SchichtwerkDatabase {
   countActiveEmployees(organizationId: string): Promise<number>;
   findProfileByEmail(organizationId: string, email: string): Promise<{ id: string } | null>;
   deactivateEmployee(organizationId: string, employeeId: string): Promise<void>;
+  /** Löscht Auth-User (cascade Profile) nach Aufräumen von RESTRICT-FKs. */
+  hardDeleteOrganizationProfile(
+    organizationId: string,
+    profileId: string
+  ): Promise<void>;
 
   // —— Qualifications ——
   listQualifications(organizationId: string): Promise<Qualification[]>;

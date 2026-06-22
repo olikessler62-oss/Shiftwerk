@@ -87,6 +87,13 @@ export const en = {
     superadminEmployeeMobileHint:
       "Mobile: cancel/swap only with employee role and org shift confirmation enabled.",
     superadminEmployeeEmpty: "No profiles found.",
+    superadminDeleteEmployees: "Permanently delete employees",
+    superadminDeleteEmployeesTitle: "Permanently delete employees",
+    superadminDeleteEmployeesHint:
+      "Removes profile, shifts, master data, and the Supabase login account permanently.",
+    superadminDeleteEmployeesConfirm:
+      "Permanently delete {name}? All shifts, master data, and login access will be removed.",
+    superadminDeleteEmployeesDeleted: "“{name}” was permanently deleted.",
     superadminEmployeeSaving: "Saving…",
     superadminEmployeeSaveError: "Save failed.",
     superadminEmployeeLoadError: "Could not load profiles.",
@@ -237,6 +244,8 @@ export const en = {
       resetShiftsFailed: "Data reset failed.",
       saveShiftSnapshotFailed: "Could not save shifts.",
       loadShiftSnapshotFailed: "Could not load shift snapshot.",
+      deleteProfileFailed: "Could not delete employee.",
+      cannotDeleteSelf: "You cannot delete your own profile here.",
     },
   },
   calendarStaffing: {
@@ -551,7 +560,11 @@ export const en = {
     selectProfileHint: "Select a profile in the left list.",
     new: "New",
     edit: "Edit",
-    delete: "Delete",
+    delete: "Deactivate",
+    confirmDeactivate:
+      "Deactivate {name}? The profile stays in the list but is inactive and no longer schedulable.",
+    deactivated: "“{name}” was deactivated.",
+    alreadyInactive: "This profile is already inactive.",
     createTitle: "Create profile",
     editTitle: "Edit profile",
     enterName: "Please enter a name.",

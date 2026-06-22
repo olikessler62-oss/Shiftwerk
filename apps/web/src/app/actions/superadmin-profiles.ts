@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { Profile } from "@schichtwerk/types";
-import { getDatabase } from "@/lib/db";
+import { getAdminDatabase, getDatabase } from "@/lib/db";
 import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
 
 export type SuperadminProfileActionResult =
@@ -16,7 +16,9 @@ export async function listSuperadminProfiles(): Promise<
     const { organizationId } = await requireSuperadminDeveloper();
     const db = await getDatabase();
     const profiles = await db.listOrganizationProfiles(organizationId);
-    return profiles.sort((a, b) => a.sort_order - b.sort_order || a.full_name.localeCompare(b.full_name));
+    return profiles.sort(
+      (a, b) => a.sort_order - b.sort_order || a.full_name.localeCompare(b.full_name)
+    );
   } catch {
     return { ok: false, errorKey: "superadmin.errors.loadProfilesFailed" };
   }
@@ -51,5 +53,32 @@ export async function updateSuperadminProfileSimulationSettings(input: {
     return { ok: true };
   } catch {
     return { ok: false, errorKey: "superadmin.errors.saveProfileFailed" };
+  }
+}
+
+export async function permanentlyDeleteSuperadminProfile(input: {
+  profileId: string;
+}): Promise<SuperadminProfileActionResult> {
+  try {
+    const ctx = await requireSuperadminDeveloper();
+    if (input.profileId === ctx.profile.id) {
+      return { ok: false, errorKey: "superadmin.errors.cannotDeleteSelf" };
+    }
+
+    const admin = getAdminDatabase();
+    await admin.hardDeleteOrganizationProfile(ctx.organizationId, input.profileId);
+
+    revalidatePath("/dashboard", "layout");
+    revalidatePath("/bereich-kalender", "layout");
+    revalidatePath("/team", "layout");
+    revalidatePath("/einstellungen", "layout");
+
+    return { ok: true };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Löschen fehlgeschlagen";
+    if (message.includes("Profil nicht gefunden")) {
+      return { ok: false, errorKey: "superadmin.errors.profileNotFound" };
+    }
+    return { ok: false, errorKey: "superadmin.errors.deleteProfileFailed" };
   }
 }

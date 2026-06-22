@@ -11,6 +11,7 @@ import {
 type Props = {
   name: string;
   count?: number;
+  confirmMessage?: string;
   onCancel: () => void;
   onConfirm: () => void;
   pending?: boolean;
@@ -19,15 +20,17 @@ type Props = {
 export function DeleteConfirmModal({
   name,
   count,
+  confirmMessage,
   onCancel,
   onConfirm,
   pending = false,
 }: Props) {
   const t = useTranslations();
   const message =
-    count != null && count > 1
+    confirmMessage ??
+    (count != null && count > 1
       ? t("common.confirmDeleteSelected", { count: String(count) })
-      : t("common.confirmDelete", { name });
+      : t("common.confirmDelete", { name }));
 
   return (
     <div
