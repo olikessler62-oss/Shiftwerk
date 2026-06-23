@@ -15,6 +15,20 @@ import type { ProfileShiftPreference } from "@schichtwerk/types";
 
 const WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So", "FT"];
 
+function weekdayLabel(weekday: number | null): string {
+  if (weekday === null) return "?";
+  return WEEKDAY_LABELS[weekday] ?? String(weekday);
+}
+
+function formatPreferenceTimeRange(
+  startTime: string | null,
+  endTime: string | null
+): string {
+  const start = startTime?.slice(0, 5) ?? "?";
+  const end = endTime?.slice(0, 5) ?? "?";
+  return `${start}–${end}`;
+}
+
 export default function AvailabilityScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,7 +89,7 @@ export default function AvailabilityScreen() {
   function confirmDelete(entry: ProfileShiftPreference) {
     Alert.alert(
       "Wunsch löschen",
-      `${WEEKDAY_LABELS[entry.weekday] ?? entry.weekday} ${entry.start_time.slice(0, 5)}–${entry.end_time.slice(0, 5)}`,
+      `${weekdayLabel(entry.weekday)} ${formatPreferenceTimeRange(entry.start_time, entry.end_time)}`,
       [
         { text: "Abbrechen", style: "cancel" },
         {
@@ -168,8 +182,8 @@ export default function AvailabilityScreen() {
           <View key={entry.id} style={styles.listItem}>
             <View style={styles.listItemText}>
               <Text style={styles.listItemTitle}>
-                {WEEKDAY_LABELS[entry.weekday] ?? entry.weekday}{" "}
-                {entry.start_time.slice(0, 5)}–{entry.end_time.slice(0, 5)}
+                {weekdayLabel(entry.weekday)}{" "}
+                {formatPreferenceTimeRange(entry.start_time, entry.end_time)}
               </Text>
               {entry.location_area_id ? (
                 <Text style={styles.muted}>Bereich: {entry.location_area_id}</Text>

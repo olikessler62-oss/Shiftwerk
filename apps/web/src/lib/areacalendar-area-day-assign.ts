@@ -11,7 +11,7 @@ export function canOpenAssignShiftContextMenu(
   dateISO: string,
   isAreaActive: boolean,
   isDayActive: boolean,
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   shiftCountInArea: number
 ): boolean {
   if (!isAreaActive || !isDayActive) return false;
@@ -37,7 +37,7 @@ export function canPromptNoServiceHoursShiftAssign(
   dateISO: string,
   isAreaActive: boolean,
   isDayActive: boolean,
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   shiftCountInArea: number
 ): boolean {
   if (!isAreaActive || !isDayActive) return false;
@@ -52,7 +52,7 @@ export function canShowAreaDayAssignContextMenu(
   dateISO: string,
   isAreaActive: boolean,
   isDayActive: boolean,
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   shiftCountInArea: number,
   simplePlanning: boolean
 ): boolean {
@@ -117,7 +117,7 @@ export function canOpenBulkShiftFromShiftCard(
   dateISO: string,
   isAreaActive: boolean,
   isDayActive: boolean,
-  serviceHours: AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[],
   shiftCountInArea: number
 ): boolean {
   if (!isAreaActive || !isDayActive) return false;

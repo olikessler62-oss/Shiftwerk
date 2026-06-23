@@ -77,6 +77,7 @@ export type EmployeeShiftRecord = {
   notes: string | null;
   created_by: string | null;
   confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
+  lifecycle_status?: import("@schichtwerk/types").ShiftLifecycleStatus;
   requested_at?: string | null;
   pending_since?: string | null;
   pending_reminder_sent_at?: string | null;
