@@ -7,7 +7,7 @@ import { DashboardCellShiftRow } from "@/components/dashboard/dashboard-cell-shi
 import { DashboardEmployeeRowOvernightOverlay } from "@/components/dashboard/dashboard-employee-row-overnight-overlay";
 import { DashboardDayColumnWidthReporter } from "@/components/dashboard/dashboard-day-column-width-reporter";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
-import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement } from "@/components/ui/tooltip";
+import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import { isPastCalendarDate } from "@/lib/dates";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { canOpenShiftCardContextMenu } from "@/lib/shift-card-context-menu-actions";
@@ -67,7 +67,10 @@ import {
   type PlanningShiftJobContext,
 } from "@/lib/planning-shift-card-display";
 import type { PlanningShift } from "@/lib/planning-shift-card";
-import type { PlanningShiftDisplaySegment } from "@/lib/planning-overnight-shift-display";
+import type {
+  PlanningOvernightSpan,
+  PlanningShiftDisplaySegment,
+} from "@/lib/planning-overnight-shift-display";
 import {
   canOpenPlanningOvernightShiftContextMenu,
   cellShowsOnlyOvernightShiftSegments,
@@ -97,6 +100,8 @@ type Props = {
   shiftsByCellDisplay: Map<string, PlanningShiftDisplaySegment[]>;
   holidayNames: Record<string, string>;
   dayHasServiceHours: boolean[];
+  /** Striktere Servicezeit-Prüfung nur für die Bedarfs-Headerzeile. */
+  dayHasStaffingHeaderServiceHours?: boolean[];
   dayHasOpenArea: boolean[];
   activeDayDates: Set<string>;
   layoutActiveDayDates: Set<string>;
@@ -140,6 +145,15 @@ type Props = {
   ) => void;
   onCellContextMenu: (
     employeeId: string,
+    date: string,
+    clientX: number,
+    clientY: number
+  ) => void;
+  canOpenCellAssignContextMenu?: (
+    employeeId: string,
+    date: string
+  ) => boolean;
+  onDayAssignContextMenu?: (
     date: string,
     clientX: number,
     clientY: number
@@ -195,6 +209,7 @@ export function DashboardCalendarGrid({
   shiftsByCellDisplay,
   holidayNames,
   dayHasServiceHours,
+  dayHasStaffingHeaderServiceHours,
   dayHasOpenArea,
   activeDayDates,
   layoutActiveDayDates,
@@ -227,6 +242,8 @@ export function DashboardCalendarGrid({
   onOpenPicker,
   onRequestPlanningDayAssign,
   onCellContextMenu,
+  canOpenCellAssignContextMenu,
+  onDayAssignContextMenu,
   onShiftContextMenu,
   onEmployeeRowContextMenu,
   onStaffingHeaderContextMenu,
@@ -320,15 +337,17 @@ export function DashboardCalendarGrid({
   const footerStatsGridRow = employees.length + employeeBodyStartRow;
   const footerGridRow = footerStatsGridRow + 1;
 
+  const effectiveBodyRowTemplate = bodyRowTemplate;
+
   const fullRowTemplate = useMemo(() => {
     const parts = [
       headerRowTemplate,
-      bodyRowTemplate,
+      effectiveBodyRowTemplate,
       PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
       PLANNING_DAY_FOOTER_ROW_HEIGHT,
     ].filter((part) => part.length > 0);
     return parts.join(" ");
-  }, [headerRowTemplate, bodyRowTemplate]);
+  }, [headerRowTemplate, effectiveBodyRowTemplate]);
 
   const gridWidthStyle =
     fillColumnsEqually
@@ -468,12 +487,16 @@ export function DashboardCalendarGrid({
 
         {showStaffingHeaderRow
           ? dates.map((date, dayIndex) => {
-              const mutedHeader = !dayHasServiceHours[dayIndex];
+              const staffingHeaderHasServiceHours =
+                dayHasStaffingHeaderServiceHours?.[dayIndex] ??
+                dayHasServiceHours[dayIndex] ??
+                false;
+              const mutedHeader = !staffingHeaderHasServiceHours;
               const staffingEntries = dailyStaffingByDate?.get(date) ?? [];
               const staffingHeaderAlertBadge =
                 staffingEntries.length > 0 &&
                 isTagAreaHeaderStaffingHeaderAlertBadge(staffingEntries);
-              const showNoServiceHoursInHeader = !dayHasServiceHours[dayIndex];
+              const showNoServiceHoursInHeader = !staffingHeaderHasServiceHours;
               const headerTooltip =
                 selectedAreaId && selectedAreaName
                   ? buildTagAreaServiceHoursHeaderTooltip({
@@ -512,6 +535,19 @@ export function DashboardCalendarGrid({
                       ? { backgroundColor: PLANNING_CLOSED_DAY_CELL_BG }
                       : undefined),
                   }}
+                  onContextMenu={
+                    showNoServiceHoursInHeader && onDayAssignContextMenu
+                      ? (event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onDayAssignContextMenu(
+                            date,
+                            event.clientX,
+                            event.clientY
+                          );
+                        }
+                      : undefined
+                  }
                 >
                   <TagAreaHeaderStaffingRow
                     className={cn(
@@ -575,6 +611,7 @@ export function DashboardCalendarGrid({
                 <Tooltip
                   className="flex min-h-0 w-full self-stretch"
                   contentClassName={employeeAvailabilityTooltipContentClassName}
+                  openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
                   content={
                     <PlanningEmployeeAvailabilityTooltipContent
                       slots={availabilityByProfileId.get(emp.id) ?? []}
@@ -861,6 +898,12 @@ export function DashboardCalendarGrid({
                       }
                       if (isPastDay) return;
                       if (effectiveBlockReason === "absent") return;
+                      if (
+                        canOpenCellAssignContextMenu &&
+                        !canOpenCellAssignContextMenu(emp.id, date)
+                      ) {
+                        return;
+                      }
                       onCellContextMenu(
                         emp.id,
                         date,

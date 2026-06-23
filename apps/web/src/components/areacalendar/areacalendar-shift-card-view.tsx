@@ -13,12 +13,11 @@ import {
   buildShiftCardDisplayContent,
   resolveJobLabelsForEmployee,
   formatShiftCardTooltipPlainText,
-  shiftCardTimeLabelIsPrimary,
   type ShiftCardDisplayContent,
   type ShiftCardDensity,
 } from "@/lib/shift-card-display-content";
 import type { ShiftCardDisplayState, ShiftConfirmationStatus } from "@schichtwerk/types";
-import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui";
+import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui";
 import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { useTranslations } from "@/i18n/locale-provider";
@@ -96,56 +95,64 @@ function ShiftCardTextRows({
   display: ShiftCardDisplayContent;
   density: ShiftCardDensity;
 }) {
-  if (density === "marker") {
-    return null;
-  }
+  const secondaryLabel =
+    display.templateName?.trim() || display.shiftLabel.trim();
+  const employeeLine = display.lastName
+    ? `${display.firstName} ${display.lastName}`
+    : display.firstName;
 
-  const emphasizeTime = shiftCardTimeLabelIsPrimary(display);
+  if (density === "marker") {
+    return (
+      <div className="flex min-w-0 flex-1 items-center overflow-hidden px-0.5">
+        <span className="min-w-[1ch] max-w-full truncate text-[9px] font-bold leading-none">
+          {display.firstName}
+        </span>
+      </div>
+    );
+  }
 
   if (density === "compact") {
     return (
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px]">
-        <span className="shrink-0 font-medium leading-none">{display.firstName}</span>
-        {display.lastName ? (
-          <span className="min-w-0 truncate font-medium leading-none">
-            {display.lastName}
-          </span>
-        ) : null}
-        <span
-          className={`shrink-0 whitespace-nowrap leading-none tabular-nums ${
-            emphasizeTime ? "font-bold" : ""
-          }`}
-        >
-          {display.line1Secondary}
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[11px]">
+        <span className="min-w-[1ch] max-w-[45%] truncate font-bold leading-none">
+          {display.firstName}
+        </span>
+        <span className="min-w-[1ch] max-w-full truncate tabular-nums leading-none">
+          {secondaryLabel ? (
+            <>
+              <span className="font-bold">{secondaryLabel}</span>
+              <span className="font-normal"> {display.timeLabel}</span>
+            </>
+          ) : (
+            <span className="font-bold">{display.timeLabel}</span>
+          )}
         </span>
       </div>
     );
   }
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col justify-center gap-px">
-      <div className="flex min-w-0 items-baseline gap-1.5 text-[11px] leading-none">
-        <span className="shrink-0 font-medium">{display.firstName}</span>
-        {display.lastName ? (
-          <span className="min-w-0 flex-1 truncate font-medium">{display.lastName}</span>
-        ) : null}
+    <div className="flex min-w-0 flex-1 flex-col justify-center gap-px overflow-hidden">
+      <div
+        className="min-w-[1ch] max-w-full truncate text-[11px] font-bold leading-none"
+      >
+        {employeeLine}
       </div>
-      <div className="flex min-w-0 items-baseline gap-1.5 text-[10px] leading-none text-black/85">
-        {display.shiftLabel ? (
-          <span className="shrink-0">{display.shiftLabel}</span>
+      <div className="min-w-[1ch] max-w-full truncate text-[10px] leading-none tabular-nums">
+        {secondaryLabel ? (
+          <>
+            <span className="font-bold">{secondaryLabel}</span>
+            <span className="font-normal"> {display.timeLabel}</span>
+          </>
         ) : (
-          <span
-            className={`shrink-0 whitespace-nowrap tabular-nums ${
-              emphasizeTime ? "font-bold" : ""
-            }`}
-          >
-            {display.timeLabel}
-          </span>
+          <span className="font-bold">{display.timeLabel}</span>
         )}
-        {display.jobsLabel ? (
-          <span className="min-w-0 truncate">{display.jobsLabel}</span>
-        ) : null}
       </div>
+      {display.jobsLabel ? (
+        <div className="min-w-[1ch] max-w-full truncate text-[10px] leading-none">
+          {display.jobsLabel}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -230,6 +237,7 @@ export function AreaCalendarShiftCardView({
       <Tooltip
         content={<ShiftCardTooltipContent data={tooltipData} />}
         contentClassName={shiftCardTooltipContentClassName}
+        openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
         className="inline-flex w-fit max-w-full"
         placement={{
           anchorLeftToTriggerCenter: true,
@@ -314,10 +322,19 @@ export function AreaCalendarShiftCardView({
         />
         {density === "marker" ? (
           <div
-            className="flex-1 self-stretch opacity-0"
-            style={{ minHeight: DASHBOARD_SHIFT_CARD_MARKER_MIN_HEIGHT_PX }}
-            aria-hidden
-          />
+            className={cn(
+              DASHBOARD_SHIFT_CARD_CONTENT_CLASS,
+              "relative items-center overflow-hidden"
+            )}
+            style={{
+              backgroundImage: buildShiftCardTimeGradientCss(
+                shift.startTime,
+                shift.endTime
+              ),
+            }}
+          >
+            <ShiftCardTextRows display={display} density={density} />
+          </div>
         ) : (
           <div
             className={cn(

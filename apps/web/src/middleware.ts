@@ -5,6 +5,7 @@ import { updateSession } from "@/lib/supabase/middleware";
 const MANAGER_ROUTES = [
   "/bereich-kalender",
   "/dashboard",
+  "/mitarbeiter-kalender",
   "/planer",
   "/planung",
   "/abwesenheiten",
@@ -47,6 +48,7 @@ export const config = {
     "/reset-password",
     "/bereich-kalender/:path*",
     "/dashboard/:path*",
+    "/mitarbeiter-kalender/:path*",
     "/planer/:path*",
     "/planung/:path*",
     "/abwesenheiten/:path*",

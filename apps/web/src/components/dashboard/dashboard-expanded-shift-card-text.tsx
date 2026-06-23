@@ -5,7 +5,6 @@ import {
   PLANNING_SHIFT_CARD_TEMPLATE_FONT_TWO_LINE_PX,
   PLANNING_SHIFT_CARD_TEXT_PADDING_LEFT_PX,
   PLANNING_SHIFT_CARD_TIME_FONT_PX,
-  PLANNING_SHIFT_CARD_TIME_ONLY_FONT_PX,
 } from "@/lib/dashboard-shift-card-inline-status";
 
 /** Uhrzeit in der Schichtkarte (kompakt und mehrzeilig). */
@@ -18,7 +17,11 @@ export {
   PLANNING_SHIFT_CARD_TIME_ONLY_FONT_PX,
 } from "@/lib/dashboard-shift-card-inline-status";
 
+const SHIFT_CARD_TRUNCATE_CLASS =
+  "min-w-[1ch] max-w-full truncate overflow-hidden text-ellipsis";
+
 type Props = {
+  employeeName: string;
   templateName: string | null;
   timeLabel: string;
   jobsLine: string | null;
@@ -26,41 +29,43 @@ type Props = {
 };
 
 export function DashboardExpandedShiftCardText({
+  employeeName,
   templateName,
   timeLabel,
   jobsLine,
   compact,
 }: Props) {
-  const templateFontPx = compact
+  const nameFontPx = compact
     ? PLANNING_SHIFT_CARD_TEMPLATE_FONT_COMPACT_PX
     : PLANNING_SHIFT_CARD_TEMPLATE_FONT_TWO_LINE_PX;
-  const timeIsPrimary = !templateName;
-  const timeFontPx = timeIsPrimary
-    ? templateFontPx
-    : PLANNING_SHIFT_CARD_TIME_FONT_PX;
+  const secondaryFontPx = PLANNING_SHIFT_CARD_TIME_FONT_PX;
+  const hasTemplate = Boolean(templateName?.trim());
 
   return (
     <div className="relative w-full min-w-0">
       <div className="flex w-full min-w-0 flex-col items-start justify-center gap-px text-left leading-none">
-        {templateName ? (
-          <div
-            className="w-full min-w-0 truncate font-bold leading-none"
-            style={{ fontSize: templateFontPx }}
-          >
-            {templateName}
-          </div>
-        ) : null}
         <div
-          className={`w-full min-w-0 truncate tabular-nums leading-none ${
-            timeIsPrimary ? "font-bold" : "font-normal"
-          }`}
-          style={{ fontSize: timeFontPx }}
+          className={`w-full font-bold leading-none ${SHIFT_CARD_TRUNCATE_CLASS}`}
+          style={{ fontSize: nameFontPx }}
         >
-          {timeLabel}
+          {employeeName}
         </div>
-        {jobsLine ? (
+        <div
+          className={`w-full tabular-nums leading-none ${SHIFT_CARD_TRUNCATE_CLASS}`}
+          style={{ fontSize: secondaryFontPx }}
+        >
+          {hasTemplate ? (
+            <>
+              <span className="font-bold">{templateName}</span>
+              <span className="font-normal"> {timeLabel}</span>
+            </>
+          ) : (
+            <span className="font-bold">{timeLabel}</span>
+          )}
+        </div>
+        {jobsLine && !compact ? (
           <div
-            className="w-full min-w-0 truncate font-normal leading-none"
+            className={`w-full font-normal leading-none ${SHIFT_CARD_TRUNCATE_CLASS}`}
             style={{ fontSize: PLANNING_SHIFT_CARD_JOB_FONT_PX }}
           >
             {jobsLine}

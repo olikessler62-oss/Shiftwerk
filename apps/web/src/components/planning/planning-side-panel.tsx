@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { CloseIcon, IconButton } from "@/components/ui";
 import {
@@ -22,6 +30,8 @@ type PlanningSidePanelProps = {
   closeAriaLabel: string;
   /** Klick auf die abgedunkelte Fläche schließt das Panel. */
   dismissOnBackdrop?: boolean;
+  /** Escape schließt das Panel (z. B. deaktivieren bei offenen Unterdialogen). */
+  dismissOnEscape?: boolean;
   /** Standard: schmales Panel. Wide: breite Tabellen / Schicht-Stati. */
   size?: "default" | "wide";
   headerAside?: ReactNode;
@@ -31,12 +41,19 @@ type PlanningSidePanelProps = {
   footer?: ReactNode;
 };
 
+const PANEL_MOTION_MS = 280;
+
+const PANEL_CLOSE_OUT_CLASS = {
+  left: "planning-side-panel-out-left",
+  right: "planning-side-panel-out-right",
+} as const;
+
 const PANEL_LAYOUT = {
   left: {
     backdrop: "md:left-56",
     position: "left-0 md:left-56",
     border: "border-r",
-    hiddenTransform: "-translate-x-full",
+    offscreenTransform: "-translate-x-full",
     shadow: "shadow-[8px_0_32px_-8px_rgba(15,23,42,0.28)]",
     width: {
       default: "w-full max-w-md",
@@ -47,7 +64,7 @@ const PANEL_LAYOUT = {
     backdrop: "",
     position: "right-0",
     border: "border-l",
-    hiddenTransform: "translate-x-full",
+    offscreenTransform: "translate-x-full",
     shadow: "shadow-[-8px_0_32px_-8px_rgba(15,23,42,0.28)]",
     width: {
       default: "w-full max-w-md",
@@ -55,6 +72,28 @@ const PANEL_LAYOUT = {
     },
   },
 } as const;
+
+type PanelMotionPhase = "entering" | "open" | "closing";
+
+const PlanningSidePanelCloseContext = createContext<(() => void) | null>(null);
+
+/** Animiertes Schließen — für Footer-Buttons innerhalb von PlanningSidePanel. */
+export function usePlanningSidePanelRequestClose(): () => void {
+  const requestClose = useContext(PlanningSidePanelCloseContext);
+  if (!requestClose) {
+    throw new Error(
+      "usePlanningSidePanelRequestClose must be used within PlanningSidePanel"
+    );
+  }
+  return requestClose;
+}
+
+function prefersReducedPanelMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
 
 /**
  * Planungs-Panel: links (Schicht zuweisen) oder rechts (Schicht-Stati) am Browserrand.
@@ -69,6 +108,7 @@ export function PlanningSidePanel({
   closeDisabled = false,
   closeAriaLabel,
   dismissOnBackdrop = true,
+  dismissOnEscape = true,
   size = "default",
   headerAside,
   panelClassName,
@@ -77,34 +117,91 @@ export function PlanningSidePanel({
   footer,
 }: PlanningSidePanelProps) {
   const layout = PANEL_LAYOUT[anchor];
-  const [entered, setEntered] = useState(false);
+  const [phase, setPhase] = useState<PanelMotionPhase>("entering");
+  const closeRequestedRef = useRef(false);
+  const closeFinishedRef = useRef(false);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setEntered(true));
-    return () => cancelAnimationFrame(frame);
+    let enterFrame1 = 0;
+    let enterFrame2 = 0;
+    enterFrame1 = requestAnimationFrame(() => {
+      enterFrame2 = requestAnimationFrame(() => setPhase("open"));
+    });
+    return () => {
+      cancelAnimationFrame(enterFrame1);
+      cancelAnimationFrame(enterFrame2);
+    };
   }, []);
+
+  const panelRef = useRef<HTMLElement>(null);
+
+  const finishClose = useCallback(() => {
+    if (closeFinishedRef.current) return;
+    closeFinishedRef.current = true;
+    onClose();
+  }, [onClose]);
+
+  const requestClose = useCallback(() => {
+    if (closeDisabled || closeRequestedRef.current) return;
+    closeRequestedRef.current = true;
+
+    if (prefersReducedPanelMotion()) {
+      finishClose();
+      return;
+    }
+
+    setPhase("closing");
+  }, [closeDisabled, finishClose]);
+
+  useEffect(() => {
+    if (phase !== "closing") return;
+    const panel = panelRef.current;
+    if (!panel) {
+      finishClose();
+      return;
+    }
+
+    function onAnimationEnd(event: AnimationEvent) {
+      if (event.target !== panel) return;
+      finishClose();
+    }
+
+    panel.addEventListener("animationend", onAnimationEnd);
+    const fallback = window.setTimeout(finishClose, PANEL_MOTION_MS + 80);
+    return () => {
+      panel.removeEventListener("animationend", onAnimationEnd);
+      clearTimeout(fallback);
+    };
+  }, [phase, finishClose]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !closeDisabled) {
-        onClose();
+      if (event.key === "Escape" && !closeDisabled && dismissOnEscape) {
+        requestClose();
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [closeDisabled, onClose]);
+  }, [closeDisabled, dismissOnEscape, requestClose]);
 
   if (typeof document === "undefined") {
     return null;
   }
 
+  const panelTransformClass =
+    phase === "open" ? "translate-x-0" : layout.offscreenTransform;
+
+  const backdropVisible = phase === "open";
+  const backdropClosing = phase === "closing";
+
   return createPortal(
-    <>
+    <PlanningSidePanelCloseContext.Provider value={requestClose}>
       <div
         className={cn(
-          "fixed inset-0 z-[108] bg-black/25 transition-opacity duration-200",
+          "fixed inset-0 z-[108] bg-black/25 transition-opacity",
           layout.backdrop,
-          entered ? "opacity-100" : "opacity-0"
+          backdropClosing ? "duration-200 ease-in" : "duration-300 ease-out",
+          backdropVisible ? "opacity-100" : "opacity-0"
         )}
         aria-hidden
         onMouseDown={(event) => {
@@ -113,11 +210,12 @@ export function PlanningSidePanel({
             dismissOnBackdrop &&
             !closeDisabled
           ) {
-            onClose();
+            requestClose();
           }
         }}
       />
       <aside
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -127,8 +225,14 @@ export function PlanningSidePanel({
           layout.border,
           layout.shadow,
           layout.width[size],
-          "transform transition-transform duration-300 ease-out",
-          entered ? "translate-x-0" : layout.hiddenTransform,
+          "transform",
+          phase === "closing"
+            ? PANEL_CLOSE_OUT_CLASS[anchor]
+            : cn(
+                "transition-transform duration-300 ease-out",
+                panelTransformClass
+              ),
+          phase === "closing" && "pointer-events-none",
           MODAL_SCROLLBAR_CLASS,
           panelClassName
         )}
@@ -149,7 +253,7 @@ export function PlanningSidePanel({
           ) : null}
           <IconButton
             size="sm"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={closeDisabled}
             aria-label={closeAriaLabel}
             className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
@@ -171,7 +275,7 @@ export function PlanningSidePanel({
           <div className="shrink-0 border-t border-border">{footer}</div>
         ) : null}
       </aside>
-    </>,
+    </PlanningSidePanelCloseContext.Provider>,
     document.body
   );
 }

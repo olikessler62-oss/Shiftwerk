@@ -109,6 +109,35 @@ export const SETTINGS_PROFILES_MASTER_DETAIL_MIN_HEIGHT_CLASS =
 export const SETTINGS_PROFILES_HALF_LIST_SCROLL_CLASS =
   "h-[calc(1.75rem+7rem)] min-h-[calc(1.75rem+7rem)] max-h-[calc(1.75rem+7rem)]";
 
+/** Eingebettete Profil-Detail-Listen — wächst mit Inhalt, scrollt ab ~4 Zeilen. */
+export const SETTINGS_EMBEDDED_DETAIL_LIST_SCROLL_CLASS =
+  "w-full max-h-[calc(1.75rem+7rem)] overflow-auto shrink-0";
+
+export const SETTINGS_EMBEDDED_EMPTY_STATE_CLASS = "min-h-[5rem]";
+
+/** Shell eingebetteter Profil-Detail-Panels — kompakt vertikal, volle Panelbreite. */
+export function settingsEmbeddedDetailPanelShellClass(className?: string) {
+  return cn("relative flex w-full flex-col shrink-0", className);
+}
+
+export function settingsEmbeddedDetailPanelInnerClass(className?: string) {
+  return cn(
+    "flex w-full flex-col shrink-0 overflow-hidden bg-background",
+    className
+  );
+}
+
+export function settingsEmbeddedDetailPanelBodyClass(className?: string) {
+  return cn("w-full shrink-0 overflow-hidden px-4 py-3", className);
+}
+
+/** Listenhöhe in eingebetteten Profil-Detail-Panels (kompakt bei wenigen Zeilen). */
+export function settingsProfileEmbeddedListScrollClass(itemCount: number) {
+  return itemCount > 4
+    ? SETTINGS_EMBEDDED_DETAIL_LIST_SCROLL_CLASS
+    : cn(SETTINGS_PROFILES_LIST_COMPACT_CLASS, "w-full");
+}
+
 export function settingsPanelHeaderClass() {
   return "shrink-0 truncate border-b border-border bg-subtle px-3 py-2.5 text-sm font-medium text-foreground";
 }

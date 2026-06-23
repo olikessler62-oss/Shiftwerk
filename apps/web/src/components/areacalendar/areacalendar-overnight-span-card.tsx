@@ -7,7 +7,7 @@ import {
 } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { DashboardShiftCardOverflowIndicator } from "@/components/dashboard/dashboard-shift-card-overflow-indicator";
-import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { useTranslations } from "@/i18n/locale-provider";
 import { formatShiftCardTooltipPlainText } from "@/lib/shift-card-display-content";
@@ -24,7 +24,7 @@ import { AREA_CALENDAR_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/areacalen
 import { PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX } from "@/lib/planning-calendar-layout";
 import { COLLAPSED_PAST_DAY_SHIFT_COLOR } from "@/lib/shift-card-cell-layout";
 import {
-  shiftCardTimeLabelIsPrimary,
+  SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX,
   type ShiftCardDisplayContent,
 } from "@/lib/shift-card-display-content";
 import {
@@ -38,8 +38,8 @@ import {
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { planningShiftCardShowsPointerCursor } from "@/lib/shift-card-context-menu-actions";
 
-const MIN_WIDTH_FOR_TIME_PX = 40;
-const MIN_WIDTH_FOR_TITLE_PX = 64;
+const MIN_WIDTH_FOR_ANY_TEXT_PX = SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX;
+const MIN_WIDTH_FOR_TWO_LINE_DETAIL_PX = 56;
 
 type Props = {
   shift: AreaCalendarShiftCard;
@@ -62,51 +62,53 @@ function ExpandedSpanCardText({
   display: ShiftCardDisplayContent;
   compact: boolean;
 }) {
-  const emphasizeTime = shiftCardTimeLabelIsPrimary(display);
+  const secondaryLabel =
+    display.templateName?.trim() || display.shiftLabel.trim();
+  const employeeLine = display.lastName
+    ? `${display.firstName} ${display.lastName}`
+    : display.firstName;
 
   if (compact) {
     return (
-      <div className="flex min-w-0 items-baseline gap-1 overflow-hidden text-[11px] leading-none">
-        <span className="shrink-0 font-medium">{display.firstName}</span>
-        {display.lastName ? (
-          <span className="min-w-0 truncate font-medium">{display.lastName}</span>
-        ) : null}
-        <span
-          className={`shrink-0 whitespace-nowrap tabular-nums ${
-            emphasizeTime ? "font-bold" : ""
-          }`}
-        >
-          {display.line1Secondary ?? display.timeLabel}
+      <div className="flex min-w-0 items-center gap-1 overflow-hidden text-[11px] leading-none">
+        <span className="min-w-[1ch] max-w-[45%] truncate font-bold">
+          {display.firstName}
+        </span>
+        <span className="min-w-[1ch] max-w-full truncate tabular-nums">
+          {secondaryLabel ? (
+            <>
+              <span className="font-bold">{secondaryLabel}</span>
+              <span className="font-normal"> {display.timeLabel}</span>
+            </>
+          ) : (
+            <span className="font-bold">{display.timeLabel}</span>
+          )}
         </span>
       </div>
     );
   }
 
   return (
-    <>
-      <div className="flex min-w-0 items-baseline gap-1.5 text-[11px] leading-none">
-        <span className="shrink-0 font-medium">{display.firstName}</span>
-        {display.lastName ? (
-          <span className="min-w-0 flex-1 truncate font-medium">{display.lastName}</span>
-        ) : null}
+    <div className="flex min-w-0 flex-col justify-center gap-px overflow-hidden">
+      <div className="min-w-[1ch] max-w-full truncate text-[11px] font-bold leading-none">
+        {employeeLine}
       </div>
-      <div className="flex min-w-0 items-baseline gap-1.5 text-[10px] leading-none text-black/85">
-        {display.shiftLabel ? (
-          <span className="shrink-0">{display.shiftLabel}</span>
+      <div className="min-w-[1ch] max-w-full truncate text-[10px] leading-none tabular-nums">
+        {secondaryLabel ? (
+          <>
+            <span className="font-bold">{secondaryLabel}</span>
+            <span className="font-normal"> {display.timeLabel}</span>
+          </>
         ) : (
-          <span
-            className={`shrink-0 whitespace-nowrap tabular-nums ${
-              emphasizeTime ? "font-bold" : ""
-            }`}
-          >
-            {display.timeLabel}
-          </span>
+          <span className="font-bold">{display.timeLabel}</span>
         )}
-        {display.jobsLabel ? (
-          <span className="min-w-0 truncate">{display.jobsLabel}</span>
-        ) : null}
       </div>
-    </>
+      {display.jobsLabel ? (
+        <div className="min-w-[1ch] max-w-full truncate text-[10px] leading-none">
+          {display.jobsLabel}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -152,9 +154,9 @@ export function AreaCalendarOvernightSpanCard({
   const employeeColor =
     shift.employeeColor?.trim() || "#94a3b8";
   const showAnyText =
-    displayMode === "expanded" && widthPx >= MIN_WIDTH_FOR_TIME_PX;
-  const showTitle =
-    displayMode === "expanded" && widthPx >= MIN_WIDTH_FOR_TITLE_PX;
+    displayMode === "expanded" && widthPx >= MIN_WIDTH_FOR_ANY_TEXT_PX;
+  const showTwoLineDetail =
+    displayMode === "expanded" && widthPx >= MIN_WIDTH_FOR_TWO_LINE_DETAIL_PX;
   const showsPointerCursor = planningShiftCardShowsPointerCursor(
     {
       shift_date: shift.shift_date,
@@ -199,6 +201,7 @@ export function AreaCalendarOvernightSpanCard({
       <Tooltip
         content={<ShiftCardTooltipContent data={tooltipData} />}
         contentClassName={shiftCardTooltipContentClassName}
+        openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
         className="inline-flex h-full"
       >
         <button
@@ -245,6 +248,7 @@ export function AreaCalendarOvernightSpanCard({
     <Tooltip
       content={<ShiftCardTooltipContent data={tooltipData} />}
       contentClassName={shiftCardTooltipContentClassName}
+      openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
       className="inline-flex h-full w-full min-w-0"
       placement={{
         anchorLeftToTriggerCenter: true,
@@ -322,7 +326,7 @@ export function AreaCalendarOvernightSpanCard({
                 />
               ) : null}
               {showAnyText ? (
-                <ExpandedSpanCardText display={display} compact={!showTitle} />
+                <ExpandedSpanCardText display={display} compact={!showTwoLineDetail} />
               ) : null}
               {showOverflowIndicator ? (
                 <DashboardShiftCardOverflowIndicator />

@@ -1,13 +1,10 @@
-import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getManagerSession } from "@/lib/server-manager-session";
-import { DashboardCalendarProvider } from "@/components/dashboard/dashboard-calendar-context";
-import { DashboardPageShell } from "@/components/dashboard/dashboard-page-shell";
-import { DashboardCalendarLayer } from "@/components/dashboard/dashboard-calendar-layer";
+import { EmployeeCalendarPage } from "@/components/dashboard/employee-calendar-page";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage({
+export default async function MitarbeiterKalenderPage({
   searchParams,
 }: {
   searchParams: Promise<{
@@ -28,12 +25,5 @@ export default async function DashboardPage({
 
   const params = await searchParams;
 
-  return (
-    <DashboardCalendarProvider>
-      <DashboardPageShell params={params} />
-      <Suspense fallback={null}>
-        <DashboardCalendarLayer params={params} />
-      </Suspense>
-    </DashboardCalendarProvider>
-  );
+  return <EmployeeCalendarPage params={params} />;
 }

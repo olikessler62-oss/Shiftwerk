@@ -22,6 +22,7 @@ import {
 import { ProfileHourlyRateFormModal } from "./profile-hourly-rate-form-modal";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
+  SETTINGS_EMBEDDED_EMPTY_STATE_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
   SettingsActionBar,
   SettingsEmptyState,
@@ -30,9 +31,13 @@ import {
   SettingsListRowDeleteButton,
   SettingsListRowCheckbox,
   SettingsBulkDeleteActionButton,
+  settingsEmbeddedDetailPanelBodyClass,
+  settingsEmbeddedDetailPanelInnerClass,
+  settingsEmbeddedDetailPanelShellClass,
   settingsListItemAttrs,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
+  settingsProfileEmbeddedListScrollClass,
   settingsScrollableTableListClass,
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
@@ -89,6 +94,8 @@ type Props = {
   cachedCompensation?: ProfileCompensationCacheEntry;
   onClose: () => void;
   onCacheUpdate: (profileId: string, entry: ProfileCompensationCacheEntry) => void;
+  /** In Slide-in-Profile: Inhalt ohne Sub-Modal-Overlay. */
+  embedded?: boolean;
 };
 
 export function ProfileCompensationPanelModal({
@@ -96,6 +103,7 @@ export function ProfileCompensationPanelModal({
   cachedCompensation,
   onClose,
   onCacheUpdate,
+  embedded = false,
 }: Props) {
   const { locale } = useLocale();
   const t = useTranslations();
@@ -310,27 +318,17 @@ export function ProfileCompensationPanelModal({
       ? `${formatAmountLabel(selectedRate.amount, selectedRate.currency, locale)} (${formatDateLabel(selectedRate.valid_from, locale)})`
       : "";
 
-  return (
-    <div
-      className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !anyFormOpen) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-compensation-panel-title"
-        aria-busy={loading || pending}
-        aria-hidden={anyFormOpen}
-        className={cn(
-          settingsSubModalDialogClass("2xl"),
-          (loading || pending) && "[&_*]:cursor-wait",
-          anyFormOpen ? "pointer-events-none" : ""
-        )}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+  if (embedded && loading) {
+    return (
+      <div className="flex shrink-0 items-center justify-center py-8 text-sm text-muted">
+        {t("common.loading")}
+      </div>
+    );
+  }
+
+  const panelContent = (
+    <>
+        {!embedded ? (
         <div
           className={cn(
             "flex items-center justify-between border-b border-border",
@@ -344,7 +342,7 @@ export function ProfileCompensationPanelModal({
             <span className="text-foreground">
               {t("profiles.panelCompensationOfPrefix")}{" "}
             </span>
-            <span className="text-cyan-600">{profile.full_name}</span>
+            <span className="text-primary">{profile.full_name}</span>
           </h3>
           <IconButton
             size="sm"
@@ -356,6 +354,7 @@ export function ProfileCompensationPanelModal({
             <CloseIcon className="h-[18px] w-[18px]" />
           </IconButton>
         </div>
+        ) : null}
 
         {errorMessage && (
           <div className="mx-4 mt-3 shrink-0">
@@ -363,23 +362,35 @@ export function ProfileCompensationPanelModal({
           </div>
         )}
 
-        <div className="min-h-0 bg-background px-4 py-3">
+        <div
+          className={
+            embedded
+              ? settingsEmbeddedDetailPanelBodyClass()
+              : "min-h-0 bg-background px-4 py-3"
+          }
+        >
           <div
             className={cn(
               settingsScrollableTableListClass(),
-              SETTINGS_PROFILES_LIST_SCROLL_CLASS
+              embedded
+                ? settingsProfileEmbeddedListScrollClass(rates.length)
+                : SETTINGS_PROFILES_LIST_SCROLL_CLASS
             )}
           >
           {loading ? (
             <SettingsEmptyState
               message={t("common.loading")}
-              className={EMPTY_STATE_CLASS}
+              className={
+                embedded ? SETTINGS_EMBEDDED_EMPTY_STATE_CLASS : EMPTY_STATE_CLASS
+              }
             />
           ) : rates.length === 0 ? (
             <SettingsEmptyState
               message={t("profiles.noHourlyRate")}
               hint={t("common.emptyHintCreate")}
-              className={EMPTY_STATE_CLASS}
+              className={
+                embedded ? SETTINGS_EMBEDDED_EMPTY_STATE_CLASS : EMPTY_STATE_CLASS
+              }
             />
           ) : (
             <table className="w-full min-w-[28rem] border-collapse">
@@ -542,11 +553,14 @@ export function ProfileCompensationPanelModal({
             className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
           >
             <CloseIcon />
-            {t("common.close")}
+            {embedded ? t("profiles.title") : t("common.close")}
           </Button>
         </div>
-      </div>
+    </>
+  );
 
+  const panelOverlays = (
+    <>
       {formMode?.type === "create" && serverToday && (
         <ProfileHourlyRateFormModal
           mode="create"
@@ -587,6 +601,55 @@ export function ProfileCompensationPanelModal({
           onConfirm={handleBulkDelete}
         />
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        className={cn(
+          settingsEmbeddedDetailPanelShellClass(),
+          (loading || pending) && "cursor-wait [&_*]:cursor-wait"
+        )}
+        aria-busy={loading || pending}
+      >
+        <div
+          className={cn(
+            settingsEmbeddedDetailPanelInnerClass(),
+            anyFormOpen && "pointer-events-none"
+          )}
+        >
+          {panelContent}
+        </div>
+        {panelOverlays}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !anyFormOpen) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-compensation-panel-title"
+        aria-busy={loading || pending}
+        aria-hidden={anyFormOpen}
+        className={cn(
+          settingsSubModalDialogClass("2xl"),
+          (loading || pending) && "[&_*]:cursor-wait",
+          anyFormOpen ? "pointer-events-none" : ""
+        )}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {panelContent}
+      </div>
+      {panelOverlays}
     </div>
   );
 }

@@ -58,6 +58,7 @@ export function revalidateAreaCalendarShiftCacheTags(input: {
   weekStarts?: readonly string[];
 }) {
   revalidatePath("/dashboard", "layout");
+  revalidatePath("/mitarbeiter-kalender", "layout");
   revalidatePath("/bereich-kalender", "layout");
   revalidateTag(areaCalendarOrgShiftsCacheTag(input.organizationId));
 

@@ -7,6 +7,7 @@ import {
   canPromptNoServiceHoursShiftAssign,
   canPromptNoServiceHoursShiftAssignForDay,
   canShowAreaDayAssignContextMenu,
+  canShowEmployeeDayCellAssignContextMenu,
 } from "./areacalendar-area-day-assign";
 
 function futureISO(daysAhead: number): string {
@@ -101,6 +102,33 @@ describe("areacalendar-area-day-assign", () => {
         false
       )
     ).toBe(true);
+  });
+
+  it("opens employee calendar cell context menu on no-service days", () => {
+    expect(
+      canShowEmployeeDayCellAssignContextMenu(
+        "bar",
+        noServiceDayISO,
+        true,
+        false,
+        0,
+        null,
+        serviceHours,
+        false
+      )
+    ).toBe(true);
+    expect(
+      canShowEmployeeDayCellAssignContextMenu(
+        "bar",
+        noServiceDayISO,
+        false,
+        false,
+        0,
+        null,
+        serviceHours,
+        false
+      )
+    ).toBe(false);
   });
 
   it("allows bulk modal from shift card on manual assignment days", () => {

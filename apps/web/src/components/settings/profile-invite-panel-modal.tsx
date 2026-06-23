@@ -9,6 +9,7 @@ import {
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
+  settingsEmbeddedDetailPanelShellClass,
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
 } from "./settings-list-ui";
@@ -18,12 +19,15 @@ type Props = {
   employeeCount: number;
   onClose: () => void;
   onInvited: () => void;
+  /** In Slide-in-Profile: Inhalt ohne Sub-Modal-Overlay. */
+  embedded?: boolean;
 };
 
 export function ProfileInvitePanelModal({
   employeeCount,
   onClose,
   onInvited,
+  embedded = false,
 }: Props) {
   const t = useTranslations();
 
@@ -35,21 +39,9 @@ export function ProfileInvitePanelModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
-    <div
-      className={settingsSubModalOverlayClass()}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-invite-panel-title"
-        className={settingsSubModalDialogClass("lg")}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+  const panelBody = (
+    <>
+      {!embedded ? (
         <div
           className={cn(
             "flex items-center justify-between border-b border-border",
@@ -68,21 +60,49 @@ export function ProfileInvitePanelModal({
             <CloseIcon className="h-[18px] w-[18px]" />
           </IconButton>
         </div>
+      ) : null}
 
-        <div className={settingsModalBodyPaddingClass()}>
-          <InviteForm
-            employeeCount={employeeCount}
-            embedded
-            onSuccess={onInvited}
-          />
-        </div>
+      <div className={cn(settingsModalBodyPaddingClass(), embedded && "bg-background")}>
+        <InviteForm
+          employeeCount={employeeCount}
+          embedded
+          onSuccess={onInvited}
+        />
+      </div>
 
-        <div className={settingsModalFooterClass()}>
-          <Button type="button" variant="outline" onClick={onClose}>
-            <CloseIcon />
-            {t("common.close")}
-          </Button>
-        </div>
+      <div className={settingsModalFooterClass("shrink-0")}>
+        <Button type="button" variant="outline" size="sm" onClick={onClose}>
+          <CloseIcon />
+          {embedded ? t("profiles.title") : t("common.close")}
+        </Button>
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className={settingsEmbeddedDetailPanelShellClass("bg-background")}>
+        {panelBody}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={settingsSubModalOverlayClass()}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-invite-panel-title"
+        className={settingsSubModalDialogClass("lg")}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {panelBody}
       </div>
     </div>
   );

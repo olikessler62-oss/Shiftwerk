@@ -15,6 +15,8 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { IconButton } from "@/components/ui";
 import { AppShellBrandHeader } from "@/components/brand/app-shell-brand-header";
+import { AppShellBrandBackdrop } from "@/components/brand/app-shell-brand-backdrop";
+import { AppShellSidebarBrandArt } from "@/components/brand/app-shell-sidebar-brand-art";
 import { cn } from "@/lib/cn";
 import { useTranslations } from "@/i18n/locale-provider";
 import { SidebarNav } from "./sidebar-nav";
@@ -31,6 +33,7 @@ import {
   APP_SHELL_MAIN_CLASS,
   APP_SHELL_ROOT_CLASS,
   APP_SHELL_SIDEBAR_CLASS,
+  APP_SHELL_SIDEBAR_SLOT_CLASS,
 } from "@/lib/app-shell-layout";
 import {
   AppShellControlsGuard,
@@ -99,14 +102,12 @@ interface AppShellProps {
 
 export function AppShell({
   orgName,
-  userName,
   role,
   superadminEnabled = false,
   children,
 }: AppShellProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const isAreaCalendar = pathname.startsWith("/bereich-kalender");
   const menuButtonRef = useRef<HTMLDivElement>(null);
   const menuPanelRef = useRef<HTMLDivElement>(null);
 
@@ -148,7 +149,6 @@ export function AppShell({
             orgName={orgName}
             open={open}
             setOpen={setOpen}
-            brandHeaderAlignContentStart={isAreaCalendar}
             menuButtonRef={menuButtonRef}
             menuPanelRef={menuPanelRef}
             superadminEnabled={superadminEnabled}
@@ -166,7 +166,6 @@ function AppShellLayout({
   orgName,
   open,
   setOpen,
-  brandHeaderAlignContentStart,
   menuButtonRef,
   menuPanelRef,
   superadminEnabled,
@@ -176,7 +175,6 @@ function AppShellLayout({
   orgName?: string;
   open: boolean;
   setOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
-  brandHeaderAlignContentStart: boolean;
   menuButtonRef: RefObject<HTMLDivElement | null>;
   menuPanelRef: RefObject<HTMLDivElement | null>;
   superadminEnabled: boolean;
@@ -188,7 +186,7 @@ function AppShellLayout({
   const shellWaitCursor = useIsAppShellWaitCursor();
   const menuAnchor = useMenuAnchor(open, menuButtonRef);
 
-  const menuPanel =
+  const mobileMenuPanel =
     open && menuAnchor && typeof document !== "undefined"
       ? createPortal(
           <div
@@ -201,7 +199,7 @@ function AppShellLayout({
               width: menuAnchor.width,
             }}
             className={cn(
-              "z-[200] max-h-[min(70vh,calc(100dvh-6rem))] overflow-y-auto rounded-[var(--radius-control)] border shadow-lg",
+              "app-shell-sidebar-mobile-panel z-[200] max-h-[min(70vh,calc(100dvh-6rem))] overflow-y-auto rounded-[var(--radius-control)] border md:hidden",
               APP_SHELL_SIDEBAR_CLASS
             )}
           >
@@ -231,17 +229,24 @@ function AppShellLayout({
           shellWaitCursor && "cursor-wait [&_*]:cursor-wait"
         )}
       >
+        <AppShellBrandBackdrop />
         <div
           className={cn(
-            "relative z-50 flex w-full shrink-0 flex-col overflow-visible border-b md:h-full md:w-56 md:min-h-0 md:border-b-0",
+            "relative z-10 flex min-h-0 flex-1 flex-col md:flex-row md:min-h-0"
+          )}
+        >
+        <div
+          className={cn(
+            "relative z-50 flex w-full shrink-0 flex-col overflow-visible border-b md:h-full md:w-56 md:min-h-0 md:overflow-hidden md:border-b-0",
             APP_SHELL_SIDEBAR_CLASS
           )}
         >
+          <AppShellSidebarBrandArt />
           <AppShellBrandHeader
+            className="relative z-10"
             orgName={orgName}
-            alignContentStart={brandHeaderAlignContentStart}
             trailing={
-              <div ref={menuButtonRef} className="relative shrink-0">
+              <div ref={menuButtonRef} className="relative shrink-0 md:hidden">
                 <IconButton
                   size="sm"
                   onClick={() => setOpen((v) => !v)}
@@ -280,6 +285,17 @@ function AppShellLayout({
               </div>
             }
           />
+          <div className={cn(APP_SHELL_SIDEBAR_SLOT_CLASS, "relative z-10 hidden md:flex")}>
+            <AppShellControlsGuard>
+              <Suspense
+                fallback={
+                  <nav className="p-2 text-sm text-muted">{t("common.loading")}</nav>
+                }
+              >
+                <SidebarNav viewerRole={role} superadminEnabled={superadminEnabled} />
+              </Suspense>
+            </AppShellControlsGuard>
+          </div>
         </div>
 
         <div className={APP_SHELL_CONTENT_COLUMN_CLASS}>
@@ -289,8 +305,9 @@ function AppShellLayout({
             <OverviewModalsAppShellFallback />
           </main>
         </div>
+        </div>
       </div>
-      {menuPanel}
+      {mobileMenuPanel}
     </>
   );
 }

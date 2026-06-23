@@ -44,7 +44,7 @@ export function buildSettingsModalUrl(
   return `${settingsModalBasePath(pathname)}?${params.toString()}`;
 }
 
-/** Schließt ein Einstellungs-Modal und bleibt auf der aktuellen Seite. */
+/** Schließt ein Einstellungs-Modal und bleibt auf der aktuellen Seite (replace — kein erneutes Öffnen per Browser-Zurück). */
 export function closeSettingsModal(
   router: AppRouterInstance,
   pathname: string,
@@ -55,5 +55,5 @@ export function closeSettingsModal(
   params.delete(flag);
   const basePath = settingsModalBasePath(pathname);
   const query = params.toString();
-  router.push(query ? `${basePath}?${query}` : basePath);
+  router.replace(query ? `${basePath}?${query}` : basePath);
 }

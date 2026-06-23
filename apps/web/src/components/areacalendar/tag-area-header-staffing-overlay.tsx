@@ -224,7 +224,9 @@ export function TagAreaHeaderStaffingOverlay({
   const display = useMemo((): StaffingHeaderDisplay => {
     if (entries.length === 0) return EMPTY_DISPLAY;
     const effectiveWidth =
-      containerWidth > 0 && Number.isFinite(containerWidth) ? containerWidth : 0;
+      containerWidth > 0 && Number.isFinite(containerWidth)
+        ? containerWidth
+        : Number.POSITIVE_INFINITY;
     return resolveStaffingHeaderDisplay(entries, effectiveWidth);
   }, [entries, entryKey, containerWidth]);
 

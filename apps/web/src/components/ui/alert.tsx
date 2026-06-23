@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 const variants = {
   success: "border-emerald-200 bg-success text-success-foreground",
   error: "border-red-200 bg-danger text-danger-foreground",
-  info: "border-teal-200 bg-info text-info-foreground",
+  info: "border-primary/25 bg-info text-info-foreground",
   neutral: "border-border bg-subtle text-foreground",
 };
 

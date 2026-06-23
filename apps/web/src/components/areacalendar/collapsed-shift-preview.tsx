@@ -17,7 +17,7 @@ import {
   SHIFT_CARD_TWO_LINE_HEIGHT_PX,
   shiftCardListItemHeightPx,
 } from "@/lib/shift-card-row-layout";
-import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
@@ -480,6 +480,7 @@ export function CollapsedShiftPreview({
               key={shift.id}
               content={<ShiftCardTooltipContent data={display.tooltip} />}
               contentClassName={shiftCardTooltipContentClassName}
+              openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
               className="self-start max-w-full"
               placement={{
                 anchorLeftToTriggerCenter: true,
@@ -505,6 +506,7 @@ export function CollapsedShiftPreview({
             key={shift.id}
             content={<ShiftCardTooltipContent data={display.tooltip} />}
             contentClassName={shiftCardTooltipContentClassName}
+            openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
             className="self-start max-w-full"
             placement={{
               anchorLeftToTriggerCenter: true,

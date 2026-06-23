@@ -28,18 +28,15 @@ import { ProfileFormModal } from "./profile-form-modal";
 import { ProfileInvitePanelModal } from "./profile-invite-panel-modal";
 import { ProfileDetailActions } from "./profile-detail-actions";
 import { ProfileQualificationsPanelModal } from "./profile-qualifications-panel-modal";
+import { SettingsSidePanel, SettingsSidePanelCloseButton } from "./settings-side-panel";
+import { SettingsDetailBackButton } from "./settings-detail-nav";
 import {
   SETTINGS_PROFILES_LIST_COMPACT_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_FROM_ELEVEN_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_THRESHOLD,
   SETTINGS_PROFILES_MASTER_DETAIL_MIN_HEIGHT_CLASS,
-  SETTINGS_MODAL_MAX_WIDTH,
-  SETTINGS_MODAL_TITLE_CLASS,
   settingsMasterDetailLayoutClass,
-  settingsModalBackdropClass,
-  settingsModalDialogClass,
   settingsModalFooterClass,
-  settingsModalHeaderPaddingClass,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -58,7 +55,6 @@ import {
 } from "./settings-list-ui";
 import {
   Alert,
-  Button,
   CheckIcon,
   CloseIcon,
   PencilIcon,
@@ -68,7 +64,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { sortProfilesByFirstName } from "@/lib/profile-display-sort";
-import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 
 type Props = {
   profiles: Profile[];
@@ -133,6 +128,28 @@ function isProfileDetailCached(
     profileId in compensationCache &&
     profileId in absencesCache
   );
+}
+
+function profileDetailPanelTitle(
+  panel: Exclude<DetailPanel, null>,
+  t: (key: string) => string
+): string {
+  switch (panel) {
+    case "qualifications":
+      return t("profiles.panelQualifications");
+    case "availability":
+      return t("profiles.panelAvailability");
+    case "shiftPreferences":
+      return t("profiles.panelShiftPreferences");
+    case "absences":
+      return t("profiles.panelAbsences");
+    case "compensation":
+      return t("profiles.panelCompensation");
+    case "surcharges":
+      return t("profiles.surchargesSection");
+    case "invite":
+      return t("profiles.inviteEmployeeTitle");
+  }
 }
 
 function isProfilesModalReady(
@@ -295,7 +312,6 @@ export function ProfilesModal({
   const deferInitialRender = !hasInitiallyShown && !modalReady;
   const profileDetailSwitching =
     !!selectedProfileId && selectedProfileId !== displayedProfileId;
-  const showModal = useDeferredSettingsModalRender(deferInitialRender, onClose);
   const clearProfileScrollTarget = useCallback(
     () => setScrollToProfileId(null),
     []
@@ -453,29 +469,38 @@ export function ProfilesModal({
     selectedProfileId,
   ]);
 
-  const anyOverlayOpen = !!profileFormMode || !!detailPanel;
-  const modalBusy = pending || actionDetailsLoading;
+  const overlayFormOpen = !!profileFormMode;
+  const anySubModalOpen = overlayFormOpen || confirmDeleteProfile;
+  const modalBusy = pending || actionDetailsLoading || deferInitialRender;
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
-      if (profileFormMode) {
-        setProfileFormMode(null);
-        return;
-      }
       if (detailPanel) {
         setDetailPanel(null);
+        return;
+      }
+      if (profileFormMode) {
+        setProfileFormMode(null);
         return;
       }
       if (confirmDeleteProfile) {
         setConfirmDeleteProfile(false);
         return;
       }
-      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDeleteProfile, detailPanel, onClose, profileFormMode]);
+  }, [confirmDeleteProfile, detailPanel, profileFormMode]);
+
+  useEffect(() => {
+    if (!deferInitialRender) return;
+    const previous = document.body.style.cursor;
+    document.body.style.cursor = "wait";
+    return () => {
+      document.body.style.cursor = previous;
+    };
+  }, [deferInitialRender]);
 
   function refreshProfiles() {
     router.refresh();
@@ -574,65 +599,230 @@ export function ProfilesModal({
     });
   }
 
-  if (!showModal) return null;
+  function navigateBackFromDetail() {
+    setDetailPanel(null);
+  }
+
+  const detailContextProfile =
+    selectedProfile ??
+    (displayedProfileId
+      ? sortedProfiles.find((p) => p.id === displayedProfileId)
+      : null);
+
+  const detailSubtitleNode =
+    detailPanel && detailPanel !== "invite" && detailContextProfile
+      ? (
+        <div className="mt-0.5 text-sm text-muted">
+          <p>
+            {detailContextProfile.full_name}
+            {detailContextProfile.role_name
+              ? ` · ${detailContextProfile.role_name}`
+              : ""}
+          </p>
+        </div>
+      )
+      : undefined;
 
   return (
-    <div
-      className={cn(settingsModalBackdropClass(), modalBusy && "cursor-wait")}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (
-          e.target === e.currentTarget &&
-          !anyOverlayOpen &&
-          !confirmDeleteProfile
-        ) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        className="relative flex w-full min-w-0 flex-col"
-        style={{ maxWidth: SETTINGS_MODAL_MAX_WIDTH }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="profiles-modal-title"
-          aria-busy={modalBusy}
-          aria-hidden={anyOverlayOpen}
-          className={cn(
-            settingsModalDialogClass(),
-            modalBusy && "[&_*]:cursor-wait",
-            anyOverlayOpen ? "pointer-events-none" : ""
-          )}
-        >
-          <div className={cn("shrink-0 border-b border-border", settingsModalHeaderPaddingClass())}>
-            <h2 id="profiles-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("profiles.title")}
-            </h2>
+    <SettingsSidePanel
+      title={
+        detailPanel
+          ? profileDetailPanelTitle(detailPanel, t)
+          : t("profiles.title")
+      }
+      subtitleNode={detailSubtitleNode}
+      titleId="profiles-modal-title"
+      onClose={onClose}
+      closeDisabled={pending}
+      dismissOnBackdrop={!anySubModalOpen && !detailPanel}
+      dismissOnEscape={!anySubModalOpen && !detailPanel}
+      closeAriaLabel={t("common.close")}
+      contentReady={modalReady}
+      panelClassName={cn(
+        modalBusy && "cursor-wait [&_*]:cursor-wait",
+        anySubModalOpen && "pointer-events-none"
+      )}
+      bodyClassName={cn(
+        detailPanel ? "flex min-h-0 w-full flex-col px-0 py-0" : undefined
+      )}
+      headerAside={
+        detailPanel ? (
+          <SettingsDetailBackButton
+            label={t("profiles.title")}
+            onClick={() => setDetailPanel(null)}
+            disabled={pending || profileDetailSwitching}
+          />
+        ) : undefined
+      }
+      footer={
+        !detailPanel ? (
+          <div className={settingsModalFooterClass()}>
+            <SettingsSidePanelCloseButton disabled={pending} />
           </div>
-
-          {successMessage && (
-            <div className="mx-4 mt-3 shrink-0">
-              <Alert variant="info">{successMessage}</Alert>
-            </div>
+        ) : undefined
+      }
+      overlay={
+        <>
+          {profileFormMode?.type === "create" && (
+            <ProfileFormModal
+              mode="create"
+              allProfiles={profileList}
+              onClose={() => setProfileFormMode(null)}
+              onSaved={handleProfileSaved}
+            />
           )}
-
-          {errorMessage && (
-            <div className="mx-4 mt-3 shrink-0">
-              <Alert variant="error">{errorMessage}</Alert>
-            </div>
+          {profileFormMode?.type === "edit" && (
+            <ProfileFormModal
+              mode="edit"
+              profile={profileFormMode.profile}
+              allProfiles={profileList}
+              onClose={() => setProfileFormMode(null)}
+              onSaved={handleProfileSaved}
+            />
           )}
+          {confirmDeleteProfile && selectedProfile && (
+            <DeleteConfirmModal
+              name={selectedProfile.full_name}
+              confirmMessage={t("profiles.confirmDeactivate", {
+                name: selectedProfile.full_name,
+              })}
+              pending={pending}
+              onCancel={() => setConfirmDeleteProfile(false)}
+              onConfirm={handleDeleteProfile}
+            />
+          )}
+        </>
+      }
+    >
+      {successMessage && (
+        <div className="mb-4 shrink-0">
+          <Alert variant="info">{successMessage}</Alert>
+        </div>
+      )}
 
-          <div
-            className={cn(
-              settingsMasterDetailLayoutClass(),
-              SETTINGS_PROFILES_MASTER_DETAIL_MIN_HEIGHT_CLASS
-            )}
-            style={{ gap: COLUMN_GAP_PX }}
-            aria-busy={actionDetailsLoading}
-          >
+      {errorMessage && (
+        <div className="mb-4 shrink-0">
+          <Alert variant="error">{errorMessage}</Alert>
+        </div>
+      )}
+
+      {detailPanel && (detailPanel === "invite" || selectedProfile) ? (
+        <>
+          {detailPanel === "qualifications" && selectedProfile && (
+            <ProfileQualificationsPanelModal
+              embedded
+              profile={selectedProfile}
+              cachedQualifications={
+                selectedProfile.id in qualificationsCache
+                  ? qualificationsCache[selectedProfile.id]
+                  : undefined
+              }
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={(profileId, list) => {
+                setQualificationsCache((prev) => ({ ...prev, [profileId]: list }));
+              }}
+            />
+          )}
+          {detailPanel === "availability" && selectedProfile && (
+            <ProfileAvailabilityPanelModal
+              embedded
+              profile={selectedProfile}
+              cachedAvailability={
+                selectedProfile.id in availabilityCache
+                  ? availabilityCache[selectedProfile.id]
+                  : undefined
+              }
+              cachedShiftPreferences={
+                selectedProfile.id in shiftPreferencesCache
+                  ? shiftPreferencesCache[selectedProfile.id]
+                  : undefined
+              }
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={(profileId, list) => {
+                setAvailabilityCache((prev) => ({ ...prev, [profileId]: list }));
+              }}
+              onProfileUpdate={handleProfileSaved}
+            />
+          )}
+          {detailPanel === "shiftPreferences" && selectedProfile && (
+            <ProfileShiftPreferencesPanelModal
+              embedded
+              profile={selectedProfile}
+              cachedPreferences={
+                selectedProfile.id in shiftPreferencesCache
+                  ? shiftPreferencesCache[selectedProfile.id]
+                  : undefined
+              }
+              cachedAvailability={
+                selectedProfile.id in availabilityCache
+                  ? availabilityCache[selectedProfile.id]
+                  : undefined
+              }
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={(profileId, list) => {
+                setShiftPreferencesCache((prev) => ({ ...prev, [profileId]: list }));
+              }}
+            />
+          )}
+          {detailPanel === "absences" && selectedProfile && (
+            <ProfileAbsencesPanelModal
+              embedded
+              profile={selectedProfile}
+              profiles={profileList}
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={(profileId, absences) => {
+                setAbsencesCache((prev) => ({ ...prev, [profileId]: absences }));
+              }}
+            />
+          )}
+          {detailPanel === "compensation" && selectedProfile && (
+            <ProfileCompensationPanelModal
+              embedded
+              profile={selectedProfile}
+              cachedCompensation={
+                selectedProfile.id in compensationCache
+                  ? compensationCache[selectedProfile.id]
+                  : undefined
+              }
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={(profileId, entry) => {
+                setCompensationCache((prev) => ({ ...prev, [profileId]: entry }));
+              }}
+            />
+          )}
+          {detailPanel === "surcharges" && selectedProfile && (
+            <ProfileSurchargesPanelModal
+              embedded
+              profile={selectedProfile}
+              cachedCompensation={
+                selectedProfile.id in compensationCache
+                  ? compensationCache[selectedProfile.id]
+                  : undefined
+              }
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={(profileId, entry) => {
+                setCompensationCache((prev) => ({ ...prev, [profileId]: entry }));
+              }}
+            />
+          )}
+          {detailPanel === "invite" && (
+            <ProfileInvitePanelModal
+              embedded
+              employeeCount={activeEmployeeCount}
+              onClose={navigateBackFromDetail}
+              onInvited={refreshProfiles}
+            />
+          )}
+        </>
+      ) : (
+        <div
+          className={cn(
+            settingsMasterDetailLayoutClass(),
+            SETTINGS_PROFILES_MASTER_DETAIL_MIN_HEIGHT_CLASS
+          )}
+          style={{ gap: COLUMN_GAP_PX }}
+          aria-busy={actionDetailsLoading}
+        >
             <ColumnShell
               title={t("profiles.panelProfiles")}
               enableListScroll={enableProfileListScroll}
@@ -719,7 +909,7 @@ export function ProfilesModal({
                                 className="inline-flex justify-center"
                                 aria-label={t("profiles.activeYes")}
                               >
-                                <CheckIcon className="size-4 text-green-600" />
+                                <CheckIcon className="size-4 text-primary" />
                               </span>
                             ) : (
                               <span
@@ -835,149 +1025,8 @@ export function ProfilesModal({
                 )}
               </div>
             </div>
-          </div>
-
-          <div className={settingsModalFooterClass("shrink-0 px-4 sm:px-6")}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
-            >
-              <CloseIcon />
-              {t("common.close")}
-            </Button>
-          </div>
         </div>
-
-        {profileFormMode?.type === "create" && (
-          <ProfileFormModal
-            mode="create"
-            allProfiles={profileList}
-            onClose={() => setProfileFormMode(null)}
-            onSaved={handleProfileSaved}
-          />
-        )}
-        {profileFormMode?.type === "edit" && (
-          <ProfileFormModal
-            mode="edit"
-            profile={profileFormMode.profile}
-            allProfiles={profileList}
-            onClose={() => setProfileFormMode(null)}
-            onSaved={handleProfileSaved}
-          />
-        )}
-        {confirmDeleteProfile && selectedProfile && (
-          <DeleteConfirmModal
-            name={selectedProfile.full_name}
-            confirmMessage={t("profiles.confirmDeactivate", {
-              name: selectedProfile.full_name,
-            })}
-            pending={pending}
-            onCancel={() => setConfirmDeleteProfile(false)}
-            onConfirm={handleDeleteProfile}
-          />
-        )}
-        {detailPanel === "qualifications" && selectedProfile && (
-          <ProfileQualificationsPanelModal
-            profile={selectedProfile}
-            cachedQualifications={
-              selectedProfile.id in qualificationsCache
-                ? qualificationsCache[selectedProfile.id]
-                : undefined
-            }
-            onClose={() => setDetailPanel(null)}
-            onCacheUpdate={(profileId, list) => {
-              setQualificationsCache((prev) => ({ ...prev, [profileId]: list }));
-            }}
-          />
-        )}
-        {detailPanel === "availability" && selectedProfile && (
-          <ProfileAvailabilityPanelModal
-            profile={selectedProfile}
-            cachedAvailability={
-              selectedProfile.id in availabilityCache
-                ? availabilityCache[selectedProfile.id]
-                : undefined
-            }
-            cachedShiftPreferences={
-              selectedProfile.id in shiftPreferencesCache
-                ? shiftPreferencesCache[selectedProfile.id]
-                : undefined
-            }
-            onClose={() => setDetailPanel(null)}
-            onCacheUpdate={(profileId, list) => {
-              setAvailabilityCache((prev) => ({ ...prev, [profileId]: list }));
-            }}
-            onProfileUpdate={handleProfileSaved}
-          />
-        )}
-        {detailPanel === "shiftPreferences" && selectedProfile && (
-          <ProfileShiftPreferencesPanelModal
-            profile={selectedProfile}
-            cachedPreferences={
-              selectedProfile.id in shiftPreferencesCache
-                ? shiftPreferencesCache[selectedProfile.id]
-                : undefined
-            }
-            cachedAvailability={
-              selectedProfile.id in availabilityCache
-                ? availabilityCache[selectedProfile.id]
-                : undefined
-            }
-            onClose={() => setDetailPanel(null)}
-            onCacheUpdate={(profileId, list) => {
-              setShiftPreferencesCache((prev) => ({ ...prev, [profileId]: list }));
-            }}
-          />
-        )}
-        {detailPanel === "absences" && selectedProfile && (
-          <ProfileAbsencesPanelModal
-            profile={selectedProfile}
-            profiles={profileList}
-            onClose={() => setDetailPanel(null)}
-            onCacheUpdate={(profileId, absences) => {
-              setAbsencesCache((prev) => ({ ...prev, [profileId]: absences }));
-            }}
-          />
-        )}
-        {detailPanel === "compensation" && selectedProfile && (
-          <ProfileCompensationPanelModal
-            profile={selectedProfile}
-            cachedCompensation={
-              selectedProfile.id in compensationCache
-                ? compensationCache[selectedProfile.id]
-                : undefined
-            }
-            onClose={() => setDetailPanel(null)}
-            onCacheUpdate={(profileId, entry) => {
-              setCompensationCache((prev) => ({ ...prev, [profileId]: entry }));
-            }}
-          />
-        )}
-        {detailPanel === "surcharges" && selectedProfile && (
-          <ProfileSurchargesPanelModal
-            profile={selectedProfile}
-            cachedCompensation={
-              selectedProfile.id in compensationCache
-                ? compensationCache[selectedProfile.id]
-                : undefined
-            }
-            onClose={() => setDetailPanel(null)}
-            onCacheUpdate={(profileId, entry) => {
-              setCompensationCache((prev) => ({ ...prev, [profileId]: entry }));
-            }}
-          />
-        )}
-        {detailPanel === "invite" && (
-          <ProfileInvitePanelModal
-            employeeCount={activeEmployeeCount}
-            onClose={() => setDetailPanel(null)}
-            onInvited={refreshProfiles}
-          />
-        )}
-      </div>
-    </div>
+      )}
+    </SettingsSidePanel>
   );
 }

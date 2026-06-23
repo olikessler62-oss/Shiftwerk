@@ -57,6 +57,7 @@ import {
 import { cn } from "@/lib/cn";
 import { useSettingsListBulkSelection } from "@/lib/use-settings-list-bulk-selection";
 import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
+import { settingsFixedNestedOverlayClass } from "./settings-modal-shell";
 
 type Props = {
   location: Location;
@@ -74,6 +75,7 @@ type Props = {
     areaId: string,
     templates: AreaShiftTemplateWithBreaks[]
   ) => void;
+  embedded?: boolean;
 };
 
 type FormMode = null | "create" | "edit" | "bulk-edit";
@@ -87,6 +89,7 @@ export function LocationStaffingPanelModal({
   onClose,
   onCacheUpdate,
   onShiftTemplatesCacheUpdate,
+  embedded = false,
 }: Props) {
   const t = useTranslations();
   const matrixRef = useRef<LocationAreaStaffingMatrixHandle>(null);
@@ -387,64 +390,50 @@ export function LocationStaffingPanelModal({
   }
 
   const showModal = useDeferredSettingsModalRender(loading, onClose);
-  if (!showModal || !editorData) return null;
+  if (!embedded && (!showModal || !editorData)) return null;
+  if (embedded && loading) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center py-12 text-sm text-muted">
+        {t("common.loading")}
+      </div>
+    );
+  }
+  if (embedded && !editorData) return null;
 
-  return (
+  const panelInner = (
     <>
-      <div
-        className={cn(settingsSubModalOverlayClass(), busy && "cursor-wait")}
-        role="presentation"
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget && !anyOverlayOpen && !busy) {
-            onClose();
-          }
-        }}
-      >
+      {!embedded ? (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="location-staffing-panel-title"
-          aria-hidden={anyOverlayOpen}
-          aria-busy={busy}
           className={cn(
-            settingsSubModalDialogClass(
-              "5xl",
-              "max-w-[min(48.64rem,calc(100vw-2rem))] max-h-[min(90dvh,calc(720px+100px))]"
-            ),
-            anyOverlayOpen && "pointer-events-none",
-            busy && "[&_*]:cursor-wait"
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
           )}
-          onMouseDown={(e) => e.stopPropagation()}
         >
-          <div
-            className={cn(
-              "flex items-center justify-between border-b border-border",
-              settingsModalHeaderPaddingClass()
-            )}
+          <h3 id="location-staffing-panel-title" className={SETTINGS_MODAL_TITLE_CLASS}>
+            <span className="text-foreground">{t("locations.panelStaffingOfPrefix")} </span>
+            <span className="text-primary">
+              {location.name} | {area.name}
+            </span>
+          </h3>
+          <IconButton
+            size="sm"
+            onClick={onClose}
+            disabled={busy}
+            aria-label={t("common.close")}
+            className="border-transparent bg-transparent hover:bg-subtle"
           >
-            <h3 id="location-staffing-panel-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              <span className="text-foreground">{t("locations.panelStaffingOfPrefix")} </span>
-              <span className="text-cyan-600">
-                {location.name} | {area.name}
-              </span>
-            </h3>
-            <IconButton
-              size="sm"
-              onClick={onClose}
-              disabled={busy}
-              aria-label={t("common.close")}
-              className="border-transparent bg-transparent hover:bg-subtle"
-            >
-              <CloseIcon className="h-[18px] w-[18px]" />
-            </IconButton>
-          </div>
+            <CloseIcon className="h-[18px] w-[18px]" />
+          </IconButton>
+        </div>
+      ) : null}
 
-          <div
-            className={cn(
-              "flex min-h-0 flex-1 flex-col overflow-hidden pb-0",
-              settingsModalBodyPaddingClass()
-            )}
-          >
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-hidden pb-0",
+          settingsModalBodyPaddingClass(),
+          embedded && "bg-background"
+        )}
+      >
             {errorMessage && (
               <Alert variant="error" className="mb-3 shrink-0">
                 {errorMessage}
@@ -457,7 +446,7 @@ export function LocationStaffingPanelModal({
                     ref={matrixRef}
                     locationId={location.id}
                     area={area}
-                    initialEditorData={editorData}
+                    initialEditorData={editorData!}
                     selectedServiceHourId={selectedServiceHourId}
                     onSelectServiceHour={setSelectedServiceHourId}
                     onEditServiceHour={(serviceHourId) => {
@@ -595,12 +584,14 @@ export function LocationStaffingPanelModal({
               className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
             >
               <CloseIcon />
-              {t("common.close")}
+              {embedded ? t("locations.title") : t("common.close")}
             </Button>
           </div>
-        </div>
-      </div>
+    </>
+  );
 
+  const panelOverlays = (
+    <>
       {formMode && editorData && (
         <LocationStaffingDetailPanelModal
           mode={formMode}
@@ -637,6 +628,55 @@ export function LocationStaffingPanelModal({
           onConfirm={() => void handleBulkDelete()}
         />
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        className={cn(
+          "relative flex min-h-0 flex-1 flex-col",
+          busy && "cursor-wait [&_*]:cursor-wait"
+        )}
+        aria-busy={busy}
+      >
+        {panelInner}
+        {panelOverlays}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div
+        className={cn(settingsSubModalOverlayClass(), busy && "cursor-wait")}
+        role="presentation"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !anyOverlayOpen && !busy) {
+            onClose();
+          }
+        }}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="location-staffing-panel-title"
+          aria-hidden={anyOverlayOpen}
+          aria-busy={busy}
+          className={cn(
+            settingsSubModalDialogClass(
+              "5xl",
+              "max-w-[min(48.64rem,calc(100vw-2rem))] max-h-[min(90dvh,calc(720px+100px))]"
+            ),
+            anyOverlayOpen && "pointer-events-none",
+            busy && "[&_*]:cursor-wait"
+          )}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {panelInner}
+        </div>
+      </div>
+      {panelOverlays}
     </>
   );
 }

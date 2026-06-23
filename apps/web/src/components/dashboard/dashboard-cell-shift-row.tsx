@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AREA_CALENDAR_SHIFT_CARD_BOX_SHADOW } from "@/components/areacalendar/areacalendar-shift-card-view";
-import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
@@ -50,10 +50,12 @@ import {
   planningShiftCardShowsPointerCursor,
 } from "@/lib/shift-card-context-menu-actions";
 
-/** Unterhalb: nur Farbbalken ohne Text. */
-const MIN_WIDTH_FOR_TIME_PX = 40;
-/** Unterhalb: nur Uhrzeit, kein Schichtname. */
-const MIN_WIDTH_FOR_TITLE_PX = 64;
+import { SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX } from "@/lib/shift-card-display-content";
+
+/** Mindestbreite für gekürzten Text (1–2 Zeichen + Ellipse). */
+const MIN_WIDTH_FOR_ANY_TEXT_PX = SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX;
+/** Unterhalb: kompakte Schrift, aber weiterhin zwei Zeilen. */
+const MIN_WIDTH_FOR_TWO_LINE_DETAIL_PX = 56;
 
 function segmentBorderRadiusClass(part: PlanningShiftDisplaySegment["part"]): string {
   if (part === "overnight-start") return "rounded-l rounded-r-none";
@@ -62,7 +64,7 @@ function segmentBorderRadiusClass(part: PlanningShiftDisplaySegment["part"]): st
 }
 
 function resolveStripWidthPx(cardWidthPx: number): number {
-  return cardWidthPx > 0 && cardWidthPx < MIN_WIDTH_FOR_TIME_PX
+  return cardWidthPx > 0 && cardWidthPx < MIN_WIDTH_FOR_ANY_TEXT_PX
     ? Math.max(2, Math.min(4, cardWidthPx))
     : SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX;
 }
@@ -178,8 +180,8 @@ export function DashboardCellShiftRow({
           widthPerSegmentPx,
           planningShiftSegmentMaxWidthPx(shiftTrackWidthPx, part)
         );
-        const showAnyText = cardWidthPx >= MIN_WIDTH_FOR_TIME_PX;
-        const showTitle = cardWidthPx >= MIN_WIDTH_FOR_TITLE_PX;
+        const showAnyText = cardWidthPx >= MIN_WIDTH_FOR_ANY_TEXT_PX;
+        const showTwoLineDetail = cardWidthPx >= MIN_WIDTH_FOR_TWO_LINE_DETAIL_PX;
         const stripWidthPx = resolveStripWidthPx(cardWidthPx);
         const showEmployeeStrip = planningShiftSegmentShowsEmployeeStrip(part);
         const isPastShift = isPastShiftDate(cellDate);
@@ -239,6 +241,7 @@ export function DashboardCellShiftRow({
             key={segmentKey}
             content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
             contentClassName={shiftCardTooltipContentClassName}
+            openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
             className={cn(
               "inline-flex h-full min-h-0 min-w-0 shrink-0",
               employeeHighlighted && "relative z-10 overflow-visible"
@@ -331,10 +334,11 @@ export function DashboardCellShiftRow({
                 ) : null}
                 {showAnyText ? (
                   <DashboardExpandedShiftCardText
+                    employeeName={employeeName}
                     templateName={cardContent.templateName}
                     timeLabel={cardContent.timeLabel}
                     jobsLine={jobsLine}
-                    compact={!showTitle}
+                    compact={!showTwoLineDetail}
                   />
                 ) : null}
                 <DashboardShiftCardConfirmationOverlay

@@ -2927,13 +2927,17 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async listLocationAreaStaffing(locationId: string) {
     const areas = await this.listLocationAreas(locationId);
     if (!areas.length) return [];
-    const areaIds = areas.map((a) => a.id);
+    return this.listLocationAreaStaffingForAreas(areas.map((a) => a.id));
+  }
+
+  async listLocationAreaStaffingForAreas(areaIds: readonly string[]) {
+    if (!areaIds.length) return [];
     const { data, error } = await this.client
       .from(T.locationAreaStaffing)
       .select(
         "id, location_area_id, service_hour_id, qualification_id, required_count"
       )
-      .in("location_area_id", areaIds);
+      .in("location_area_id", [...areaIds]);
     if (error) throw new Error(error.message);
     return (data ?? []) as LocationAreaStaffing[];
   }
@@ -3476,11 +3480,15 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async listLocationAreaServiceHours(locationId: string) {
     const areas = await this.listLocationAreas(locationId);
     if (!areas.length) return [];
-    const areaIds = areas.map((a) => a.id);
+    return this.listLocationAreaServiceHoursForAreas(areas.map((a) => a.id));
+  }
+
+  async listLocationAreaServiceHoursForAreas(areaIds: readonly string[]) {
+    if (!areaIds.length) return [];
     const { data, error } = await this.client
       .from(T.locationAreaServiceHours)
       .select("id, location_area_id, weekday, start_time, end_time")
-      .in("location_area_id", areaIds)
+      .in("location_area_id", [...areaIds])
       .order("weekday")
       .order("start_time");
     if (error) {

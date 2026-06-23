@@ -210,6 +210,28 @@ export function staffingAssignmentsForPlanningAreaDay(
   );
 }
 
+/** Bereich für die Bedarfs-Headerzeile — URL, Bereichsliste oder Daten aus Schichten/Regeln. */
+export function resolveStaffingHeaderAreaId(input: {
+  selectedAreaId: string | null;
+  areas: readonly { id: string }[];
+  locationShifts: readonly { location_area_id: string | null }[];
+  staffingRules: readonly { location_area_id: string }[];
+  serviceHours: readonly { location_area_id?: string | null }[];
+}): string | null {
+  if (input.selectedAreaId) return input.selectedAreaId;
+  if (input.areas[0]?.id) return input.areas[0].id;
+  for (const shift of input.locationShifts) {
+    if (shift.location_area_id) return shift.location_area_id;
+  }
+  for (const rule of input.staffingRules) {
+    if (rule.location_area_id) return rule.location_area_id;
+  }
+  for (const hour of input.serviceHours) {
+    if (hour.location_area_id) return hour.location_area_id;
+  }
+  return null;
+}
+
 /** Alle Schichten eines Bereichs/Tags für Personalbedarf-Zählung (wie Bereich-Kalender). */
 export function staffingAssignmentsForAreaDay(
   shifts: readonly PlanningStaffingShiftRef[],

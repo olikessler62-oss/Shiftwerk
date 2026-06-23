@@ -38,6 +38,7 @@ import {
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
 } from "./settings-list-ui";
+import { settingsFixedNestedOverlayClass } from "./settings-modal-shell";
 import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 import {
   Alert,
@@ -64,6 +65,8 @@ type Props = {
     areaId: string,
     templates: AreaShiftTemplateWithBreaks[]
   ) => void;
+  /** In Slide-in-Standorte: Inhalt ohne Sub-Modal-Overlay. */
+  embedded?: boolean;
 };
 
 const serviceHoursEntryGridClass = () =>
@@ -222,6 +225,7 @@ export function LocationServiceHoursPanelModal({
   onClose,
   onCacheUpdate,
   onShiftTemplatesCacheUpdate,
+  embedded = false,
 }: Props) {
   const t = useTranslations();
   const { locale } = useLocale();
@@ -423,30 +427,22 @@ export function LocationServiceHoursPanelModal({
   }
 
   const showModal = useDeferredSettingsModalRender(loading, onClose);
-  if (!showModal) return null;
+  if (!embedded && !showModal) return null;
+  if (embedded && loading) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center py-12 text-sm text-muted">
+        {t("common.loading")}
+      </div>
+    );
+  }
 
-  return (
+  const nestedOverlayClass = embedded
+    ? settingsFixedNestedOverlayClass
+    : settingsNestedModalOverlayClass;
+
+  const panelBody = (
     <>
-      <div
-        className={cn(settingsSubModalOverlayClass(), saving && "cursor-wait")}
-        role="presentation"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget && !saving && !overnightConfirmOpen) {
-            onClose();
-          }
-        }}
-      >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="location-service-hours-title"
-        aria-busy={saving}
-        className={cn(
-          settingsSubModalDialogClass("3xl", "max-w-[calc(48rem+60px)]"),
-          saving && "cursor-wait"
-        )}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+      {!embedded ? (
         <div
           className={cn(
             "flex items-center justify-between border-b border-border",
@@ -456,7 +452,7 @@ export function LocationServiceHoursPanelModal({
           <div className="min-w-0">
             <h3 id="location-service-hours-title" className={SETTINGS_MODAL_TITLE_CLASS}>
               <span className="text-foreground">{t("locations.panelServiceHoursOfPrefix")} </span>
-              <span className="text-cyan-600">
+              <span className="text-primary">
                 {location.name} | {area.name}
               </span>
             </h3>
@@ -471,8 +467,15 @@ export function LocationServiceHoursPanelModal({
             <CloseIcon className="h-[18px] w-[18px]" />
           </IconButton>
         </div>
+      ) : null}
 
-        <div className={cn("min-h-0 flex-1 overflow-y-auto", settingsModalBodyPaddingClass())}>
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto",
+          settingsModalBodyPaddingClass(),
+          embedded && "bg-background"
+        )}
+      >
           {errorMessage ? (
             <Alert variant="error" className="mb-3">
               {errorMessage}
@@ -825,10 +828,12 @@ export function LocationServiceHoursPanelModal({
         </div>
 
         <div className={settingsModalFooterClass()}>
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
-            <CloseIcon />
-            {t("common.cancel")}
-          </Button>
+          {!embedded ? (
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              <CloseIcon />
+              {t("common.cancel")}
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="primary"
@@ -839,12 +844,10 @@ export function LocationServiceHoursPanelModal({
             {t("common.ok")}
           </Button>
         </div>
-      </div>
-      </div>
 
       {overnightConfirmOpen && overnightConfirmLines.length > 0 ? (
         <div
-          className={settingsNestedModalOverlayClass()}
+          className={nestedOverlayClass()}
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget && !saving) {
@@ -890,6 +893,48 @@ export function LocationServiceHoursPanelModal({
           </div>
         </div>
       ) : null}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        className={cn(
+          "relative flex min-h-0 flex-1 flex-col",
+          saving && "cursor-wait [&_*]:cursor-wait"
+        )}
+        aria-busy={saving}
+      >
+        {panelBody}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div
+        className={cn(settingsSubModalOverlayClass(), saving && "cursor-wait")}
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !saving && !overnightConfirmOpen) {
+            onClose();
+          }
+        }}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="location-service-hours-title"
+          aria-busy={saving}
+          className={cn(
+            settingsSubModalDialogClass("3xl", "max-w-[calc(48rem+60px)]"),
+            saving && "cursor-wait"
+          )}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {panelBody}
+        </div>
+      </div>
     </>
   );
 }

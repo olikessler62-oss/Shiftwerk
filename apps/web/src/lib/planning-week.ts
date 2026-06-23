@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import { startOfWeek, toISODate, parseISODate } from "@/lib/dates";
 import { resolvePlanningWeekStart } from "@schichtwerk/database";
 
-export type PlanningPagePathname = "/bereich-kalender" | "/dashboard";
+export type PlanningPagePathname =
+  | "/bereich-kalender"
+  | "/dashboard"
+  | "/mitarbeiter-kalender";
 
 /** Woche, Standort und Bereich beim Wechsel zwischen Planungsseiten erhalten. */
 export const PLANNING_PRESERVED_QUERY_KEYS = ["week", "location", "area"] as const;
@@ -34,7 +37,7 @@ export function resolveManagerPlanningWeek(weekParam: string | undefined): strin
 
 /** Redirect wenn `week` in der URL älter als das Hot-Fenster ist. */
 export function redirectIfPlanningWeekClamped(
-  pathname: "/bereich-kalender" | "/dashboard",
+  pathname: PlanningPagePathname,
   weekParam: string | undefined,
   queryParams: Record<string, string | undefined>
 ): string {

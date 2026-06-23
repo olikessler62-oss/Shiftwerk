@@ -1,8 +1,8 @@
 import { shiftTimeFromTimestamp } from "@/lib/dates";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
 import {
+  resolvePlanningLocationId,
   resolveSelectedAreaId,
-  resolveSelectedLocationId,
 } from "@/lib/resolve-areacalendar-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/areacalendar-assignment-presets";
 import type { PlanningShift } from "@/lib/planning-shift-card";
@@ -81,7 +81,11 @@ export async function loadDashboardCalendarLayerData(input: {
     planningEmployees,
   } = input;
 
-  const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
+  const selectedLocationId = resolvePlanningLocationId(
+    locations,
+    locationParam,
+    tentativeLocationId
+  );
 
   const locationScopedPrefetch = tentativeLocationId
     ? loadDashboardLocationScopedData(

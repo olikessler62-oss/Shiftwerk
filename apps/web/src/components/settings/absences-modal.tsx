@@ -13,7 +13,6 @@ import {
 import {
   applyCreatedListSelection,
   SETTINGS_ABSENCES_LIST_SCROLL_CLASS,
-  SETTINGS_MODAL_TITLE_CLASS,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -26,12 +25,7 @@ import {
   settingsDataRowClass,
   settingsIndicatorCellClass,
   settingsListItemAttrs,
-  settingsModalBackdropClass,
-  settingsModalBodyPaddingClass,
-  settingsModalDialogClass,
   settingsModalFooterClass,
-  settingsModalHeaderPaddingClass,
-  settingsModalRootClass,
   settingsNestedModalOverlayClass,
   settingsPanelHeaderClass,
   settingsScrollableTableListClass,
@@ -50,12 +44,12 @@ import {
   emptyAbsenceDraft,
 } from "./absence-form-modal";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
+import { SettingsSidePanel, SettingsSidePanelCloseButton } from "./settings-side-panel";
 import {
   Alert,
   Button,
   CheckIcon,
   CloseIcon,
-  IconButton,
   Input,
   LabelMuted,
   PencilIcon,
@@ -182,13 +176,6 @@ export function AbsencesModal({ profiles, onClose }: Props) {
   }, [loadAbsences]);
 
   useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
-
-  useEffect(() => {
     if (!loading) return;
     const previousCursor = document.body.style.cursor;
     document.body.style.cursor = "wait";
@@ -220,7 +207,6 @@ export function AbsencesModal({ profiles, onClose }: Props) {
         setConfirmBulkDelete(false);
         return;
       }
-      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -388,65 +374,133 @@ export function AbsencesModal({ profiles, onClose }: Props) {
   const canCloseSickSelected =
     selected?.status === "approved" && selected.is_open_ended;
 
+  const anySubModalOpen =
+    formMode !== null ||
+    confirmDelete ||
+    confirmBulkDelete ||
+    closeSickOpen;
+
+  if (loading) {
+    return null;
+  }
+
   return (
-    <div
-      className={cn(settingsModalBackdropClass(), loading && "cursor-wait")}
-      role="presentation"
-      aria-busy={loading}
-      onMouseDown={(e) => {
-        if (
-          e.target === e.currentTarget &&
-          !formMode &&
-          !confirmDelete &&
-          !confirmBulkDelete &&
-          !closeSickOpen
-        ) {
-          onClose();
-        }
-      }}
-    >
-      {!loading ? (
-        <div
-          className={settingsModalRootClass("4xl")}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="absences-modal-title"
-            aria-hidden={!!formMode}
-            className={cn(
-              settingsModalDialogClass(),
-              formMode ? "pointer-events-none" : ""
-            )}
-          >
+    <SettingsSidePanel
+      title={t("settings.absences.title")}
+      titleId="absences-modal-title"
+      onClose={onClose}
+      closeDisabled={pending}
+      dismissOnBackdrop={!anySubModalOpen}
+      dismissOnEscape={!anySubModalOpen}
+      closeAriaLabel={t("common.close")}
+      panelClassName={cn(anySubModalOpen && "pointer-events-none")}
+      footer={
+        <div className={settingsModalFooterClass()}>
+          <SettingsSidePanelCloseButton disabled={pending} />
+        </div>
+      }
+      overlay={
+        <>
+          {formMode && (
+            <AbsenceFormModal
+              mode={formMode.type}
+              absenceId={formMode.type === "edit" ? formMode.absence.id : undefined}
+              initialDraft={
+                formMode.type === "create"
+                  ? emptyAbsenceDraft()
+                  : absenceDraftFromRequest(formMode.absence)
+              }
+              profiles={profiles}
+              existingRanges={existingRanges}
+              onClose={() => setFormMode(null)}
+              onSaved={handleFormSaved}
+            />
+          )}
+          {confirmDelete && selected && (
+            <DeleteConfirmModal
+              name={`${profileById.get(selected.employee_id)?.full_name ?? "—"} (${dateFormatter.format(new Date(`${selected.start_date}T12:00:00`))} – ${formatEndDateLabel(selected, dateFormatter, t("settings.absences.openEnded"))})`}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={handleDelete}
+              pending={pending}
+            />
+          )}
+          {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+            <DeleteConfirmModal
+              name={t("common.deleteSelectedEntries")}
+              count={bulkSelection.checkedCount}
+              onCancel={() => setConfirmBulkDelete(false)}
+              onConfirm={handleBulkDelete}
+              pending={pending}
+            />
+          )}
+          {closeSickOpen && selected && (
             <div
-              className={cn(
-                "flex items-center justify-between border-b border-border",
-                settingsModalHeaderPaddingClass()
-              )}
+              className={settingsNestedModalOverlayClass()}
+              role="presentation"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget && !pending) {
+                  setCloseSickOpen(false);
+                }
+              }}
             >
-              <h2 id="absences-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-                {t("settings.absences.title")}
-              </h2>
-              <IconButton
-                size="sm"
-                onClick={onClose}
-                aria-label={t("common.close")}
-                className="border-transparent bg-transparent hover:bg-subtle"
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="close-sick-title"
+                className={settingsConfirmDialogClass()}
+                onMouseDown={(e) => e.stopPropagation()}
               >
-                <CloseIcon className="h-[18px] w-[18px]" />
-              </IconButton>
-            </div>
-
-            {errorMessage && (
-              <div className="mx-6 mt-4 shrink-0">
-                <Alert variant="error">{errorMessage}</Alert>
+                <h4
+                  id="close-sick-title"
+                  className="text-base font-semibold text-foreground"
+                >
+                  {t("settings.absences.healthyAgainTitle")}
+                </h4>
+                <p className="mt-2 text-sm text-muted">
+                  {t("settings.absences.healthyAgainMessage")}
+                </p>
+                <div className="mt-4">
+                  <LabelMuted>{t("settings.absences.endDate")}</LabelMuted>
+                  <Input
+                    type="date"
+                    value={closeSickDate}
+                    min={selected.start_date}
+                    onChange={(e) => setCloseSickDate(e.target.value)}
+                    disabled={pending}
+                  />
+                </div>
+                <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCloseSickOpen(false)}
+                    disabled={pending}
+                  >
+                    <CloseIcon />
+                    {t("common.cancel")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleCloseSick}
+                    disabled={pending}
+                  >
+                    {t("settings.absences.healthyAgainConfirm")}
+                  </Button>
+                </div>
               </div>
-            )}
+            </div>
+          )}
+        </>
+      }
+    >
+      {errorMessage && (
+        <div className="mb-4 shrink-0">
+          <Alert variant="error">{errorMessage}</Alert>
+        </div>
+      )}
 
-            <div className={cn(settingsModalBodyPaddingClass(), "bg-background")}>
-              <div className="mb-3 flex gap-2">
+      <div className="mb-3 flex gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -690,114 +744,6 @@ export function AbsencesModal({ profiles, onClose }: Props) {
                   }
                 />
               </div>
-            </div>
-
-            <div className={settingsModalFooterClass()}>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={onClose}
-                disabled={pending}
-              >
-                <CloseIcon />
-                {t("common.close")}
-              </Button>
-            </div>
-          </div>
-
-          {formMode && (
-            <AbsenceFormModal
-              mode={formMode.type}
-              absenceId={formMode.type === "edit" ? formMode.absence.id : undefined}
-              initialDraft={
-                formMode.type === "create"
-                  ? emptyAbsenceDraft()
-                  : absenceDraftFromRequest(formMode.absence)
-              }
-              profiles={profiles}
-              existingRanges={existingRanges}
-              onClose={() => setFormMode(null)}
-              onSaved={handleFormSaved}
-            />
-          )}
-
-          {confirmDelete && selected && (
-            <DeleteConfirmModal
-              name={`${profileById.get(selected.employee_id)?.full_name ?? "—"} (${dateFormatter.format(new Date(`${selected.start_date}T12:00:00`))} – ${formatEndDateLabel(selected, dateFormatter, t("settings.absences.openEnded"))})`}
-              onCancel={() => setConfirmDelete(false)}
-              onConfirm={handleDelete}
-              pending={pending}
-            />
-          )}
-          {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
-            <DeleteConfirmModal
-              name={t("common.deleteSelectedEntries")}
-              count={bulkSelection.checkedCount}
-              onCancel={() => setConfirmBulkDelete(false)}
-              onConfirm={handleBulkDelete}
-              pending={pending}
-            />
-          )}
-
-          {closeSickOpen && selected && (
-            <div
-              className={settingsNestedModalOverlayClass()}
-              role="presentation"
-              onMouseDown={(e) => {
-                if (e.target === e.currentTarget && !pending) {
-                  setCloseSickOpen(false);
-                }
-              }}
-            >
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="close-sick-title"
-                className={settingsConfirmDialogClass()}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <h4
-                  id="close-sick-title"
-                  className="text-base font-semibold text-foreground"
-                >
-                  {t("settings.absences.healthyAgainTitle")}
-                </h4>
-                <p className="mt-2 text-sm text-muted">
-                  {t("settings.absences.healthyAgainMessage")}
-                </p>
-                <div className="mt-4">
-                  <LabelMuted>{t("settings.absences.endDate")}</LabelMuted>
-                  <Input
-                    type="date"
-                    value={closeSickDate}
-                    min={selected.start_date}
-                    onChange={(e) => setCloseSickDate(e.target.value)}
-                    disabled={pending}
-                  />
-                </div>
-                <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setCloseSickOpen(false)}
-                    disabled={pending}
-                  >
-                    {t("common.cancel")}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={handleCloseSick}
-                    disabled={pending}
-                  >
-                    {t("settings.absences.healthyAgainConfirm")}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : null}
-    </div>
+    </SettingsSidePanel>
   );
 }

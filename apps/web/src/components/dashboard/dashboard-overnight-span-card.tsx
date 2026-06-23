@@ -9,7 +9,7 @@ import {
 import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { DashboardShiftCardOverflowIndicator } from "@/components/dashboard/dashboard-shift-card-overflow-indicator";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
-import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
@@ -43,11 +43,16 @@ import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { planningShiftCardShowsPointerCursor } from "@/lib/shift-card-context-menu-actions";
 
-const MIN_WIDTH_FOR_TIME_PX = 40;
-const MIN_WIDTH_FOR_TITLE_PX = 64;
+import {
+  SHIFT_CARD_MARKER_MAX_CELL_WIDTH_PX,
+  SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX,
+} from "@/lib/shift-card-display-content";
+
+const MIN_WIDTH_FOR_ANY_TEXT_PX = SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX;
+const MIN_WIDTH_FOR_TWO_LINE_DETAIL_PX = 56;
 
 function resolveStripWidthPx(cardWidthPx: number): number {
-  return cardWidthPx > 0 && cardWidthPx < MIN_WIDTH_FOR_TIME_PX
+  return cardWidthPx > 0 && cardWidthPx < MIN_WIDTH_FOR_ANY_TEXT_PX
     ? Math.max(2, Math.min(4, cardWidthPx))
     : SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX;
 }
@@ -121,9 +126,9 @@ export function DashboardOvernightSpanCard({
     }
   );
   const showAnyText =
-    displayMode === "expanded" && widthPx >= MIN_WIDTH_FOR_TIME_PX;
-  const showTitle =
-    displayMode === "expanded" && widthPx >= MIN_WIDTH_FOR_TITLE_PX;
+    displayMode === "expanded" && widthPx >= MIN_WIDTH_FOR_ANY_TEXT_PX;
+  const showTwoLineDetail =
+    displayMode === "expanded" && widthPx >= MIN_WIDTH_FOR_TWO_LINE_DETAIL_PX;
   const stripWidthPx = resolveStripWidthPx(widthPx);
   const showsPointerCursor = planningShiftCardShowsPointerCursor(
     {
@@ -176,6 +181,7 @@ export function DashboardOvernightSpanCard({
       <Tooltip
         content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
         contentClassName={shiftCardTooltipContentClassName}
+        openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
         className="inline-flex h-full"
       >
         <button
@@ -222,6 +228,7 @@ export function DashboardOvernightSpanCard({
     <Tooltip
       content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
       contentClassName={shiftCardTooltipContentClassName}
+      openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
       className={cn(
         "inline-flex h-full w-full min-w-0",
         employeeHighlighted && displayMode === "expanded" && "relative z-10 overflow-visible"
@@ -288,10 +295,11 @@ export function DashboardOvernightSpanCard({
           ) : null}
           {showAnyText ? (
             <DashboardExpandedShiftCardText
+              employeeName={employeeName}
               templateName={cardContent.templateName}
               timeLabel={cardContent.timeLabel}
               jobsLine={jobsLine}
-              compact={!showTitle}
+              compact={!showTwoLineDetail}
             />
           ) : null}
           {showOverflowIndicator ? <DashboardShiftCardOverflowIndicator /> : null}

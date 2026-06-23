@@ -18,6 +18,9 @@ export function clearDocumentTextSelection(): void {
 /** Platz für den Leuchtrand — verhindert Abschneiden durch overflow:hidden der Liste. */
 export const EMPLOYEE_SHIFT_HIGHLIGHT_GLOW_BLEED_PX = 18;
 
+/** Verzögerung Leuchteffekt (Mitarbeiterliste → Schichtkarten), kürzer als Tooltip. */
+export const EMPLOYEE_SHIFT_HIGHLIGHT_HOVER_DELAY_MS = 500;
+
 export const EMPLOYEE_SHIFT_HIGHLIGHT_OVERLAY_OPACITY = 0.4;
 
 export function buildEmployeeShiftHighlightBoxShadow(

@@ -547,6 +547,9 @@ export interface SchichtwerkDatabase {
   listLocationAreaServiceHours(
     locationId: string
   ): Promise<LocationAreaServiceHour[]>;
+  listLocationAreaServiceHoursForAreas(
+    areaIds: readonly string[]
+  ): Promise<LocationAreaServiceHour[]>;
   listLocationAreaServiceHoursForArea(
     locationAreaId: string,
     locationId: string
@@ -570,6 +573,9 @@ export interface SchichtwerkDatabase {
     to: string
   ): Promise<LocationArea[]>;
   listLocationAreaStaffing(locationId: string): Promise<LocationAreaStaffing[]>;
+  listLocationAreaStaffingForAreas(
+    areaIds: readonly string[]
+  ): Promise<LocationAreaStaffing[]>;
   listLocationAreaStaffingForArea(
     locationAreaId: string,
     locationId: string

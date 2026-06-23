@@ -32,6 +32,8 @@ import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { LocationFormModal } from "./location-form-modal";
 import { LocationAreaFormModal } from "./location-area-form-modal";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
+import { SettingsSidePanel, SettingsSidePanelCloseButton } from "./settings-side-panel";
+import { SettingsDetailBackButton } from "./settings-detail-nav";
 import { LocationDetailActions } from "./location-detail-actions";
 import { areaPlanningModeLabel } from "./area-planning-mode-field";
 import { LocationServiceHoursPanelModal } from "./location-service-hours-panel-modal";
@@ -40,14 +42,9 @@ import { AreaShiftTemplatesPanelModal } from "./area-shift-templates-panel-modal
 import { AreaQualificationTemplatesPanelModal } from "./area-qualification-templates-panel-modal";
 import {
   SETTINGS_LIST_SCROLL_COMPACT_CLASS,
-  SETTINGS_MODAL_MAX_WIDTH,
-  SETTINGS_MODAL_TITLE_CLASS,
   settingsMasterDetailLayoutClass,
   settingsMasterDetailListsClass,
-  settingsModalBackdropClass,
-  settingsModalDialogClass,
   settingsModalFooterClass,
-  settingsModalHeaderPaddingClass,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -63,11 +60,9 @@ import {
   settingsIndicatorCellClass,
   settingsPanelHeaderClass,
 } from "./settings-list-ui";
-import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
 import {
   Alert,
   Button,
-  CloseIcon,
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
@@ -104,6 +99,22 @@ type DetailPanel =
   | "serviceHours"
   | "staffing"
   | "shiftTemplates";
+
+function locationDetailPanelTitle(
+  panel: Exclude<DetailPanel, null>,
+  t: (key: string) => string
+): string {
+  switch (panel) {
+    case "serviceHours":
+      return t("locations.panelServiceHours");
+    case "staffing":
+      return t("locations.panelStaffing");
+    case "shiftTemplates":
+      return t("locations.panelShiftTemplates");
+    case "qualificationTemplates":
+      return t("locations.panelQualificationTemplates");
+  }
+}
 
 const COLUMN_GAP_PX = 20;
 const MAX_NAME_DISPLAY = 25;
@@ -340,8 +351,10 @@ export function LocationsModal({
   const [scrollToLocationId, setScrollToLocationId] = useState<string | null>(null);
   const [scrollToAreaId, setScrollToAreaId] = useState<string | null>(null);
 
-  const overlayFormOpen =
-    !!locationFormMode || !!areaFormMode || !!detailPanel;
+  const overlayFormOpen = !!locationFormMode || !!areaFormMode;
+
+  const anySubModalOpen =
+    overlayFormOpen || confirmDeleteLocation || confirmDeleteArea;
 
   const {
     sortedList: sortedLocations,
@@ -523,7 +536,6 @@ export function LocationsModal({
         setConfirmDeleteArea(false);
         return;
       }
-      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -533,15 +545,7 @@ export function LocationsModal({
     confirmDeleteLocation,
     detailPanel,
     locationFormMode,
-    onClose,
   ]);
-
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
 
   function refreshList() {
     router.refresh();
@@ -768,62 +772,219 @@ export function LocationsModal({
     });
   }
 
-  const showModal = useDeferredSettingsModalRender(deferInitialRender, onClose);
-  if (!showModal) return null;
+  useEffect(() => {
+    if (!deferInitialRender) return;
+    const previous = document.body.style.cursor;
+    document.body.style.cursor = "wait";
+    return () => {
+      document.body.style.cursor = previous;
+    };
+  }, [deferInitialRender]);
+
+  const detailContextSubtitle =
+    detailPanel && selectedLocation && selectedArea
+      ? `${selectedLocation.name} · ${selectedArea.name}`
+      : undefined;
+
+  const detailSubtitleNode =
+    detailPanel && selectedLocation && selectedArea ? (
+      <div className="mt-0.5 text-sm text-muted">
+        <p>{detailContextSubtitle}</p>
+        {detailPanel === "qualificationTemplates" ? (
+          <p className="mt-1 text-xs">{t("locations.areaQualificationTemplatesHint")}</p>
+        ) : null}
+        {detailPanel === "shiftTemplates" ? (
+          <p className="mt-1 text-xs">{t("locations.areaShiftTemplatesHint")}</p>
+        ) : null}
+      </div>
+    ) : undefined;
+
+  function navigateBackFromDetail() {
+    setDetailPanel(null);
+  }
 
   return (
-    <div
-      className={cn(
-        settingsModalBackdropClass(),
-        (pending || areasLoading || areaDetailSwitching) && "cursor-wait"
+    <SettingsSidePanel
+      title={
+        detailPanel
+          ? locationDetailPanelTitle(detailPanel, t)
+          : t("locations.title")
+      }
+      subtitle={detailPanel ? undefined : undefined}
+      subtitleNode={detailSubtitleNode}
+      titleId="locations-modal-title"
+      onClose={onClose}
+      closeDisabled={pending}
+      dismissOnBackdrop={!anySubModalOpen && !detailPanel}
+      dismissOnEscape={!anySubModalOpen && !detailPanel}
+      closeAriaLabel={t("common.close")}
+      contentReady={modalReady}
+      panelClassName={cn(
+        (pending || areasLoading || areaDetailSwitching || deferInitialRender) &&
+          "cursor-wait [&_*]:cursor-wait",
+        anySubModalOpen && "pointer-events-none"
       )}
-      role="presentation"
-      aria-busy={pending || areasLoading || areaDetailSwitching}
-      onMouseDown={(e) => {
-        if (
-          e.target === e.currentTarget &&
-          !overlayFormOpen &&
-          !confirmDeleteLocation &&
-          !confirmDeleteArea
-        ) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        className="relative flex w-full min-w-0 flex-col"
-        style={{ maxWidth: SETTINGS_MODAL_MAX_WIDTH }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="locations-modal-title"
-          aria-hidden={overlayFormOpen}
-          aria-busy={pending || areasLoading || areaDetailSwitching}
-          className={cn(
-            settingsModalDialogClass(),
-            overlayFormOpen ? "pointer-events-none" : "",
-            (pending || areasLoading || areaDetailSwitching) &&
-              "[&_*]:cursor-wait"
-          )}
-        >
-          <div className={cn("shrink-0 border-b border-border", settingsModalHeaderPaddingClass())}>
-            <h2 id="locations-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("locations.title")}
-            </h2>
+      bodyClassName={cn(
+        detailPanel ? "flex min-h-0 flex-col px-0 py-0" : undefined
+      )}
+      headerAside={
+        detailPanel ? (
+          <SettingsDetailBackButton
+            label={t("locations.title")}
+            onClick={() => setDetailPanel(null)}
+            disabled={pending || areasLoading || areaDetailSwitching}
+          />
+        ) : undefined
+      }
+      footer={
+        !detailPanel ? (
+          <div className={settingsModalFooterClass()}>
+            <SettingsSidePanelCloseButton disabled={pending} />
           </div>
-
-          {errorMessage && (
-            <div className="mx-4 mt-3 shrink-0">
-              <Alert variant="error">{errorMessage}</Alert>
-            </div>
+        ) : undefined
+      }
+      overlay={
+        <>
+          {locationFormMode?.type === "create" && (
+            <LocationFormModal
+              mode="create"
+              existingLocations={list}
+              onClose={() => setLocationFormMode(null)}
+              onSaved={handleLocationFormSaved}
+            />
           )}
+          {locationFormMode?.type === "edit" && (
+            <LocationFormModal
+              mode="edit"
+              location={locationFormMode.location}
+              existingLocations={list}
+              onClose={() => setLocationFormMode(null)}
+              onSaved={handleLocationFormSaved}
+            />
+          )}
+          {areaFormMode?.type === "create" && selectedLocationId && (
+            <LocationAreaFormModal
+              mode="create"
+              locationId={selectedLocationId}
+              existingAreas={areas}
+              onClose={() => setAreaFormMode(null)}
+              onSaved={handleAreaFormSaved}
+            />
+          )}
+          {areaFormMode?.type === "edit" && selectedLocationId && (
+            <LocationAreaFormModal
+              mode="edit"
+              locationId={selectedLocationId}
+              area={areaFormMode.area}
+              existingAreas={areas}
+              onClose={() => setAreaFormMode(null)}
+              onSaved={handleAreaFormSaved}
+              onServiceHoursUpdated={(areaId) => {
+                void fetchLocationAreaServiceHours(selectedLocationId, areaId).then(
+                  (result) => {
+                    if (!result.ok) return;
+                    handleServiceHoursCacheUpdate(areaId, result.hours ?? []);
+                  }
+                );
+              }}
+            />
+          )}
+          {confirmDeleteLocation && selectedLocation && (
+            <DeleteConfirmModal
+              name={selectedLocation.name}
+              pending={pending}
+              onCancel={() => setConfirmDeleteLocation(false)}
+              onConfirm={handleDeleteLocation}
+            />
+          )}
+          {confirmDeleteArea && selectedArea && (
+            <DeleteConfirmModal
+              name={selectedArea.name}
+              pending={pending}
+              onCancel={() => setConfirmDeleteArea(false)}
+              onConfirm={handleDeleteArea}
+            />
+          )}
+        </>
+      }
+    >
+      {errorMessage && (
+        <div className="mb-4 shrink-0">
+          <Alert variant="error">{errorMessage}</Alert>
+        </div>
+      )}
 
-          <div
-            className={settingsMasterDetailLayoutClass()}
-            style={{ gap: COLUMN_GAP_PX }}
-          >
+      {detailPanel && selectedLocation && selectedArea ? (
+        <>
+          {detailPanel === "serviceHours" && (
+            <LocationServiceHoursPanelModal
+              embedded
+              location={selectedLocation}
+              area={selectedArea}
+              cachedHours={
+                selectedArea.id in serviceHoursCache
+                  ? serviceHoursCache[selectedArea.id]
+                  : undefined
+              }
+              cachedShiftTemplates={
+                selectedArea.id in shiftTemplatesCache
+                  ? shiftTemplatesCache[selectedArea.id]
+                  : undefined
+              }
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={handleServiceHoursCacheUpdate}
+              onShiftTemplatesCacheUpdate={handleShiftTemplatesCacheUpdate}
+            />
+          )}
+          {detailPanel === "staffing" && (
+            <LocationStaffingPanelModal
+              embedded
+              location={selectedLocation}
+              area={selectedArea}
+              cachedServiceHours={
+                selectedArea.id in serviceHoursCache
+                  ? serviceHoursCache[selectedArea.id]
+                  : undefined
+              }
+              cachedStaffing={
+                selectedArea.id in staffingCache
+                  ? staffingCache[selectedArea.id]
+                  : undefined
+              }
+              cachedShiftTemplates={
+                selectedArea.id in shiftTemplatesCache
+                  ? shiftTemplatesCache[selectedArea.id]
+                  : undefined
+              }
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={handleStaffingCacheUpdate}
+              onShiftTemplatesCacheUpdate={handleShiftTemplatesCacheUpdate}
+            />
+          )}
+          {detailPanel === "shiftTemplates" && (
+            <AreaShiftTemplatesPanelModal
+              embedded
+              location={selectedLocation}
+              area={selectedArea}
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={handleShiftTemplatesCacheUpdate}
+            />
+          )}
+          {detailPanel === "qualificationTemplates" && (
+            <AreaQualificationTemplatesPanelModal
+              embedded
+              location={selectedLocation}
+              area={selectedArea}
+              onClose={navigateBackFromDetail}
+              onCacheUpdate={handleQualificationTemplatesCacheUpdate}
+            />
+          )}
+        </>
+      ) : (
+        <div
+          className={settingsMasterDetailLayoutClass()}
+          style={{ gap: COLUMN_GAP_PX }}
+        >
             <div
               className={settingsMasterDetailListsClass()}
               style={{ gap: COLUMN_GAP_PX }}
@@ -1087,153 +1248,7 @@ export function LocationsModal({
               )}
             </div>
           </div>
-
-          <div className={settingsModalFooterClass("shrink-0 px-4 sm:px-6")}>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
-            >
-              <CloseIcon />
-              {t("common.close")}
-            </Button>
-          </div>
-        </div>
-
-        {locationFormMode?.type === "create" && (
-          <LocationFormModal
-            mode="create"
-            existingLocations={list}
-            onClose={() => setLocationFormMode(null)}
-            onSaved={handleLocationFormSaved}
-          />
-        )}
-        {locationFormMode?.type === "edit" && (
-          <LocationFormModal
-            mode="edit"
-            location={locationFormMode.location}
-            existingLocations={list}
-            onClose={() => setLocationFormMode(null)}
-            onSaved={handleLocationFormSaved}
-          />
-        )}
-        {areaFormMode?.type === "create" && selectedLocationId && (
-          <LocationAreaFormModal
-            mode="create"
-            locationId={selectedLocationId}
-            existingAreas={areas}
-            onClose={() => setAreaFormMode(null)}
-            onSaved={handleAreaFormSaved}
-          />
-        )}
-        {areaFormMode?.type === "edit" && selectedLocationId && (
-          <LocationAreaFormModal
-            mode="edit"
-            locationId={selectedLocationId}
-            area={areaFormMode.area}
-            existingAreas={areas}
-            onClose={() => setAreaFormMode(null)}
-            onSaved={handleAreaFormSaved}
-            onServiceHoursUpdated={(areaId) => {
-              void fetchLocationAreaServiceHours(selectedLocationId, areaId).then(
-                (result) => {
-                  if (!result.ok) return;
-                  handleServiceHoursCacheUpdate(areaId, result.hours ?? []);
-                }
-              );
-            }}
-          />
-        )}
-        {confirmDeleteLocation && selectedLocation && (
-          <DeleteConfirmModal
-            name={selectedLocation.name}
-            pending={pending}
-            onCancel={() => setConfirmDeleteLocation(false)}
-            onConfirm={handleDeleteLocation}
-          />
-        )}
-        {confirmDeleteArea && selectedArea && (
-          <DeleteConfirmModal
-            name={selectedArea.name}
-            pending={pending}
-            onCancel={() => setConfirmDeleteArea(false)}
-            onConfirm={handleDeleteArea}
-          />
-        )}
-        {detailPanel === "serviceHours" && selectedLocation && selectedArea && (
-          <LocationServiceHoursPanelModal
-            location={selectedLocation}
-            area={selectedArea}
-            cachedHours={
-              selectedArea.id in serviceHoursCache
-                ? serviceHoursCache[selectedArea.id]
-                : undefined
-            }
-            cachedShiftTemplates={
-              selectedArea.id in shiftTemplatesCache
-                ? shiftTemplatesCache[selectedArea.id]
-                : undefined
-            }
-            onClose={() => {
-              setDetailPanel(null);
-              refreshList();
-            }}
-            onCacheUpdate={handleServiceHoursCacheUpdate}
-            onShiftTemplatesCacheUpdate={handleShiftTemplatesCacheUpdate}
-          />
-        )}
-        {detailPanel === "staffing" && selectedLocation && selectedArea && (
-          <LocationStaffingPanelModal
-            location={selectedLocation}
-            area={selectedArea}
-            cachedServiceHours={
-              selectedArea.id in serviceHoursCache
-                ? serviceHoursCache[selectedArea.id]
-                : undefined
-            }
-            cachedStaffing={
-              selectedArea.id in staffingCache
-                ? staffingCache[selectedArea.id]
-                : undefined
-            }
-            cachedShiftTemplates={
-              selectedArea.id in shiftTemplatesCache
-                ? shiftTemplatesCache[selectedArea.id]
-                : undefined
-            }
-            onClose={() => {
-              setDetailPanel(null);
-              refreshStaffingCache(selectedLocation.id, selectedArea.id);
-            }}
-            onCacheUpdate={handleStaffingCacheUpdate}
-            onShiftTemplatesCacheUpdate={handleShiftTemplatesCacheUpdate}
-          />
-        )}
-        {detailPanel === "shiftTemplates" && selectedLocation && selectedArea && (
-          <AreaShiftTemplatesPanelModal
-            location={selectedLocation}
-            area={selectedArea}
-            onClose={() => {
-              setDetailPanel(null);
-            }}
-            onCacheUpdate={handleShiftTemplatesCacheUpdate}
-          />
-        )}
-        {detailPanel === "qualificationTemplates" &&
-          selectedLocation &&
-          selectedArea && (
-            <AreaQualificationTemplatesPanelModal
-              location={selectedLocation}
-              area={selectedArea}
-              onClose={() => {
-                setDetailPanel(null);
-              }}
-              onCacheUpdate={handleQualificationTemplatesCacheUpdate}
-            />
-          )}
-      </div>
-    </div>
+      )}
+    </SettingsSidePanel>
   );
 }

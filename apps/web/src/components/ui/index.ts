@@ -8,6 +8,7 @@ export {
   Tooltip,
   tooltipContentClassName,
   shiftCardTooltipContentClassName,
+  HOVER_TOOLTIP_OPEN_DELAY_MS,
   TOOLTIP_Z_INDEX,
 } from "./tooltip";
 export {

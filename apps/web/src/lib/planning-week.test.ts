@@ -16,6 +16,9 @@ describe("buildPlanningPageUrl", () => {
     expect(buildPlanningPageUrl("/dashboard", params)).toBe(
       "/dashboard?week=2026-06-16&location=loc-1&area=area-1"
     );
+    expect(buildPlanningPageUrl("/mitarbeiter-kalender", params)).toBe(
+      "/mitarbeiter-kalender?week=2026-06-16&location=loc-1&area=area-1"
+    );
   });
 
   it("returns pathname without query when no preserved params are set", () => {

@@ -28,10 +28,11 @@ import {
   weeklyHoursCheckShiftFromAreaCalendarCard,
 } from "@/lib/weekly-hours-check-shifts";
 import { useAppShellModalLockActive, useAppShellWaitCursorActive } from "@/lib/app-shell-modal-lock";
+import { useClearMainNavPendingWhenReady } from "@/lib/app-shell-main-nav-pending";
+import { useRegisterPlanningToolbarPageBridge } from "@/lib/planning-toolbar-page-bridge";
 import { AreaCalendarEmployeeLegendSidebar } from "./areacalendar-employee-legend-sidebar";
 import { PlanningEmployeeListContextMenu } from "@/components/planning/planning-employee-list-context-menu";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { AreaCalendarHeader } from "./areacalendar-header";
 import {
   AreaCalendar,
   type AreaCalendarShiftCard,
@@ -48,12 +49,12 @@ import { shouldDisplayShiftOnPlanningCalendar } from "@/lib/shift-cancellation-p
 import { useLocallyRemovedShifts } from "@/lib/use-locally-removed-shifts";
 import {
   APP_SHELL_CONTENT_OFFSET_CLASS,
-  AREA_CALENDAR_VIEW_ROOT_CLASS,
   PLANNING_PAGE_CALENDAR_MAIN_CLASS,
   PLANNING_PAGE_CALENDAR_SECTION_CLASS,
 } from "@/lib/app-shell-layout";
 import { cn } from "@/lib/cn";
 import { usePlanningEmployeeListContextMenu } from "@/lib/use-planning-employee-list-context-menu";
+import { useDelayedEmployeeHighlight } from "@/lib/use-delayed-employee-highlight";
 
 type Props = {
   weekStart: string;
@@ -199,9 +200,7 @@ export function AreaCalendarView({
     [shiftConfirmationEnabled, visibleShifts, communicationHubOptions]
   );
 
-  const [highlightedEmployeeId, setHighlightedEmployeeId] = useState<string | null>(
-    null
-  );
+  const { highlightedEmployeeId, handleEmployeeHover } = useDelayedEmployeeHighlight();
   const {
     menu: employeeListContextMenu,
     menuRef: employeeListContextMenuRef,
@@ -216,6 +215,7 @@ export function AreaCalendarView({
 
   useAppShellModalLockActive(communicationOpen);
   useAppShellWaitCursorActive(communicationBusy);
+  useClearMainNavPendingWhenReady(true);
 
   function openCommunication(options?: CommunicationOpenOptions) {
     setCommunicationOptions(options);
@@ -237,21 +237,15 @@ export function AreaCalendarView({
     router.push(query ? `${pathname}?${query}` : pathname);
   }
 
+  useRegisterPlanningToolbarPageBridge({
+    communicationItemCount,
+    onOpenCommunication: openCommunication,
+    onNavigateToWeek: navigateToWeek,
+    managerNotifications,
+  });
+
   return (
-    <div
-      className={AREA_CALENDAR_VIEW_ROOT_CLASS}
-      onContextMenu={(event) => event.preventDefault()}
-    >
-      <AreaCalendarHeader
-        weekStart={weekStart}
-        locations={locations}
-        selectedLocationId={selectedLocationId}
-        communicationItemCount={communicationItemCount}
-        shiftConfirmationEnabled={shiftConfirmationEnabled}
-        managerNotifications={managerNotifications}
-        onOpenCommunication={openCommunication}
-        onNavigateToWeek={navigateToWeek}
-      />
+    <div onContextMenu={(event) => event.preventDefault()}>
       <section className={cn("relative flex flex-col px-2 md:px-4", PLANNING_PAGE_CALENDAR_SECTION_CLASS)}>
         <div className="flex min-h-0 flex-1 flex-col gap-2 max-md:overflow-visible md:flex-row md:gap-3">
           <AreaCalendarEmployeeLegendSidebar
@@ -264,7 +258,7 @@ export function AreaCalendarView({
             locale={locale}
             employeeHoursLabel={t("common.basic")}
             emptyLabel={t("areaCalendar.weekEmployeeLegendEmpty")}
-            onEmployeeHover={setHighlightedEmployeeId}
+            onEmployeeHover={handleEmployeeHover}
             onEmployeeContextMenu={openEmployeeListContextMenu}
             className={cn(
               APP_SHELL_CONTENT_OFFSET_CLASS,

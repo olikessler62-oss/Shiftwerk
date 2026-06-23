@@ -3,6 +3,7 @@ import {
   isAreaOpenOnDate,
   type AreaServiceHourRef,
 } from "@/lib/location-staffing-client";
+import type { PlanningDayAssignBlockReason } from "@/lib/planning-day-assign-block-reason";
 
 /** Kontextmenü / Linksklick: Servicezeit-Tag oder manuelle Einsätze ohne Servicezeit. */
 export function canOpenAssignShiftContextMenu(
@@ -75,6 +76,38 @@ export function canShowAreaDayAssignContextMenu(
     isDayActive,
     serviceHours,
     shiftCountInArea
+  );
+}
+
+/**
+ * Mitarbeiter-Kalender: Rechtsklick auf Zelle — gleiche Policy wie Bereich-Kalender-Tag.
+ */
+export function canShowEmployeeDayCellAssignContextMenu(
+  areaId: string | null,
+  dateISO: string,
+  isDayExpanded: boolean,
+  dayHasServiceHours: boolean,
+  shiftCountInArea: number,
+  employeeBlockReason: PlanningDayAssignBlockReason | null,
+  serviceHours: readonly AreaServiceHourRef[],
+  simplePlanning: boolean
+): boolean {
+  if (!areaId || isPastCalendarDate(dateISO)) return false;
+  if (employeeBlockReason === "absent") return false;
+
+  if (dayHasServiceHours) {
+    if (shiftCountInArea > 0) return true;
+    if (employeeBlockReason === "no_availability") return false;
+  }
+
+  return canShowAreaDayAssignContextMenu(
+    areaId,
+    dateISO,
+    true,
+    isDayExpanded,
+    serviceHours,
+    shiftCountInArea,
+    simplePlanning
   );
 }
 

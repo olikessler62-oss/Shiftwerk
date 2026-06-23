@@ -73,6 +73,7 @@ type Props = {
     areaId: string,
     templates: AreaShiftTemplateWithBreaks[]
   ) => void;
+  embedded?: boolean;
 };
 
 const COLUMN_LABEL_KEYS = [
@@ -94,6 +95,7 @@ export function AreaShiftTemplatesPanelModal({
   area,
   onClose,
   onCacheUpdate,
+  embedded = false,
 }: Props) {
   const t = useTranslations();
   const [pending, startTransition] = useTransition();
@@ -293,31 +295,18 @@ export function AreaShiftTemplatesPanelModal({
   }
 
   const showModal = useDeferredSettingsModalRender(initialLoading, onClose);
-  if (!showModal) return null;
+  if (!embedded && !showModal) return null;
+  if (embedded && initialLoading) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center py-12 text-sm text-muted">
+        {t("common.loading")}
+      </div>
+    );
+  }
 
-  return (
-    <div
-      className={cn(settingsSubModalOverlayClass(), pending && "cursor-wait")}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !anyOverlayOpen) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="area-shift-templates-panel-title"
-        aria-busy={pending}
-        aria-hidden={anyOverlayOpen}
-        className={cn(
-          settingsSubModalDialogClass("2xl"),
-          pending && "[&_*]:cursor-wait",
-          anyOverlayOpen ? "pointer-events-none" : ""
-        )}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+  const panelContent = (
+    <>
+      {!embedded ? (
         <div
           className={cn(
             "flex items-center justify-between border-b border-border",
@@ -329,7 +318,7 @@ export function AreaShiftTemplatesPanelModal({
               <span className="text-foreground">
                 {t("locations.panelShiftTemplatesOfPrefix")}{" "}
               </span>
-              <span className="text-cyan-600">
+              <span className="text-primary">
                 {location.name} | {area.name}
               </span>
             </h3>
@@ -347,6 +336,7 @@ export function AreaShiftTemplatesPanelModal({
             <CloseIcon className="h-[18px] w-[18px]" />
           </IconButton>
         </div>
+      ) : null}
 
         {errorMessage && (
           <div className="mx-4 mt-3 shrink-0">
@@ -558,11 +548,14 @@ export function AreaShiftTemplatesPanelModal({
             className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
           >
             <CloseIcon />
-            {t("common.close")}
+            {embedded ? t("locations.title") : t("common.close")}
           </Button>
         </div>
-      </div>
+    </>
+  );
 
+  const panelOverlays = (
+    <>
       {formMode && (
         <AreaShiftTemplateFormModal
           key={
@@ -586,6 +579,57 @@ export function AreaShiftTemplatesPanelModal({
           onConfirm={handleDelete}
         />
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        className={cn(
+          "relative flex min-h-0 flex-1 flex-col",
+          pending && "cursor-wait [&_*]:cursor-wait"
+        )}
+        aria-busy={pending}
+      >
+        <div
+          className={cn(
+            "flex min-h-0 flex-1 flex-col overflow-hidden bg-background",
+            anyOverlayOpen && "pointer-events-none"
+          )}
+        >
+          {panelContent}
+        </div>
+        {panelOverlays}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(settingsSubModalOverlayClass(), pending && "cursor-wait")}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !anyOverlayOpen) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="area-shift-templates-panel-title"
+        aria-busy={pending}
+        aria-hidden={anyOverlayOpen}
+        className={cn(
+          settingsSubModalDialogClass("2xl"),
+          pending && "[&_*]:cursor-wait",
+          anyOverlayOpen ? "pointer-events-none" : ""
+        )}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {panelContent}
+      </div>
+      {panelOverlays}
     </div>
   );
 }

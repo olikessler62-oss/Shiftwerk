@@ -15,8 +15,8 @@ export const WEEK_PLAN_ACTIVE = {
   rowDivider: "#e2e8f0",
   columnBackground: "#ffffff",
   dayLabelText: "#25262b",
-  /** Heutiger Tag — dunkles Türkis (an Primary #0D9488 angelehnt) */
-  todayLabelText: "#0F766E",
+  /** Heutiger Tag — Primary #0F3558 */
+  todayLabelText: "#0F3558",
   shiftCardText: "#000000",
 } as const;
 

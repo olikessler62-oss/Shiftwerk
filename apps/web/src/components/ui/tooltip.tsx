@@ -14,6 +14,9 @@ import { cn } from "@/lib/cn";
 
 export const TOOLTIP_Z_INDEX = 200;
 
+/** Verzögerung für Schichtkarten- und Mitarbeiterlisten-Tooltips (Hover). */
+export const HOVER_TOOLTIP_OPEN_DELAY_MS = 700;
+
 export type TooltipPlacement = {
   /** Linker Tooltip-Rand liegt auf der horizontalen Mitte des Triggers. */
   anchorLeftToTriggerCenter?: boolean;
@@ -68,6 +71,8 @@ type TooltipProps = {
   /** Tooltip bleibt geschlossen (z. B. solange ein Kontextmenü offen ist). */
   suppressOpen?: boolean;
   placement?: TooltipPlacement;
+  /** Verzögerung vor Anzeige bei Hover (Fokus öffnet sofort). */
+  openDelayMs?: number;
 };
 
 function hasTooltipContent(content: ReactNode): boolean {
@@ -104,18 +109,47 @@ export function Tooltip({
   disabled = false,
   suppressOpen = false,
   placement,
+  openDelayMs = 0,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const openDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = useId();
   const show = !disabled && hasTooltipContent(content);
   const allowOpen = show && !suppressOpen;
 
+  const clearOpenDelay = useCallback(() => {
+    if (openDelayTimeoutRef.current !== null) {
+      clearTimeout(openDelayTimeoutRef.current);
+      openDelayTimeoutRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
-    if (suppressOpen) setOpen(false);
-  }, [suppressOpen]);
+    if (suppressOpen) {
+      clearOpenDelay();
+      setOpen(false);
+    }
+  }, [suppressOpen, clearOpenDelay]);
+
+  useEffect(() => () => clearOpenDelay(), [clearOpenDelay]);
+
+  const handleMouseEnter = useCallback(() => {
+    if (!allowOpen) return;
+    clearOpenDelay();
+    if (openDelayMs <= 0) {
+      setOpen(true);
+      return;
+    }
+    openDelayTimeoutRef.current = setTimeout(() => setOpen(true), openDelayMs);
+  }, [allowOpen, clearOpenDelay, openDelayMs]);
+
+  const handleMouseLeave = useCallback(() => {
+    clearOpenDelay();
+    setOpen(false);
+  }, [clearOpenDelay]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -191,10 +225,10 @@ export function Tooltip({
       <span
         ref={triggerRef}
         className={cn("inline-flex max-w-full min-w-0", className)}
-        onMouseEnter={() => allowOpen && setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         onFocus={() => allowOpen && setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onBlur={handleMouseLeave}
         onContextMenu={() => setOpen(false)}
         aria-describedby={open && allowOpen ? id : undefined}
       >

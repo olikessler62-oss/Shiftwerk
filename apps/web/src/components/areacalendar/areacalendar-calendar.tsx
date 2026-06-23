@@ -2508,6 +2508,11 @@ export function AreaCalendar({
                         showDayCellContent;
                       const isPastWorkDayCell =
                         showDayCellContent && isPastAreaWorkDay;
+                      const showAreaStaffingHeaderStrip =
+                        isAreaActive &&
+                        isLayoutAreaExpanded &&
+                        (isOpen || showNoServiceHoursInHeader) &&
+                        !showNoServiceHoursLabel;
                       const headerStaffing = computeBulkStaffingHeaderEntries({
                         staffingRules: rulesForAreaDate(area.id, date),
                         areaId: area.id,
@@ -2548,7 +2553,9 @@ export function AreaCalendar({
                             (cellHasHighlightedShift ||
                               cellStaffingHeaderAlertBadge) &&
                               "overflow-visible",
-                            showDayCellContent ? "p-2" : undefined,
+                            showDayCellContent ? "p-2" : showAreaStaffingHeaderStrip
+                              ? "min-h-[44px]"
+                              : undefined,
                             dayColumnDivider(dayIndex),
                             !isLastRow && ROW_DIVIDER_CLASS
                           )}
@@ -2584,56 +2591,63 @@ export function AreaCalendar({
                                   : undefined),
                           }}
                         >
+                          {showAreaStaffingHeaderStrip ? (
+                            <TagAreaHeaderStrip
+                              key={`${area.id}:${date}:${dayShifts.map((shift) => shift.id).join(",")}`}
+                              className={cn(
+                                (cellHasHighlightedShift ||
+                                  cellStaffingHeaderAlertBadge) &&
+                                  "z-40"
+                              )}
+                              dayCollapsed={!isDayActive}
+                              entries={headerStaffing}
+                              noServiceHoursLabel={
+                                showNoServiceHoursInHeader
+                                  ? t("areaCalendar.noServiceHours")
+                                  : undefined
+                              }
+                              headerTooltip={tagAreaHeaderServiceHoursTooltip(
+                                area.id,
+                                area.name,
+                                date,
+                                showNoServiceHoursInHeader
+                              )}
+                              staffingHeaderMenuOpen={
+                                staffingHeaderContextMenu != null
+                              }
+                              onStaffingHeaderMenu={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (isPastShiftDate(date)) return;
+                                if (headerStaffing.length === 0) return;
+                                setContextMenu(null);
+                                setShiftContextMenu(null);
+                                staffingHeaderContextMenuOpenedAtRef.current =
+                                  performance.now();
+                                setStaffingHeaderContextMenu({
+                                  x: event.clientX,
+                                  y: event.clientY,
+                                  areaId: area.id,
+                                  date,
+                                  initialServiceHourId:
+                                    headerStaffing[0]?.serviceHourId,
+                                });
+                              }}
+                              overlayBackgroundColor={
+                                isPastWorkDayCell
+                                  ? PAST_TAG_AREA_OVERLAY_BG
+                                  : PLANNING_ACTIVE_DAY_OVERLAY_BG
+                              }
+                              style={{
+                                height: TAG_AREA_HEADER_STRIP_HEIGHT,
+                                position: "absolute",
+                                insetInline: 0,
+                                top: 0,
+                              }}
+                            />
+                          ) : null}
                           {showDayCellContent ? (
                             <>
-                              <TagAreaHeaderStrip
-                                key={`${area.id}:${date}:${dayShifts.map((shift) => shift.id).join(",")}`}
-                                className={cn(
-                                  (cellHasHighlightedShift ||
-                                    cellStaffingHeaderAlertBadge) &&
-                                    "z-40"
-                                )}
-                                dayCollapsed={!isDayActive}
-                                entries={headerStaffing}
-                                noServiceHoursLabel={
-                                  showNoServiceHoursInHeader
-                                    ? t("areaCalendar.noServiceHours")
-                                    : undefined
-                                }
-                                headerTooltip={tagAreaHeaderServiceHoursTooltip(
-                                  area.id,
-                                  area.name,
-                                  date,
-                                  showNoServiceHoursInHeader
-                                )}
-                                staffingHeaderMenuOpen={
-                                  staffingHeaderContextMenu != null
-                                }
-                                onStaffingHeaderMenu={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  if (isPastShiftDate(date)) return;
-                                  if (headerStaffing.length === 0) return;
-                                  setContextMenu(null);
-                                  setShiftContextMenu(null);
-                                  staffingHeaderContextMenuOpenedAtRef.current =
-                                    performance.now();
-                                  setStaffingHeaderContextMenu({
-                                    x: event.clientX,
-                                    y: event.clientY,
-                                    areaId: area.id,
-                                    date,
-                                    initialServiceHourId:
-                                      headerStaffing[0]?.serviceHourId,
-                                  });
-                                }}
-                                overlayBackgroundColor={
-                                  isPastWorkDayCell
-                                    ? PAST_TAG_AREA_OVERLAY_BG
-                                    : PLANNING_ACTIVE_DAY_OVERLAY_BG
-                                }
-                                style={{ height: TAG_AREA_HEADER_STRIP_HEIGHT }}
-                              />
                               <div
                                 data-areacalendar-area-cell-footer
                                 className="absolute inset-x-0 bottom-0 z-30 flex items-center justify-center overflow-hidden border-t border-border px-1"

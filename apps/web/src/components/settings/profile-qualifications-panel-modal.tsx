@@ -12,6 +12,7 @@ import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { ProfileQualificationFormModal } from "./profile-qualification-form-modal";
 import {
   SETTINGS_MODAL_TITLE_CLASS,
+  SETTINGS_EMBEDDED_EMPTY_STATE_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
   SettingsActionBar,
   SettingsEmptyState,
@@ -20,9 +21,13 @@ import {
   SettingsListRowDeleteButton,
   SettingsListRowCheckbox,
   SettingsBulkDeleteActionButton,
+  settingsEmbeddedDetailPanelBodyClass,
+  settingsEmbeddedDetailPanelInnerClass,
+  settingsEmbeddedDetailPanelShellClass,
   settingsListItemAttrs,
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
+  settingsProfileEmbeddedListScrollClass,
   settingsScrollableTableListClass,
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
@@ -66,6 +71,8 @@ type Props = {
   cachedQualifications?: Qualification[];
   onClose: () => void;
   onCacheUpdate: (profileId: string, qualifications: Qualification[]) => void;
+  /** In Slide-in-Profile: Inhalt ohne Sub-Modal-Overlay. */
+  embedded?: boolean;
 };
 
 export function ProfileQualificationsPanelModal({
@@ -73,6 +80,7 @@ export function ProfileQualificationsPanelModal({
   cachedQualifications,
   onClose,
   onCacheUpdate,
+  embedded = false,
 }: Props) {
   const t = useTranslations();
   const [pending, startTransition] = useTransition();
@@ -242,34 +250,19 @@ export function ProfileQualificationsPanelModal({
     });
   }
 
-  return (
-    <div
-      className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (
-          e.target === e.currentTarget &&
-          !anyFormOpen &&
-          !confirmRemove &&
-          !confirmBulkRemove
-        ) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-qualifications-panel-title"
-        aria-busy={loading || pending}
-        aria-hidden={anyFormOpen}
-        className={cn(
-          settingsSubModalDialogClass("lg"),
-          (loading || pending) && "[&_*]:cursor-wait",
-          anyFormOpen ? "pointer-events-none" : ""
-        )}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+  if (embedded && loading) {
+    return (
+      <div className="flex shrink-0 items-center justify-center py-8 text-sm text-muted">
+        {t("common.loading")}
+      </div>
+    );
+  }
+
+  const anyOverlayOpen = anyFormOpen || confirmRemove || confirmBulkRemove;
+
+  const panelContent = (
+    <>
+        {!embedded ? (
         <div
           className={cn(
             "flex items-center justify-between border-b border-border",
@@ -283,7 +276,7 @@ export function ProfileQualificationsPanelModal({
             <span className="text-foreground">
               {t("profiles.panelQualificationsOfPrefix")}{" "}
             </span>
-            <span className="text-cyan-600">{profile.full_name}</span>
+            <span className="text-primary">{profile.full_name}</span>
           </h3>
           <IconButton
             size="sm"
@@ -295,30 +288,43 @@ export function ProfileQualificationsPanelModal({
             <CloseIcon className="h-[18px] w-[18px]" />
           </IconButton>
         </div>
+        ) : null}
 
         {errorMessage && (
-          <div className="mx-4 mt-3 shrink-0">
+          <div className={cn("shrink-0", embedded ? "mx-4 mt-3" : "mx-4 mt-3")}>
             <Alert variant="error">{errorMessage}</Alert>
           </div>
         )}
 
-        <div className="min-h-0 bg-background px-4 py-3">
+        <div
+          className={
+            embedded
+              ? settingsEmbeddedDetailPanelBodyClass()
+              : "min-h-0 bg-background px-4 py-3"
+          }
+        >
           <div
             className={cn(
               settingsScrollableTableListClass(),
-              SETTINGS_PROFILES_LIST_SCROLL_CLASS
+              embedded
+                ? settingsProfileEmbeddedListScrollClass(profileQualifications.length)
+                : SETTINGS_PROFILES_LIST_SCROLL_CLASS
             )}
           >
             {loading ? (
               <SettingsEmptyState
                 message={t("common.loading")}
-                className={EMPTY_STATE_CLASS}
+                className={
+                  embedded ? SETTINGS_EMBEDDED_EMPTY_STATE_CLASS : EMPTY_STATE_CLASS
+                }
               />
             ) : profileQualifications.length === 0 ? (
               <SettingsEmptyState
                 message={t("profiles.emptyQualifications")}
                 hint={t("common.emptyHintCreate")}
-                className={EMPTY_STATE_CLASS}
+                className={
+                  embedded ? SETTINGS_EMBEDDED_EMPTY_STATE_CLASS : EMPTY_STATE_CLASS
+                }
               />
             ) : (
               <table className="w-full border-collapse">
@@ -457,11 +463,14 @@ export function ProfileQualificationsPanelModal({
             className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
           >
             <CloseIcon />
-            {t("common.close")}
+            {embedded ? t("profiles.title") : t("common.close")}
           </Button>
         </div>
-      </div>
+    </>
+  );
 
+  const panelOverlays = (
+    <>
       {formMode?.type === "create" && (
         <ProfileQualificationFormModal
           mode="create"
@@ -498,6 +507,57 @@ export function ProfileQualificationsPanelModal({
           onConfirm={handleBulkRemove}
         />
       )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        className={cn(
+          settingsEmbeddedDetailPanelShellClass(),
+          (loading || pending) && "cursor-wait [&_*]:cursor-wait"
+        )}
+        aria-busy={loading || pending}
+      >
+        <div
+          className={cn(
+            settingsEmbeddedDetailPanelInnerClass(),
+            anyOverlayOpen && "pointer-events-none"
+          )}
+        >
+          {panelContent}
+        </div>
+        {panelOverlays}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(settingsSubModalOverlayClass(), (loading || pending) && "cursor-wait")}
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !anyOverlayOpen) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-qualifications-panel-title"
+        aria-busy={loading || pending}
+        aria-hidden={anyOverlayOpen}
+        className={cn(
+          settingsSubModalDialogClass("lg"),
+          (loading || pending) && "[&_*]:cursor-wait",
+          anyOverlayOpen ? "pointer-events-none" : ""
+        )}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {panelContent}
+      </div>
+      {panelOverlays}
     </div>
   );
 }

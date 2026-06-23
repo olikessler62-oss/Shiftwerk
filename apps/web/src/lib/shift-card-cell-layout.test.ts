@@ -671,6 +671,7 @@ describe("shift-card-display-content", () => {
   it("chooses density based on cell width", () => {
     expect(resolveShiftCardDensity(400, 152, 100)).toBe("two-line");
     expect(resolveShiftCardDensity(120, 152, 100)).toBe("compact");
-    expect(resolveShiftCardDensity(48, 152, 100)).toBe("marker");
+    expect(resolveShiftCardDensity(48, 152, 100)).toBe("compact");
+    expect(resolveShiftCardDensity(18, 152, 100)).toBe("marker");
   });
 });

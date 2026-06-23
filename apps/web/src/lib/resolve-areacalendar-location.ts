@@ -11,6 +11,18 @@ export function resolveSelectedLocationId(
   return locations[0].id;
 }
 
+/** URL-Parameter oder Cookie-Fallback (wie in Planning-Shells). */
+export function resolvePlanningLocationId(
+  locations: Location[],
+  locationParam: string | undefined,
+  tentativeLocationId: string | undefined
+): string | null {
+  return resolveSelectedLocationId(
+    locations,
+    locationParam ?? tentativeLocationId
+  );
+}
+
 export function resolveSelectedAreaId(
   areas: LocationArea[],
   areaParam: string | undefined

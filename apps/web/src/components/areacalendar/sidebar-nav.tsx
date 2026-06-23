@@ -67,22 +67,23 @@ function buildOverviewLinks(includeQualifications: boolean) {
 }
 
 const OVERVIEW_SECTION_ID = "uebersicht";
+const CALENDAR_SECTION_ID = "kalender";
 const SETTINGS_SECTION_ID = "einstellungen";
 
 const navItemClass = (active: boolean) =>
   cn(
-    "block w-full rounded-lg border-l-2 py-2 pl-[calc(0.75rem-2px)] pr-3 text-left text-sm transition-colors",
+    "block w-full rounded-lg border-l-2 py-2 pl-[calc(0.75rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
     active
-      ? "border-l-primary bg-primary/5 font-medium text-foreground"
-      : "border-l-transparent text-foreground hover:bg-primary/5"
+      ? "border-l-primary bg-white/[0.16] text-foreground"
+      : "border-l-transparent text-foreground hover:bg-white/[0.12]"
   );
 
 const subLinkClass = (active: boolean) =>
   cn(
-    "block w-full rounded-lg border-l-2 py-2 pl-[calc(2rem-2px)] pr-3 text-left text-sm transition-colors",
+    "block w-full rounded-lg border-l-2 py-1.5 pl-[calc(2rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
     active
-      ? "border-l-primary bg-primary/5 font-medium text-foreground"
-      : "border-l-transparent text-muted hover:bg-primary/5 hover:text-foreground"
+      ? "border-l-primary bg-white/[0.16] text-foreground"
+      : "border-l-transparent text-muted hover:bg-white/[0.12] hover:text-foreground"
   );
 
 const settingsSubLinkClass = subLinkClass;
@@ -99,6 +100,8 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const t = useTranslations();
   const features = useOrgFeatures();
   const areaCalendarActive = pathname === "/bereich-kalender";
+  const employeeCalendarActive = pathname === "/mitarbeiter-kalender";
+  const calendarActive = areaCalendarActive || employeeCalendarActive;
   const overviewActive =
     pathname.startsWith("/uebersicht") ||
     searchParams.get("uebersichtAbwesenheiten") === "1" ||
@@ -131,9 +134,16 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     sonderzuschlaegeOpen ||
     abwesenheitenOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    [CALENDAR_SECTION_ID]: calendarActive,
     [OVERVIEW_SECTION_ID]: overviewActive,
     [SETTINGS_SECTION_ID]: settingsModalOpen,
   });
+
+  useEffect(() => {
+    if (calendarActive) {
+      setExpanded((prev) => ({ ...prev, [CALENDAR_SECTION_ID]: true }));
+    }
+  }, [calendarActive]);
 
   useEffect(() => {
     if (overviewActive) {
@@ -147,6 +157,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     }
   }, [settingsModalOpen]);
 
+  const calendarExpanded = expanded[CALENDAR_SECTION_ID] ?? false;
   const overviewExpanded = expanded[OVERVIEW_SECTION_ID] ?? false;
   const settingsExpanded = expanded[SETTINGS_SECTION_ID] ?? false;
 
@@ -200,6 +211,10 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
 
   const dashboardHref = buildPlanningPageUrl("/dashboard", searchParams);
   const areaCalendarHref = buildPlanningPageUrl("/bereich-kalender", searchParams);
+  const employeeCalendarHref = buildPlanningPageUrl(
+    "/mitarbeiter-kalender",
+    searchParams
+  );
 
   function handleSettingsNav(flag: SettingsModalQueryFlag) {
     beginMainNavPending({ kind: "settings-modal", flag });
@@ -222,7 +237,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   }
 
   return (
-    <nav className="flex flex-col gap-0.5 p-2">
+    <nav className="app-shell-sidebar-nav-slot flex w-full shrink-0 flex-col gap-1 py-2">
       <Link
         href={dashboardHref}
         onClick={() => handlePageNav("/dashboard")}
@@ -231,13 +246,44 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
         {t("nav.dashboard")}
       </Link>
 
-      <Link
-        href={areaCalendarHref}
-        onClick={() => handlePageNav("/bereich-kalender")}
-        className={navItemClass(areaCalendarActive)}
-      >
-        {t("nav.planning")}
-      </Link>
+      <div>
+        <button
+          type="button"
+          onClick={() => toggleSection(CALENDAR_SECTION_ID)}
+          aria-expanded={calendarExpanded}
+          className={cn(
+            navItemClass(calendarExpanded || calendarActive),
+            "flex items-center justify-between"
+          )}
+        >
+          <span>{t("nav.calendar")}</span>
+          <Chevron open={calendarExpanded} />
+        </button>
+
+        <div
+          className={cn(
+            "grid transition-[grid-template-rows] duration-200 ease-out",
+            calendarExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          )}
+        >
+          <div className="overflow-hidden space-y-0.5 pt-0.5">
+            <Link
+              href={employeeCalendarHref}
+              onClick={() => handlePageNav("/mitarbeiter-kalender")}
+              className={subLinkClass(employeeCalendarActive)}
+            >
+              {t("nav.employeeCalendar")}
+            </Link>
+            <Link
+              href={areaCalendarHref}
+              onClick={() => handlePageNav("/bereich-kalender")}
+              className={subLinkClass(areaCalendarActive)}
+            >
+              {t("nav.areaCalendar")}
+            </Link>
+          </div>
+        </div>
+      </div>
 
       <div>
         <button
@@ -259,16 +305,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
             overviewExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
           )}
         >
-          <div className="overflow-hidden">
-            {overviewLinks.map((item, index) => (
+          <div className="overflow-hidden space-y-0.5 pt-0.5">
+            {overviewLinks.map((item) => (
                 <Link
                   key={item.flag}
                   href={buildOverviewModalUrl(item.flag)}
                   onClick={() => handleOverviewNav(item.flag)}
-                  className={cn(
-                    subLinkClass(isOverviewModalLinkOpen(item.flag)),
-                    index === 0 && "mt-0.5"
-                  )}
+                  className={subLinkClass(isOverviewModalLinkOpen(item.flag))}
                 >
                   {t(item.labelKey)}
                 </Link>
@@ -297,13 +340,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
             settingsExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
           )}
         >
-          <div className="overflow-hidden">
-            {settingsLinks.map((item, index) => (
+          <div className="overflow-hidden space-y-0.5 pt-0.5">
+            {settingsLinks.map((item) => (
               <Link
                 key={item.flag}
                 href={buildSettingsModalUrl(item.flag)}
                 onClick={() => handleSettingsNav(item.flag)}
-                className={cn(settingsSubLinkClass(item.open), index === 0 && "mt-0.5")}
+                className={settingsSubLinkClass(item.open)}
               >
                 {t(item.labelKey)}
               </Link>

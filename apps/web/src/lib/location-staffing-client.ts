@@ -427,15 +427,30 @@ export function hasServiceHoursOnDate(
 ): boolean {
   const weekday = serviceWeekdayForDate(dateISO);
   return serviceHours.some((hour) => {
-    if (
-      areaIds.length > 0 &&
-      hour.location_area_id &&
-      !areaIds.includes(hour.location_area_id)
-    ) {
-      return false;
+    if (areaIds.length > 0) {
+      if (!hour.location_area_id || !areaIds.includes(hour.location_area_id)) {
+        return false;
+      }
     }
     return normalizeServiceHourWeekday(hour.weekday) === weekday;
   });
+}
+
+/** Servicezeiten, die eine Bedarfs-Füllanzeige tragen können (wie tagAreaHeaderStaffingEntries). */
+export function hasStaffingHeaderServiceHoursOnDate(
+  serviceHours: readonly AreaServiceHourRef[],
+  dateISO: string,
+  areaId: string
+): boolean {
+  const weekday = serviceWeekdayForDate(dateISO);
+  return serviceHours.some(
+    (hour) =>
+      hour.location_area_id === areaId &&
+      Boolean(hour.id) &&
+      Boolean(hour.start_time?.trim()) &&
+      Boolean(hour.end_time?.trim()) &&
+      normalizeWeekday(hour.weekday) === weekday
+  );
 }
 
 export type StaffingRule = {

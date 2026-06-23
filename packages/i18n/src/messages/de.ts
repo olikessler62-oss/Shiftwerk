@@ -36,6 +36,9 @@ export const de = {
   },
   nav: {
     dashboard: "Dashboard",
+    calendar: "Kalender",
+    areaCalendar: "Bereich-Kalender",
+    employeeCalendar: "Mitarbeiter-Kalender",
     planning: "Bereich-Kalender",
     absences: "Abwesenheiten",
     reports: "Berichte",
@@ -939,6 +942,11 @@ export const de = {
     },
   },
   dashboard: {
+    summaryTitle: "Schichtübersicht",
+    summaryEmpty: "In dieser Woche sind keine Schichten geplant.",
+    summaryShiftCount: "{count, plural, one {# Schicht} other {# Schichten}}",
+    summaryColumnTime: "Zeit",
+    summaryColumnShift: "Schicht",
     headerSubtitle: "Schichtplan",
     headerCalendarWeek: "KW {week}",
     readOnlyWeek:

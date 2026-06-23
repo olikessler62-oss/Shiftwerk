@@ -1,18 +1,22 @@
 import { cookies } from "next/headers";
 import { getDatabase } from "@/lib/db";
 import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
-import { DashboardView } from "@/components/dashboard/dashboard-view";
+import { DashboardSummaryShell } from "@/components/dashboard/dashboard-summary-shell";
 import { DashboardLocationPreferenceSync } from "@/components/dashboard/dashboard-location-preference-sync";
 import {
   PLANNING_SELECTED_LOCATION_COOKIE,
   readPlanningLocationCookie,
 } from "@/lib/planning-location-preference";
 import {
+  emptyDashboardSummaryPageBundle,
+  loadDashboardSummaryPageBundle,
+} from "@/lib/dashboard-summary-data";
+import {
   resolveDashboardPageFrame,
   type DashboardSearchParams,
 } from "@/lib/dashboard-page-frame";
 
-/** Schneller Shell-Load: Header + Rahmen, Kalender folgt per Suspense. */
+/** Dashboard: Schichtübersicht als Liste (kein Kalender). */
 export async function DashboardPageShell({
   params,
 }: {
@@ -23,6 +27,7 @@ export async function DashboardPageShell({
     user,
     organization,
     orgId,
+    timeZone,
     weekStart,
     dates,
     from,
@@ -34,76 +39,72 @@ export async function DashboardPageShell({
 
   const db = await getDatabase();
 
-  const [
-    planningEmployees,
-    recurringAvailability,
-    absences,
-    locations,
-    qualifications,
-    profileQualificationIdsMap,
-    settingsRoles,
-    settingsProfiles,
-    settingsCompensationSurchargeTypes,
-    managerNotifications,
-  ] = await Promise.all([
-    db.listPlanningEmployees(orgId),
-    db.listOrganizationRecurringAvailability(orgId),
-    db.listOrganizationAbsences(orgId, {
-      statuses: ["approved"],
-      overlappingFrom: from,
-      overlappingTo: to,
-    }),
-    db.listLocations(orgId),
-    db.listQualifications(orgId),
-    db.listProfileQualificationIdsByOrganization(orgId),
-    loadSettingsModalsData
-      ? db.listRoles(orgId).then(async (roles) => {
-          if (!roles.length) {
-            await db.seedDefaultRoles(orgId);
-            return db.listRoles(orgId);
-          }
-          return roles;
-        })
-      : Promise.resolve([]),
-    loadSettingsModalsData
-      ? db.listOrganizationProfiles(orgId)
-      : Promise.resolve([]),
-    loadSettingsModalsData
-      ? db.listCompensationSurchargeTypes(orgId)
-      : Promise.resolve([]),
-    organization.shift_confirmation_enabled
-      ? db.listManagerNotificationsForRecipient(user.id, { limit: 50 })
-      : Promise.resolve([]),
-  ]);
+  const [locations, planningEmployees, settingsRoles, settingsProfiles, settingsCompensationSurchargeTypes] =
+    await Promise.all([
+      db.listLocations(orgId),
+      db.listPlanningEmployees(orgId),
+      loadSettingsModalsData
+        ? db.listRoles(orgId).then(async (roles) => {
+            if (!roles.length) {
+              await db.seedDefaultRoles(orgId);
+              return db.listRoles(orgId);
+            }
+            return roles;
+          })
+        : Promise.resolve([]),
+      loadSettingsModalsData
+        ? db.listOrganizationProfiles(orgId)
+        : Promise.resolve([]),
+      loadSettingsModalsData
+        ? db.listCompensationSurchargeTypes(orgId)
+        : Promise.resolve([]),
+    ]);
 
-  const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
-  const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
+  const cookieStore = await cookies();
+  const selectedLocationId = resolveSelectedLocationId(
+    locations,
+    locationParam ??
+      readPlanningLocationCookie(
+        cookieStore.get(PLANNING_SELECTED_LOCATION_COOKIE)?.value
+      )
+  );
+  const selectedLocation =
+    locations.find((location) => location.id === selectedLocationId) ?? null;
+
+  const summaryBundle =
+    selectedLocationId
+      ? await loadDashboardSummaryPageBundle({
+          db,
+          orgId,
+          userId: user.id,
+          organization,
+          locationId: selectedLocationId,
+          weekStart,
+          from,
+          to,
+          timeZone,
+          planningEmployees,
+        })
+      : emptyDashboardSummaryPageBundle();
 
   return (
     <>
       <DashboardLocationPreferenceSync locationId={selectedLocationId} />
-      <DashboardView
+      <DashboardSummaryShell
         weekStart={weekStart}
         dates={dates}
-        employees={planningEmployees}
-        shifts={[]}
-        locationShifts={[]}
-        recurringAvailability={recurringAvailability}
-        absences={absences}
-        communicationSwapRequests={[]}
-        communicationCancelActors={{}}
         locations={locations}
         selectedLocationId={selectedLocationId}
-        areas={[]}
-        selectedAreaId={null}
-        areaShiftTemplates={[]}
-        serviceHours={[]}
-        staffingRules={[]}
-        staffingOverrides={[]}
-        qualifications={qualifications}
-        profileQualificationIds={profileQualificationIds}
+        selectedLocationName={selectedLocation?.name}
+        shifts={summaryBundle.summaryShifts}
+        areas={summaryBundle.areas}
+        locationShifts={summaryBundle.locationShifts}
+        employees={summaryBundle.employees}
+        absences={summaryBundle.absences}
+        communicationSwapRequests={summaryBundle.communicationSwapRequests}
+        communicationCancelActors={summaryBundle.communicationCancelActors}
+        managerNotifications={summaryBundle.managerNotifications}
         readOnlyWeek={readOnlyWeek}
-        managerNotifications={managerNotifications}
         settingsModals={
           loadSettingsModalsData
             ? {

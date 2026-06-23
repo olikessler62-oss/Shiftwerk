@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type {
   Location,
@@ -15,7 +15,6 @@ import { fetchOverviewShiftPreferences } from "@/app/actions/overview-shift-pref
 import { DeleteConfirmModal } from "@/components/settings/delete-confirm-modal";
 import { ProfileShiftPreferencesFormModal } from "@/components/settings/profile-shift-preferences-form-modal";
 import {
-  SETTINGS_MODAL_TITLE_CLASS,
   SettingsActionBar,
   SettingsBulkDeleteActionButton,
   SettingsEmptyState,
@@ -26,17 +25,12 @@ import {
   SettingsPrimaryActionButton,
   applyCreatedListSelection,
   shouldIgnoreSettingsListRowActivation,
-  areaCalendarModalBackdropClass,
   settingsDataCellClass,
   settingsDataRowClass,
   settingsIndicatorCellClass,
   settingsListItemAttrs,
   settingsOverviewListRowActionsHeaderClass,
-  settingsModalBodyPaddingClass,
-  settingsModalDialogClass,
   settingsModalFooterClass,
-  settingsModalHeaderPaddingClass,
-  settingsModalRootClass,
   settingsScrollableTableListClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
@@ -45,10 +39,10 @@ import {
 import {
   Button,
   CloseIcon,
-  IconButton,
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
+import { OverviewSidePanel } from "./overview-side-panel";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
@@ -109,7 +103,6 @@ export function OverviewShiftPreferencesEditableModal({
   const [jumpSelectedEmployeeId, setJumpSelectedEmployeeId] = useState(
     initialEmployeeId ?? ""
   );
-  const modalRootRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -135,13 +128,6 @@ export function OverviewShiftPreferencesEditableModal({
     void loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
-
   const anySubModalOpen = !!formMode || confirmRemove || confirmBulkRemove;
 
   useEffect(() => {
@@ -159,11 +145,10 @@ export function OverviewShiftPreferencesEditableModal({
         setConfirmBulkRemove(false);
         return;
       }
-      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmBulkRemove, confirmRemove, formMode, onClose]);
+  }, [confirmBulkRemove, confirmRemove, formMode]);
 
   const preferenceById = useMemo(
     () => new Map(preferences.map((item) => [item.id, item])),
@@ -388,69 +373,32 @@ export function OverviewShiftPreferencesEditableModal({
   }
 
   return (
-    <div
-      className={cn(
-        areaCalendarModalBackdropClass(),
-        (waitingForContent || pending) && "cursor-wait"
-      )}
-      role="presentation"
-      aria-busy={waitingForContent || pending}
-      onMouseDown={(event) => {
-        if (waitingForContent || anySubModalOpen) return;
-        if (modalRootRef.current?.contains(event.target as Node)) return;
-        onClose();
-      }}
-    >
+    <>
       {!loading ? (
-        <div
-          ref={modalRootRef}
-          className={cn(settingsModalRootClass("5xl"), !contentReady && "invisible pointer-events-none")}
-          aria-hidden={!contentReady}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="overview-shift-preferences-modal-title"
-            aria-hidden={anySubModalOpen}
-            className={cn(
-              settingsModalDialogClass(),
-              anySubModalOpen ? "pointer-events-none" : ""
-            )}
-          >
-            <div
-              className={cn(
-                "flex items-center justify-between gap-3 border-b border-border",
-                settingsModalHeaderPaddingClass()
-              )}
-            >
-              <div className="min-w-0">
-                <h2
-                  id="overview-shift-preferences-modal-title"
-                  className={SETTINGS_MODAL_TITLE_CLASS}
-                >
-                  {t("overview.preferences.title")}
-                </h2>
-                <p className="mt-0.5 text-xs text-muted">
-                  {t("overview.preferences.inlineEditHint")}
-                </p>
-              </div>
-              <IconButton
-                size="sm"
-                onClick={onClose}
-                aria-label={t("common.close")}
-                className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
-              >
-                <CloseIcon className="h-[18px] w-[18px]" />
-              </IconButton>
+        <OverviewSidePanel
+          title={t("overview.preferences.title")}
+          subtitle={t("overview.preferences.inlineEditHint")}
+          titleId="overview-shift-preferences-modal-title"
+          onClose={onClose}
+          closeDisabled={pending || waitingForContent || anySubModalOpen}
+          dismissOnBackdrop={!anySubModalOpen && !waitingForContent && !pending}
+          closeAriaLabel={t("common.close")}
+          contentReady={contentReady}
+          panelClassName={cn(anySubModalOpen && "pointer-events-none")}
+          footer={
+            <div className={settingsModalFooterClass()}>
+              <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+                <CloseIcon />
+                {t("common.close")}
+              </Button>
             </div>
+          }
+        >
+          {errorMessage ? (
+            <p className="mb-3 text-sm text-red-700">{errorMessage}</p>
+          ) : null}
 
-            <div className={cn(settingsModalBodyPaddingClass(), "bg-background")}>
-              {errorMessage ? (
-                <p className="mb-3 text-sm text-red-700">{errorMessage}</p>
-              ) : null}
-
-              <div className="flex flex-col rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
+          <div className="flex flex-col rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
                 <div className="relative z-30 flex shrink-0 items-center justify-between gap-3 overflow-visible border-b border-border bg-subtle px-3 py-2.5">
                   <h3 className="min-w-0 truncate text-sm font-medium text-foreground">
                     {t("overview.preferences.listTitle")}
@@ -705,17 +653,10 @@ export function OverviewShiftPreferencesEditableModal({
                   {t("overview.preferences.selectEmployeeHint")}
                 </p>
               )}
-            </div>
+        </OverviewSidePanel>
+      ) : null}
 
-            <div className={settingsModalFooterClass()}>
-              <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
-                <CloseIcon />
-                {t("common.close")}
-              </Button>
-            </div>
-          </div>
-
-          {formMode?.type === "create" && createEmployeeId ? (
+      {formMode?.type === "create" && createEmployeeId ? (
             <ProfileShiftPreferencesFormModal
               mode="create"
               profileId={createEmployeeId}
@@ -756,8 +697,6 @@ export function OverviewShiftPreferencesEditableModal({
               onConfirm={handleBulkRemove}
             />
           ) : null}
-        </div>
-      ) : null}
-    </div>
+    </>
   );
 }

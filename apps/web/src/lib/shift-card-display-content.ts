@@ -302,21 +302,30 @@ export function measureShiftCardContentMinWidth(
   );
 }
 
+export const SHIFT_CARD_TWO_LINE_MIN_FALLBACK_PX = 120;
+export const SHIFT_CARD_COMPACT_MIN_FALLBACK_PX = 48;
+
+/** Nur Farbbalken — darunter kein lesbarer Text. */
+export const SHIFT_CARD_MARKER_MAX_CELL_WIDTH_PX = 22;
+
+/** Mindestbreite Texttrack für gekürzten Text (1–2 Zeichen + Ellipse). */
+export const SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX = 6;
+
 export function resolveShiftCardDensity(
   cellWidthPx: number,
   twoLineMinWidthPx: number,
   compactMinWidthPx: number
 ): ShiftCardDensity {
-  if (cellWidthPx < 52) return "marker";
+  if (cellWidthPx < SHIFT_CARD_MARKER_MAX_CELL_WIDTH_PX) return "marker";
 
   const contentTrack = Math.max(0, cellWidthPx - SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX);
   if (contentTrack >= twoLineMinWidthPx) return "two-line";
-  if (contentTrack >= compactMinWidthPx) return "compact";
+  if (contentTrack >= Math.max(SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX, compactMinWidthPx)) {
+    return "compact";
+  }
+  if (contentTrack >= SHIFT_CARD_MIN_TEXT_CONTENT_TRACK_PX) return "compact";
   return "marker";
 }
-
-export const SHIFT_CARD_TWO_LINE_MIN_FALLBACK_PX = 120;
-export const SHIFT_CARD_COMPACT_MIN_FALLBACK_PX = 72;
 
 export function estimateShiftCardMinWidths(
   content: ShiftCardDisplayContent

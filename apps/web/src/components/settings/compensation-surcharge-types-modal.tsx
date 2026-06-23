@@ -15,10 +15,9 @@ import {
 } from "@/lib/profile-surcharge-display";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { CompensationSurchargeTypeFormModal } from "./compensation-surcharge-type-form-modal";
+import { SettingsSidePanel, SettingsSidePanelCloseButton } from "./settings-side-panel";
 import {
-  MODAL_SCROLLBAR_CLASS,
   SETTINGS_LIST_SCROLL_CLASS,
-  SETTINGS_MODAL_TITLE_CLASS,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -40,12 +39,10 @@ import {
   settingsPanelHeaderClass,
   settingsStickyColumnHeaderClass,
   settingsStickyIndicatorHeaderClass,
+  settingsModalFooterClass,
 } from "./settings-list-ui";
 import {
   Alert,
-  Button,
-  CloseIcon,
-  IconButton,
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
@@ -107,18 +104,13 @@ export function CompensationSurchargeTypesModal({
         setConfirmBulkDelete(false);
         return;
       }
-      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmBulkDelete, confirmDelete, formMode, onClose]);
+  }, [confirmBulkDelete, confirmDelete, formMode]);
 
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
+  const anySubModalOpen =
+    formMode !== null || confirmDelete || confirmBulkDelete;
 
   const { sortedList, canMoveUp, canMoveDown, handleMove } =
     useSettingsListReorder({
@@ -206,53 +198,68 @@ export function CompensationSurchargeTypesModal({
   }
 
   return (
-    <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !formMode && !confirmDelete && !confirmBulkDelete) onClose();
-      }}
+    <SettingsSidePanel
+      title={t("surcharges.title")}
+      titleId="compensation-surcharge-types-modal-title"
+      onClose={onClose}
+      closeDisabled={pending}
+      dismissOnBackdrop={!anySubModalOpen}
+      dismissOnEscape={!anySubModalOpen}
+      closeAriaLabel={t("common.close")}
+      panelClassName={cn(anySubModalOpen && "pointer-events-none")}
+      footer={
+        <div className={settingsModalFooterClass()}>
+          <SettingsSidePanelCloseButton disabled={pending} />
+        </div>
+      }
+      overlay={
+        <>
+          {formMode?.type === "create" && (
+            <CompensationSurchargeTypeFormModal
+              key="create"
+              mode="create"
+              existingTypes={list}
+              onClose={() => setFormMode(null)}
+              onSaved={handleFormSaved}
+            />
+          )}
+          {formMode?.type === "edit" && (
+            <CompensationSurchargeTypeFormModal
+              key={formMode.surchargeType.id}
+              mode="edit"
+              surchargeType={formMode.surchargeType}
+              existingTypes={list}
+              onClose={() => setFormMode(null)}
+              onSaved={handleFormSaved}
+            />
+          )}
+          {confirmDelete && selected && (
+            <DeleteConfirmModal
+              name={selected.name}
+              pending={pending}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={handleDelete}
+            />
+          )}
+          {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+            <DeleteConfirmModal
+              name={t("common.deleteSelectedEntries")}
+              count={bulkSelection.checkedCount}
+              pending={pending}
+              onCancel={() => setConfirmBulkDelete(false)}
+              onConfirm={handleBulkDelete}
+            />
+          )}
+        </>
+      }
     >
-      <div
-        className="relative w-full max-w-3xl"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="compensation-surcharge-types-modal-title"
-          aria-hidden={!!formMode}
-          className={cn(
-            "flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
-            MODAL_SCROLLBAR_CLASS,
-            formMode ? "pointer-events-none" : ""
-          )}
-        >
-          <div className="flex items-center justify-between border-b border-border px-6 py-4">
-            <h2
-              id="compensation-surcharge-types-modal-title"
-              className={SETTINGS_MODAL_TITLE_CLASS}
-            >
-              {t("surcharges.title")}
-            </h2>
-            <IconButton
-              size="sm"
-              onClick={onClose}
-              aria-label={t("common.close")}
-              className="border-transparent bg-transparent hover:bg-subtle"
-            >
-              <CloseIcon className="h-[18px] w-[18px]" />
-            </IconButton>
-          </div>
+      {errorMessage && (
+        <div className="mb-4 shrink-0">
+          <Alert variant="error">{errorMessage}</Alert>
+        </div>
+      )}
 
-          {errorMessage && (
-            <div className="mx-6 mt-4 shrink-0">
-              <Alert variant="error">{errorMessage}</Alert>
-            </div>
-          )}
-
-          <div className="bg-background px-6 py-4">
-            <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
+      <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
               <h3 className={settingsPanelHeaderClass()}>{t("surcharges.column")}</h3>
 
               <div
@@ -428,59 +435,6 @@ export function CompensationSurchargeTypesModal({
                 }
               />
             </div>
-          </div>
-
-          <div className="flex shrink-0 justify-end border-t border-border px-6 py-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
-            >
-              <CloseIcon />
-              {t("common.close")}
-            </Button>
-          </div>
-        </div>
-
-        {formMode?.type === "create" && (
-          <CompensationSurchargeTypeFormModal
-            key="create"
-            mode="create"
-            existingTypes={list}
-            onClose={() => setFormMode(null)}
-            onSaved={handleFormSaved}
-          />
-        )}
-        {formMode?.type === "edit" && (
-          <CompensationSurchargeTypeFormModal
-            key={formMode.surchargeType.id}
-            mode="edit"
-            surchargeType={formMode.surchargeType}
-            existingTypes={list}
-            onClose={() => setFormMode(null)}
-            onSaved={handleFormSaved}
-          />
-        )}
-        {confirmDelete && selected && (
-          <DeleteConfirmModal
-            name={selected.name}
-            pending={pending}
-            onCancel={() => setConfirmDelete(false)}
-            onConfirm={handleDelete}
-          />
-        )}
-        {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
-          <DeleteConfirmModal
-            name={t("common.deleteSelectedEntries")}
-            count={bulkSelection.checkedCount}
-            pending={pending}
-            onCancel={() => setConfirmBulkDelete(false)}
-            onConfirm={handleBulkDelete}
-          />
-        )}
-      </div>
-    </div>
+    </SettingsSidePanel>
   );
 }

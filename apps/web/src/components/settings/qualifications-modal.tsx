@@ -9,10 +9,9 @@ import {
 import type { Qualification } from "@schichtwerk/types";
 import { DeleteConfirmModal } from "./delete-confirm-modal";
 import { QualificationFormModal } from "./qualification-form-modal";
+import { SettingsSidePanel, SettingsSidePanelCloseButton } from "./settings-side-panel";
 import {
-  MODAL_SCROLLBAR_CLASS,
   SETTINGS_LIST_SCROLL_CLASS,
-  SETTINGS_MODAL_TITLE_CLASS,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -34,12 +33,10 @@ import {
   settingsDataRowClass,
   settingsIndicatorCellClass,
   settingsPanelHeaderClass,
+  settingsModalFooterClass,
 } from "./settings-list-ui";
 import {
   Alert,
-  Button,
-  CloseIcon,
-  IconButton,
   PencilIcon,
   PlusIcon,
 } from "@/components/ui";
@@ -95,18 +92,13 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
         setConfirmBulkDelete(false);
         return;
       }
-      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmBulkDelete, confirmDelete, formMode, onClose]);
+  }, [confirmBulkDelete, confirmDelete, formMode]);
 
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
+  const anySubModalOpen =
+    formMode !== null || confirmDelete || confirmBulkDelete;
 
   const {
     sortedList,
@@ -198,50 +190,67 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
   }
 
   return (
-    <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-black/25 p-4"
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !formMode && !confirmDelete && !confirmBulkDelete) onClose();
-      }}
+    <SettingsSidePanel
+      title={t("qualifications.title")}
+      titleId="qualifications-modal-title"
+      onClose={onClose}
+      closeDisabled={pending}
+      dismissOnBackdrop={!anySubModalOpen}
+      dismissOnEscape={!anySubModalOpen}
+      closeAriaLabel={t("common.close")}
+      panelClassName={cn(anySubModalOpen && "pointer-events-none")}
+      size="default"
+      footer={
+        <div className={settingsModalFooterClass()}>
+          <SettingsSidePanelCloseButton disabled={pending} />
+        </div>
+      }
+      overlay={
+        <>
+          {formMode?.type === "create" && (
+            <QualificationFormModal
+              mode="create"
+              existingQualifications={list}
+              onClose={() => setFormMode(null)}
+              onSaved={handleFormSaved}
+            />
+          )}
+          {formMode?.type === "edit" && (
+            <QualificationFormModal
+              mode="edit"
+              qualification={formMode.qualification}
+              existingQualifications={list}
+              onClose={() => setFormMode(null)}
+              onSaved={handleFormSaved}
+            />
+          )}
+          {confirmDelete && selected && (
+            <DeleteConfirmModal
+              name={selected.name}
+              pending={pending}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={handleDelete}
+            />
+          )}
+          {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
+            <DeleteConfirmModal
+              name={t("common.deleteSelectedEntries")}
+              count={bulkSelection.checkedCount}
+              pending={pending}
+              onCancel={() => setConfirmBulkDelete(false)}
+              onConfirm={handleBulkDelete}
+            />
+          )}
+        </>
+      }
     >
-      <div
-        className="relative w-full max-w-lg"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="qualifications-modal-title"
-          aria-hidden={!!formMode}
-          className={cn(
-            "flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-xl",
-            MODAL_SCROLLBAR_CLASS,
-            formMode ? "pointer-events-none" : ""
-          )}
-        >
-          <div className="flex items-center justify-between border-b border-border px-6 py-4">
-            <h2 id="qualifications-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("qualifications.title")}
-            </h2>
-            <IconButton
-              size="sm"
-              onClick={onClose}
-              aria-label={t("common.close")}
-              className="border-transparent bg-transparent hover:bg-subtle"
-            >
-              <CloseIcon className="h-[18px] w-[18px]" />
-            </IconButton>
-          </div>
+      {errorMessage && (
+        <div className="mb-4 shrink-0">
+          <Alert variant="error">{errorMessage}</Alert>
+        </div>
+      )}
 
-          {errorMessage && (
-            <div className="mx-6 mt-4 shrink-0">
-              <Alert variant="error">{errorMessage}</Alert>
-            </div>
-          )}
-
-          <div className="bg-background px-6 py-4">
-            <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
+      <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
               <h3 className={settingsPanelHeaderClass()}>{t("qualifications.column")}</h3>
 
               <div className={cn("space-y-1 bg-background px-2 py-2", SETTINGS_LIST_SCROLL_CLASS)}>
@@ -378,57 +387,6 @@ export function QualificationsModal({ qualifications, onClose }: Props) {
                 }
               />
             </div>
-          </div>
-
-          <div className="flex shrink-0 justify-end border-t border-border px-6 py-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onClose}
-              className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
-            >
-              <CloseIcon />
-              {t("common.close")}
-            </Button>
-          </div>
-        </div>
-
-        {formMode?.type === "create" && (
-          <QualificationFormModal
-            mode="create"
-            existingQualifications={list}
-            onClose={() => setFormMode(null)}
-            onSaved={handleFormSaved}
-          />
-        )}
-        {formMode?.type === "edit" && (
-          <QualificationFormModal
-            mode="edit"
-            qualification={formMode.qualification}
-            existingQualifications={list}
-            onClose={() => setFormMode(null)}
-            onSaved={handleFormSaved}
-          />
-        )}
-        {confirmDelete && selected && (
-          <DeleteConfirmModal
-            name={selected.name}
-            pending={pending}
-            onCancel={() => setConfirmDelete(false)}
-            onConfirm={handleDelete}
-          />
-        )}
-        {confirmBulkDelete && bulkSelection.checkedCount > 0 && (
-          <DeleteConfirmModal
-            name={t("common.deleteSelectedEntries")}
-            count={bulkSelection.checkedCount}
-            pending={pending}
-            onCancel={() => setConfirmBulkDelete(false)}
-            onConfirm={handleBulkDelete}
-          />
-        )}
-      </div>
-    </div>
+    </SettingsSidePanel>
   );
 }

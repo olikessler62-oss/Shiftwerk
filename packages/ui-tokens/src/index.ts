@@ -1,6 +1,8 @@
 /** Shared design tokens for Web + Mobile */
 export const colors = {
-  primary: "#0D9488",
+  primary: "#0F3558",
+  primaryLight: "#4A7294",
+  primaryDark: "#0A2844",
   primaryForeground: "#FFFFFF",
   background: "#F8FAFC",
   surface: "#FFFFFF",

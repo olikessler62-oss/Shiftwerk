@@ -5,22 +5,17 @@ import type { AbsenceRequest, AbsenceType, Profile, RequestStatus } from "@schic
 import { fetchOrganizationAbsences } from "@/app/actions/absences";
 import { fetchOverviewAbsencesProfiles } from "@/app/actions/overview-absences";
 import {
-  SETTINGS_MODAL_TITLE_CLASS,
   SettingsEmptyState,
   settingsDataCellClass,
   settingsDataRowClass,
-  settingsModalBackdropClass,
-  settingsModalBodyPaddingClass,
-  settingsModalDialogClass,
   settingsModalFooterClass,
-  settingsModalHeaderPaddingClass,
-  settingsModalRootClass,
   settingsPanelHeaderClass,
   settingsScrollableTableListClass,
   settingsStickyColumnHeaderClass,
   OVERVIEW_ABSENCES_LIST_SCROLL_CLASS,
 } from "@/components/settings/settings-list-ui";
-import { Button, CloseIcon, IconButton } from "@/components/ui";
+import { Button, CloseIcon } from "@/components/ui";
+import { OverviewSidePanel } from "./overview-side-panel";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
@@ -95,13 +90,6 @@ export function OverviewAbsencesModal({ onClose }: Props) {
   }, [loadData]);
 
   useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, []);
-
-  useEffect(() => {
     if (!loading) return;
     const previousCursor = document.body.style.cursor;
     document.body.style.cursor = "wait";
@@ -109,15 +97,6 @@ export function OverviewAbsencesModal({ onClose }: Props) {
       document.body.style.cursor = previousCursor;
     };
   }, [loading]);
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const rows = useMemo(
     () =>
@@ -157,52 +136,29 @@ export function OverviewAbsencesModal({ onClose }: Props) {
   }
 
   return (
-    <div
-      className={cn(settingsModalBackdropClass(), loading && "cursor-wait")}
-      role="presentation"
-      aria-busy={loading}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !loading) {
-          onClose();
-        }
-      }}
-    >
+    <>
       {!loading ? (
-        <div
-          className={settingsModalRootClass("3xl")}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="overview-absences-modal-title"
-            className={settingsModalDialogClass()}
-          >
-            <div
-              className={cn(
-                "flex items-center justify-between border-b border-border",
-                settingsModalHeaderPaddingClass()
-              )}
-            >
-              <h2 id="overview-absences-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-                {t("overview.absences.title")}
-              </h2>
-              <IconButton
-                size="sm"
-                onClick={onClose}
-                aria-label={t("common.close")}
-                className="border-transparent bg-transparent hover:bg-subtle"
-              >
-                <CloseIcon className="h-[18px] w-[18px]" />
-              </IconButton>
+        <OverviewSidePanel
+          title={t("overview.absences.title")}
+          titleId="overview-absences-modal-title"
+          onClose={onClose}
+          closeDisabled={loading}
+          dismissOnBackdrop={!loading}
+          closeAriaLabel={t("common.close")}
+          footer={
+            <div className={settingsModalFooterClass()}>
+              <Button type="button" variant="outline" onClick={onClose}>
+                <CloseIcon />
+                {t("common.close")}
+              </Button>
             </div>
+          }
+        >
+          {errorMessage ? (
+            <p className="mb-3 text-sm text-red-700">{errorMessage}</p>
+          ) : null}
 
-            <div className={cn(settingsModalBodyPaddingClass(), "bg-background")}>
-              {errorMessage ? (
-                <p className="mb-3 text-sm text-red-700">{errorMessage}</p>
-              ) : null}
-
-              <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
+          <div className="flex flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
                 <h3 className={settingsPanelHeaderClass()}>
                   {t("overview.absences.listTitle")}
                 </h3>
@@ -282,17 +238,8 @@ export function OverviewAbsencesModal({ onClose }: Props) {
                   )}
                 </div>
               </div>
-            </div>
-
-            <div className={settingsModalFooterClass()}>
-              <Button type="button" variant="outline" onClick={onClose}>
-                <CloseIcon />
-                {t("common.close")}
-              </Button>
-            </div>
-          </div>
-        </div>
+        </OverviewSidePanel>
       ) : null}
-    </div>
+    </>
   );
 }

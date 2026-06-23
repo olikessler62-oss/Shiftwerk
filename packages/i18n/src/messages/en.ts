@@ -38,6 +38,9 @@ export const en = {
   },
   nav: {
     dashboard: "Dashboard",
+    calendar: "Calendar",
+    areaCalendar: "Area calendar",
+    employeeCalendar: "Employee calendar",
     planning: "Area calendar",
     absences: "Absences",
     reports: "Reports",
@@ -908,6 +911,11 @@ export const en = {
     },
   },
   dashboard: {
+    summaryTitle: "Shift overview",
+    summaryEmpty: "No shifts are scheduled for this week.",
+    summaryShiftCount: "{count, plural, one {# shift} other {# shifts}}",
+    summaryColumnTime: "Time",
+    summaryColumnShift: "Shift",
     headerSubtitle: "Shift plan",
     headerCalendarWeek: "CW {week}",
     readOnlyWeek:

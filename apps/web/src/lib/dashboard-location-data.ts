@@ -28,6 +28,33 @@ export const EMPTY_DASHBOARD_LOCATION_SCOPED_DATA: DashboardLocationScopedData =
   staffingOverrides: [],
 };
 
+function uniqueServiceHoursById(
+  serviceHours: readonly AreaServiceHourRef[]
+): AreaServiceHourRef[] {
+  const seen = new Set<string>();
+  const result: AreaServiceHourRef[] = [];
+  for (const hour of serviceHours) {
+    const id = hour.id?.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push(hour);
+  }
+  return result;
+}
+
+function uniqueStaffingRulesById(
+  rules: readonly LocationAreaStaffing[]
+): LocationAreaStaffing[] {
+  const seen = new Set<string>();
+  const result: LocationAreaStaffing[] = [];
+  for (const rule of rules) {
+    if (seen.has(rule.id)) continue;
+    seen.add(rule.id);
+    result.push(rule);
+  }
+  return result;
+}
+
 export async function loadDashboardLocationScopedData(
   db: SchichtwerkDatabase,
   orgId: string,
@@ -36,28 +63,57 @@ export async function loadDashboardLocationScopedData(
   from: string,
   to: string
 ): Promise<DashboardLocationScopedData> {
+  const areas = await db.listLocationAreasForAreaCalendar(
+    locationId,
+    from,
+    to
+  );
+  const calendarAreaIds = areas.map((area) => area.id);
+
+  const activeAreas = await db.listLocationAreas(locationId);
+  const activeAreaIds = new Set(activeAreas.map((area) => area.id));
+  const supplementalAreaIds = calendarAreaIds.filter(
+    (areaId) => !activeAreaIds.has(areaId)
+  );
+
   const [
-    areas,
     areaShiftTemplates,
-    serviceHours,
+    serviceHoursBase,
     shiftRows,
-    staffingRules,
+    staffingRulesBase,
     staffingOverrides,
+    supplementalServiceHours,
+    supplementalStaffingRules,
   ] = await Promise.all([
-    db.listLocationAreas(locationId),
     db.listAreaShiftTemplatesWithBreaksForLocation(locationId).catch(() => []),
     db.listLocationAreaServiceHours(locationId).catch(() => []),
     getCachedAreaCalendarShifts(orgId, locationId, weekStart, from, to),
     db.listLocationAreaStaffing(locationId).catch(() => []),
     db.listLocationAreaStaffingOverrides(locationId, from, to).catch(() => []),
+    supplementalAreaIds.length
+      ? db
+          .listLocationAreaServiceHoursForAreas(supplementalAreaIds)
+          .catch(() => [])
+      : Promise.resolve([] as AreaServiceHourRef[]),
+    supplementalAreaIds.length
+      ? db
+          .listLocationAreaStaffingForAreas(supplementalAreaIds)
+          .catch(() => [])
+      : Promise.resolve([] as LocationAreaStaffing[]),
   ]);
 
   return {
     areas,
     areaShiftTemplates,
-    serviceHours,
+    serviceHours: uniqueServiceHoursById([
+      ...serviceHoursBase,
+      ...supplementalServiceHours,
+    ]),
     shiftRows,
-    staffingRules,
+    staffingRules: uniqueStaffingRulesById([
+      ...staffingRulesBase,
+      ...supplementalStaffingRules,
+    ]),
     staffingOverrides,
   };
 }

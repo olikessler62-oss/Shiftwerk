@@ -21,6 +21,17 @@ export type MainNavPendingTarget =
   | { kind: "overview-modal"; flag: OverviewModalQueryFlag }
   | { kind: "superadmin" };
 
+/** Planungsseiten — Wartekursor bis Client-Inhalt gemeldet ist (nicht nur pathname). */
+export const PLANNING_CALENDAR_PAGE_PATHS = new Set([
+  "/dashboard",
+  "/mitarbeiter-kalender",
+  "/bereich-kalender",
+]);
+
+function isPlanningCalendarPagePath(pathname: string): boolean {
+  return PLANNING_CALENDAR_PAGE_PATHS.has(pathname);
+}
+
 type MainNavPendingContextValue = {
   pendingTarget: MainNavPendingTarget | null;
   beginMainNavPending: (target: MainNavPendingTarget) => void;
@@ -73,6 +84,14 @@ export function useClearMainNavPendingOptional(): () => void {
   return useContext(MainNavPendingContext)?.clearMainNavPending ?? (() => {});
 }
 
+/** Planungs-Kalender: Nav-Pending nach Mount bzw. wenn Daten bereit sind beenden. */
+export function useClearMainNavPendingWhenReady(ready: boolean): void {
+  const clearMainNavPending = useClearMainNavPendingOptional();
+  useEffect(() => {
+    if (ready) clearMainNavPending();
+  }, [ready, clearMainNavPending]);
+}
+
 export function AppShellMainNavPendingBridge() {
   const ctx = useContext(MainNavPendingContext);
   const pathname = usePathname();
@@ -88,7 +107,10 @@ export function AppShellMainNavPendingBridge() {
     if (!pendingTarget || !clearMainNavPending) return;
 
     if (pendingTarget.kind === "page") {
-      if (pathname === pendingTarget.pathname) {
+      if (
+        pathname === pendingTarget.pathname &&
+        !isPlanningCalendarPagePath(pendingTarget.pathname)
+      ) {
         clearMainNavPending();
       }
       return;
@@ -104,7 +126,9 @@ export function AppShellMainNavPendingBridge() {
     if (
       pendingTarget.kind === "settings-modal" &&
       searchParams.get(pendingTarget.flag) === "1" &&
-      (pathname === "/bereich-kalender" || pathname === "/dashboard")
+      (pathname === "/bereich-kalender" ||
+        pathname === "/dashboard" ||
+        pathname === "/mitarbeiter-kalender")
     ) {
       const frameId = window.requestAnimationFrame(() => {
         clearMainNavPending();

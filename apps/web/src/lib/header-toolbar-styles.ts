@@ -7,8 +7,8 @@ const headerToolbarControlRadius = "rounded-[var(--radius-control)]";
 const headerToolbarControlSurface = cn(
   headerToolbarControlRadius,
   "border shadow-none transition",
-  "border-[var(--header-toolbar-combobox-border,#e2e8f0)] bg-foreground/[0.07]",
-  "hover:bg-foreground/[0.11]",
+  "border-[var(--header-toolbar-combobox-border,#e2e8f0)] bg-[var(--header-toolbar-control-bg,color-mix(in_srgb,var(--color-foreground)_7%,transparent))]",
+  "hover:bg-[var(--header-toolbar-control-bg-hover,color-mix(in_srgb,var(--color-foreground)_11%,transparent))]",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))]"
 );
 
@@ -38,8 +38,8 @@ export const headerToolbarPillIconButtonClass = cn(
 const headerToolbarWeekNavSurface = cn(
   headerToolbarControlRadius,
   "border shadow-none transition",
-  "!border-[var(--header-toolbar-combobox-border,#e2e8f0)] !bg-foreground/[0.07]",
-  "hover:!bg-foreground/[0.11]",
+  "!border-[var(--header-toolbar-combobox-border,#e2e8f0)] !bg-[var(--header-toolbar-control-bg,color-mix(in_srgb,var(--color-foreground)_7%,transparent))]",
+  "hover:!bg-[var(--header-toolbar-control-bg-hover,color-mix(in_srgb,var(--color-foreground)_11%,transparent))]",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))]",
   "!h-8 !min-h-8 inline-flex shrink-0 items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
 );
@@ -54,11 +54,11 @@ export const headerToolbarWeekNavTodayButtonClass = cn(
   "px-3.5 text-sm font-medium text-foreground"
 );
 
-/** Hervorgehobene Toolbar-Aktion (z. B. Kommunikation mit offenen Items). */
+/** Hervorgehobene Toolbar-Aktion — im Dark-Header dunkle Fläche, Text bleibt hell. */
 export const headerToolbarPillPrimaryClass = cn(
   HEADER_TOOLBAR_CONTROL_H,
   headerToolbarControlRadius,
-  "header-toolbar-accent-button inline-flex items-center justify-center border-0 px-3.5 text-sm font-medium shadow-none",
+  "header-toolbar-accent-button inline-flex items-center justify-center border border-[var(--header-toolbar-combobox-border,#e2e8f0)] px-3.5 text-sm font-medium shadow-none",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))] disabled:cursor-not-allowed disabled:opacity-50"
 );
 
