@@ -45,7 +45,8 @@ describe("enrichShiftRowWithLifecycle", () => {
   });
 
   it("leaves rows without confirmation_status unchanged", () => {
-    const row = { location_id: "loc-1" };
+    const row: { confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus } =
+      {};
     expect(enrichShiftRowWithLifecycle(row)).toBe(row);
   });
 });
