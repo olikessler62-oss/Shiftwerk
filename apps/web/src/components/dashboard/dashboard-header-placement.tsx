@@ -78,7 +78,7 @@ export function DashboardHeaderPlacement({
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2",
+        "flex min-w-0 flex-nowrap items-center gap-1.5 sm:gap-2",
         className
       )}
     >

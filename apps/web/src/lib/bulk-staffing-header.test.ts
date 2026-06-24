@@ -170,6 +170,43 @@ describe("countQualificationCoverage", () => {
 
     expect(counts.get(qualKoch)).toBe(2);
   });
+
+  it("counts inferred qualifications beyond demand for overstaffing display", () => {
+    const assignments: StaffingAssignmentRef[] = [
+      {
+        startTime: "12:00",
+        endTime: "16:00",
+        employeeId: "emp-1",
+      },
+      {
+        startTime: "12:00",
+        endTime: "16:00",
+        employeeId: "emp-2",
+      },
+      {
+        startTime: "12:00",
+        endTime: "16:00",
+        employeeId: "emp-3",
+      },
+    ];
+    const qualRules = staffingRules.filter(
+      (rule) => rule.service_hour_id === hourEvening
+    );
+    const profileQuals = new Map([
+      ["emp-1", new Set([qualKellner])],
+      ["emp-2", new Set([qualKellner])],
+      ["emp-3", new Set([qualKellner])],
+    ]);
+
+    const counts = countQualificationCoverage(
+      assignments,
+      qualRules,
+      profileQuals
+    );
+
+    expect(counts.get(qualKellner)).toBe(3);
+    expect(counts.get(qualKoch)).toBe(0);
+  });
 });
 
 describe("allocateAssignmentsToDemandWindows", () => {
@@ -372,6 +409,51 @@ describe("computeBulkStaffingHeaderEntries", () => {
     ]);
   });
 
+  it("counts all inferred kellner shifts when overstaffed", () => {
+    const dateISO = "2026-06-04";
+
+    const entries = computeBulkStaffingHeaderEntries({
+      staffingRules,
+      areaId,
+      dateISO,
+      serviceHours,
+      assignments: [
+        {
+          startTime: "18:00",
+          endTime: "22:00",
+          employeeId: "emp-1",
+        },
+        {
+          startTime: "18:00",
+          endTime: "22:00",
+          employeeId: "emp-2",
+        },
+        {
+          startTime: "18:00",
+          endTime: "22:00",
+          employeeId: "emp-3",
+        },
+      ],
+      assignmentPresets: [],
+      qualifications,
+      profileQualificationIds: new Map([
+        ["emp-1", new Set([qualKellner])],
+        ["emp-2", new Set([qualKellner])],
+        ["emp-3", new Set([qualKellner])],
+      ]),
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start} bis ${end} Uhr`,
+      weekdayLabel: () => "Donnerstag",
+    });
+
+    const evening = entries.find((entry) => entry.serviceHourId === hourEvening);
+    expect(evening?.assigned).toBe(3);
+    expect(evening?.required).toBe(3);
+    expect(evening?.qualifications).toEqual([
+      { qualificationId: qualKoch, name: "Koch", assigned: 0, required: 1 },
+      { qualificationId: qualKellner, name: "Kellner", assigned: 3, required: 2 },
+    ]);
+  });
+
   it("sets calendarTimeLabel without weekday when formatter is provided", () => {
     const dateISO = "2026-06-04";
 
@@ -500,6 +582,32 @@ describe("formatStaffingEntryTooltipContent", () => {
     );
 
     expect(body).toBe("08:00 - 10:00 Uhr\n0/2");
+  });
+
+  it("shows actual assigned count when overstaffed on one qualification", () => {
+    const body = formatStaffingEntryTooltipContent(
+      {
+        serviceHourId: hourEvening,
+        label: "Do 12:00–16:00",
+        assigned: 3,
+        required: 2,
+        calendarTimeLabel: "12:00 - 16:00 Uhr",
+        shiftTemplateLabel: "Mittagschicht",
+        qualifications: [
+          {
+            qualificationId: qualKellner,
+            name: "Kellner",
+            assigned: 3,
+            required: 2,
+          },
+        ],
+      },
+      formatQualLine
+    );
+
+    expect(body).toBe(
+      "Mittagschicht\n12:00 - 16:00 Uhr\nKellner: 3/2"
+    );
   });
 });
 

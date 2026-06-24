@@ -45,7 +45,7 @@ import { removeShift } from "@/app/actions/shifts";
 import { cancelShiftAsManager, confirmPastShiftAsManager, submitCommunicationConfirmationRequests } from "@/app/actions/shift-confirmations";
 import { translateActionError } from "@/lib/translate-action-error";
 import {
-  AREA_DAY_CONTEXT_MENU_WIDTH_PX,
+  AREA_CALENDAR_DAY_CONTEXT_MENU_WIDTH_PX,
   AREA_SHIFT_CONTEXT_MENU_WIDTH_PX,
   DASHBOARD_CELL_CONTEXT_MENU_WIDTH_PX,
   PLANNING_CONTEXT_MENU_SURFACE_CLASS,
@@ -387,7 +387,7 @@ function distanceFromPointToMenu(
 function clampContextMenuPosition(
   clientX: number,
   clientY: number,
-  menuWidth = AREA_DAY_CONTEXT_MENU_WIDTH_PX,
+  menuWidth = AREA_CALENDAR_DAY_CONTEXT_MENU_WIDTH_PX,
   menuHeight = ASSIGN_SHIFT_CONTEXT_MENU_HEIGHT_PX
 ): { x: number; y: number } {
   if (typeof window === "undefined") {
@@ -2930,7 +2930,7 @@ export function AreaCalendar({
           style={{
             left: clampedAreaDayContextMenuPosition.x,
             top: clampedAreaDayContextMenuPosition.y,
-            width: AREA_DAY_CONTEXT_MENU_WIDTH_PX,
+            width: AREA_CALENDAR_DAY_CONTEXT_MENU_WIDTH_PX,
           }}
           role="menu"
           aria-label={t("areaCalendar.assignMultipleShifts")}

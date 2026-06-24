@@ -316,15 +316,19 @@ export function mapAssignmentQualificationIds(
     if (!employeeQuals?.size) return;
 
     let bestQualId: string | null = null;
-    let bestGap = -Infinity;
+    let bestScore = -Infinity;
     for (const rule of qualRules) {
       if (!employeeQuals.has(rule.qualification_id)) continue;
       const required = normalizeRequiredCount(rule.required_count);
       const assigned = assignedByQual.get(rule.qualification_id) ?? 0;
-      if (assigned >= required) continue;
-      const gap = required - assigned;
-      if (gap > bestGap) {
-        bestGap = gap;
+      const score =
+        required > 0
+          ? assigned < required
+            ? (required - assigned) * 10_000 + required
+            : required * 100 - assigned
+          : 0;
+      if (score > bestScore) {
+        bestScore = score;
         bestQualId = rule.qualification_id;
       }
     }

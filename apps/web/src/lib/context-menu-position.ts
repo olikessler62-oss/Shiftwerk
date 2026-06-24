@@ -16,6 +16,10 @@ export const DASHBOARD_CELL_CONTEXT_MENU_WIDTH_PX = Math.round(
 export const AREA_DAY_CONTEXT_MENU_WIDTH_PX = Math.round(
   AREA_DAY_CONTEXT_MENU_WIDTH_REM * 16
 );
+/** Tag-Bereich-Zellen im Bereich-Kalender — 50 % breiter als {@link AREA_DAY_CONTEXT_MENU_WIDTH_PX}. */
+export const AREA_CALENDAR_DAY_CONTEXT_MENU_WIDTH_PX = Math.round(
+  AREA_DAY_CONTEXT_MENU_WIDTH_PX * 1.5
+);
 export const AREA_SHIFT_CONTEXT_MENU_WIDTH_PX = Math.round(
   AREA_SHIFT_CONTEXT_MENU_WIDTH_REM * 16
 );

@@ -9,7 +9,7 @@ import {
 } from "@/components/areacalendar/communication-hub-modal";
 import { DashboardSummaryView } from "@/components/dashboard/dashboard-summary-view";
 import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
-import { useOrganization } from "@/lib/org-features-provider";
+import { useOrganization, useOrgFeatures } from "@/lib/org-features-provider";
 import { organizationTodayISO } from "@schichtwerk/database";
 import type { CommunicationOpenOptions } from "@/lib/communication-hub";
 import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
@@ -18,6 +18,7 @@ import {
   weeklyHoursCheckShiftFromPlanningShift,
 } from "@/lib/weekly-hours-check-shifts";
 import { useAppShellModalLockActive, useAppShellWaitCursorActive } from "@/lib/app-shell-modal-lock";
+import { useClearMainNavPendingWhenReady } from "@/lib/app-shell-main-nav-pending";
 import { useRegisterPlanningToolbarPageBridge } from "@/lib/planning-toolbar-page-bridge";
 import {
   planningShiftToAreaCalendarCard,
@@ -25,16 +26,20 @@ import {
 } from "@/lib/planning-shift-card";
 import { shouldDisplayShiftOnPlanningCalendar } from "@/lib/shift-cancellation-policy";
 import { useLocallyRemovedShifts } from "@/lib/use-locally-removed-shifts";
-import type { DashboardSummaryShift } from "@/lib/dashboard-summary-data";
 import type {
   AbsenceRequest,
+  AreaShiftTemplateWithBreaks,
   CompensationSurchargeType,
   Location,
   LocationArea,
+  LocationAreaStaffing,
+  LocationAreaStaffingOverride,
   ManagerNotification,
   Profile,
+  Qualification,
   Role,
 } from "@schichtwerk/types";
+import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 
 type Props = {
   weekStart: string;
@@ -42,10 +47,15 @@ type Props = {
   locations: Location[];
   selectedLocationId: string | null;
   selectedLocationName?: string;
-  shifts: DashboardSummaryShift[];
   areas: LocationArea[];
   locationShifts: PlanningShift[];
   employees: Profile[];
+  serviceHours: AreaServiceHourRef[];
+  staffingRules: LocationAreaStaffing[];
+  staffingOverrides: LocationAreaStaffingOverride[];
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
+  qualifications: Qualification[];
+  profileQualificationIds: Record<string, string[]>;
   absences: AbsenceRequest[];
   communicationSwapRequests: CommunicationSwapRequestRow[];
   communicationCancelActors: Record<string, "employee" | "manager">;
@@ -64,10 +74,15 @@ export function DashboardSummaryShell({
   locations,
   selectedLocationId,
   selectedLocationName,
-  shifts,
   areas,
   locationShifts,
   employees,
+  serviceHours,
+  staffingRules,
+  staffingOverrides,
+  areaShiftTemplates,
+  qualifications,
+  profileQualificationIds,
   absences,
   communicationSwapRequests,
   communicationCancelActors,
@@ -80,6 +95,7 @@ export function DashboardSummaryShell({
   const searchParams = useSearchParams();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const organization = useOrganization();
+  const features = useOrgFeatures();
   const weeklyHoursTodayISO = useMemo(
     () => organizationTodayISO(organization.timezone),
     [organization.timezone]
@@ -104,6 +120,19 @@ export function DashboardSummaryShell({
   const visibleLocationShifts = useMemo(
     () => locationShifts.filter((shift) => !removedIds.has(shift.id)),
     [locationShifts, removedIds]
+  );
+
+  const calendarPlanningShifts = useMemo(
+    () =>
+      visibleLocationShifts.filter((shift) =>
+        shouldDisplayShiftOnPlanningCalendar({
+          id: shift.id,
+          confirmationStatus: shift.confirmationStatus,
+          cancelActors: communicationCancelActorsMap,
+          cancelledBy: shift.displayState?.openCancellation?.cancelledBy,
+        })
+      ),
+    [visibleLocationShifts, communicationCancelActorsMap]
   );
 
   const employeesById = useMemo(
@@ -221,7 +250,15 @@ export function DashboardSummaryShell({
         dates={dates}
         locations={locations}
         selectedLocationId={selectedLocationId}
-        shifts={shifts}
+        areas={areas}
+        calendarShifts={calendarPlanningShifts}
+        serviceHours={serviceHours}
+        staffingRules={staffingRules}
+        staffingOverrides={staffingOverrides}
+        areaShiftTemplates={areaShiftTemplates}
+        qualifications={qualifications}
+        profileQualificationIds={profileQualificationIds}
+        staffingEnabled={features.staffing}
         readOnlyWeek={readOnlyWeek}
         settingsModals={settingsModals}
       />

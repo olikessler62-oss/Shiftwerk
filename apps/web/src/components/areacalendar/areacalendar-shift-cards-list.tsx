@@ -19,7 +19,7 @@ import {
   resolveShiftCardDensity,
 } from "@/lib/shift-card-display-content";
 import {
-  shiftCardListItemHeightPx,
+  areaCalendarShiftCardListItemHeightPx,
 } from "@/lib/shift-card-row-layout";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
@@ -418,7 +418,7 @@ export function AreaCalendarShiftCardsList({
             <div
               key={`gap-${rowIndex}`}
               className="max-w-full shrink-0 self-start"
-              style={{ height: shiftCardListItemHeightPx() }}
+              style={{ height: areaCalendarShiftCardListItemHeightPx() }}
               aria-hidden
             />
           );
@@ -430,7 +430,7 @@ export function AreaCalendarShiftCardsList({
               key={row.shiftId}
               data-areacalendar-overnight-span-anchor={row.shiftId}
               className="max-w-full shrink-0 self-start"
-              style={{ height: shiftCardListItemHeightPx() }}
+              style={{ height: areaCalendarShiftCardListItemHeightPx() }}
               aria-hidden
               onContextMenu={(event) =>
                 handleOvernightRowContextMenu(row.shiftId, event)
@@ -445,7 +445,7 @@ export function AreaCalendarShiftCardsList({
               key={`tail-${row.shiftId}`}
               data-areacalendar-overnight-tail-spacer={row.shiftId}
               className="max-w-full shrink-0 self-start"
-              style={{ height: shiftCardListItemHeightPx() }}
+              style={{ height: areaCalendarShiftCardListItemHeightPx() }}
               aria-hidden
               onContextMenu={(event) =>
                 handleOvernightRowContextMenu(row.shiftId, event)

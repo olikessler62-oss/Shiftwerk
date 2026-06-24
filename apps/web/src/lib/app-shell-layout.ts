@@ -4,8 +4,9 @@ export const APP_SHELL_SIDEBAR_CLASS = "app-shell-sidebar";
 /** Gemeinsame Desktop-Höhe: Sidebar-Logo-Zeile und Wochen-Toolbar (Trennlinie bündig). */
 export const APP_SHELL_TOP_HEADER_ROW_MD_CLASS = "md:min-h-16 md:py-3";
 
-/** Logo-Zeile in der Sidebar — Mobile fest, Desktop gleiche Höhe wie Wochen-Toolbar. */
-export const APP_SHELL_BRAND_HEADER_CLASS = `h-[5.5rem] md:h-auto ${APP_SHELL_TOP_HEADER_ROW_MD_CLASS}`;
+/** Logo-Zeile in der Sidebar — gleiche Höhe wie Wochen-Toolbar (CSS-Variable). */
+export const APP_SHELL_BRAND_HEADER_CLASS =
+  "h-[var(--app-shell-brand-band-height)] min-h-[var(--app-shell-brand-band-height)] max-h-[var(--app-shell-brand-band-height)]";
 
 /** Glas-Surface auf der gemeinsamen Brand-Backdrop-Schicht. */
 export const APP_SHELL_BRAND_SURFACE_CLASS = "app-shell-brand-surface";
@@ -35,7 +36,7 @@ export const APP_SHELL_SIDEBAR_SCROLL_CLASS = "app-shell-sidebar-scroll";
 
 /** Dashboard-Sidebar-Slot unter dem Logo — Mobile natürliche Höhe, Desktop flex-fill. */
 export const APP_SHELL_SIDEBAR_SLOT_CLASS =
-  `${APP_SHELL_SIDEBAR_SCROLL_CLASS} flex w-full min-w-0 flex-col overflow-y-auto px-0 pb-3 pt-0 max-md:shrink-0 max-md:flex-none md:min-h-0 md:flex-1`;
+  `${APP_SHELL_SIDEBAR_SCROLL_CLASS} flex w-full min-w-0 flex-col overflow-x-hidden overflow-y-auto px-0 pb-3 pt-0 max-md:shrink-0 max-md:flex-none md:min-h-0 md:flex-1`;
 
 /** Planungsseiten: Kalender-Container — Mobile Mindesthöhe für Innen-Scroll, Desktop flex-fill. */
 export const PLANNING_PAGE_CALENDAR_SECTION_CLASS =
@@ -46,15 +47,15 @@ export const PLANNING_PAGE_CALENDAR_MAIN_CLASS =
 
 /** Bereich-Kalender Inhalt (ohne Toolbar-Hintergrund). */
 export const AREA_CALENDAR_VIEW_CONTENT_CLASS =
-  "flex min-h-0 flex-1 flex-col bg-background pb-[10px] max-md:h-auto md:h-[calc(100%+48px)]";
+  "relative z-10 flex min-h-0 flex-1 flex-col bg-background pb-[10px]";
 
 /** Dashboard / Mitarbeiter-Kalender Inhalt (ohne Toolbar-Hintergrund). */
 export const DASHBOARD_VIEW_CONTENT_CLASS =
-  "flex min-h-0 flex-1 flex-col bg-subtle";
+  "relative z-10 flex min-h-0 flex-1 flex-col bg-subtle";
 
 /** Planungsseiten-Wrapper: Toolbar + Inhalt, negative Ränder zum Main-Padding. */
 export const PLANNING_PAGES_SHELL_CLASS =
-  "-m-4 flex min-h-0 flex-col md:-m-6";
+  "-m-4 flex min-h-0 flex-1 flex-col md:-m-6";
 
 /** @deprecated Nur noch für Skeleton — Wrapper ohne Toolbar-Hintergrund. */
 export const DASHBOARD_VIEW_ROOT_CLASS =
@@ -69,4 +70,4 @@ export const APP_SHELL_BRAND_HEADER_CONTENT_ALIGN_CLASS = "h-2 md:h-4";
 
 /** Wochen-Toolbar im Hauptbereich (Dashboard / Bereich-Kalender). */
 export const APP_PAGE_TOOLBAR_HEADER_CLASS =
-  `${APP_HEADER_DARK_PREVIEW_CLASS} app-page-toolbar-header flex shrink-0 flex-col gap-2.5 border-b border-border px-4 py-2.5 md:flex-row md:items-center md:justify-between md:gap-3 md:px-6 ${APP_SHELL_TOP_HEADER_ROW_MD_CLASS}`;
+  `${APP_HEADER_DARK_PREVIEW_CLASS} app-page-toolbar-header flex shrink-0 flex-row items-center justify-between gap-2 border-b border-border px-4 md:gap-3 md:px-6`;

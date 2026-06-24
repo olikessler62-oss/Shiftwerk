@@ -5,11 +5,12 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { fetchSettingsModalsData } from "@/app/actions/settings-modals-data";
 import type { SettingsModalsData } from "@/app/actions/settings-modals-data";
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
-import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
+import {
+  isPageHostedSettingsPath,
+  SETTINGS_MODALS_ON_CURRENT_PAGE,
+} from "@/lib/settings-modal-config";
 import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
 import { useClearMainNavPendingOptional } from "@/lib/app-shell-main-nav-pending";
-
-const PAGE_HOSTED_SETTINGS_PATHS = ["/bereich-kalender", "/dashboard"] as const;
 
 function SettingsModalsAppShellFallbackInner() {
   const pathname = usePathname();
@@ -19,9 +20,7 @@ function SettingsModalsAppShellFallbackInner() {
   const clearMainNavPending = useClearMainNavPendingOptional();
 
   const modalOpen = isSettingsModalOpen(searchParams);
-  const pageHostsModals = PAGE_HOSTED_SETTINGS_PATHS.includes(
-    pathname as (typeof PAGE_HOSTED_SETTINGS_PATHS)[number]
-  );
+  const pageHostsModals = isPageHostedSettingsPath(pathname);
 
   useEffect(() => {
     if (

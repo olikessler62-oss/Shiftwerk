@@ -10,11 +10,16 @@ import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 import type {
   AbsenceRequest,
+  AreaShiftTemplateWithBreaks,
   LocationArea,
+  LocationAreaStaffing,
+  LocationAreaStaffingOverride,
   ManagerNotification,
   Organization,
   Profile,
+  Qualification,
 } from "@schichtwerk/types";
+import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { SchichtwerkDatabase } from "@/lib/db";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
@@ -42,6 +47,12 @@ export type DashboardSummaryPageBundle = {
   communicationSwapRequests: CommunicationSwapRequestRow[];
   communicationCancelActors: Record<string, "employee" | "manager">;
   managerNotifications: ManagerNotification[];
+  serviceHours: AreaServiceHourRef[];
+  staffingRules: LocationAreaStaffing[];
+  staffingOverrides: LocationAreaStaffingOverride[];
+  areaShiftTemplates: AreaShiftTemplateWithBreaks[];
+  qualifications: Qualification[];
+  profileQualificationIds: Record<string, string[]>;
 };
 
 const EMPTY_DASHBOARD_SUMMARY_PAGE_BUNDLE: DashboardSummaryPageBundle = {
@@ -53,6 +64,12 @@ const EMPTY_DASHBOARD_SUMMARY_PAGE_BUNDLE: DashboardSummaryPageBundle = {
   communicationSwapRequests: [],
   communicationCancelActors: {},
   managerNotifications: [],
+  serviceHours: [],
+  staffingRules: [],
+  staffingOverrides: [],
+  areaShiftTemplates: [],
+  qualifications: [],
+  profileQualificationIds: {},
 };
 
 export async function loadDashboardSummaryPageBundle(input: {
@@ -80,7 +97,7 @@ export async function loadDashboardSummaryPageBundle(input: {
     planningEmployees,
   } = input;
 
-  const { areas, areaShiftTemplates, shiftRows } =
+  const { areas, areaShiftTemplates, shiftRows, serviceHours, staffingRules, staffingOverrides } =
     await loadDashboardLocationScopedData(
       db,
       orgId,
@@ -89,6 +106,11 @@ export async function loadDashboardSummaryPageBundle(input: {
       from,
       to
     );
+
+  const [qualifications, profileQualificationIdsMap] = await Promise.all([
+    db.listQualifications(orgId),
+    db.listProfileQualificationIdsByOrganization(orgId),
+  ]);
 
   const areaNameById = new Map(areas.map((area) => [area.id, area.name]));
   const summaryShifts: DashboardSummaryShift[] = [];
@@ -223,6 +245,12 @@ export async function loadDashboardSummaryPageBundle(input: {
     communicationSwapRequests,
     communicationCancelActors: Object.fromEntries(cancelActorEntries),
     managerNotifications,
+    serviceHours,
+    staffingRules,
+    staffingOverrides,
+    areaShiftTemplates,
+    qualifications,
+    profileQualificationIds: Object.fromEntries(profileQualificationIdsMap),
   };
 }
 

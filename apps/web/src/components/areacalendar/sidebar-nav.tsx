@@ -72,7 +72,7 @@ const SETTINGS_SECTION_ID = "einstellungen";
 
 const navItemClass = (active: boolean) =>
   cn(
-    "block w-full rounded-lg border-l-2 py-2 pl-[calc(0.75rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
+    "block w-full min-w-0 rounded-lg border-l-2 py-2 pl-[calc(0.75rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
     active
       ? "border-l-primary bg-white/[0.16] text-foreground"
       : "border-l-transparent text-foreground hover:bg-white/[0.12]"
@@ -80,7 +80,7 @@ const navItemClass = (active: boolean) =>
 
 const subLinkClass = (active: boolean) =>
   cn(
-    "block w-full rounded-lg border-l-2 py-1.5 pl-[calc(2rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
+    "block w-full min-w-0 rounded-lg border-l-2 py-1.5 pl-[calc(2rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
     active
       ? "border-l-primary bg-white/[0.16] text-foreground"
       : "border-l-transparent text-muted hover:bg-white/[0.12] hover:text-foreground"
@@ -253,10 +253,10 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           aria-expanded={calendarExpanded}
           className={cn(
             navItemClass(calendarExpanded || calendarActive),
-            "flex items-center justify-between"
+            "flex min-w-0 items-center justify-between gap-1"
           )}
         >
-          <span>{t("nav.calendar")}</span>
+          <span className="min-w-0 truncate">{t("nav.calendar")}</span>
           <Chevron open={calendarExpanded} />
         </button>
 
@@ -292,10 +292,10 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           aria-expanded={overviewExpanded}
           className={cn(
             navItemClass(overviewExpanded || overviewActive),
-            "flex items-center justify-between"
+            "flex min-w-0 items-center justify-between gap-1"
           )}
         >
-          <span>{t("nav.overview")}</span>
+          <span className="min-w-0 truncate">{t("nav.overview")}</span>
           <Chevron open={overviewExpanded} />
         </button>
 
@@ -327,10 +327,10 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           aria-expanded={settingsExpanded}
           className={cn(
             navItemClass(settingsExpanded || settingsModalOpen),
-            "flex items-center justify-between"
+            "flex min-w-0 items-center justify-between gap-1"
           )}
         >
-          <span>{t("nav.settings")}</span>
+          <span className="min-w-0 truncate">{t("nav.settings")}</span>
           <Chevron open={settingsExpanded} />
         </button>
 

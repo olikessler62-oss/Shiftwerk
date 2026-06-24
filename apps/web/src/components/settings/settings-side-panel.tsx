@@ -74,7 +74,7 @@ export function SettingsSidePanel({
     overlay && typeof document !== "undefined"
       ? createPortal(
           <div
-            className="pointer-events-none fixed inset-0 z-[115] md:left-56 [&>*]:pointer-events-auto"
+            className="pointer-events-none fixed inset-0 z-[115] md:left-[var(--app-shell-sidebar-width)] [&>*]:pointer-events-auto"
           >
             {overlay}
           </div>,

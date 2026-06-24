@@ -7,7 +7,7 @@ import { DashboardCellShiftRow } from "@/components/dashboard/dashboard-cell-shi
 import { DashboardEmployeeRowOvernightOverlay } from "@/components/dashboard/dashboard-employee-row-overnight-overlay";
 import { DashboardDayColumnWidthReporter } from "@/components/dashboard/dashboard-day-column-width-reporter";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
-import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
+import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement } from "@/components/ui/tooltip";
 import { isPastCalendarDate } from "@/lib/dates";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { canOpenShiftCardContextMenu } from "@/lib/shift-card-context-menu-actions";
@@ -87,6 +87,15 @@ import { PlanningEmployeeAvailabilityTooltipContent } from "@/components/plannin
 import { groupRecurringAvailabilityByProfileId, resolvePlanningEmployeeJobsTooltipLabel } from "@/lib/planning-employee-availability-tooltip";
 
 const EMPLOYEE_COLOR_FALLBACK = "#94a3b8";
+
+export const PLANNING_SHIFT_CARD_SELECTOR = "[data-planning-shift-card]";
+
+function isPlanningShiftCardTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(target.closest(PLANNING_SHIFT_CARD_SELECTOR))
+  );
+}
 
 type DayAssignBlockReason = "absent" | "no_availability";
 
@@ -561,7 +570,7 @@ export function DashboardCalendarGrid({
                         : undefined
                     }
                     headerTooltip={headerTooltip}
-                    dayCollapsed={!layoutActiveDayDates.has(date)}
+                    dayCollapsed={!activeDayDates.has(date)}
                     staffingHeaderMenuOpen={staffingHeaderContextMenuOpen}
                     onStaffingHeaderMenu={
                       onStaffingHeaderContextMenu
@@ -611,7 +620,6 @@ export function DashboardCalendarGrid({
                 <Tooltip
                   className="flex min-h-0 w-full self-stretch"
                   contentClassName={employeeAvailabilityTooltipContentClassName}
-                  openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
                   content={
                     <PlanningEmployeeAvailabilityTooltipContent
                       slots={availabilityByProfileId.get(emp.id) ?? []}
@@ -709,15 +717,88 @@ export function DashboardCalendarGrid({
                   serviceTimelinesByDate.values().next().value!;
                 const onShiftClick = (shiftId: string) =>
                   onOpenPicker(emp.id, date, shiftId);
-                const canOpenNewShiftInCell =
-                  !pending && canAssign && !dayReadOnly;
                 const showCellFreePlus =
                   DASHBOARD_CELL_FREE_PLUS_ENABLED &&
                   !isPastDay &&
                   !isNoServiceDay;
-                const openNewShiftInCell = () =>
-                  onRequestPlanningDayAssign(emp.id, date, "picker");
                 const emptyAreaLabel = t("dashboard.addShiftTitle");
+                const handleCellAssignInteraction = (
+                  event: React.MouseEvent<HTMLElement>,
+                  interaction: "click" | "contextmenu"
+                ) => {
+                  if (isPlanningShiftCardTarget(event.target)) return;
+
+                  if (interaction === "contextmenu") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }
+
+                  if (
+                    overnightSpanOnCell &&
+                    canOpenPlanningOvernightShiftContextMenu(
+                      overnightSpanOnCell,
+                      {
+                        todayISO,
+                        isDayReadOnly,
+                        pastUnconfirmedMenu: {
+                          shiftDate: overnightSpanOnCell.shift.shift_date,
+                          isPastShiftDate,
+                          displayState: overnightSpanOnCell.shift.displayState,
+                        },
+                      }
+                    ) &&
+                    (cellSegments.length === 0 ||
+                      cellShowsOnlyOvernightShiftSegments(
+                        cellSegments,
+                        overnightSpanOnCell.shift.id
+                      ))
+                  ) {
+                    if (interaction === "click") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }
+                    onShiftContextMenu(
+                      emp.id,
+                      resolvePlanningOvernightShiftContextMenuDate(
+                        overnightSpanOnCell,
+                        date,
+                        {
+                          todayISO,
+                          isDayReadOnly,
+                          pastUnconfirmedMenu: {
+                            shiftDate: overnightSpanOnCell.shift.shift_date,
+                            isPastShiftDate,
+                          },
+                        }
+                      ),
+                      overnightSpanOnCell.shift.id,
+                      event.clientX,
+                      event.clientY
+                    );
+                    return;
+                  }
+
+                  if (isPastDay) return;
+                  if (effectiveBlockReason === "absent") return;
+                  if (
+                    canOpenCellAssignContextMenu &&
+                    !canOpenCellAssignContextMenu(emp.id, date)
+                  ) {
+                    return;
+                  }
+
+                  if (interaction === "click") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }
+
+                  onCellContextMenu(
+                    emp.id,
+                    date,
+                    event.clientX,
+                    event.clientY
+                  );
+                };
                 const collapsedOvernightAnchors = !isDayExpanded
                   ? employeeOvernightSpans.filter(
                       (span) =>
@@ -769,10 +850,6 @@ export function DashboardCalendarGrid({
                           event.clientY
                         );
                       }}
-                      onEmptyAreaClick={
-                        showCellFreePlus ? openNewShiftInCell : undefined
-                      }
-                      emptyAreaDisabled={!canOpenNewShiftInCell}
                       emptyAreaLabel={emptyAreaLabel}
                     />
                   ) : null;
@@ -823,10 +900,6 @@ export function DashboardCalendarGrid({
                       absenceConflictShiftIds={absenceConflictShiftIds}
                       swapRequestShiftIds={swapRequestShiftIds}
                       shiftConfirmationEnabled={shiftConfirmationEnabled}
-                      onEmptyAreaClick={
-                        showCellFreePlus ? openNewShiftInCell : undefined
-                      }
-                      emptyAreaDisabled={!canOpenNewShiftInCell}
                       emptyAreaLabel={emptyAreaLabel}
                     />
                   ) : null;
@@ -849,68 +922,12 @@ export function DashboardCalendarGrid({
                         ? { backgroundColor: cellBackground }
                         : undefined),
                     }}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      const pastUnconfirmedMenu = {
-                        shiftDate: "",
-                        isPastShiftDate,
-                      };
-                      if (
-                        overnightSpanOnCell &&
-                        canOpenPlanningOvernightShiftContextMenu(
-                          overnightSpanOnCell,
-                          {
-                            todayISO,
-                            isDayReadOnly,
-                            pastUnconfirmedMenu: {
-                              shiftDate: overnightSpanOnCell.shift.shift_date,
-                              isPastShiftDate,
-                              displayState: overnightSpanOnCell.shift.displayState,
-                            },
-                          }
-                        ) &&
-                        (cellSegments.length === 0 ||
-                          cellShowsOnlyOvernightShiftSegments(
-                            cellSegments,
-                            overnightSpanOnCell.shift.id
-                          ))
-                      ) {
-                        onShiftContextMenu(
-                          emp.id,
-                          resolvePlanningOvernightShiftContextMenuDate(
-                            overnightSpanOnCell,
-                            date,
-                            {
-                              todayISO,
-                              isDayReadOnly,
-                              pastUnconfirmedMenu: {
-                                shiftDate: overnightSpanOnCell.shift.shift_date,
-                                isPastShiftDate,
-                              },
-                            }
-                          ),
-                          overnightSpanOnCell.shift.id,
-                          event.clientX,
-                          event.clientY
-                        );
-                        return;
-                      }
-                      if (isPastDay) return;
-                      if (effectiveBlockReason === "absent") return;
-                      if (
-                        canOpenCellAssignContextMenu &&
-                        !canOpenCellAssignContextMenu(emp.id, date)
-                      ) {
-                        return;
-                      }
-                      onCellContextMenu(
-                        emp.id,
-                        date,
-                        event.clientX,
-                        event.clientY
-                      );
-                    }}
+                    onContextMenu={(event) =>
+                      handleCellAssignInteraction(event, "contextmenu")
+                    }
+                    onClick={(event) =>
+                      handleCellAssignInteraction(event, "click")
+                    }
                   >
                     {rowIndex === 0 ? (
                       <DashboardDayColumnWidthReporter
@@ -986,7 +1003,9 @@ export function DashboardCalendarGrid({
                           <button
                             type="button"
                             disabled={pending || !canAssign || dayReadOnly}
-                            onClick={() => onOpenPicker(emp.id, date)}
+                            onClick={(event) =>
+                              handleCellAssignInteraction(event, "click")
+                            }
                             className={cn(
                               "flex min-h-0 w-full flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40",
                               picker?.employeeId === emp.id &&

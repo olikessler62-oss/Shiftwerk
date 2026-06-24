@@ -69,7 +69,7 @@ import {
   resolveStaffingHeaderAreaId,
   staffingAssignmentsForAreaDay,
 } from "@/lib/bulk-staffing-header";
-import { mergeStaffingRulesWithOverridesForAreaDate } from "@/lib/staffing-rules-with-overrides";
+import { staffingRulesWithOverridesForAreaDate } from "@/lib/staffing-rules-with-overrides";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
 import { resolveOpenDemandShiftPrefill } from "@/lib/bulk-shift-staffing";
 import { isPastShiftDate } from "@/lib/planning-readonly";
@@ -939,7 +939,7 @@ export function DashboardView({
       map.set(
         date,
         computeBulkStaffingHeaderEntries({
-          staffingRules: mergeStaffingRulesWithOverridesForAreaDate(
+          staffingRules: staffingRulesWithOverridesForAreaDate(
             staffingRules,
             staffingOverrides,
             staffingHeaderAreaId,

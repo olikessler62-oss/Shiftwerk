@@ -9,14 +9,14 @@ export function DashboardLoadingSkeleton() {
   return (
     <div className={PLANNING_PAGES_SHELL_CLASS} aria-busy="true" aria-live="polite">
       <header className={cn(APP_PAGE_TOOLBAR_HEADER_CLASS, "pointer-events-none")}>
-        <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4">
+        <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 md:gap-3">
           <div className="h-8 w-48 animate-pulse rounded-md bg-white/20" />
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
             <div className="h-8 w-8 animate-pulse rounded-md bg-white/15" />
             <div className="h-8 w-16 animate-pulse rounded-md bg-white/15" />
             <div className="h-8 w-8 animate-pulse rounded-md bg-white/15" />
           </div>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
             <div className="h-8 w-28 animate-pulse rounded-full bg-white/15" />
             <div className="h-8 w-24 animate-pulse rounded-full bg-white/15" />
           </div>

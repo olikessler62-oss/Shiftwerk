@@ -96,10 +96,15 @@ export async function DashboardPageShell({
         locations={locations}
         selectedLocationId={selectedLocationId}
         selectedLocationName={selectedLocation?.name}
-        shifts={summaryBundle.summaryShifts}
         areas={summaryBundle.areas}
         locationShifts={summaryBundle.locationShifts}
         employees={summaryBundle.employees}
+        serviceHours={summaryBundle.serviceHours}
+        staffingRules={summaryBundle.staffingRules}
+        staffingOverrides={summaryBundle.staffingOverrides}
+        areaShiftTemplates={summaryBundle.areaShiftTemplates}
+        qualifications={summaryBundle.qualifications}
+        profileQualificationIds={summaryBundle.profileQualificationIds}
         absences={summaryBundle.absences}
         communicationSwapRequests={summaryBundle.communicationSwapRequests}
         communicationCancelActors={summaryBundle.communicationCancelActors}

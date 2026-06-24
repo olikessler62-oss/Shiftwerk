@@ -10,6 +10,7 @@ import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 
 export type DashboardLocationScopedData = {
   areas: LocationArea[];
+  activeAreas: LocationArea[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   serviceHours: AreaServiceHourRef[];
   shiftRows: Awaited<
@@ -21,6 +22,7 @@ export type DashboardLocationScopedData = {
 
 export const EMPTY_DASHBOARD_LOCATION_SCOPED_DATA: DashboardLocationScopedData = {
   areas: [],
+  activeAreas: [],
   areaShiftTemplates: [],
   serviceHours: [],
   shiftRows: [],
@@ -63,57 +65,41 @@ export async function loadDashboardLocationScopedData(
   from: string,
   to: string
 ): Promise<DashboardLocationScopedData> {
-  const areas = await db.listLocationAreasForAreaCalendar(
-    locationId,
-    from,
-    to
-  );
+  const [areas, activeAreas] = await Promise.all([
+    db.listLocationAreasForAreaCalendar(locationId, from, to),
+    db.listLocationAreas(locationId),
+  ]);
   const calendarAreaIds = areas.map((area) => area.id);
-
-  const activeAreas = await db.listLocationAreas(locationId);
-  const activeAreaIds = new Set(activeAreas.map((area) => area.id));
-  const supplementalAreaIds = calendarAreaIds.filter(
-    (areaId) => !activeAreaIds.has(areaId)
-  );
 
   const [
     areaShiftTemplates,
-    serviceHoursBase,
+    serviceHours,
     shiftRows,
-    staffingRulesBase,
+    staffingRules,
     staffingOverrides,
-    supplementalServiceHours,
-    supplementalStaffingRules,
   ] = await Promise.all([
     db.listAreaShiftTemplatesWithBreaksForLocation(locationId).catch(() => []),
-    db.listLocationAreaServiceHours(locationId).catch(() => []),
-    getCachedAreaCalendarShifts(orgId, locationId, weekStart, from, to),
-    db.listLocationAreaStaffing(locationId).catch(() => []),
-    db.listLocationAreaStaffingOverrides(locationId, from, to).catch(() => []),
-    supplementalAreaIds.length
+    calendarAreaIds.length
       ? db
-          .listLocationAreaServiceHoursForAreas(supplementalAreaIds)
-          .catch(() => [])
+          .listLocationAreaServiceHoursForAreas(calendarAreaIds)
+          .catch(() => [] as AreaServiceHourRef[])
       : Promise.resolve([] as AreaServiceHourRef[]),
-    supplementalAreaIds.length
+    getCachedAreaCalendarShifts(orgId, locationId, weekStart, from, to),
+    calendarAreaIds.length
       ? db
-          .listLocationAreaStaffingForAreas(supplementalAreaIds)
-          .catch(() => [])
+          .listLocationAreaStaffingForAreas(calendarAreaIds)
+          .catch(() => [] as LocationAreaStaffing[])
       : Promise.resolve([] as LocationAreaStaffing[]),
+    db.listLocationAreaStaffingOverrides(locationId, from, to).catch(() => []),
   ]);
 
   return {
     areas,
+    activeAreas,
     areaShiftTemplates,
-    serviceHours: uniqueServiceHoursById([
-      ...serviceHoursBase,
-      ...supplementalServiceHours,
-    ]),
+    serviceHours: uniqueServiceHoursById(serviceHours),
     shiftRows,
-    staffingRules: uniqueStaffingRulesById([
-      ...staffingRulesBase,
-      ...supplementalStaffingRules,
-    ]),
+    staffingRules: uniqueStaffingRulesById(staffingRules),
     staffingOverrides,
   };
 }

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getManagerSession } from "@/lib/server-manager-session";
 import { DashboardPageShell } from "@/components/dashboard/dashboard-page-shell";
+import { DashboardPageLoadingFill } from "@/components/dashboard/dashboard-page-loading-fill";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function DashboardPage({
   const params = await searchParams;
 
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<DashboardPageLoadingFill />}>
       <DashboardPageShell params={params} />
     </Suspense>
   );

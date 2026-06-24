@@ -8,18 +8,15 @@ import {
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import {
   resolveStaffingHeaderDisplay,
+  resolveStaffingFillGaugeVariant,
   isTagAreaHeaderStaffingAssignmentMismatch,
-  isTagAreaHeaderStaffingHeaderAlertBadge,
   isTagAreaHeaderStaffingOverstaffed,
+  isTagAreaHeaderStaffingUnderstaffed,
   type StaffingHeaderDisplay,
 } from "@/lib/tag-area-header-staffing-display";
-import {
-  StaffingFillGauge,
-  StaffingOverstaffedBadge,
-  STAFFING_OVERSTAFFED_BADGE_ANCHOR_CLASS,
-} from "@/components/areacalendar/staffing-fill-gauge";
+import { StaffingFillGauge } from "@/components/areacalendar/staffing-fill-gauge";
 import { useTranslations } from "@/i18n/locale-provider";
-import { Tooltip, type TooltipPlacement } from "@/components/ui/tooltip";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 
 type Props = {
@@ -38,9 +35,11 @@ const EMPTY_DISPLAY: StaffingHeaderDisplay = { mode: "empty" };
 function StaffingTooltipContent({
   title,
   body,
+  footnote,
 }: {
   title: string;
   body: string;
+  footnote?: string;
 }) {
   return (
     <>
@@ -48,93 +47,12 @@ function StaffingTooltipContent({
         {title}
       </p>
       <span className="block whitespace-pre-line">{body}</span>
+      {footnote ? (
+        <p className="mt-1.5 border-t border-border/60 pt-1.5 text-xs text-muted-foreground">
+          {footnote}
+        </p>
+      ) : null}
     </>
-  );
-}
-
-const STAFFING_HEADER_ALERT_BADGE_ANCHOR_CENTER_CLASS =
-  "left-1/2 right-auto -translate-x-1/2";
-
-const STAFFING_HEADER_ALERT_BADGE_TOOLTIP_PLACEMENT: TooltipPlacement = {
-  side: "above",
-  gapPx: 26,
-};
-
-function StaffingHeaderAlertBadgeTooltip({
-  content,
-  dataAttribute,
-  size = "sm",
-  anchorClassName,
-  suppressOpen = false,
-}: {
-  content: string;
-  dataAttribute: string;
-  size?: "sm" | "md";
-  anchorClassName?: string;
-  suppressOpen?: boolean;
-}) {
-  return (
-    <Tooltip
-      content={content}
-      suppressOpen={suppressOpen}
-      placement={STAFFING_HEADER_ALERT_BADGE_TOOLTIP_PLACEMENT}
-      className="pointer-events-auto z-[51]"
-    >
-      <span
-        data-staffing-header-alert-badge={dataAttribute}
-        className={cn(
-          STAFFING_OVERSTAFFED_BADGE_ANCHOR_CLASS,
-          "pointer-events-auto cursor-default",
-          anchorClassName
-        )}
-      >
-        <StaffingOverstaffedBadge size={size} />
-      </span>
-    </Tooltip>
-  );
-}
-
-function StaffingOverstaffedBadgeTooltip({
-  size = "sm",
-  anchorClassName,
-  suppressOpen = false,
-}: {
-  size?: "sm" | "md";
-  anchorClassName?: string;
-  suppressOpen?: boolean;
-}) {
-  const t = useTranslations();
-
-  return (
-    <StaffingHeaderAlertBadgeTooltip
-      content={t("areaCalendar.staffingOverstaffedBadgeTooltip")}
-      dataAttribute="overstaffed"
-      size={size}
-      anchorClassName={anchorClassName}
-      suppressOpen={suppressOpen}
-    />
-  );
-}
-
-function StaffingAssignmentMismatchBadgeTooltip({
-  size = "sm",
-  anchorClassName,
-  suppressOpen = false,
-}: {
-  size?: "sm" | "md";
-  anchorClassName?: string;
-  suppressOpen?: boolean;
-}) {
-  const t = useTranslations();
-
-  return (
-    <StaffingHeaderAlertBadgeTooltip
-      content={t("areaCalendar.staffingAssignmentMismatchBadgeTooltip")}
-      dataAttribute="assignment-mismatch"
-      size={size}
-      anchorClassName={anchorClassName}
-      suppressOpen={suppressOpen}
-    />
   );
 }
 
@@ -168,30 +86,60 @@ export function TagAreaHeaderStaffingOverlay({
   );
 
   const staffingTooltipTitle = t("locations.panelStaffing");
-  const overstaffedBadgeSuppressOpen = staffingHeaderMenuOpen;
+  const overstaffedGaugeFootnote = t("areaCalendar.staffingOverstaffedGaugeFootnote");
+
+  const hasOverstaffed = useMemo(
+    () => isTagAreaHeaderStaffingOverstaffed(entries),
+    [entries]
+  );
+
+  const hasAssignmentMismatch = useMemo(
+    () => isTagAreaHeaderStaffingAssignmentMismatch(entries),
+    [entries]
+  );
+
+  const hasUnderstaffed = useMemo(
+    () => isTagAreaHeaderStaffingUnderstaffed(entries),
+    [entries]
+  );
+
+  const showPureOverstaffedFootnote =
+    hasOverstaffed && !hasUnderstaffed && !hasAssignmentMismatch;
 
   const allEntriesTooltip = useMemo(
     () => (
       <StaffingTooltipContent
         title={staffingTooltipTitle}
         body={formatStaffingEntriesTooltipContent(entries, formatQualLine)}
+        footnote={
+          showPureOverstaffedFootnote ? overstaffedGaugeFootnote : undefined
+        }
       />
     ),
-    [entries, formatQualLine, staffingTooltipTitle]
+    [
+      entries,
+      formatQualLine,
+      overstaffedGaugeFootnote,
+      showPureOverstaffedFootnote,
+      staffingTooltipTitle,
+    ]
   );
 
   const entryTooltip = useCallback(
-    (serviceHourId: string) => {
+    (serviceHourId: string, showOverstaffedFootnote: boolean) => {
       const entry = entryByServiceHourId.get(serviceHourId);
       if (!entry) return undefined;
       return (
         <StaffingTooltipContent
           title={staffingTooltipTitle}
           body={formatStaffingEntryTooltipContent(entry, formatQualLine)}
+          footnote={
+            showOverstaffedFootnote ? overstaffedGaugeFootnote : undefined
+          }
         />
       );
     },
-    [entryByServiceHourId, formatQualLine, staffingTooltipTitle]
+    [entryByServiceHourId, formatQualLine, overstaffedGaugeFootnote, staffingTooltipTitle]
   );
 
   const entryKey = useMemo(
@@ -252,23 +200,14 @@ export function TagAreaHeaderStaffingOverlay({
     return () => observer.disconnect();
   }, [display, entryKey, containerWidth]);
 
-  const hasOverstaffed = useMemo(
-    () => isTagAreaHeaderStaffingOverstaffed(entries),
-    [entries]
-  );
-
-  const hasAssignmentMismatch = useMemo(
-    () => isTagAreaHeaderStaffingAssignmentMismatch(entries),
-    [entries]
-  );
-
-  const hasHeaderAlertBadge = useMemo(
-    () => isTagAreaHeaderStaffingHeaderAlertBadge(entries),
-    [entries]
-  );
-
   const showIndicator =
     dayCollapsed || display.mode === "indicator" || contentOverflows;
+
+  const indicatorAlertClass = hasUnderstaffed || hasAssignmentMismatch
+    ? "text-red-600"
+    : hasOverstaffed
+      ? "text-[#CA8A04]"
+      : "text-neutral-600";
 
   const assignInteractiveClusterRef = useCallback(
     (node: HTMLElement | null) => {
@@ -310,9 +249,7 @@ export function TagAreaHeaderStaffingOverlay({
     <div
       ref={containerRef}
       className={cn(
-        "pointer-events-none flex h-full w-full min-w-0 items-stretch justify-center px-0.5",
-        hasHeaderAlertBadge && "relative z-[50] overflow-visible",
-        !hasHeaderAlertBadge && "overflow-hidden",
+        "pointer-events-none flex h-full w-full min-w-0 items-stretch justify-center overflow-hidden px-0.5",
         className
       )}
     >
@@ -321,19 +258,6 @@ export function TagAreaHeaderStaffingOverlay({
           ref={assignInteractiveClusterRef}
           className="pointer-events-auto relative flex h-full w-full min-w-0 self-stretch"
         >
-          {hasAssignmentMismatch ? (
-            <StaffingAssignmentMismatchBadgeTooltip
-              size="md"
-              anchorClassName={STAFFING_HEADER_ALERT_BADGE_ANCHOR_CENTER_CLASS}
-              suppressOpen={overstaffedBadgeSuppressOpen}
-            />
-          ) : hasOverstaffed ? (
-            <StaffingOverstaffedBadgeTooltip
-              size="md"
-              anchorClassName={STAFFING_HEADER_ALERT_BADGE_ANCHOR_CENTER_CLASS}
-              suppressOpen={overstaffedBadgeSuppressOpen}
-            />
-          ) : null}
           <Tooltip
             content={allEntriesTooltip}
             suppressOpen={staffingHeaderMenuOpen}
@@ -348,8 +272,8 @@ export function TagAreaHeaderStaffingOverlay({
             >
               <span
                 className={cn(
-                  "shrink-0 text-base font-bold leading-none text-neutral-600",
-                  hasHeaderAlertBadge && "invisible"
+                  "shrink-0 text-base font-bold leading-none",
+                  indicatorAlertClass
                 )}
               >
                 !
@@ -360,53 +284,38 @@ export function TagAreaHeaderStaffingOverlay({
       ) : display.mode === "gauges" ? (
         <div
           ref={setGaugeClusterRef}
-          className={cn(
-            "pointer-events-none flex min-w-0 max-w-full shrink items-stretch justify-center gap-1",
-            hasHeaderAlertBadge ? "overflow-visible" : "overflow-hidden"
-          )}
+          className="pointer-events-none flex min-w-0 max-w-full shrink items-stretch justify-center gap-1 overflow-hidden"
         >
-          {display.segments.map((segment) => (
-            <span
-              key={segment.serviceHourId}
-              className={cn(
-                "pointer-events-auto relative flex h-full min-w-0 shrink-0 self-stretch items-center justify-center",
-                (segment.assignmentMismatch || segment.overstaffed) &&
-                  "overflow-visible"
-              )}
-            >
-              {segment.assignmentMismatch ? (
-                <StaffingAssignmentMismatchBadgeTooltip
-                  anchorClassName={STAFFING_HEADER_ALERT_BADGE_ANCHOR_CENTER_CLASS}
-                  suppressOpen={overstaffedBadgeSuppressOpen}
-                />
-              ) : segment.overstaffed ? (
-                <StaffingOverstaffedBadgeTooltip
-                  anchorClassName={STAFFING_HEADER_ALERT_BADGE_ANCHOR_CENTER_CLASS}
-                  suppressOpen={overstaffedBadgeSuppressOpen}
-                />
-              ) : null}
-              <Tooltip
-                content={entryTooltip(segment.serviceHourId)}
-                suppressOpen={staffingHeaderMenuOpen}
-                className="pointer-events-auto"
+          {display.segments.map((segment) => {
+            const variant = resolveStaffingFillGaugeVariant(segment);
+            return (
+              <span
+                key={segment.serviceHourId}
+                className="pointer-events-auto flex h-full min-w-0 shrink-0 self-stretch items-center justify-center"
               >
-                <span
-                  {...menuTriggerProps}
-                  className={onStaffingHeaderMenu ? "cursor-pointer" : undefined}
+                <Tooltip
+                  content={entryTooltip(
+                    segment.serviceHourId,
+                    variant === "overstaffed"
+                  )}
+                  suppressOpen={staffingHeaderMenuOpen}
+                  className="pointer-events-auto"
                 >
-                  <StaffingFillGauge
-                    assigned={segment.assigned}
-                    required={segment.required}
-                    label={segment.timeText}
-                    understaffed={segment.understaffed}
-                    overstaffed={
-                      segment.overstaffed || segment.assignmentMismatch
-                    }
-                  />
-                </span>
-              </Tooltip>
-            </span>
-          ))}
+                  <span
+                    {...menuTriggerProps}
+                    className={onStaffingHeaderMenu ? "cursor-pointer" : undefined}
+                  >
+                    <StaffingFillGauge
+                      assigned={segment.assigned}
+                      required={segment.required}
+                      label={segment.timeText}
+                      variant={variant}
+                    />
+                  </span>
+                </Tooltip>
+              </span>
+            );
+          })}
         </div>
       ) : null}
     </div>

@@ -457,6 +457,7 @@ export type StaffingRule = {
   location_area_id: string;
   service_hour_id: string;
   required_count: number;
+  qualification_id?: string | null;
 };
 
 export function areaHasServiceHours(
@@ -681,6 +682,122 @@ export function createServiceHourStaffingLabel(
   };
 }
 
+function staffingCoverageKey(
+  timeKey: string,
+  rule: Pick<StaffingRule, "qualification_id">
+): string {
+  return `${timeKey}|${rule.qualification_id ?? ""}`;
+}
+
+/** Ordnet Personalbedarf-Regeln den Servicezeit-Fenstern eines Tages zu (auch per Uhrzeit). */
+function accumulateRequiredStaffingForDayHours(
+  rules: StaffingRule[],
+  areaId: string,
+  dayHours: readonly ServiceHourStaffingRef[],
+  serviceHours: readonly AreaServiceHourRef[],
+  weekday: number
+): Map<string, number> {
+  const requiredByHour = new Map<string, number>();
+  const dayHourIds = new Set(dayHours.map((hour) => hour.id));
+  const dayHourIdByTimeKey = new Map(
+    dayHours.map(
+      (hour) => [`${hour.start_time}|${hour.end_time}`, hour.id] as const
+    )
+  );
+  const areaServiceHours = serviceHours.filter(
+    (hour) => hour.location_area_id === areaId
+  );
+  /** Fenster+Funktion, für die an diesem Tag bereits Bedarf gezählt wird. */
+  const coveredStaffingKeys = new Set<string>();
+
+  const addRequired = (
+    hourId: string,
+    count: number,
+    timeKey: string,
+    rule: StaffingRule
+  ) => {
+    const coverageKey = staffingCoverageKey(timeKey, rule);
+    if (coveredStaffingKeys.has(coverageKey)) return;
+    requiredByHour.set(hourId, (requiredByHour.get(hourId) ?? 0) + count);
+    coveredStaffingKeys.add(coverageKey);
+  };
+
+  for (const rule of rules) {
+    if (rule.location_area_id !== areaId) continue;
+    const count = normalizeRequiredCount(rule.required_count);
+    if (count <= 0) continue;
+
+    if (dayHourIds.has(rule.service_hour_id)) {
+      const hour = dayHours.find((item) => item.id === rule.service_hour_id);
+      if (!hour) continue;
+      addRequired(
+        hour.id,
+        count,
+        `${hour.start_time}|${hour.end_time}`,
+        rule
+      );
+      continue;
+    }
+
+    const ruleHour = serviceHours.find((hour) => hour.id === rule.service_hour_id);
+    if (
+      !ruleHour ||
+      ruleHour.location_area_id !== areaId ||
+      !ruleHour.start_time ||
+      !ruleHour.end_time
+    ) {
+      continue;
+    }
+
+    const ruleStart = serviceHourTimeFieldValue(ruleHour.start_time);
+    const ruleEnd = serviceHourTimeFieldValue(ruleHour.end_time);
+    const timeKey = `${ruleStart}|${ruleEnd}`;
+
+    if (coveredStaffingKeys.has(staffingCoverageKey(timeKey, rule))) continue;
+
+    const ruleWeekday = normalizeWeekday(ruleHour.weekday);
+
+    if (ruleWeekday === weekday) {
+      const mappedHourId = dayHourIdByTimeKey.get(timeKey);
+      if (mappedHourId) {
+        addRequired(mappedHourId, count, timeKey, rule);
+      }
+      continue;
+    }
+
+    const equivalentHour = findServiceHourByWeekdayAndWindow(
+      weekday,
+      ruleStart,
+      ruleEnd,
+      areaServiceHours
+    );
+    if (equivalentHour?.id && dayHourIds.has(equivalentHour.id)) {
+      addRequired(equivalentHour.id, count, timeKey, rule);
+      continue;
+    }
+
+    const containedDayHours = dayHours.filter((hour) =>
+      shiftFitsInServiceHourWindow(
+        hour.start_time,
+        hour.end_time,
+        ruleStart,
+        ruleEnd
+      )
+    );
+    if (containedDayHours.length === 1) {
+      const child = containedDayHours[0]!;
+      addRequired(
+        child.id,
+        count,
+        `${child.start_time}|${child.end_time}`,
+        rule
+      );
+    }
+  }
+
+  return requiredByHour;
+}
+
 /** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header. */
 export function tagAreaHeaderStaffingEntries(
   rules: StaffingRule[],
@@ -718,16 +835,13 @@ export function tagAreaHeaderStaffingEntries(
 
   if (dayHours.length === 0) return [];
 
-  const requiredByHour = new Map<string, number>();
-  for (const rule of rules) {
-    if (rule.location_area_id !== areaId) continue;
-    const count = normalizeRequiredCount(rule.required_count);
-    if (count <= 0) continue;
-    requiredByHour.set(
-      rule.service_hour_id,
-      (requiredByHour.get(rule.service_hour_id) ?? 0) + count
-    );
-  }
+  const requiredByHour = accumulateRequiredStaffingForDayHours(
+    rules,
+    areaId,
+    dayHours,
+    serviceHours,
+    weekday
+  );
 
   const assignedByHour = new Map<string, number>();
   for (const shift of assignedShifts) {
@@ -839,7 +953,7 @@ export function findServiceHourByWeekdayAndWindow(
   const end = serviceHourTimeFieldValue(endTime);
   return serviceHours.find(
     (hour) =>
-      hour.weekday === weekday &&
+      normalizeWeekday(hour.weekday) === weekday &&
       hour.id != null &&
       hour.start_time != null &&
       hour.end_time != null &&

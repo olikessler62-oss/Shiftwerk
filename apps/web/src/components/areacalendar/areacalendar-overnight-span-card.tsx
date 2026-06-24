@@ -7,7 +7,7 @@ import {
 } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { DashboardShiftCardOverflowIndicator } from "@/components/dashboard/dashboard-shift-card-overflow-indicator";
-import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { useTranslations } from "@/i18n/locale-provider";
 import { formatShiftCardTooltipPlainText } from "@/lib/shift-card-display-content";
@@ -32,8 +32,8 @@ import {
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
 } from "@/lib/shift-card-time-gradient";
 import {
-  SHIFT_CARD_TWO_LINE_HEIGHT_PX,
-  shiftCardListItemHeightPx,
+  AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+  areaCalendarShiftCardListItemHeightPx,
 } from "@/lib/shift-card-row-layout";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { planningShiftCardShowsPointerCursor } from "@/lib/shift-card-context-menu-actions";
@@ -191,7 +191,7 @@ export function AreaCalendarOvernightSpanCard({
   if (displayMode === "collapsed") {
     const markerHeightPx = Math.max(
       1,
-      SHIFT_CARD_TWO_LINE_HEIGHT_PX + PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX
+      AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX + PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX
     );
     const markerColor = isPastDay
       ? COLLAPSED_PAST_DAY_SHIFT_COLOR
@@ -201,7 +201,6 @@ export function AreaCalendarOvernightSpanCard({
       <Tooltip
         content={<ShiftCardTooltipContent data={tooltipData} />}
         contentClassName={shiftCardTooltipContentClassName}
-        openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
         className="inline-flex h-full"
       >
         <button
@@ -235,7 +234,7 @@ export function AreaCalendarOvernightSpanCard({
   }
 
   const showOverflowIndicator = !showAnyText || textOverflows;
-  const cardHeightPx = SHIFT_CARD_TWO_LINE_HEIGHT_PX;
+  const cardHeightPx = AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX;
   const cardBoxShadow =
     employeeHighlighted && displayMode === "expanded"
       ? buildEmployeeShiftHighlightBoxShadow(
@@ -248,7 +247,6 @@ export function AreaCalendarOvernightSpanCard({
     <Tooltip
       content={<ShiftCardTooltipContent data={tooltipData} />}
       contentClassName={shiftCardTooltipContentClassName}
-      openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
       className="inline-flex h-full w-full min-w-0"
       placement={{
         anchorLeftToTriggerCenter: true,
@@ -341,5 +339,7 @@ export function AreaCalendarOvernightSpanCard({
 }
 
 export function areaCalendarOvernightSpanRowHeightPx(): number {
-  return shiftCardListItemHeightPx(SHIFT_CARD_TWO_LINE_HEIGHT_PX);
+  return areaCalendarShiftCardListItemHeightPx(
+    AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX
+  );
 }

@@ -74,7 +74,7 @@ export function settingsNestedModalOverlayClass(className?: string) {
 /** Nested Overlay in eingebetteten Slide-in-Detail-Panels (fixed über Shell). */
 export function settingsFixedNestedOverlayClass(className?: string) {
   return cn(
-    "fixed inset-0 z-[115] flex items-center justify-center bg-black/30 p-2 sm:p-4 md:left-56",
+    "fixed inset-0 z-[115] flex items-center justify-center bg-black/30 p-2 sm:p-4 md:left-[var(--app-shell-sidebar-width)]",
     "max-sm:items-stretch max-sm:justify-stretch max-sm:p-0",
     className
   );

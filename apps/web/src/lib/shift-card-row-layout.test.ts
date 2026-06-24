@@ -16,15 +16,14 @@ import {
   SHIFT_CARD_LIST_GAP_PX,
   SHIFT_CARD_ROW_FIT_BUFFER_PX,
   SHIFT_CARD_SHADOW_BLEED_PX,
-  SHIFT_CARD_TWO_LINE_HEIGHT_PX,
-  shiftCardListItemHeightPx,
+  areaCalendarShiftCardListItemHeightPx,
   totalAssignedRowHeightPx,
 } from "./shift-card-row-layout";
 
 describe("shift-card-row-layout", () => {
   it("T1: fits twelve cards at required height without scroll", () => {
     expect(areaRowShiftStackHeightPx(12)).toBe(
-      12 * shiftCardListItemHeightPx() +
+      12 * areaCalendarShiftCardListItemHeightPx() +
         11 * SHIFT_CARD_LIST_GAP_PX,
     );
 

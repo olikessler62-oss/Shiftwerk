@@ -33,7 +33,7 @@ import {
   resolveAreaCalendarLocationServiceDayTimeline,
   resolveAreaCalendarOvernightEndDayTimeline,
 } from "@/lib/areacalendar-service-day-timeline";
-import { SHIFT_CARD_TWO_LINE_HEIGHT_PX, AREA_ROW_FOOTER_STRIP_PX } from "@/lib/shift-card-row-layout";
+import { AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX, AREA_ROW_FOOTER_STRIP_PX } from "@/lib/shift-card-row-layout";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing } from "@schichtwerk/types";
 
@@ -151,7 +151,7 @@ function resolveAreaCalendarOvernightServiceSpans(
 
 const COLLAPSED_MARKER_HEIGHT_PX = Math.max(
   1,
-  SHIFT_CARD_TWO_LINE_HEIGHT_PX + PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX
+  AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX + PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX
 );
 
 export function AreaCalendarAreaRowOvernightOverlay({

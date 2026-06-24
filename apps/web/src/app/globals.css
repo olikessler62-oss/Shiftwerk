@@ -81,6 +81,7 @@
  */
 .app-shell-root {
   --app-shell-brand-band-height: 5.75rem;
+  --app-shell-sidebar-width: 15rem;
 }
 
 @media (min-width: 768px) {
@@ -328,14 +329,19 @@
     );
 }
 
-/** Logo-Zeile + Toolbar: volle Brand-Band-Höhe. */
+/** Logo-Zeile + Toolbar: volle Brand-Band-Höhe — fest, damit Navigation kein vertikales Flackern erzeugt. */
 .app-shell-sidebar > .app-shell-brand-surface,
 .app-page-toolbar-header.app-shell-brand-surface {
+  box-sizing: border-box;
+  height: var(--app-shell-brand-band-height);
   min-height: var(--app-shell-brand-band-height);
+  max-height: var(--app-shell-brand-band-height);
+  overflow: hidden;
 }
 
 /** Logo-Zeile: Glas-Overlay reduziert — Abdunkelung liegt auf ::before. */
-.app-shell-sidebar > .app-shell-brand-surface {
+.app-shell-sidebar > .app-shell-brand-surface,
+.app-page-toolbar-header.app-shell-brand-surface {
   background: linear-gradient(
     180deg,
     rgb(0 0 0 / 0.06) 0%,
@@ -344,6 +350,8 @@
     rgb(0 0 0 / 0.04) 100%
   );
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
 }
 
 /** Wortmarke neben dem Logo-Icon — weiß, leicht und zurückhaltend. */
@@ -421,6 +429,7 @@
 /** Sidebar-Scrollbars — am scrollbaren Slot-Wrapper, nicht am inneren nav. */
 .app-shell-sidebar-scroll,
 .app-shell-sidebar-mobile-panel {
+  overflow-x: hidden;
   scrollbar-width: thin;
   scrollbar-color: var(--sidebar-scrollbar-thumb) var(--sidebar-scrollbar-track);
   scrollbar-gutter: stable;

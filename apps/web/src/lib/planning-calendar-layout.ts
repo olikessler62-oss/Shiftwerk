@@ -59,7 +59,7 @@ export const PLANNING_ACTIVE_DAY_CELL_BG = "#f8fafc";
 export const PLANNING_ACTIVE_DAY_OVERLAY_BG = "#f6f7f9";
 export const PLANNING_PAST_DAY_CELL_BG = "#f3f6f9";
 export const PLANNING_CLOSED_DAY_CELL_BG = "#e6edf2";
-/** UX-Experiment: „+ / frei“ in leeren aktuellen/künftigen Dashboard-Zellen ausblenden. */
+/** UX-Experiment: sichtbares „+ / frei“ in leeren aufgeklappten Zellen ausblenden (Klickzonen neben Schichten bleiben aktiv). */
 export const DASHBOARD_CELL_FREE_PLUS_ENABLED = false;
 export const PLANNING_OPEN_DAY_COLUMN_WIDTH = "minmax(110px, 1fr)";
 export const PLANNING_EQUAL_FILL_DAY_COLUMN_WIDTH = "minmax(0, 1fr)";

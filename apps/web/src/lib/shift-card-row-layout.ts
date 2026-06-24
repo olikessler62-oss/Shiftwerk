@@ -5,6 +5,10 @@ export const SHIFT_CARD_EXTRA_WIDTH_PX = 1;
 export const SHIFT_CARD_EXTRA_HEIGHT_PX = 1;
 /** Zwei Textzeilen + vertikales Padding — leicht über Reserve, damit nichts abgeschnitten wird. */
 export const SHIFT_CARD_TWO_LINE_HEIGHT_PX = 30 + SHIFT_CARD_EXTRA_HEIGHT_PX;
+/** Zusätzliche Höhe für Schichtkarten im Bereich-Kalender (Breite unverändert). */
+export const AREA_CALENDAR_SHIFT_CARD_EXTRA_HEIGHT_PX = 5;
+export const AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX =
+  SHIFT_CARD_TWO_LINE_HEIGHT_PX + AREA_CALENDAR_SHIFT_CARD_EXTRA_HEIGHT_PX;
 export const SHIFT_CARD_LIST_GAP_PX = 4;
 /** Unteres Padding der Schichtkarten-Liste (pb-1). */
 export const SHIFT_CARD_LIST_BOTTOM_PADDING_PX = 4;
@@ -70,10 +74,16 @@ export function shiftCardListItemHeightPx(
   return cardHeightPx + SHIFT_CARD_SHADOW_BLEED_PX;
 }
 
+export function areaCalendarShiftCardListItemHeightPx(
+  cardHeightPx: number = AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+): number {
+  return shiftCardListItemHeightPx(cardHeightPx);
+}
+
 export function areaRowShiftStackHeightPx(shiftCount: number): number {
   if (shiftCount <= 0) return 0;
   return (
-    shiftCount * shiftCardListItemHeightPx() +
+    shiftCount * areaCalendarShiftCardListItemHeightPx() +
     Math.max(0, shiftCount - 1) * SHIFT_CARD_LIST_GAP_PX
   );
 }

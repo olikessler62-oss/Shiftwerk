@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 
 export const TOOLTIP_Z_INDEX = 200;
 
-/** Verzögerung für Schichtkarten- und Mitarbeiterlisten-Tooltips (Hover). */
+/** Standard-Verzögerung für Hover-Tooltips (Fokus öffnet weiterhin sofort). */
 export const HOVER_TOOLTIP_OPEN_DELAY_MS = 700;
 
 export type TooltipPlacement = {
@@ -109,7 +109,7 @@ export function Tooltip({
   disabled = false,
   suppressOpen = false,
   placement,
-  openDelayMs = 0,
+  openDelayMs = HOVER_TOOLTIP_OPEN_DELAY_MS,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });

@@ -5,6 +5,7 @@ import {
   isTagAreaHeaderStaffingEntryAssignmentMismatch,
   isTagAreaHeaderStaffingEntryOverstaffed,
   isTagAreaHeaderStaffingEntryUnderstaffed,
+  resolveStaffingFillGaugeVariant,
   isTagAreaHeaderStaffingHeaderAlertBadge,
   gaugeCountsForTagAreaHeaderStaffingEntry,
   STAFFING_FILL_GAUGE_SIZE_PX,
@@ -298,6 +299,54 @@ describe("isTagAreaHeaderStaffingHeaderAlertBadge", () => {
     expect(isTagAreaHeaderStaffingHeaderAlertBadge([entry("a", 1, 2)])).toBe(
       false
     );
+  });
+});
+
+describe("resolveStaffingFillGaugeVariant", () => {
+  it("uses full red ring for understaffing and assignment mismatch", () => {
+    expect(
+      resolveStaffingFillGaugeVariant({
+        understaffed: true,
+        overstaffed: false,
+        assignmentMismatch: false,
+        assigned: 2,
+        required: 12,
+      } as StaffingHeaderSegment)
+    ).toBe("understaffed");
+
+    expect(
+      resolveStaffingFillGaugeVariant({
+        understaffed: true,
+        overstaffed: true,
+        assignmentMismatch: true,
+        assigned: 2,
+        required: 2,
+      } as StaffingHeaderSegment)
+    ).toBe("understaffed");
+  });
+
+  it("uses full yellow ring for pure overstaffing", () => {
+    expect(
+      resolveStaffingFillGaugeVariant({
+        understaffed: false,
+        overstaffed: true,
+        assignmentMismatch: false,
+        assigned: 3,
+        required: 2,
+      } as StaffingHeaderSegment)
+    ).toBe("overstaffed");
+  });
+
+  it("uses full green ring when demand is met", () => {
+    expect(
+      resolveStaffingFillGaugeVariant({
+        understaffed: false,
+        overstaffed: false,
+        assignmentMismatch: false,
+        assigned: 2,
+        required: 2,
+      } as StaffingHeaderSegment)
+    ).toBe("met");
   });
 });
 

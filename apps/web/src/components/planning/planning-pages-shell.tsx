@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import type { Location } from "@schichtwerk/types";
 import { cn } from "@/lib/cn";
@@ -8,6 +9,7 @@ import {
   DASHBOARD_VIEW_CONTENT_CLASS,
   PLANNING_PAGES_SHELL_CLASS,
 } from "@/lib/app-shell-layout";
+import { useMainNavPendingTarget } from "@/lib/app-shell-main-nav-pending";
 import { PlanningToolbarPageBridgeProvider } from "@/lib/planning-toolbar-page-bridge";
 import { PlanningPageToolbar } from "@/components/planning/planning-page-toolbar";
 
@@ -18,7 +20,19 @@ type Props = {
 
 export function PlanningPagesShell({ locations, children }: Props) {
   const pathname = usePathname();
-  const isAreaCalendar = pathname === "/bereich-kalender";
+  const pendingTarget = useMainNavPendingTarget();
+  const frozenContentPathnameRef = useRef(pathname);
+
+  useEffect(() => {
+    if (!pendingTarget) {
+      frozenContentPathnameRef.current = pathname;
+    }
+  }, [pendingTarget, pathname]);
+
+  const contentPathname = pendingTarget
+    ? frozenContentPathnameRef.current
+    : pathname;
+  const isAreaCalendar = contentPathname === "/bereich-kalender";
 
   return (
     <PlanningToolbarPageBridgeProvider>

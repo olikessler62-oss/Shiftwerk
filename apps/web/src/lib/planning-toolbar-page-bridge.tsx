@@ -79,8 +79,5 @@ export function useRegisterPlanningToolbarPageBridge(
   useLayoutEffect(() => {
     if (!setBridge) return;
     setBridge(valueRef.current);
-    return () => {
-      setBridge({});
-    };
   }, [setBridge, displayKey]);
 }

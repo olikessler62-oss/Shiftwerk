@@ -9,7 +9,7 @@ import {
 import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { DashboardShiftCardOverflowIndicator } from "@/components/dashboard/dashboard-shift-card-overflow-indicator";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
-import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
@@ -181,12 +181,12 @@ export function DashboardOvernightSpanCard({
       <Tooltip
         content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
         contentClassName={shiftCardTooltipContentClassName}
-        openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
         className="inline-flex h-full"
       >
         <button
           type="button"
           disabled={pending}
+          data-planning-shift-card
           onMouseDown={preventPointerTextSelection}
           onClick={onShiftClick}
           onContextMenu={(event) => {
@@ -228,7 +228,6 @@ export function DashboardOvernightSpanCard({
     <Tooltip
       content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
       contentClassName={shiftCardTooltipContentClassName}
-      openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
       className={cn(
         "inline-flex h-full w-full min-w-0",
         employeeHighlighted && displayMode === "expanded" && "relative z-10 overflow-visible"
@@ -249,6 +248,7 @@ export function DashboardOvernightSpanCard({
         <button
           type="button"
           disabled={pending}
+          data-planning-shift-card
           onMouseDown={preventPointerTextSelection}
           onClick={onShiftClick}
           onContextMenu={(event) => {

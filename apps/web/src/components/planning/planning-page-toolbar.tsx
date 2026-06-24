@@ -27,7 +27,7 @@ import {
   headerToolbarWeekNavTodayButtonClass,
 } from "@/lib/header-toolbar-styles";
 import { buildPlanningPageUrl, planningWeekStartFromParam } from "@/lib/planning-week";
-import { useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
+import { useBeginMainNavPending, useMainNavPendingTarget } from "@/lib/app-shell-main-nav-pending";
 import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
 import { usePlanningToolbarPageBridgeState } from "@/lib/planning-toolbar-page-bridge";
@@ -57,10 +57,22 @@ export function PlanningPageToolbar({ locations }: Props) {
   const headerRef = useRef<HTMLElement>(null);
   const bridge = usePlanningToolbarPageBridgeState();
   const beginMainNavPending = useBeginMainNavPending();
+  const pendingTarget = useMainNavPendingTarget();
+  const frozenToolbarPathnameRef = useRef(pathname);
 
-  const isDashboard = pathname === "/dashboard";
-  const isEmployeeCalendar = pathname === "/mitarbeiter-kalender";
-  const isAreaCalendar = pathname === "/bereich-kalender";
+  useEffect(() => {
+    if (!pendingTarget) {
+      frozenToolbarPathnameRef.current = pathname;
+    }
+  }, [pendingTarget, pathname]);
+
+  const toolbarPathname = pendingTarget
+    ? frozenToolbarPathnameRef.current
+    : pathname;
+
+  const isDashboard = toolbarPathname === "/dashboard";
+  const isEmployeeCalendar = toolbarPathname === "/mitarbeiter-kalender";
+  const isAreaCalendar = toolbarPathname === "/bereich-kalender";
 
   const weekStart = useMemo(
     () => planningWeekStartFromParam(searchParams.get("week") ?? undefined),
@@ -234,6 +246,65 @@ export function PlanningPageToolbar({ locations }: Props) {
       </>
     ) : null;
 
+  const placementControls =
+    isAreaCalendar && features.areas ? (
+      <LocationSelect
+        locations={locations}
+        selectedLocationId={selectedLocationId}
+        variant="header"
+        className="md:ml-1"
+      />
+    ) : isEmployeeCalendar && features.areas ? (
+      <DashboardHeaderPlacement
+        locations={locations}
+        selectedLocationId={selectedLocationId}
+        areas={bridge.areas ?? []}
+        selectedAreaId={bridge.selectedAreaId ?? null}
+        disabled={controlsDisabled}
+        className="md:ml-1 md:border-l md:border-foreground/10 md:pl-3"
+        onAreaChange={(areaId) => bridge.onAreaChange?.(areaId)}
+      />
+    ) : isDashboard ? (
+      <LocationSelect
+        locations={locations}
+        selectedLocationId={selectedLocationId}
+        variant="header"
+        className="md:ml-1"
+      />
+    ) : null;
+
+  const calendarNavLink = isEmployeeCalendar ? (
+    <Link
+      href={areaCalendarHref}
+      onClick={() =>
+        beginMainNavPending({ kind: "page", pathname: "/bereich-kalender" })
+      }
+      className={calendarNavLinkClass}
+    >
+      {t("nav.areaCalendar")}
+    </Link>
+  ) : isAreaCalendar ? (
+    <Link
+      href={employeeCalendarHref}
+      onClick={() =>
+        beginMainNavPending({ kind: "page", pathname: "/mitarbeiter-kalender" })
+      }
+      className={calendarNavLinkClass}
+    >
+      {t("nav.employeeCalendar")}
+    </Link>
+  ) : isDashboard ? (
+    <Link
+      href={employeeCalendarHref}
+      onClick={() =>
+        beginMainNavPending({ kind: "page", pathname: "/mitarbeiter-kalender" })
+      }
+      className={calendarNavLinkClass}
+    >
+      {t("nav.employeeCalendar")}
+    </Link>
+  ) : null;
+
   return (
     <header
       ref={headerRef}
@@ -244,98 +315,32 @@ export function PlanningPageToolbar({ locations }: Props) {
       aria-hidden={shellLocked || undefined}
       {...(shellLocked ? { inert: true } : {})}
     >
-      {isAreaCalendar ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-3 md:gap-4">
-          {weekNavGroup}
-          <p
-            className="min-w-0 select-none text-sm leading-none text-white"
-            title={weekLabelTitle}
-          >
-            <span className="font-semibold">{weekHeader.monthYearLabel}</span>
-            <span className="ml-1.5 text-xs font-normal">
-              KW {weekHeader.calendarWeek}
-            </span>
-          </p>
-          {features.areas ? (
-            <LocationSelect
-              locations={locations}
-              selectedLocationId={selectedLocationId}
-              variant="header"
-              className="md:ml-1"
-            />
-          ) : null}
-        </div>
-      ) : (
-        <div className="flex min-w-0 flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4">
-          <div className="min-w-0 shrink-0" title={weekLabelTitle}>
-            <h1
-              className="min-w-0 select-none text-xl font-semibold leading-none tracking-tight text-white sm:text-2xl md:text-xl"
-            >
-              <span>{weekHeader.monthYearLabel}</span>
-              <span className="ml-1.5 text-base font-normal tabular-nums sm:text-lg md:text-base">
-                KW {weekHeader.calendarWeek}
-              </span>
-            </h1>
+      <div
+        className={cn(
+          "planning-toolbar-primary-row flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden md:gap-3",
+          "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        )}
+      >
+        {weekNavGroup}
+        <p
+          className="min-w-0 shrink-0 select-none text-sm leading-none text-white"
+          title={weekLabelTitle}
+        >
+          <span className="font-semibold">{weekHeader.monthYearLabel}</span>
+          <span className="ml-1.5 text-xs font-normal tabular-nums">
+            KW {weekHeader.calendarWeek}
+          </span>
+        </p>
+        {placementControls ? (
+          <div className="planning-toolbar-placement-slot flex h-8 shrink-0 items-center">
+            {placementControls}
           </div>
-
-          <div className="flex min-w-0 flex-wrap items-center gap-3 select-none md:gap-4 md:ml-2">
-            {weekNavGroup}
-
-            {isEmployeeCalendar && features.areas ? (
-              <DashboardHeaderPlacement
-                locations={locations}
-                selectedLocationId={selectedLocationId}
-                areas={bridge.areas ?? []}
-                selectedAreaId={bridge.selectedAreaId ?? null}
-                disabled={controlsDisabled}
-                className="md:ml-1 md:border-l md:border-foreground/10 md:pl-3"
-                onAreaChange={(areaId) => bridge.onAreaChange?.(areaId)}
-              />
-            ) : isDashboard ? (
-              <LocationSelect
-                locations={locations}
-                selectedLocationId={selectedLocationId}
-                variant="header"
-                className="md:ml-1"
-              />
-            ) : null}
-          </div>
-        </div>
-      )}
-
-      <div className="flex shrink-0 items-center gap-2 self-end md:self-auto">
-        {communicationControls}
-        {isEmployeeCalendar ? (
-          <Link
-            href={areaCalendarHref}
-            onClick={() =>
-              beginMainNavPending({ kind: "page", pathname: "/bereich-kalender" })
-            }
-            className={calendarNavLinkClass}
-          >
-            {t("nav.areaCalendar")}
-          </Link>
-        ) : isAreaCalendar ? (
-          <Link
-            href={employeeCalendarHref}
-            onClick={() =>
-              beginMainNavPending({ kind: "page", pathname: "/mitarbeiter-kalender" })
-            }
-            className={calendarNavLinkClass}
-          >
-            {t("nav.employeeCalendar")}
-          </Link>
-        ) : isDashboard ? (
-          <Link
-            href={employeeCalendarHref}
-            onClick={() =>
-              beginMainNavPending({ kind: "page", pathname: "/mitarbeiter-kalender" })
-            }
-            className={calendarNavLinkClass}
-          >
-            {t("nav.employeeCalendar")}
-          </Link>
         ) : null}
+      </div>
+
+      <div className="flex shrink-0 flex-nowrap items-center gap-2">
+        {communicationControls}
+        {calendarNavLink}
         <LanguageSelect variant="header" className="shrink-0" />
       </div>
     </header>

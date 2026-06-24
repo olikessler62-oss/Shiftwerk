@@ -33,3 +33,31 @@ export function resolveSelectedAreaId(
   }
   return areas[0].id;
 }
+
+/** Standard-Bereich für Planungskalender: URL, dann aktiver Bereich mit Schichten, sonst erster aktiver Bereich. */
+export function resolvePlanningAreaId(input: {
+  calendarAreas: readonly LocationArea[];
+  activeAreas: readonly LocationArea[];
+  areaParam: string | undefined;
+  shiftAreaIds: readonly (string | null | undefined)[];
+}): string | null {
+  const { calendarAreas, activeAreas, areaParam, shiftAreaIds } = input;
+
+  if (areaParam && calendarAreas.some((area) => area.id === areaParam)) {
+    return areaParam;
+  }
+
+  const activeIds = new Set(activeAreas.map((area) => area.id));
+  const shiftIdsInWeek = [
+    ...new Set(
+      shiftAreaIds.filter((areaId): areaId is string => Boolean(areaId))
+    ),
+  ];
+
+  for (const areaId of shiftIdsInWeek) {
+    if (activeIds.has(areaId)) return areaId;
+  }
+
+  if (activeAreas[0]?.id) return activeAreas[0].id;
+  return calendarAreas[0]?.id ?? null;
+}

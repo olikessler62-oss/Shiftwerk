@@ -140,6 +140,7 @@ export function DashboardCellCollapsedShiftMarkers({
             key={segmentKey}
             type="button"
             disabled={pending}
+            data-planning-shift-card
             onMouseDown={preventPointerTextSelection}
             onClick={() => onShiftClick(shift.id)}
             onContextMenu={

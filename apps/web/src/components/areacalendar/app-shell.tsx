@@ -237,7 +237,7 @@ function AppShellLayout({
         >
         <div
           className={cn(
-            "relative z-50 flex w-full shrink-0 flex-col overflow-visible border-b md:h-full md:w-56 md:min-h-0 md:overflow-hidden md:border-b-0",
+            "relative z-50 flex w-full shrink-0 flex-col overflow-visible border-b md:h-full md:min-h-0 md:w-[var(--app-shell-sidebar-width)] md:overflow-hidden md:border-b-0",
             APP_SHELL_SIDEBAR_CLASS
           )}
         >

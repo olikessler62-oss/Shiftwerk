@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AREA_CALENDAR_SHIFT_CARD_BOX_SHADOW } from "@/components/areacalendar/areacalendar-shift-card-view";
-import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
@@ -241,7 +241,6 @@ export function DashboardCellShiftRow({
             key={segmentKey}
             content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
             contentClassName={shiftCardTooltipContentClassName}
-            openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
             className={cn(
               "inline-flex h-full min-h-0 min-w-0 shrink-0",
               employeeHighlighted && "relative z-10 overflow-visible"
@@ -267,6 +266,7 @@ export function DashboardCellShiftRow({
               <button
                 type="button"
                 disabled={pending}
+                data-planning-shift-card
                 onMouseDown={preventPointerTextSelection}
                 onClick={() => onShiftClick(shift.id)}
                 onContextMenu={(event) => {

@@ -80,6 +80,10 @@ export function useBeginMainNavPending(): (target: MainNavPendingTarget) => void
   return ctx?.beginMainNavPending ?? (() => {});
 }
 
+export function useMainNavPendingTarget(): MainNavPendingTarget | null {
+  return useContext(MainNavPendingContext)?.pendingTarget ?? null;
+}
+
 export function useClearMainNavPendingOptional(): () => void {
   return useContext(MainNavPendingContext)?.clearMainNavPending ?? (() => {});
 }

@@ -28,7 +28,7 @@ import {
   TimeInput,
   tooltipContentClassName,
 } from "@/components/ui";
-import { Tooltip } from "@/components/ui/tooltip";
+import { Tooltip, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import {
   areAreaCalendarShiftTimesComplete,
   filterAreaCalendarShiftAssignEmployeesByWindowWithoutOverlap,
@@ -458,6 +458,7 @@ export function AreaCalendarShiftEmployeeCombobox({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const hintTooltipRef = useRef<HTMLDivElement>(null);
+  const hintOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
   const closeDropdown = useCallback(() => setOpen(false), []);
   useComboboxCloseOnPointerDistance(open, closeDropdown, [triggerRef, listRef]);
@@ -472,6 +473,13 @@ export function AreaCalendarShiftEmployeeCombobox({
     selectedEmployee !== null &&
     value !== EMPTY_EMPLOYEE_ID;
 
+  const clearHintOpenDelay = useCallback(() => {
+    if (hintOpenTimeoutRef.current !== null) {
+      clearTimeout(hintOpenTimeoutRef.current);
+      hintOpenTimeoutRef.current = null;
+    }
+  }, []);
+
   const showHint = useCallback(
     (
       availabilities: AreaCalendarEmployeeAvailabilityEntry[],
@@ -479,20 +487,26 @@ export function AreaCalendarShiftEmployeeCombobox({
       employeeName: string,
       employeeId: string
     ) => {
-      setHintAnchorEl(anchorEl);
-      setHintEmployeeName(employeeName);
-      setHintEmployeeId(employeeId);
-      setHintAvailabilities(availabilities);
+      clearHintOpenDelay();
+      hintOpenTimeoutRef.current = setTimeout(() => {
+        setHintAnchorEl(anchorEl);
+        setHintEmployeeName(employeeName);
+        setHintEmployeeId(employeeId);
+        setHintAvailabilities(availabilities);
+      }, HOVER_TOOLTIP_OPEN_DELAY_MS);
     },
-    []
+    [clearHintOpenDelay]
   );
 
   const hideHint = useCallback(() => {
+    clearHintOpenDelay();
     setHintAvailabilities(null);
     setHintAnchorEl(null);
     setHintEmployeeName("");
     setHintEmployeeId("");
-  }, []);
+  }, [clearHintOpenDelay]);
+
+  useEffect(() => () => clearHintOpenDelay(), [clearHintOpenDelay]);
 
   const hintJobsLabel = useMemo(() => {
     if (

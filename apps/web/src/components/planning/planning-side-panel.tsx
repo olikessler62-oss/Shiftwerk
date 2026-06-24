@@ -50,14 +50,14 @@ const PANEL_CLOSE_OUT_CLASS = {
 
 const PANEL_LAYOUT = {
   left: {
-    backdrop: "md:left-56",
-    position: "left-0 md:left-56",
+    backdrop: "md:left-[var(--app-shell-sidebar-width)]",
+    position: "left-0 md:left-[var(--app-shell-sidebar-width)]",
     border: "border-r",
     offscreenTransform: "-translate-x-full",
     shadow: "shadow-[8px_0_32px_-8px_rgba(15,23,42,0.28)]",
     width: {
       default: "w-full max-w-md",
-      wide: "w-full max-w-none md:w-[min(64rem,calc(100vw-14rem))]",
+      wide: "w-full max-w-none md:w-[min(64rem,calc(100vw-var(--app-shell-sidebar-width)))]",
     },
   },
   right: {

@@ -3,6 +3,8 @@ import { resolveCalendarStaffingTimeLabel } from "@/lib/location-staffing-client
 
 export const STAFFING_FILL_GAUGE_SIZE_PX = 24;
 
+export type StaffingFillGaugeVariant = "understaffed" | "met" | "overstaffed";
+
 export type StaffingHeaderDisplayLevel =
   | "full-schicht"
   | "counts-only"
@@ -118,7 +120,22 @@ export function isTagAreaHeaderStaffingOverstaffed(
   return entries.some(isTagAreaHeaderStaffingEntryOverstaffed);
 }
 
-/** Überbesetzung oder falsche Funktionen — Badge auf der Datum/Bedarf-Grenze. */
+export function resolveStaffingFillGaugeVariant(
+  segment: Pick<
+    StaffingHeaderSegment,
+    "understaffed" | "overstaffed" | "assignmentMismatch"
+  >
+): StaffingFillGaugeVariant {
+  if (segment.assignmentMismatch || segment.understaffed) {
+    return "understaffed";
+  }
+  if (segment.overstaffed) {
+    return "overstaffed";
+  }
+  return "met";
+}
+
+/** Überbesetzung oder falsche Funktionen — früher Badge auf der Datum/Bedarf-Grenze. */
 export function isTagAreaHeaderStaffingHeaderAlertBadge(
   entries: readonly TagAreaHeaderStaffingEntry[]
 ): boolean {

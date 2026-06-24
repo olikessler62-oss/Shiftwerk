@@ -14,10 +14,10 @@ import {
 } from "@/lib/shift-card-cell-layout";
 import type { ShiftCardServiceTimeline } from "@/lib/shift-card-service-timeline";
 import {
-  SHIFT_CARD_TWO_LINE_HEIGHT_PX,
-  shiftCardListItemHeightPx,
+  AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+  areaCalendarShiftCardListItemHeightPx,
 } from "@/lib/shift-card-row-layout";
-import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
@@ -198,7 +198,7 @@ export function CollapsedShiftPreview({
       cellWidthPx,
       sortedShifts,
       serviceTimeline,
-      SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+      AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX,
       {
         uniformMinWidth: true,
         uniformWidthPx,
@@ -215,7 +215,7 @@ export function CollapsedShiftPreview({
     });
 
     const rowHeightPx = (baseHeightPx: number) =>
-      shiftCardListItemHeightPx(
+      areaCalendarShiftCardListItemHeightPx(
         Math.max(1, baseHeightPx + markerHeightDeltaPx)
       );
 
@@ -224,7 +224,7 @@ export function CollapsedShiftPreview({
         return {
           kind: "spacer",
           spacerKey: `tail-${cellRow.shiftId}`,
-          heightPx: rowHeightPx(SHIFT_CARD_TWO_LINE_HEIGHT_PX),
+          heightPx: rowHeightPx(AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX),
         };
       }
 
@@ -232,7 +232,7 @@ export function CollapsedShiftPreview({
         return {
           kind: "spacer",
           spacerKey: `gap-${rowIndex}`,
-          heightPx: rowHeightPx(SHIFT_CARD_TWO_LINE_HEIGHT_PX),
+          heightPx: rowHeightPx(AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX),
         };
       }
 
@@ -240,14 +240,14 @@ export function CollapsedShiftPreview({
         return {
           kind: "overnight-anchor",
           shiftId: cellRow.shiftId,
-          heightPx: rowHeightPx(SHIFT_CARD_TWO_LINE_HEIGHT_PX),
+          heightPx: rowHeightPx(AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX),
         };
       }
 
       const layoutIndex = sortedIndexByShiftId.get(cellRow.shift.id) ?? 0;
       const baseWidthPx = layouts[layoutIndex]?.widthPx ?? 0;
       const baseHeightPx =
-        layouts[layoutIndex]?.heightPx ?? SHIFT_CARD_TWO_LINE_HEIGHT_PX;
+        layouts[layoutIndex]?.heightPx ?? AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX;
 
       return {
         kind: "shift",
@@ -278,7 +278,7 @@ export function CollapsedShiftPreview({
   ]);
 
   const compactRowMinHeightPx =
-    SHIFT_CARD_TWO_LINE_HEIGHT_PX + markerHeightDeltaPx;
+    AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX + markerHeightDeltaPx;
 
   const showDetail = !isPastDay && !areaCollapsed;
   const interactive = Boolean(onShiftClick) && !disabled;
@@ -480,7 +480,6 @@ export function CollapsedShiftPreview({
               key={shift.id}
               content={<ShiftCardTooltipContent data={display.tooltip} />}
               contentClassName={shiftCardTooltipContentClassName}
-              openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
               className="self-start max-w-full"
               placement={{
                 anchorLeftToTriggerCenter: true,
@@ -506,7 +505,6 @@ export function CollapsedShiftPreview({
             key={shift.id}
             content={<ShiftCardTooltipContent data={display.tooltip} />}
             contentClassName={shiftCardTooltipContentClassName}
-            openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
             className="self-start max-w-full"
             placement={{
               anchorLeftToTriggerCenter: true,

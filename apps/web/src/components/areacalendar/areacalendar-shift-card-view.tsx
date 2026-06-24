@@ -5,9 +5,10 @@ import {
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
 } from "@/lib/shift-card-time-gradient";
 import {
+  AREA_CALENDAR_SHIFT_CARD_EXTRA_HEIGHT_PX,
+  AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+  areaCalendarShiftCardListItemHeightPx,
   SHIFT_CARD_EXTRA_HEIGHT_PX,
-  SHIFT_CARD_TWO_LINE_HEIGHT_PX,
-  shiftCardListItemHeightPx,
 } from "@/lib/shift-card-row-layout";
 import {
   buildShiftCardDisplayContent,
@@ -17,7 +18,7 @@ import {
   type ShiftCardDensity,
 } from "@/lib/shift-card-display-content";
 import type { ShiftCardDisplayState, ShiftConfirmationStatus } from "@schichtwerk/types";
-import { Tooltip, shiftCardTooltipContentClassName, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui";
+import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui";
 import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { useTranslations } from "@/i18n/locale-provider";
@@ -66,8 +67,8 @@ const DASHBOARD_SHIFT_CARD_CLASS =
 export const AREA_CALENDAR_SHIFT_CARD_BOX_SHADOW =
   "0 1px 2px rgba(0, 0, 0, 0.32), 0 2px 4px rgba(0, 0, 0, 0.07), 0 0 0 1px rgba(0, 0, 0, 0.12)";
 
-const DASHBOARD_SHIFT_CARD_MARKER_MIN_HEIGHT_PX =
-  16 + SHIFT_CARD_EXTRA_HEIGHT_PX;
+const AREA_CALENDAR_SHIFT_CARD_MARKER_MIN_HEIGHT_PX =
+  16 + SHIFT_CARD_EXTRA_HEIGHT_PX + AREA_CALENDAR_SHIFT_CARD_EXTRA_HEIGHT_PX;
 
 const DASHBOARD_SHIFT_CARD_CONTENT_CLASS =
   "flex min-w-0 flex-1 bg-white px-1.5 py-0.5 text-black";
@@ -175,8 +176,8 @@ export function AreaCalendarShiftCardView({
 
   const cardHeightPx =
     density === "marker"
-      ? DASHBOARD_SHIFT_CARD_MARKER_MIN_HEIGHT_PX
-      : SHIFT_CARD_TWO_LINE_HEIGHT_PX;
+      ? AREA_CALENDAR_SHIFT_CARD_MARKER_MIN_HEIGHT_PX
+      : AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX;
 
   const confirmationStatus = shift.confirmationStatus;
   const showConfirmationOverlay =
@@ -229,7 +230,7 @@ export function AreaCalendarShiftCardView({
         employeeHighlighted && "relative z-10 overflow-visible"
       )}
       style={{
-        height: shiftCardListItemHeightPx(cardHeightPx),
+        height: areaCalendarShiftCardListItemHeightPx(cardHeightPx),
         ...(widthPx !== undefined ? { width: widthPx } : undefined),
         ...(marginLeftPx !== undefined ? { marginLeft: marginLeftPx } : undefined),
       }}
@@ -237,7 +238,6 @@ export function AreaCalendarShiftCardView({
       <Tooltip
         content={<ShiftCardTooltipContent data={tooltipData} />}
         contentClassName={shiftCardTooltipContentClassName}
-        openDelayMs={HOVER_TOOLTIP_OPEN_DELAY_MS}
         className="inline-flex w-fit max-w-full"
         placement={{
           anchorLeftToTriggerCenter: true,
