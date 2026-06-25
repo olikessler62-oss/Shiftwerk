@@ -6,7 +6,6 @@ import type {
 } from "@schichtwerk/types";
 import {
   buildShiftConfirmationSnapshot,
-  isShiftConfirmationSnapshotStale,
   type ShiftConfirmationSnapshot,
   type ShiftConfirmationSnapshotSource,
 } from "./shift-confirmation-snapshot";
@@ -134,15 +133,15 @@ export function parseStoredConfirmationSnapshot(
   };
 }
 
-/** Schicht ist sendbar wenn proposed (Delta = erneut proposed nach Planänderung). */
+/**
+ * Schicht ist sendbar wenn `confirmation_status = proposed` (Spec 008 §7.1).
+ * Vorhandene Snapshots steuern nur Delta-Erkennung (`confirmationBatchIsDelta`), nicht Sendbarkeit.
+ */
 export function isSendableProposedShift(
   shift: ProposedShiftForSend,
-  latestSnapshots: ReadonlyMap<string, ShiftConfirmationSnapshot>
+  _latestSnapshots?: ReadonlyMap<string, ShiftConfirmationSnapshot>
 ): boolean {
-  if (!isShiftProposedForSend(shift)) return false;
-  const prior = latestSnapshots.get(shift.id);
-  if (!prior) return true;
-  return isShiftConfirmationSnapshotStale(prior, shift);
+  return isShiftProposedForSend(shift);
 }
 
 export function filterSendableProposedShifts(

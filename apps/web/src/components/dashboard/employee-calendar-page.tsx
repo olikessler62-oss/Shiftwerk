@@ -45,28 +45,48 @@ export async function EmployeeCalendarPage({
 
   const db = await getDatabase();
 
+  // Group A: only what calendarData needs — start first
+  const [planningEmployees, locations, qualifications, profileQualificationIdsMap] =
+    await Promise.all([
+      db.listPlanningEmployees(orgId),
+      db.listLocations(orgId),
+      db.listQualifications(orgId),
+      db.listProfileQualificationIdsByOrganization(orgId),
+    ]);
+
+  // Group B + calendarData run in parallel — Group B no longer blocks calendarData
   const [
-    planningEmployees,
+    calendarData,
     recurringAvailability,
     absences,
-    locations,
-    qualifications,
-    profileQualificationIdsMap,
     settingsRoles,
     settingsProfiles,
     settingsCompensationSurchargeTypes,
     managerNotifications,
   ] = await Promise.all([
-    db.listPlanningEmployees(orgId),
+    loadDashboardCalendarLayerData({
+      db,
+      orgId,
+      orgFeatures,
+      organization,
+      timeZone,
+      weekStart,
+      from,
+      to,
+      locationParam,
+      areaParam,
+      tentativeLocationId,
+      locations,
+      qualifications,
+      profileQualificationIdsMap,
+      planningEmployees,
+    }),
     db.listOrganizationRecurringAvailability(orgId),
     db.listOrganizationAbsences(orgId, {
       statuses: ["approved"],
       overlappingFrom: from,
       overlappingTo: to,
     }),
-    db.listLocations(orgId),
-    db.listQualifications(orgId),
-    db.listProfileQualificationIdsByOrganization(orgId),
     loadSettingsModalsData
       ? db.listRoles(orgId).then(async (roles) => {
           if (!roles.length) {
@@ -92,24 +112,6 @@ export async function EmployeeCalendarPage({
     locationParam,
     tentativeLocationId
   );
-
-  const calendarData = await loadDashboardCalendarLayerData({
-    db,
-    orgId,
-    orgFeatures,
-    organization,
-    timeZone,
-    weekStart,
-    from,
-    to,
-    locationParam,
-    areaParam,
-    tentativeLocationId,
-    locations,
-    qualifications,
-    profileQualificationIdsMap,
-    planningEmployees,
-  });
 
   const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
 

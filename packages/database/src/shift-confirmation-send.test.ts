@@ -55,7 +55,7 @@ describe("filterSendableProposedShifts", () => {
     expect(filterSendableProposedShifts([shift], new Map())).toHaveLength(1);
   });
 
-  it("excludes proposed shifts matching last snapshot", () => {
+  it("includes proposed shifts even when last snapshot matches", () => {
     const prior: ShiftConfirmationSnapshot = {
       employee_id: shift.employee_id,
       location_id: shift.location_id,
@@ -68,7 +68,7 @@ describe("filterSendableProposedShifts", () => {
     };
     expect(
       filterSendableProposedShifts([shift], new Map([[shift.id, prior]]))
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   it("includes delta shifts after plan change", () => {

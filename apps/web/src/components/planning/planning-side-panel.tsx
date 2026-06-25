@@ -50,8 +50,8 @@ const PANEL_CLOSE_OUT_CLASS = {
 
 const PANEL_LAYOUT = {
   left: {
-    backdrop: "md:left-[var(--app-shell-sidebar-width)]",
-    position: "left-0 md:left-[var(--app-shell-sidebar-width)]",
+    backdrop: "max-md:left-0 md:left-[var(--app-shell-sidebar-width)]",
+    position: "max-md:left-0 md:left-[var(--app-shell-sidebar-width)]",
     border: "border-r",
     offscreenTransform: "-translate-x-full",
     shadow: "shadow-[8px_0_32px_-8px_rgba(15,23,42,0.28)]",

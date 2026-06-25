@@ -34,6 +34,21 @@ export function resolveSelectedAreaId(
   return areas[0].id;
 }
 
+/** Bereich-Kalender: genau ein Bereich aktiv (URL-Parameter oder erster Bereich). */
+export function resolveSingleActiveAreaIds(
+  areas: readonly Pick<LocationArea, "id">[],
+  preferredAreaId?: string | null
+): Set<string> {
+  if (
+    preferredAreaId &&
+    areas.some((area) => area.id === preferredAreaId)
+  ) {
+    return new Set([preferredAreaId]);
+  }
+  const firstAreaId = areas[0]?.id;
+  return firstAreaId ? new Set([firstAreaId]) : new Set();
+}
+
 /** Standard-Bereich für Planungskalender: URL, dann aktiver Bereich mit Schichten, sonst erster aktiver Bereich. */
 export function resolvePlanningAreaId(input: {
   calendarAreas: readonly LocationArea[];

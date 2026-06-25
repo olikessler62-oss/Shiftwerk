@@ -2,10 +2,34 @@ import { describe, expect, it } from "vitest";
 import {
   collectWeekLegendEmployeesFromAreaCalendarShifts,
   areaCalendarEmployeeWeekHours,
+  filterAreaCalendarShiftsByActiveAreas,
   DASHBOARD_SIDEBAR_EMPLOYEE_LIST_MAX_HEIGHT_PX,
   DASHBOARD_SIDEBAR_EMPLOYEE_MAX_VISIBLE,
   DASHBOARD_SIDEBAR_EMPLOYEE_ROW_HEIGHT_PX,
 } from "./areacalendar-week-employee-legend";
+
+describe("filterAreaCalendarShiftsByActiveAreas", () => {
+  it("returns only shifts in active areas", () => {
+    const shifts = [
+      { id: "1", locationAreaId: "kitchen" },
+      { id: "2", locationAreaId: "bar" },
+      { id: "3", locationAreaId: null },
+    ];
+
+    expect(
+      filterAreaCalendarShiftsByActiveAreas(shifts, new Set(["bar"])).map(
+        (shift) => shift.id
+      )
+    ).toEqual(["2"]);
+  });
+
+  it("returns empty list when no area is active", () => {
+    const shifts = [{ id: "1", locationAreaId: "kitchen" }];
+    expect(
+      filterAreaCalendarShiftsByActiveAreas(shifts, new Set()).length
+    ).toBe(0);
+  });
+});
 
 describe("collectWeekLegendEmployeesFromAreaCalendarShifts", () => {
   it("returns unique employees sorted by name", () => {

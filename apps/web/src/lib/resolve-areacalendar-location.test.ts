@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolvePlanningAreaId } from "./resolve-areacalendar-location";
+import {
+  resolvePlanningAreaId,
+  resolveSingleActiveAreaIds,
+} from "./resolve-areacalendar-location";
 import type { LocationArea } from "@schichtwerk/types";
 
 function area(id: string, sortOrder: number): LocationArea {
@@ -39,5 +42,20 @@ describe("resolvePlanningAreaId", () => {
         shiftAreaIds: ["restaurant"],
       })
     ).toBe("restaurant");
+  });
+});
+
+describe("resolveSingleActiveAreaIds", () => {
+  it("activates only the preferred area when valid", () => {
+    const areas = [area("kitchen", 0), area("bar", 1)];
+    expect(resolveSingleActiveAreaIds(areas, "bar")).toEqual(new Set(["bar"]));
+  });
+
+  it("falls back to the first area when preferred id is missing or invalid", () => {
+    const areas = [area("kitchen", 0), area("bar", 1)];
+    expect(resolveSingleActiveAreaIds(areas, "unknown")).toEqual(
+      new Set(["kitchen"])
+    );
+    expect(resolveSingleActiveAreaIds(areas, null)).toEqual(new Set(["kitchen"]));
   });
 });

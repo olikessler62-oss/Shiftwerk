@@ -44,7 +44,19 @@ type AreaCalendarShiftRef = {
   shift_date: string;
   startTime: string;
   endTime: string;
+  locationAreaId?: string | null;
 };
+
+export function filterAreaCalendarShiftsByActiveAreas<
+  T extends { locationAreaId?: string | null },
+>(shifts: readonly T[], activeAreaIds: ReadonlySet<string>): T[] {
+  if (activeAreaIds.size === 0) return [];
+  return shifts.filter(
+    (shift) =>
+      shift.locationAreaId != null &&
+      activeAreaIds.has(shift.locationAreaId)
+  );
+}
 
 export function isAreaCalendarEmployeeAbsentOnDate(
   employeeId: string,

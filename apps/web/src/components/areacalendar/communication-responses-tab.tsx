@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import {
   cancelShiftsAsManager,
+  listConfirmationSendShifts,
   submitCommunicationConfirmationRequests,
 } from "@/app/actions/shift-confirmations";
 import { removeShiftsAsManager } from "@/app/actions/shifts";
@@ -222,6 +223,9 @@ export function CommunicationResponsesTab({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [batchConfirm, setBatchConfirm] = useState<BatchConfirmState>(null);
+  const [proposedSendableShiftIds, setProposedSendableShiftIds] = useState<
+    Set<string> | null
+  >(null);
 
   const categoryActions = communicationTabActions(activeCategory);
   const showSelection = communicationTabShowsSelection(activeCategory);
@@ -239,6 +243,20 @@ export function CommunicationResponsesTab({
       | AreaCalendarShiftCard[]
       | undefined ?? [];
   }, [activeCategory, grouped]);
+
+  const isProposedShiftSendable = useCallback(
+    (shiftId: string) => {
+      if (activeCategory !== "proposed") return true;
+      if (!proposedSendableShiftIds) return true;
+      return proposedSendableShiftIds.has(shiftId);
+    },
+    [activeCategory, proposedSendableShiftIds]
+  );
+
+  const selectableVisibleShifts = useMemo(() => {
+    if (activeCategory !== "proposed") return visibleShifts;
+    return visibleShifts.filter((shift) => isProposedShiftSendable(shift.id));
+  }, [activeCategory, visibleShifts, isProposedShiftSendable]);
 
   const visibleSwaps =
     activeCategory === "swaps" ? grouped.swaps : [];
@@ -344,9 +362,58 @@ export function CommunicationResponsesTab({
     onBusyChange?.(pending);
   }, [onBusyChange, pending]);
 
+  useEffect(() => {
+    if (activeCategory !== "proposed") {
+      setProposedSendableShiftIds(null);
+      return;
+    }
+
+    let cancelled = false;
+    void listConfirmationSendShifts({
+      weekStart,
+      locationId: locationId ?? undefined,
+      simulatedProposedOnAssign,
+      relaxAppRegistrationGate,
+    }).then((result) => {
+      if (cancelled || !result.ok) return;
+      setProposedSendableShiftIds(
+        new Set(
+          result.shifts
+            .filter(
+              (row) => row.confirmationStatus === "proposed" && row.sendable
+            )
+            .map((row) => row.shiftId)
+        )
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeCategory,
+    weekStart,
+    locationId,
+    simulatedProposedOnAssign,
+    relaxAppRegistrationGate,
+  ]);
+
+  useEffect(() => {
+    if (activeCategory !== "proposed" || !proposedSendableShiftIds) return;
+    setSelected((prev) => {
+      const next = new Set(
+        [...prev].filter((id) => proposedSendableShiftIds.has(id))
+      );
+      return next.size === prev.size ? prev : next;
+    });
+  }, [activeCategory, proposedSendableShiftIds]);
+
   const allVisibleSelected =
-    visibleShifts.length > 0 && visibleShifts.every((shift) => selected.has(shift.id));
-  const someVisibleSelected = visibleShifts.some((shift) => selected.has(shift.id));
+    selectableVisibleShifts.length > 0 &&
+    selectableVisibleShifts.every((shift) => selected.has(shift.id));
+  const someVisibleSelected = selectableVisibleShifts.some((shift) =>
+    selected.has(shift.id)
+  );
 
   function toggleShift(shiftId: string) {
     setSelected((prev) => {
@@ -359,7 +426,9 @@ export function CommunicationResponsesTab({
 
   function toggleAllVisible(checked: boolean) {
     setSelected(
-      checked ? new Set(visibleShifts.map((shift) => shift.id)) : new Set()
+      checked
+        ? new Set(selectableVisibleShifts.map((shift) => shift.id))
+        : new Set()
     );
   }
 
@@ -691,6 +760,9 @@ export function CommunicationResponsesTab({
                     activeCategory === "conflicts" && conflicts.length > 0
                       ? shiftHubConflictTooltip(conflicts, t)
                       : null;
+                  const rowSelectionInactive =
+                    activeCategory === "proposed" &&
+                    !isProposedShiftSendable(shift.id);
 
                   const row = (
                     <li className={cn(rowGridClass, "px-3")}>
@@ -700,7 +772,7 @@ export function CommunicationResponsesTab({
                             type="checkbox"
                             className="h-4 w-4 shrink-0 rounded border-border"
                             checked={selected.has(shift.id)}
-                            disabled={pending}
+                            disabled={pending || rowSelectionInactive}
                             onChange={() => toggleShift(shift.id)}
                             aria-label={t(checkboxLabelKey(activeCategory))}
                           />
@@ -712,9 +784,9 @@ export function CommunicationResponsesTab({
                       <span
                         className={cn(
                           CELL_CLASS,
-                          item.showEmployeeName
-                            ? "font-medium text-foreground"
-                            : "text-muted"
+                          rowSelectionInactive || !item.showEmployeeName
+                            ? "text-muted"
+                            : "font-medium text-foreground"
                         )}
                       >
                         {groupedEmployeeListNameLabel(
@@ -728,7 +800,9 @@ export function CommunicationResponsesTab({
                       <span
                         className={cn(
                           CELL_CLASS,
-                          hasTemplate ? "font-medium text-foreground" : "text-muted"
+                          rowSelectionInactive || !hasTemplate
+                            ? "text-muted"
+                            : "font-medium text-foreground"
                         )}
                       >
                         {templateLabel}
@@ -784,7 +858,7 @@ export function CommunicationResponsesTab({
                       element.indeterminate = someVisibleSelected && !allVisibleSelected;
                     }
                   }}
-                  disabled={pending || visibleShifts.length === 0}
+                  disabled={pending || selectableVisibleShifts.length === 0}
                   onChange={(event) => toggleAllVisible(event.target.checked)}
                   aria-label={t("shiftConfirmation.send.selectAll")}
                 />

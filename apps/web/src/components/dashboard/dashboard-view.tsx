@@ -144,7 +144,7 @@ import {
   employeeMatchesShiftAvailability,
   isEmployeeAbsentOnDate,
 } from "@schichtwerk/database";
-import { sortProfilesByFirstName } from "@/lib/profile-display-sort";
+import { sortProfilesByShiftCountDesc } from "@/lib/profile-display-sort";
 import {
   buildPlanningShiftsByCellDisplay,
   type PlanningShiftDisplaySegment,
@@ -908,8 +908,8 @@ export function DashboardView({
   }, [showStaffingHeaderRow]);
 
   const calendarEmployees = useMemo(
-    () => sortProfilesByFirstName(employees),
-    [employees]
+    () => sortProfilesByShiftCountDesc(employees, calendarPlanningShifts),
+    [employees, calendarPlanningShifts]
   );
 
   const planningBodyRowTemplate = useMemo(() => {

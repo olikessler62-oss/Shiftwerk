@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Profile } from "@schichtwerk/types";
-import { sortProfilesByFirstName } from "./profile-display-sort";
+import {
+  sortProfilesByFirstName,
+  sortProfilesByShiftCountDesc,
+} from "./profile-display-sort";
 
 function profile(id: string, full_name: string): Profile {
   return {
@@ -35,5 +38,48 @@ describe("sortProfilesByFirstName", () => {
       "Bea Braun",
       "Zara Young",
     ]);
+  });
+});
+
+describe("sortProfilesByShiftCountDesc", () => {
+  it("sorts employees with shifts first by descending shift count", () => {
+    const profiles = [
+      profile("no-shifts", "Anna Albers"),
+      profile("two", "Bea Braun"),
+      profile("one", "Clara Chen"),
+      profile("three", "Dana Davis"),
+    ];
+    const shifts = [
+      { employee_id: "two" },
+      { employee_id: "two" },
+      { employee_id: "three" },
+      { employee_id: "three" },
+      { employee_id: "three" },
+      { employee_id: "one" },
+    ];
+
+    const sorted = sortProfilesByShiftCountDesc(profiles, shifts);
+
+    expect(sorted.map((entry) => entry.id)).toEqual([
+      "three",
+      "two",
+      "one",
+      "no-shifts",
+    ]);
+  });
+
+  it("uses first-name order when shift counts match", () => {
+    const profiles = [
+      profile("b", "Bea Braun"),
+      profile("a", "Anna Albers"),
+    ];
+    const shifts = [
+      { employee_id: "a" },
+      { employee_id: "b" },
+    ];
+
+    const sorted = sortProfilesByShiftCountDesc(profiles, shifts);
+
+    expect(sorted.map((entry) => entry.id)).toEqual(["a", "b"]);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import type {
   AbsenceRequest,
@@ -55,6 +55,8 @@ import {
 import { cn } from "@/lib/cn";
 import { usePlanningEmployeeListContextMenu } from "@/lib/use-planning-employee-list-context-menu";
 import { useDelayedEmployeeHighlight } from "@/lib/use-delayed-employee-highlight";
+import { filterAreaCalendarShiftsByActiveAreas } from "@/lib/areacalendar-week-employee-legend";
+import { resolveSingleActiveAreaIds } from "@/lib/resolve-areacalendar-location";
 
 type Props = {
   weekStart: string;
@@ -139,6 +141,21 @@ export function AreaCalendarView({
     [communicationCancelActors]
   );
 
+  const initialActiveAreaId = useMemo(() => {
+    const areaParam = searchParams.get("area");
+    if (!areaParam) return null;
+    return areas.some((area) => area.id === areaParam) ? areaParam : null;
+  }, [searchParams, areas]);
+
+  const [employeeLegendActiveAreaIds, setEmployeeLegendActiveAreaIds] =
+    useState<Set<string>>(() =>
+      resolveSingleActiveAreaIds(areas, initialActiveAreaId)
+    );
+
+  const handleActiveAreaIdsChange = useCallback((activeAreaIds: Set<string>) => {
+    setEmployeeLegendActiveAreaIds(new Set(activeAreaIds));
+  }, []);
+
   const calendarShifts = useMemo(
     () =>
       visibleShifts.filter((shift) =>
@@ -150,6 +167,15 @@ export function AreaCalendarView({
         })
       ),
     [visibleShifts, communicationCancelActorsMap]
+  );
+
+  const employeeLegendShifts = useMemo(
+    () =>
+      filterAreaCalendarShiftsByActiveAreas(
+        calendarShifts,
+        employeeLegendActiveAreaIds
+      ),
+    [calendarShifts, employeeLegendActiveAreaIds]
   );
 
   const compensationShiftRefs = useMemo(
@@ -249,7 +275,7 @@ export function AreaCalendarView({
       <section className={cn("relative flex flex-col px-2 md:px-4", PLANNING_PAGE_CALENDAR_SECTION_CLASS)}>
         <div className="flex min-h-0 flex-1 flex-col gap-2 max-md:overflow-visible md:flex-row md:gap-3">
           <AreaCalendarEmployeeLegendSidebar
-            shifts={calendarShifts}
+            shifts={employeeLegendShifts}
             profiles={profiles}
             absences={absences}
             recurringAvailability={recurringAvailability}
@@ -297,6 +323,8 @@ export function AreaCalendarView({
               swapRequestShiftIds={
                 new Set(communicationSwapRequests.map((request) => request.shiftId))
               }
+              initialActiveAreaId={initialActiveAreaId}
+              onActiveAreaIdsChange={handleActiveAreaIdsChange}
             />
           </div>
         </div>

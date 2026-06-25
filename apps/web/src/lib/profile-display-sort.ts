@@ -18,3 +18,24 @@ export function compareProfilesByFirstName(a: Profile, b: Profile): number {
 export function sortProfilesByFirstName<T extends Profile>(profiles: readonly T[]): T[] {
   return [...profiles].sort(compareProfilesByFirstName);
 }
+
+/** Mitarbeiter-Kalender: zuerst mit Schichten, absteigend nach Anzahl; Rest nach Vorname. */
+export function sortProfilesByShiftCountDesc<T extends Profile>(
+  profiles: readonly T[],
+  shifts: readonly { employee_id: string }[]
+): T[] {
+  const countByEmployeeId = new Map<string, number>();
+  for (const shift of shifts) {
+    countByEmployeeId.set(
+      shift.employee_id,
+      (countByEmployeeId.get(shift.employee_id) ?? 0) + 1
+    );
+  }
+
+  return [...profiles].sort((a, b) => {
+    const countDiff =
+      (countByEmployeeId.get(b.id) ?? 0) - (countByEmployeeId.get(a.id) ?? 0);
+    if (countDiff !== 0) return countDiff;
+    return compareProfilesByFirstName(a, b);
+  });
+}

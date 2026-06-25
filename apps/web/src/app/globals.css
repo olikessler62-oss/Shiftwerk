@@ -79,10 +79,17 @@
 /**
  * Gemeinsame Brand-Palette — Verlauf auf Shell-Root, Logo + Glas-Surfaces nutzen dieselbe Familie.
  */
-.app-shell-root {
-  --app-shell-brand-band-height: 5.75rem;
+:root {
   --app-shell-sidebar-width: 15rem;
 }
+
+.app-shell-root {
+  --app-shell-brand-band-height: 5.75rem;
+}
+
+/**
+ * Slide-ins/Modals render via portal auf `body` — Sidebar-Breite auf :root (siehe oben).
+ */
 
 @media (min-width: 768px) {
   :root,

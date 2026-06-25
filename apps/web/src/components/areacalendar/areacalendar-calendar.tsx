@@ -74,6 +74,7 @@ import {
   translateShiftCancelError,
 } from "@/lib/shift-cancellation-policy";
 import { isPastShiftDate } from "@/lib/planning-readonly";
+import { resolveSingleActiveAreaIds } from "@/lib/resolve-areacalendar-location";
 import { resolveAreaCalendarLocationServiceDayTimeline } from "@/lib/areacalendar-service-day-timeline";
 import {
   createPastServiceTimelineHourGridStyle,
@@ -205,6 +206,9 @@ type Props = {
   onLocalShiftRestore?: (shiftIds: readonly string[]) => void;
   onOpenCommunication?: (options?: CommunicationOpenOptions) => void;
   swapRequestShiftIds?: ReadonlySet<string>;
+  /** Bereich aus URL (`area=`) — nur dieser Bereich ist initial aktiv. */
+  initialActiveAreaId?: string | null;
+  onActiveAreaIdsChange?: (activeAreaIds: Set<string>) => void;
 };
 
 const OPEN_DAY_COLUMN_WIDTH = "minmax(120px, 1fr)";
@@ -402,9 +406,11 @@ function clampContextMenuPosition(
   };
 }
 
-function createInitialActiveAreaIds(areas: readonly LocationArea[]): Set<string> {
-  const firstAreaId = areas[0]?.id;
-  return firstAreaId ? new Set([firstAreaId]) : new Set();
+function createInitialActiveAreaIds(
+  areas: readonly LocationArea[],
+  preferredAreaId?: string | null
+): Set<string> {
+  return resolveSingleActiveAreaIds(areas, preferredAreaId);
 }
 
 function createActiveDayDates(
@@ -498,6 +504,8 @@ export function AreaCalendar({
   onLocalShiftRestore,
   onOpenCommunication,
   swapRequestShiftIds,
+  initialActiveAreaId = null,
+  onActiveAreaIdsChange,
 }: Props) {
   const router = useRouter();
   const { locale } = useLocale();
@@ -639,13 +647,18 @@ export function AreaCalendar({
   );
 
   const [activeAreaIds, setActiveAreaIds] = useState<Set<string>>(
-    () => createInitialActiveAreaIds(areas)
+    () => createInitialActiveAreaIds(areas, initialActiveAreaId)
   );
+
+  useEffect(() => {
+    onActiveAreaIdsChange?.(activeAreaIds);
+  }, [activeAreaIds, onActiveAreaIdsChange]);
+
   const [activeDayDates, setActiveDayDates] = useState<Set<string>>(() =>
     createActiveDayDates(dates, areaIds, serviceHours, shifts)
   );
   const [layoutActiveAreaIds, setLayoutActiveAreaIds] = useState<Set<string>>(
-    () => createInitialActiveAreaIds(areas)
+    () => createInitialActiveAreaIds(areas, initialActiveAreaId)
   );
   const [layoutActiveDayDates, setLayoutActiveDayDates] = useState<Set<string>>(
     () => createActiveDayDates(dates, areaIds, serviceHours, shifts)
@@ -836,7 +849,7 @@ export function AreaCalendar({
     }
     calendarLayoutScopeRef.current = scopeKey;
 
-    const nextAreas = createInitialActiveAreaIds(areas);
+    const nextAreas = createInitialActiveAreaIds(areas, initialActiveAreaId);
     const nextDays = resolveCalendarLayoutDayDates(
       dates,
       areaIds,
@@ -868,6 +881,7 @@ export function AreaCalendar({
     areaIds,
     serviceHours,
     shifts,
+    initialActiveAreaId,
     syncLayoutAreasImmediate,
     syncLayoutDaysImmediate,
   ]);
