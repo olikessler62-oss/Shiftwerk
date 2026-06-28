@@ -610,12 +610,22 @@ export type StaffingConflictKind =
 
 /** Einzelner Konflikt für Tooltip-Fußnote (wer, wann, welche Position). */
 export type StaffingConflictDetail = {
-  kind: StaffingConflictKind;
+  kind: Exclude<StaffingConflictKind, "overstaffed">;
   employeeName: string;
   timeLabel: string;
   assignedQualificationName?: string;
   missingQualificationName?: string;
 };
+
+/** Hinweis zur Einteilung (z. B. Überbedarf) — kein Konflikt. */
+export type StaffingHintDetail = {
+  kind: "overstaffed";
+  employeeName: string;
+  timeLabel: string;
+  assignedQualificationName?: string;
+};
+
+export type StaffingAssignmentDetail = StaffingConflictDetail | StaffingHintDetail;
 
 export type TagAreaHeaderStaffingEntry = {
   serviceHourId: string;
@@ -634,8 +644,10 @@ export type TagAreaHeaderStaffingEntry = {
   qualifications?: StaffingQualificationCoverage[];
   /** Funktions-Einsatz inkl. geplanter Schichten. */
   projectedQualifications?: StaffingQualificationCoverage[];
-  /** Konkrete Über-/Fehlbelegungen für Kalender-Tooltip-Fußnote. */
+  /** Konkrete Qualifikations-/Zuweisungskonflikte für Kalender-Tooltip. */
   conflictDetails?: StaffingConflictDetail[];
+  /** Hinweise zur Einteilung (z. B. Überbedarf) für Kalender-Tooltip. */
+  hintDetails?: StaffingHintDetail[];
 };
 
 /** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header (Bereich-Kalender). */

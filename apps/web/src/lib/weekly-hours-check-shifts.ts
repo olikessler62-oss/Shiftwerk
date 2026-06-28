@@ -77,6 +77,15 @@ export function shiftAssignWeekShiftsFromPlanningShifts(
   }));
 }
 
+/** Schichten einer Planungswoche — für Wochenstunden wie serverseitige Validierung. */
+export function planningShiftsForCalendarWeek(
+  shifts: readonly PlanningShift[],
+  weekDates: readonly string[]
+): PlanningShift[] {
+  const weekDateSet = new Set(weekDates);
+  return shifts.filter((shift) => weekDateSet.has(shift.shift_date));
+}
+
 export type WeeklyHoursConflictWarningShift = {
   id: string;
   shift_date: string;

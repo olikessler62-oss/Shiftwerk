@@ -54,6 +54,13 @@
 html {
   -webkit-user-select: none;
   user-select: none;
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+body {
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 /** 2px schwarze Linie am oberen Browserrand — volle Viewport-Breite. */
@@ -119,10 +126,26 @@ textarea,
  */
 :root {
   --app-shell-sidebar-width: 15rem;
+  --app-shell-header-panel-color: #14476e;
 }
 
 .app-shell-root {
   --app-shell-brand-band-height: 5.75rem;
+}
+
+/**
+ * Einheitliches Kopfband — volle Viewport-Breite, deckt Wellen/Backdrop ab.
+ */
+.app-shell-root::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--app-shell-brand-band-height);
+  background: var(--app-shell-header-panel-color);
+  z-index: 5;
+  pointer-events: none;
 }
 
 /**
@@ -136,16 +159,9 @@ textarea,
   }
 }
 
-/** Verlauf + Kurven — volle Breite, Wellen ragen leicht in den Inhalt. */
+/** Brand-Backdrop deaktiviert — flaches Kopfband (#14476e), keine Wellen-Artefakte im Content. */
 .app-shell-brand-backdrop {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: calc(var(--app-shell-brand-band-height) + 1.5rem);
-  z-index: 0;
-  pointer-events: none;
-  overflow: visible;
+  display: none;
 }
 
 .app-shell-brand-backdrop-mesh {
@@ -270,7 +286,7 @@ textarea,
   -webkit-backdrop-filter: blur(1px);
 }
 
-/** Linke App-Sidebar — durchläuft mit Brand-Backdrop, Nav-Bereich mit Kurven-Schicht. */
+/** Linke App-Sidebar — einfarbig wie Kopfband. */
 .app-shell-sidebar {
   --sidebar-scrollbar-thumb: #052830;
   --sidebar-scrollbar-track: #256892;
@@ -281,61 +297,26 @@ textarea,
   --color-subtle: rgb(255 255 255 / 0.16);
   --color-primary: #ffffff;
   --color-nav-active: rgb(255 255 255 / 0.18);
-  background: transparent;
+  background: var(--app-shell-header-panel-color);
   color: var(--color-foreground);
   border-color: var(--color-border);
   position: relative;
   z-index: 50;
 }
 
-/**
- * Logo-Band: sehr dunkles Overlay — Brand-Verlauf bleibt am Rand leicht sichtbar.
- */
+/** Logo-Band — Brand-Backdrop durchscheinend, ohne Abdunkelungs-Overlay. */
 .app-shell-sidebar > .app-shell-brand-header {
   position: relative;
-  overflow: hidden;
 }
 
-.app-shell-sidebar > .app-shell-brand-header::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgb(0 0 0 / 0.62) 0%,
-    rgb(0 0 0 / 0.88) 12%,
-    rgb(0 0 0 / 0.94) 38%,
-    rgb(0 0 0 / 0.96) 58%,
-    rgb(0 0 0 / 0.9) 82%,
-    rgb(0 0 0 / 0.68) 100%
-  );
-}
-
-.app-shell-sidebar > .app-shell-brand-header > * {
-  position: relative;
-  z-index: 1;
-}
-
-/** @deprecated — Overlay liegt auf .app-shell-brand-header::before. */
+/** @deprecated — früheres Sidebar-Overlay, nicht mehr aktiv. */
 .app-shell-sidebar::before {
   content: none;
 }
 
-/** Türkis-Verlauf + Kurven unter der Logo-Zeile (nur Desktop). */
+/** Sidebar-Dekor aus — flaches Panel wie Kopfband. */
 .app-shell-sidebar-brand-art {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-@media (max-width: 767px) {
-  .app-shell-sidebar-brand-art {
-    display: none;
-  }
+  display: none;
 }
 
 .app-shell-sidebar-brand-art-mesh {
@@ -386,22 +367,107 @@ textarea,
     );
 }
 
-/** Logo-Zeile + Toolbar: gemeinsames Top-Panel auf dem Brand-Backdrop. */
+/** Logo-Zeile + Wochen-Toolbar — exakt gleiche Band-Höhe. Toolbar immer mit Panel-Farbe (auch Mobile unter Logo). */
 .app-shell-sidebar > .app-shell-brand-header,
 .app-page-toolbar-header.app-shell-top-panel-toolbar {
   box-sizing: border-box;
   height: var(--app-shell-brand-band-height);
   min-height: var(--app-shell-brand-band-height);
   max-height: var(--app-shell-brand-band-height);
+  padding-top: 0;
+  padding-bottom: 0;
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-/** Dropdowns (Sprache, Standort) dürfen unter die Toolbar hinausragen. */
 .app-page-toolbar-header.app-shell-top-panel-toolbar {
+  background: var(--app-shell-header-panel-color);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .app-page-toolbar-header.app-shell-top-panel-toolbar {
+    scroll-padding-inline: 1.5rem;
+  }
+}
+
+/** Toolbar bündig mit Logo — Main-Top-Padding ausgleichen, horizontal bis Rand. */
+.planning-toolbar-bleed-shell {
+  box-sizing: border-box;
+  flex-shrink: 0;
+  min-width: 0;
+  margin-top: -1rem;
+  margin-inline: -1rem;
   overflow: visible;
+}
+
+@media (min-width: 768px) {
+  .planning-toolbar-bleed-shell {
+    margin-top: -1.5rem;
+    margin-inline: -1.5rem;
+  }
+}
+
+/** @deprecated — durch .planning-toolbar-bleed-shell ersetzt. */
+.planning-toolbar-bleed {
+  box-sizing: border-box;
+  min-width: 0;
+  margin-inline: -1rem;
+}
+
+@media (min-width: 768px) {
+  .planning-toolbar-bleed {
+    margin-inline: -1.5rem;
+  }
+}
+
+/**
+ * Segmentierte Toolbar — eine scrollbare Zeile, Segmente quetschen nicht (shrink-0).
+ */
+.planning-toolbar-segmented {
+  position: relative;
+  z-index: 10;
+}
+
+.planning-toolbar-scroll-row {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  height: var(--app-shell-brand-band-height);
+}
+
+/** Ab md: Trailing-Gruppe nach rechts, bei Platzmangel scrollt der Header. */
+.planning-toolbar-row-spacer {
+  flex: 1 1 auto;
+  min-width: 0.5rem;
+}
+
+.planning-toolbar-segment-divider {
+  width: 2px;
+  flex-shrink: 0;
+  align-self: stretch;
+  background: rgb(255 255 255 / 0.22);
+}
+
+.app-page-toolbar-header.planning-toolbar-segmented::-webkit-scrollbar {
+  height: 4px;
+}
+
+.app-page-toolbar-header.planning-toolbar-segmented::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-page-toolbar-header.planning-toolbar-segmented::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.35);
+  border-radius: 9999px;
 }
 
 @media (min-width: 768px) {
@@ -417,22 +483,17 @@ textarea,
   height: var(--app-shell-brand-band-height);
   min-height: var(--app-shell-brand-band-height);
   max-height: var(--app-shell-brand-band-height);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-/** Logo-Zeile: Glas-Overlay reduziert — Abdunkelung liegt auf ::before. */
+/** Logo-Zeile: ohne Glas-Overlay — Brand-Backdrop bleibt sichtbar. */
 .app-shell-sidebar > .app-shell-brand-surface,
 .app-page-toolbar-header.app-shell-brand-surface {
-  background: linear-gradient(
-    180deg,
-    rgb(0 0 0 / 0.06) 0%,
-    transparent 35%,
-    transparent 72%,
-    rgb(0 0 0 / 0.04) 100%
-  );
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
-  backdrop-filter: blur(1px);
-  -webkit-backdrop-filter: blur(1px);
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /** Wortmarke neben dem Logo-Icon — weiß, leicht und zurückhaltend. */

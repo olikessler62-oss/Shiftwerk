@@ -16,6 +16,7 @@ import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 import {
   weeklyHoursByEmployeeIdFromProfiles,
   weeklyHoursCheckShiftFromPlanningShift,
+  planningShiftsForCalendarWeek,
 } from "@/lib/weekly-hours-check-shifts";
 import { useAppShellModalLockActive, useAppShellWaitCursorActive } from "@/lib/app-shell-modal-lock";
 import { useRegisterPlanningToolbarPageBridge } from "@/lib/planning-toolbar-page-bridge";
@@ -59,6 +60,7 @@ type Props = {
   communicationHubAbsences: AbsenceRequest[];
   managerNotifications: ManagerNotification[];
   locationShifts: PlanningShift[];
+  organizationWeekShifts: PlanningShift[];
   serviceHours: AreaServiceHourRef[];
   staffingRules: LocationAreaStaffing[];
   staffingOverrides: LocationAreaStaffingOverride[];
@@ -82,6 +84,7 @@ export function DashboardShell({
   communicationHubAbsences,
   managerNotifications,
   locationShifts,
+  organizationWeekShifts,
   serviceHours,
   staffingRules,
   staffingOverrides,
@@ -179,6 +182,12 @@ export function DashboardShell({
     [visibleCommunicationHubLocationShifts]
   );
 
+  const weeklyHoursShifts = useMemo(
+    () =>
+      planningShiftsForCalendarWeek(organizationWeekShifts, snapshot.dates),
+    [organizationWeekShifts, snapshot.dates]
+  );
+
   const weeklyHoursByEmployeeId = useMemo(
     () => weeklyHoursByEmployeeIdFromProfiles(employees),
     [employees]
@@ -263,6 +272,8 @@ export function DashboardShell({
       <DashboardOverviewView
         snapshot={snapshot}
         calendarShifts={calendarPlanningShifts}
+        weeklyHoursShifts={weeklyHoursShifts}
+        locations={locations}
         weekStart={weekStart}
         selectedLocationId={selectedLocationId}
         planningAreas={areas}

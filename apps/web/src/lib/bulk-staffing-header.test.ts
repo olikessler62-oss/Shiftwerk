@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateAssignmentsToDemandWindows,
+  buildStaffingAssignmentDetails,
   buildStaffingConflictDetails,
   buildStaffingQualificationBreakdown,
   countQualificationCoverage,
   computeBulkStaffingHeaderEntries,
+  formatStaffingAssignmentTooltipBlocks,
   formatStaffingConflictTooltipLines,
   formatStaffingEntryTooltipSection,
   type StaffingTooltipCoverageFormatter,
@@ -504,13 +506,14 @@ describe("computeBulkStaffingHeaderEntries", () => {
       { qualificationId: qualKoch, name: "Koch", assigned: 0, required: 1 },
       { qualificationId: qualKellner, name: "Kellner", assigned: 3, required: 2 },
     ]);
-    expect(evening?.conflictDetails).toEqual([
+    expect(evening?.hintDetails).toEqual([
       expect.objectContaining({
         kind: "overstaffed",
         employeeName: "emp-3",
         assignedQualificationName: "Kellner",
       }),
     ]);
+    expect(evening?.conflictDetails).toBeUndefined();
   });
 
   it("builds conflict footnote with employee, time and position", () => {
@@ -556,12 +559,14 @@ describe("computeBulkStaffingHeaderEntries", () => {
     });
 
     const evening = entries.find((entry) => entry.serviceHourId === hourEvening);
-    const footnote = formatStaffingConflictTooltipLines(
+    const footnote = formatStaffingAssignmentTooltipBlocks(
       evening ? [evening] : [],
       (key, params) => `${key}:${JSON.stringify(params)}`
     );
 
-    const conflictText = footnote.join("\n");
+    const conflictText = [...footnote.conflicts, ...footnote.hints]
+      .flatMap((block) => [block.titleLine, block.descriptionLine])
+      .join("\n");
     expect(conflictText).toContain("Carl");
     expect(conflictText).toContain("18:00-22:00 Uhr");
     expect(conflictText).toContain("Kellner");
@@ -850,7 +855,7 @@ describe("formatStaffingEntryTooltipSection", () => {
   });
 });
 
-describe("buildStaffingConflictDetails", () => {
+describe("buildStaffingAssignmentDetails", () => {
   const qualificationNameById = new Map([
     [qualKoch, "Koch"],
     [qualKellner, "Kellner"],
@@ -863,7 +868,7 @@ describe("buildStaffingConflictDetails", () => {
       { startTime: "18:00", endTime: "22:00", employeeId: "emp-3" },
     ];
 
-    const details = buildStaffingConflictDetails({
+    const { hints, conflicts } = buildStaffingAssignmentDetails({
       hourAssignments,
       qualRules: staffingRules.filter(
         (rule) => rule.service_hour_id === hourEvening
@@ -879,7 +884,8 @@ describe("buildStaffingConflictDetails", () => {
       totalRequired: 3,
     });
 
-    expect(details).toEqual([
+    expect(conflicts).toEqual([]);
+    expect(hints).toEqual([
       {
         kind: "overstaffed",
         employeeName: "Carl",
@@ -895,7 +901,7 @@ describe("buildStaffingConflictDetails", () => {
       { startTime: "18:00", endTime: "22:00", employeeId: "emp-2" },
     ];
 
-    const details = buildStaffingConflictDetails({
+    const { conflicts } = buildStaffingAssignmentDetails({
       hourAssignments,
       qualRules: staffingRules.filter(
         (rule) => rule.service_hour_id === hourEvening
@@ -913,7 +919,7 @@ describe("buildStaffingConflictDetails", () => {
       totalRequired: 2,
     });
 
-    expect(details).toEqual(
+    expect(conflicts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "qualification_mismatch",

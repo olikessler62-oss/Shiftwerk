@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   collectWeekLegendEmployeesFromAreaCalendarShifts,
   areaCalendarEmployeeWeekHours,
+  areaCalendarEmployeeLegendCardHeightPx,
+  AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_HEIGHT_PX,
   filterAreaCalendarShiftsByActiveAreas,
   filterAreaCalendarShiftsForEmployeeLegend,
   DASHBOARD_SIDEBAR_EMPLOYEE_LIST_MAX_HEIGHT_PX,
@@ -201,6 +203,15 @@ describe("area calendar sidebar employee legend layout", () => {
     expect(DASHBOARD_SIDEBAR_EMPLOYEE_MAX_VISIBLE).toBe(10);
     expect(DASHBOARD_SIDEBAR_EMPLOYEE_LIST_MAX_HEIGHT_PX).toBe(
       DASHBOARD_SIDEBAR_EMPLOYEE_ROW_HEIGHT_PX * 10
+    );
+  });
+
+  it("grows legend card height for multiple weekly-hours lines", () => {
+    expect(areaCalendarEmployeeLegendCardHeightPx(1)).toBe(
+      AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_HEIGHT_PX
+    );
+    expect(areaCalendarEmployeeLegendCardHeightPx(3)).toBeGreaterThan(
+      AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_HEIGHT_PX
     );
   });
 });

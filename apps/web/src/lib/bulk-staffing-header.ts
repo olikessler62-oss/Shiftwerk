@@ -12,6 +12,7 @@ import {
   tagAreaHeaderStaffingEntries,
   type AreaServiceHourRef,
   type StaffingConflictDetail,
+  type StaffingHintDetail,
   type StaffingQualificationCoverage,
   type TagAreaHeaderStaffingEntry,
 } from "@/lib/location-staffing-client";
@@ -457,8 +458,8 @@ function qualificationLabel(
   return qualificationNameById.get(qualificationId) ?? qualificationId;
 }
 
-/** Konkrete Über-/Fehlbelegungen je Schicht für Kalender-Tooltip-Fußnote. */
-export function buildStaffingConflictDetails(input: {
+/** Konkrete Konflikte und Hinweise je Schicht für Kalender-Tooltip-Fußnote. */
+export function buildStaffingAssignmentDetails(input: {
   hourAssignments: readonly StaffingAssignmentRef[];
   qualRules: readonly LocationAreaStaffing[];
   profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
@@ -466,7 +467,10 @@ export function buildStaffingConflictDetails(input: {
   employeeNameById?: ReadonlyMap<string, string>;
   formatCalendarTimeLabel?: (startTime: string, endTime: string) => string;
   totalRequired: number;
-}): StaffingConflictDetail[] {
+}): {
+  conflicts: StaffingConflictDetail[];
+  hints: StaffingHintDetail[];
+} {
   const {
     hourAssignments,
     qualRules,
@@ -477,21 +481,28 @@ export function buildStaffingConflictDetails(input: {
     totalRequired,
   } = input;
 
-  if (hourAssignments.length === 0) return [];
+  if (hourAssignments.length === 0) {
+    return { conflicts: [], hints: [] };
+  }
 
   if (qualRules.length === 0) {
-    if (hourAssignments.length <= totalRequired) return [];
-    return hourAssignments.slice(totalRequired).map((assignment) => ({
-      kind: "overstaffed" as const,
-      employeeName: resolveStaffingEmployeeName(
-        assignment.employeeId,
-        employeeNameById
-      ),
-      timeLabel: formatAssignmentTimeLabel(
-        assignment,
-        formatCalendarTimeLabel
-      ),
-    }));
+    if (hourAssignments.length <= totalRequired) {
+      return { conflicts: [], hints: [] };
+    }
+    return {
+      conflicts: [],
+      hints: hourAssignments.slice(totalRequired).map((assignment) => ({
+        kind: "overstaffed" as const,
+        employeeName: resolveStaffingEmployeeName(
+          assignment.employeeId,
+          employeeNameById
+        ),
+        timeLabel: formatAssignmentTimeLabel(
+          assignment,
+          formatCalendarTimeLabel
+        ),
+      })),
+    };
   }
 
   const mapping = mapAssignmentQualificationIds(
@@ -529,6 +540,7 @@ export function buildStaffingConflictDetails(input: {
   }
 
   const conflicts: StaffingConflictDetail[] = [];
+  const hints: StaffingHintDetail[] = [];
   const surplusIndices = new Set<number>();
 
   for (const [qualId, indices] of indicesByQual) {
@@ -537,7 +549,7 @@ export function buildStaffingConflictDetails(input: {
     for (const index of indices.slice(required)) {
       surplusIndices.add(index);
       const assignment = hourAssignments[index]!;
-      conflicts.push({
+      hints.push({
         kind: "overstaffed",
         employeeName: resolveStaffingEmployeeName(
           assignment.employeeId,
@@ -640,7 +652,15 @@ export function buildStaffingConflictDetails(input: {
     }
   }
 
-  return conflicts;
+  return { conflicts, hints };
+}
+
+/** @deprecated Nur für Tests — nutze {@link buildStaffingAssignmentDetails}. */
+export function buildStaffingConflictDetails(
+  input: Parameters<typeof buildStaffingAssignmentDetails>[0]
+): Array<StaffingConflictDetail | StaffingHintDetail> {
+  const { conflicts, hints } = buildStaffingAssignmentDetails(input);
+  return [...conflicts, ...hints];
 }
 
 function requiredQualificationNamesMissingForEmployee(
@@ -790,15 +810,21 @@ export function computeBulkStaffingHeaderEntries(input: {
         qualificationNameById,
         qualificationSortOrder
       ),
-      conflictDetails: buildStaffingConflictDetails({
-        hourAssignments: confirmedHourAssignments,
-        qualRules,
-        profileQualificationIds,
-        qualificationNameById,
-        employeeNameById,
-        formatCalendarTimeLabel,
-        totalRequired: entry.required,
-      }),
+      ...(() => {
+        const { conflicts, hints } = buildStaffingAssignmentDetails({
+          hourAssignments: confirmedHourAssignments,
+          qualRules,
+          profileQualificationIds,
+          qualificationNameById,
+          employeeNameById,
+          formatCalendarTimeLabel,
+          totalRequired: entry.required,
+        });
+        return {
+          conflictDetails: conflicts.length > 0 ? conflicts : undefined,
+          hintDetails: hints.length > 0 ? hints : undefined,
+        };
+      })(),
     };
   });
 }
@@ -1007,41 +1033,97 @@ export function formatStaffingEntriesTooltipSections(
   );
 }
 
-type StaffingConflictTooltipTranslator = (
-  key:
-    | "areaCalendar.staffingConflictOverstaffedLine"
-    | "areaCalendar.staffingConflictMismatchLine"
-    | "areaCalendar.staffingConflictNoQualLine",
+export type StaffingAssignmentTooltipBlock = {
+  titleLine: string;
+  descriptionLine: string;
+  /** Zusätzliche Zeile (z. B. Hinweistext bei Überbesetzung im Füllstands-Tooltip). */
+  noteLine?: string;
+};
+
+type StaffingAssignmentTooltipTranslator = (
+  key: string,
   params: Record<string, string>
 ) => string;
 
+function formatStaffingConflictTooltipBlock(
+  detail: StaffingConflictDetail,
+  t: StaffingAssignmentTooltipTranslator
+): StaffingAssignmentTooltipBlock {
+  switch (detail.kind) {
+    case "qualification_mismatch":
+      return {
+        titleLine: t("areaCalendar.staffingTooltipConflictMismatchTitle", {}),
+        descriptionLine: t(
+          "areaCalendar.staffingTooltipConflictMismatchDescription",
+          {
+            time: detail.timeLabel,
+            name: detail.employeeName,
+            position: detail.assignedQualificationName ?? "—",
+            missing: detail.missingQualificationName ?? "—",
+          }
+        ),
+      };
+    case "no_matching_qualification":
+      return {
+        titleLine: t("areaCalendar.staffingTooltipConflictNoQualTitle", {}),
+        descriptionLine: t(
+          "areaCalendar.staffingTooltipConflictNoQualDescription",
+          {
+            time: detail.timeLabel,
+            name: detail.employeeName,
+            missing: detail.missingQualificationName ?? "—",
+          }
+        ),
+      };
+  }
+}
+
+function formatStaffingHintTooltipBlock(
+  detail: StaffingHintDetail,
+  t: StaffingAssignmentTooltipTranslator
+): StaffingAssignmentTooltipBlock {
+  return {
+    titleLine: t("areaCalendar.staffingTooltipHintOverstaffedTitle", {}),
+    descriptionLine: t("areaCalendar.staffingTooltipHintOverstaffedDescription", {
+      time: detail.timeLabel,
+      name: detail.employeeName,
+      position: detail.assignedQualificationName ?? "—",
+    }),
+    noteLine: t("areaCalendar.staffingTooltipHintOverstaffedNote", {}),
+  };
+}
+
+export function formatStaffingAssignmentTooltipBlocks(
+  entries: readonly TagAreaHeaderStaffingEntry[],
+  t: StaffingAssignmentTooltipTranslator
+): {
+  conflicts: StaffingAssignmentTooltipBlock[];
+  hints: StaffingAssignmentTooltipBlock[];
+} {
+  const conflicts: StaffingAssignmentTooltipBlock[] = [];
+  const hints: StaffingAssignmentTooltipBlock[] = [];
+
+  for (const entry of entries) {
+    for (const detail of entry.conflictDetails ?? []) {
+      conflicts.push(formatStaffingConflictTooltipBlock(detail, t));
+    }
+    for (const detail of entry.hintDetails ?? []) {
+      hints.push(formatStaffingHintTooltipBlock(detail, t));
+    }
+  }
+
+  return { conflicts, hints };
+}
+
+/** @deprecated Nutze {@link formatStaffingAssignmentTooltipBlocks}. */
 export function formatStaffingConflictTooltipLines(
   entries: readonly TagAreaHeaderStaffingEntry[],
-  t: StaffingConflictTooltipTranslator
+  t: StaffingAssignmentTooltipTranslator
 ): string[] {
-  return entries.flatMap((entry) =>
-    (entry.conflictDetails ?? []).map((detail) => {
-      switch (detail.kind) {
-        case "overstaffed":
-          return t("areaCalendar.staffingConflictOverstaffedLine", {
-            time: detail.timeLabel,
-            name: detail.employeeName,
-            position: detail.assignedQualificationName ?? "—",
-          });
-        case "qualification_mismatch":
-          return t("areaCalendar.staffingConflictMismatchLine", {
-            time: detail.timeLabel,
-            name: detail.employeeName,
-            position: detail.assignedQualificationName ?? "—",
-            missing: detail.missingQualificationName ?? "—",
-          });
-        case "no_matching_qualification":
-          return t("areaCalendar.staffingConflictNoQualLine", {
-            time: detail.timeLabel,
-            name: detail.employeeName,
-            missing: detail.missingQualificationName ?? "—",
-          });
-      }
-    })
-  );
+  const { conflicts, hints } = formatStaffingAssignmentTooltipBlocks(entries, t);
+  return [...conflicts, ...hints].flatMap((block) => [
+    block.titleLine,
+    block.descriptionLine,
+    ...(block.noteLine ? [block.noteLine] : []),
+  ]);
 }

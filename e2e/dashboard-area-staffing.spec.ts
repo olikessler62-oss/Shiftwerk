@@ -59,7 +59,7 @@ test.describe("Dashboard · Bereichs-Header (Walkthrough Schritte 1–5)", () =>
     await expect(card.getByRole("button", { name: "Gedeckt" })).toHaveCount(0);
   });
 
-  test("Restaurant · Hinweise zur Einteilung → Modal", async ({ page }) => {
+  test("Restaurant · Konflikte & Hinweise zur Einteilung → Modal", async ({ page }) => {
     const manifest = readDashboardScenarios();
     await openDashboardDayDrilldown(
       page,
@@ -67,15 +67,15 @@ test.describe("Dashboard · Bereichs-Header (Walkthrough Schritte 1–5)", () =>
     );
 
     const card = dashboardAreaCard(page, manifest.restaurantOverstaffed.areaName);
-    const line = card.getByText("Hinweise zur Einteilung", { exact: true });
+    const line = card.getByText("Konflikte & Hinweise zur Einteilung", { exact: true });
     await expect(line).toBeVisible();
     await line.click();
     await expect(
-      page.getByRole("dialog").getByText(/Hinweise zur Einteilung/)
+      page.getByRole("dialog").getByText(/Konflikte & Hinweise/)
     ).toBeVisible();
   });
 
-  test("Küche · Hinweise zur Einteilung (Qualifikation)", async ({ page }) => {
+  test("Küche · Konflikte & Hinweise (Qualifikation)", async ({ page }) => {
     const manifest = readDashboardScenarios();
     await openDashboardDayDrilldown(
       page,
@@ -83,15 +83,15 @@ test.describe("Dashboard · Bereichs-Header (Walkthrough Schritte 1–5)", () =>
     );
 
     const card = dashboardAreaCard(page, manifest.kitchenQualMismatch.areaName);
-    const line = card.getByText("Hinweise zur Einteilung", { exact: true });
+    const line = card.getByText("Konflikte & Hinweise zur Einteilung", { exact: true });
     await expect(line).toBeVisible();
     await line.click();
     const dialog = page.getByRole("dialog");
     await expect(
-      dialog.getByRole("heading", { name: /Hinweise zur Einteilung · Küche/ })
+      dialog.getByRole("heading", { name: /Konflikte & Hinweise · Küche/ })
     ).toBeVisible();
     await expect(
-      dialog.getByText(/zugerechnet als|fehlt:|über Bedarf/i).first()
+      dialog.getByText(/zugerechnet als|fehlt:|mehr Personal, als benötigt/i).first()
     ).toBeVisible();
   });
 });

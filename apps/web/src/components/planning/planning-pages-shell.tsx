@@ -8,7 +8,9 @@ import {
   AREA_CALENDAR_VIEW_CONTENT_CLASS,
   DASHBOARD_VIEW_CONTENT_CLASS,
   EMPLOYEE_CALENDAR_VIEW_CONTENT_CLASS,
+  PLANNING_PAGE_CONTENT_BLEED_CLASS,
   PLANNING_PAGES_SHELL_CLASS,
+  PLANNING_TOOLBAR_BLEED_SHELL_CLASS,
 } from "@/lib/app-shell-layout";
 import { useMainNavPendingTarget } from "@/lib/app-shell-main-nav-pending";
 import { PlanningToolbarPageBridgeProvider } from "@/lib/planning-toolbar-page-bridge";
@@ -39,9 +41,12 @@ export function PlanningPagesShell({ locations, children }: Props) {
   return (
     <PlanningToolbarPageBridgeProvider>
       <div className={PLANNING_PAGES_SHELL_CLASS}>
-        <PlanningPageToolbar locations={locations} />
+        <div className={PLANNING_TOOLBAR_BLEED_SHELL_CLASS}>
+          <PlanningPageToolbar locations={locations} />
+        </div>
         <div
           className={cn(
+            PLANNING_PAGE_CONTENT_BLEED_CLASS,
             isAreaCalendar
               ? AREA_CALENDAR_VIEW_CONTENT_CLASS
               : isDashboard

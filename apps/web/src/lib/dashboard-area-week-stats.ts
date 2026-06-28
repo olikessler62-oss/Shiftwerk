@@ -66,10 +66,12 @@ export type DashboardStaffingWindowRow = {
   assigned: number;
   required: number;
   status: DashboardStaffingWindowRowStatus;
-  /** Personal-Konflikt (falsche Quali, Überbesetzung, …) — Kandidaten-Button in der Zeile. */
+  /** Personal-Konflikt (falsche Quali, …) — Kandidaten-Button in der Zeile. */
   hasConflict?: boolean;
-  /** Hinweise zur Einteilung in diesem Schichtfenster (für Inline-Anzeige in der Liste). */
+  /** Konflikte zur Einteilung in diesem Schichtfenster. */
   staffingConflicts?: readonly DashboardStaffingIssue[];
+  /** Hinweise zur Einteilung (z. B. Überbedarf) in diesem Schichtfenster. */
+  staffingHints?: readonly DashboardStaffingIssue[];
   /** Bestätigungs-Konflikte je Status in diesem Schichtfenster. */
   confirmationCounts?: DashboardStaffingWindowConfirmationCounts;
   /** Schichten trotz fehlender Servicezeit (nur `no_service_hours`). */
@@ -169,21 +171,32 @@ type DashboardStaffingIssueTranslator = (
     | "dashboard.staffingIssueUnderstaffedWindow"
     | "dashboard.staffingIssueUnderstaffedQual"
     | "dashboard.staffingIssueOverstaffed"
+    | "dashboard.staffingIssueOverstaffedTitle"
     | "dashboard.staffingIssueMismatch"
-    | "dashboard.staffingIssueNoQual",
+    | "dashboard.staffingIssueMismatchTitle"
+    | "dashboard.staffingIssueNoQual"
+    | "dashboard.staffingIssueNoQualTitle",
   params: Record<string, string>
 ) => string;
 
-function buildDashboardStaffingIssuesForEntry(input: {
+function buildDashboardAssignmentIssuesForEntry(input: {
   dateISO: string;
   weekdayLabel: string;
   entry: TagAreaHeaderStaffingEntry;
   shiftName: string;
-}): DashboardStaffingIssue[] {
+}): {
+  conflicts: DashboardStaffingIssue[];
+  hints: DashboardStaffingIssue[];
+} {
   const { dateISO, weekdayLabel, entry, shiftName } = input;
 
-  return (entry.conflictDetails ?? []).map((detail, index) => ({
-    id: `${dateISO}:${entry.serviceHourId}:conflict:${index}:${detail.kind}:${detail.employeeName}`,
+  const mapDetail = (
+    detail:
+      | NonNullable<TagAreaHeaderStaffingEntry["conflictDetails"]>[number]
+      | NonNullable<TagAreaHeaderStaffingEntry["hintDetails"]>[number],
+    index: number
+  ): DashboardStaffingIssue => ({
+    id: `${dateISO}:${entry.serviceHourId}:assignment:${index}:${detail.kind}:${detail.employeeName}`,
     kind: detail.kind,
     dateISO,
     weekdayLabel,
@@ -191,8 +204,18 @@ function buildDashboardStaffingIssuesForEntry(input: {
     shiftName,
     employeeName: detail.employeeName,
     assignedQualificationName: detail.assignedQualificationName,
-    missingQualificationName: detail.missingQualificationName,
-  }));
+    missingQualificationName:
+      "missingQualificationName" in detail
+        ? detail.missingQualificationName
+        : undefined,
+  });
+
+  const conflicts = (entry.conflictDetails ?? []).map(mapDetail);
+  const hints = (entry.hintDetails ?? []).map((detail, index) =>
+    mapDetail(detail, conflicts.length + index)
+  );
+
+  return { conflicts, hints };
 }
 
 function sortDashboardStaffingIssues(
@@ -306,6 +329,51 @@ export function formatDashboardStaffingIssueDescription(
   }
 }
 
+type DashboardStaffingIssueTooltipTranslator = DashboardStaffingIssueTranslator;
+
+export function formatDashboardStaffingIssueTooltipBlock(
+  issue: DashboardStaffingIssue,
+  t: DashboardStaffingIssueTooltipTranslator
+): { titleLine: string; descriptionLine: string } {
+  switch (issue.kind) {
+    case "overstaffed":
+      return {
+        titleLine: t("dashboard.staffingIssueOverstaffedTitle", {}),
+        descriptionLine: formatDashboardStaffingIssueDescription(issue, t),
+      };
+    case "qualification_mismatch":
+      return {
+        titleLine: t("dashboard.staffingIssueMismatchTitle", {}),
+        descriptionLine: formatDashboardStaffingIssueDescription(issue, t),
+      };
+    case "no_matching_qualification":
+      return {
+        titleLine: t("dashboard.staffingIssueNoQualTitle", {}),
+        descriptionLine: formatDashboardStaffingIssueDescription(issue, t),
+      };
+    default:
+      return {
+        titleLine: formatDashboardStaffingIssueDescription(issue, t),
+        descriptionLine: formatDashboardStaffingIssueDescription(issue, t),
+      };
+  }
+}
+
+export function partitionDashboardStaffingIssues(
+  issues: readonly DashboardStaffingIssue[]
+): {
+  conflicts: DashboardStaffingIssue[];
+  hints: DashboardStaffingIssue[];
+} {
+  const conflicts: DashboardStaffingIssue[] = [];
+  const hints: DashboardStaffingIssue[] = [];
+  for (const issue of issues) {
+    if (issue.kind === "overstaffed") hints.push(issue);
+    else conflicts.push(issue);
+  }
+  return { conflicts, hints };
+}
+
 function resolveAmpelLevel(input: {
   requiredTotal: number;
   openSlots: number;
@@ -331,6 +399,57 @@ function resolveAmpelLevel(input: {
     input.openSlots >= 3 || gapRate >= 0.2 || input.understaffedWindowCount >= 2;
   if (critical) return "critical";
   return "partial";
+}
+
+/** Ampel für einen einzelnen Tag aus den Fenster-Zeilen (Wochenübersicht-Tageskarte). */
+export function resolveDashboardAreaAmpelLevelFromWindowRows(
+  rows: readonly DashboardStaffingWindowRow[]
+): DashboardAreaAmpelLevel {
+  if (rows.length === 0) return "no_demand";
+
+  let requiredTotal = 0;
+  let openSlots = 0;
+  let understaffedWindowCount = 0;
+  let hasUnderstaffed = false;
+  let hasOverstaffed = false;
+  let hasPlannedCoverage = false;
+  let hasAssignmentMismatch = false;
+
+  for (const row of rows) {
+    if (row.rowKind === "no_service_hours") {
+      if (row.hasUnplannedShifts) hasPlannedCoverage = true;
+      continue;
+    }
+    if (row.required <= 0) continue;
+
+    requiredTotal += row.required;
+
+    if (row.status === "understaffed") {
+      hasUnderstaffed = true;
+      understaffedWindowCount += 1;
+      openSlots += Math.max(0, row.required - row.assigned);
+    }
+    if (row.status === "planned") {
+      hasPlannedCoverage = true;
+    }
+    if (row.status === "overstaffed") {
+      if (row.staffingConflicts?.length) {
+        hasAssignmentMismatch = true;
+      } else {
+        hasOverstaffed = true;
+      }
+    }
+  }
+
+  return resolveAmpelLevel({
+    requiredTotal,
+    openSlots,
+    understaffedWindowCount,
+    hasUnderstaffed,
+    hasPlannedCoverage,
+    hasAssignmentMismatch,
+    hasOverstaffed,
+  });
 }
 
 function ampelLevelToGaugeVariant(level: DashboardAreaAmpelLevel): StaffingFillGaugeVariant {
@@ -545,7 +664,7 @@ export function computeDashboardAreaWeekStats(
 
           const timeFrom = demandTimes?.startTime ?? "—";
           const timeTo = demandTimes?.endTime ?? "—";
-          const rowConflicts = buildDashboardStaffingIssuesForEntry({
+          const rowAssignmentIssues = buildDashboardAssignmentIssuesForEntry({
             dateISO,
             weekdayLabel: weekdayLabelForRow,
             entry,
@@ -571,14 +690,23 @@ export function computeDashboardAreaWeekStats(
               mismatch: entryMismatch,
               plannedCoverage: entryPlannedCoverage,
             }),
-            hasConflict: rowConflicts.length > 0,
+            hasConflict: rowAssignmentIssues.conflicts.length > 0,
             staffingConflicts:
-              rowConflicts.length > 0 ? rowConflicts : undefined,
+              rowAssignmentIssues.conflicts.length > 0
+                ? rowAssignmentIssues.conflicts
+                : undefined,
+            staffingHints:
+              rowAssignmentIssues.hints.length > 0
+                ? rowAssignmentIssues.hints
+                : undefined,
             confirmationCounts,
           });
 
-          if (rowConflicts.length > 0) {
-            staffingIssues.push(...rowConflicts);
+          if (rowAssignmentIssues.conflicts.length > 0) {
+            staffingIssues.push(...rowAssignmentIssues.conflicts);
+          }
+          if (rowAssignmentIssues.hints.length > 0) {
+            staffingIssues.push(...rowAssignmentIssues.hints);
           }
         }
       }

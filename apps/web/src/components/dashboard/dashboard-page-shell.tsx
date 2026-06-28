@@ -37,6 +37,7 @@ export async function DashboardPageShell({
         communicationHubAbsences={communicationBundle.communicationHubAbsences}
         managerNotifications={communicationBundle.managerNotifications}
         locationShifts={communicationBundle.locationShifts}
+        organizationWeekShifts={communicationBundle.organizationWeekShifts}
         serviceHours={communicationBundle.serviceHours}
         staffingRules={communicationBundle.staffingRules}
         staffingOverrides={communicationBundle.staffingOverrides}

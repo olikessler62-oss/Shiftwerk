@@ -170,7 +170,7 @@ export function OpenConfirmationsPanel({
                         {t("shiftConfirmation.actions.requestConfirmation")}
                       </Button>
                     ) : null}
-                    {activeTab !== "proposed" ? (
+                    {activeTab === "pending" ? (
                       <Button
                         type="button"
                         size="sm"

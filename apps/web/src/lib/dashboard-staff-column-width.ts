@@ -1,8 +1,3 @@
-import {
-  employeeWeekHours,
-  formatPlanningHoursRatio,
-  type PlanningShiftRef,
-} from "@/lib/planning-utils";
 import type { Profile } from "@schichtwerk/types";
 
 export const PLANNING_STAFF_COLUMN_WIDTH_TOLERANCE_PX = 10;
@@ -21,8 +16,7 @@ const HEADER_FONT =
 
 export type PlanningStaffColumnWidthInput = {
   employees: readonly Pick<Profile, "id" | "full_name" | "weekly_hours">[];
-  shifts: readonly PlanningShiftRef[];
-  locale: string;
+  weeklyHoursCardLabelsByEmployeeId: ReadonlyMap<string, string>;
   staffColumnHeaderLabel: string;
   employeeHoursLabel: string;
 };
@@ -56,20 +50,17 @@ function computePlanningStaffColumnWidthPx(
       measureText(employee.full_name, NAME_FONT)
     );
 
-    const weekH = employeeWeekHours(employee.id, input.shifts);
-    const targetH = employee.weekly_hours ?? 40;
-    const hoursLine = `${input.employeeHoursLabel} ${formatPlanningHoursRatio(
-      weekH,
-      targetH,
-      input.locale
-    )}`;
-    maxContentWidthPx = Math.max(
-      maxContentWidthPx,
-      measureText(
-        hoursLine,
-        weekH > targetH ? SUBTITLE_EMPHASIS_FONT : SUBTITLE_FONT
-      )
-    );
+    const hoursCardLabel =
+      input.weeklyHoursCardLabelsByEmployeeId.get(employee.id) ?? "";
+    if (hoursCardLabel) {
+      maxContentWidthPx = Math.max(
+        maxContentWidthPx,
+        measureText(
+          `${input.employeeHoursLabel} ${hoursCardLabel}`,
+          SUBTITLE_FONT
+        )
+      );
+    }
   }
 
   return Math.max(

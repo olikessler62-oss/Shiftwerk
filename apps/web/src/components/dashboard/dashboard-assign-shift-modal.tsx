@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchAreaCalendarShiftAssignEmployees } from "@/app/actions/areacalendar-shift-assign";
+import { fetchAreaCalendarBulkShiftContext } from "@/app/actions/areacalendar-shift-assign";
 import {
   ADD_SHIFT_AVAILABILITY_NOTICE_CLASS,
   AreaCalendarQualificationCombobox,
@@ -37,15 +37,17 @@ import {
   profileAvailabilitiesForWeekday,
   profileAvailabilityWeekdayFromAreaCalendarDate,
 } from "@/lib/available-employees-for-shift";
+import { assignmentWindowsFromShiftRefsForDate, locationDayAssignmentsFromShiftRefsForDate } from "@/lib/shift-overlap";
+import { filterEmployeesByOrganizationDayShiftCompliance } from "@/lib/bulk-shift-day-compliance";
+import { DEFAULT_ORGANIZATION_TIME_ZONE } from "@/lib/dates";
+import type { EmployeeWeeklyHoursDisplay } from "@/lib/employee-weekly-hours-display";
 import {
   areaStaffingQualificationOptions,
   presetQualificationForServiceHour,
 } from "@/lib/bulk-shift-qualification";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import {
-  buildEmployeeWeeklyHoursTooltipLabels,
   formatDayHeader,
-  weeklyAssignedMinutesByEmployeeId,
 } from "@/lib/planning-utils";
 import { findServiceHourIdForShift } from "@/lib/location-staffing-client";
 import { validateAreaCalendarShiftServiceHours } from "@/lib/service-hours-shift-validation";
@@ -61,7 +63,6 @@ import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing, Qualification } from "@schichtwerk/types";
 import type { AreaCalendarShiftAssignEmployee } from "@/app/actions/areacalendar-shift-assign";
 import type { ShiftAssignWeekShiftRef } from "@/lib/shift-weekly-hours-validation-client";
-import { useLocale } from "@/i18n/locale-provider";
 
 export type DashboardShiftActionResult =
   | { ok: true; warnings?: string[] }
@@ -123,8 +124,12 @@ type Props = {
   timesComplete: boolean;
   canAssign: boolean;
   hasExistingShift: boolean;
+  editingShiftId?: string | null;
   weekDates: readonly string[];
   weekShifts?: readonly ShiftAssignWeekShiftRef[];
+  organizationWeekShifts?: readonly ShiftAssignWeekShiftRef[];
+  timeZone?: string;
+  weeklyHoursDisplayByEmployeeId?: ReadonlyMap<string, EmployeeWeeklyHoursDisplay>;
   onAssign: (
     options?: {
       withoutServiceHours?: boolean;
@@ -169,18 +174,22 @@ export function DashboardAssignShiftModal({
   timesComplete,
   canAssign,
   hasExistingShift,
+  editingShiftId = null,
   weekDates,
   weekShifts = [],
+  organizationWeekShifts = [],
+  timeZone = DEFAULT_ORGANIZATION_TIME_ZONE,
+  weeklyHoursDisplayByEmployeeId,
   onAssign,
   onClose,
   presetEmployeeId,
   presetEmployee,
 }: Props) {
-  const { locale } = useLocale();
   const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
     useSimulatedProposedOnAssignRequest();
   const [employees, setEmployees] = useState<AreaCalendarShiftAssignEmployee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [countryCode, setCountryCode] = useState("DE");
   const [saving, setSaving] = useState(false);
   const [messagePrompt, setMessagePrompt] = useState<MessagePrompt | null>(null);
   const [outsideServiceHoursConfirm, setOutsideServiceHoursConfirm] =
@@ -267,7 +276,7 @@ export function DashboardAssignShiftModal({
 
     async function loadEmployees() {
       setLoadingEmployees(true);
-      const result = await fetchAreaCalendarShiftAssignEmployees(date, {
+      const result = await fetchAreaCalendarBulkShiftContext(date, {
         simulatedProposedOnAssign,
         relaxAppRegistrationGate,
       });
@@ -280,6 +289,7 @@ export function DashboardAssignShiftModal({
         setEmployees([]);
       } else {
         setEmployees(result.employees);
+        setCountryCode(result.countryCode);
       }
       setLoadingEmployees(false);
     }
@@ -324,9 +334,33 @@ export function DashboardAssignShiftModal({
     onQualificationChange,
   ]);
 
-  const matchingEmployees = useMemo(
+  const organizationDayOverlapAssignments = useMemo(() => {
+    const shiftsForOverlap =
+      organizationWeekShifts.length > 0 ? organizationWeekShifts : weekShifts;
+    return assignmentWindowsFromShiftRefsForDate(shiftsForOverlap, date, {
+      excludeShiftIds: editingShiftId
+        ? new Set([editingShiftId])
+        : undefined,
+    });
+  }, [organizationWeekShifts, weekShifts, date, editingShiftId]);
+
+  const organizationDayAssignments = useMemo(
     () =>
-      filterPlanningAssignShiftEmployees(
+      locationDayAssignmentsFromShiftRefsForDate(
+        organizationWeekShifts.length > 0 ? organizationWeekShifts : weekShifts,
+        date,
+        {
+          excludeShiftIds: editingShiftId
+            ? new Set([editingShiftId])
+            : undefined,
+        }
+      ),
+    [organizationWeekShifts, weekShifts, date, editingShiftId]
+  );
+
+  const matchingEmployees = useMemo(
+    () => {
+      const byPlanning = filterPlanningAssignShiftEmployees(
         employees,
         weekday,
         startTime,
@@ -335,8 +369,19 @@ export function DashboardAssignShiftModal({
           simplePlanning,
           qualificationId,
           profileQualificationIds,
+          shiftDate: date,
+          organizationDayAssignments: organizationDayOverlapAssignments,
+          timeZone,
         }
-      ),
+      );
+      return filterEmployeesByOrganizationDayShiftCompliance(byPlanning, {
+        countryCode,
+        shiftDate: date,
+        windowStart: startTime,
+        windowEnd: endTime,
+        organizationDayAssignments,
+      });
+    },
     [
       employees,
       weekday,
@@ -345,6 +390,11 @@ export function DashboardAssignShiftModal({
       simplePlanning,
       qualificationId,
       profileQualificationIds,
+      date,
+      organizationDayOverlapAssignments,
+      organizationDayAssignments,
+      timeZone,
+      countryCode,
     ]
   );
 
@@ -418,17 +468,7 @@ export function DashboardAssignShiftModal({
     selectedEmployeeId,
   ]);
 
-  const weeklyHoursLineByEmployeeId = useMemo(() => {
-    const assignedMinutes = weeklyAssignedMinutesByEmployeeId(
-      weekShifts,
-      weekDates
-    );
-    return buildEmployeeWeeklyHoursTooltipLabels(
-      employees,
-      assignedMinutes,
-      locale
-    );
-  }, [employees, weekShifts, weekDates, locale]);
+  const weeklyHoursDisplayByEmployeeIdResolved = weeklyHoursDisplayByEmployeeId;
 
   useEffect(() => {
     if (loadingEmployees || hasExistingShift) return;
@@ -787,7 +827,7 @@ export function DashboardAssignShiftModal({
               profileQualificationIds={profileQualificationIds}
               qualificationNameById={qualificationNameById}
               qualificationSortOrder={qualificationSortOrder}
-              weeklyHoursLineByEmployeeId={weeklyHoursLineByEmployeeId}
+              weeklyHoursDisplayByEmployeeId={weeklyHoursDisplayByEmployeeIdResolved}
             />
             {availabilityNotice.visible ? (
               <p className={ADD_SHIFT_AVAILABILITY_NOTICE_CLASS}>

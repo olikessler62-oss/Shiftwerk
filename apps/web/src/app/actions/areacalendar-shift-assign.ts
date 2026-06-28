@@ -12,10 +12,13 @@ import { requireManager } from "@/lib/manager";
 import { resolveSimulatedProposedAssignOptions } from "@/lib/shift-confirmation-assign-mode";
 import {
   DEFAULT_COUNTRY_CODE,
+  isoWeekEndFromWeekStart,
+  isoWeekStartFromShiftDate,
   resolveOrganizationTimeZone,
   serviceWeekdayForShiftDate,
 } from "@schichtwerk/database";
 import type { AbsenceType, Profile } from "@schichtwerk/types";
+import { shiftTimeFromTimestamp } from "@/lib/dates";
 import {
   resolveEmployeeAbsenceTypeOnDate,
   type DashboardStaffingCandidateEmployeeTooltipPayload,
@@ -50,6 +53,17 @@ export type FetchAreaCalendarShiftAssignEmployeesResult =
   | { ok: true; employees: AreaCalendarShiftAssignEmployee[] }
   | { ok: false; error: string };
 
+export type OrganizationWeekShiftRef = {
+  id: string;
+  employee_id: string;
+  shift_date: string;
+  startTime: string;
+  endTime: string;
+  location_id: string | null;
+  location_area_id: string | null;
+  area_shift_template_id: string | null;
+};
+
 export type FetchAreaCalendarBulkShiftContextResult =
   | {
       ok: true;
@@ -58,6 +72,8 @@ export type FetchAreaCalendarBulkShiftContextResult =
       profileShiftPreferences: Record<string, ProfileShiftPreferenceEntry[]>;
       countryCode: string;
       timeZone: string;
+      locations: { id: string; name: string }[];
+      organizationWeekShifts?: OrganizationWeekShiftRef[];
     }
   | { ok: false; error: string };
 
@@ -201,7 +217,8 @@ export async function fetchAreaCalendarBulkShiftContext(
   }
 ): Promise<FetchAreaCalendarBulkShiftContextResult> {
   try {
-    const { organizationId } = await requireManager();
+    const { organizationId, organization } = await requireManager();
+    const db = await getDatabase();
 
     const employeeResult = await fetchAreaCalendarShiftAssignEmployees(
       date,
@@ -212,11 +229,34 @@ export async function fetchAreaCalendarBulkShiftContext(
     }
 
     const metadata = await fetchShiftAssignBulkMetadata(organizationId, date);
+    const timeZone = resolveOrganizationTimeZone(organization);
+    const weekStart = isoWeekStartFromShiftDate(date);
+    const weekEnd = isoWeekEndFromWeekStart(weekStart);
+    const [organizationShiftRows, locations] = await Promise.all([
+      db.listOrganizationShiftsInDateRange(organizationId, weekStart, weekEnd),
+      db.listLocations(organizationId),
+    ]);
+    const organizationWeekShifts: OrganizationWeekShiftRef[] =
+      organizationShiftRows.map((shift) => ({
+        id: shift.id,
+        employee_id: shift.employee_id,
+        shift_date: shift.shift_date,
+        startTime: shiftTimeFromTimestamp(shift.starts_at, timeZone),
+        endTime: shiftTimeFromTimestamp(shift.ends_at, timeZone),
+        location_id: shift.location_id,
+        location_area_id: shift.location_area_id,
+        area_shift_template_id: shift.area_shift_template_id,
+      }));
 
     return {
       ok: true,
       employees: employeeResult.employees,
       ...metadata,
+      locations: locations.map((location) => ({
+        id: location.id,
+        name: location.name,
+      })),
+      organizationWeekShifts,
     };
   } catch (e) {
     return {
@@ -234,7 +274,7 @@ export async function fetchDashboardStaffingCandidateContext(
   }
 ): Promise<FetchDashboardStaffingCandidateContextResult> {
   try {
-    const { organizationId } = await requireManager();
+    const { organizationId, organization } = await requireManager();
     const db = await getDatabase();
 
     const profiles = await db.listOrganizationProfiles(organizationId);
@@ -249,11 +289,34 @@ export async function fetchDashboardStaffingCandidateContext(
     }
 
     const metadata = await fetchShiftAssignBulkMetadata(organizationId, date);
+    const timeZone = resolveOrganizationTimeZone(organization);
+    const weekStart = isoWeekStartFromShiftDate(date);
+    const weekEnd = isoWeekEndFromWeekStart(weekStart);
+    const [organizationShiftRows, locations] = await Promise.all([
+      db.listOrganizationShiftsInDateRange(organizationId, weekStart, weekEnd),
+      db.listLocations(organizationId),
+    ]);
+    const organizationWeekShifts: OrganizationWeekShiftRef[] =
+      organizationShiftRows.map((shift) => ({
+        id: shift.id,
+        employee_id: shift.employee_id,
+        shift_date: shift.shift_date,
+        startTime: shiftTimeFromTimestamp(shift.starts_at, timeZone),
+        endTime: shiftTimeFromTimestamp(shift.ends_at, timeZone),
+        location_id: shift.location_id,
+        location_area_id: shift.location_area_id,
+        area_shift_template_id: shift.area_shift_template_id,
+      }));
 
     return {
       ok: true,
       employees: employeeResult.employees,
       ...metadata,
+      locations: locations.map((location) => ({
+        id: location.id,
+        name: location.name,
+      })),
+      organizationWeekShifts,
     };
   } catch (e) {
     return {

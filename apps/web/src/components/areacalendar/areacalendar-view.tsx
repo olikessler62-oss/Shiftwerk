@@ -89,6 +89,7 @@ type Props = {
   communicationSwapRequests?: CommunicationSwapRequestRow[];
   communicationCancelActors?: Record<string, "employee" | "manager">;
   communicationHubLocationShifts?: PlanningShift[];
+  organizationWeekShifts?: PlanningShift[];
   communicationHubAbsences?: AbsenceRequest[];
   managerNotifications?: ManagerNotification[];
 };
@@ -116,6 +117,7 @@ export function AreaCalendarView({
   communicationSwapRequests = [],
   communicationCancelActors = {},
   communicationHubLocationShifts = [],
+  organizationWeekShifts = [],
   communicationHubAbsences = [],
   managerNotifications = [],
 }: Props) {
@@ -358,6 +360,11 @@ export function AreaCalendarView({
               profileQualificationIds={profileQualificationIds}
               locale={locale}
               employeeHoursLabel={t("common.basic")}
+              weekDates={dates}
+              selectedLocationId={selectedLocationId}
+              areas={areas}
+              locations={locations}
+              organizationWeekShifts={organizationWeekShifts}
               onEmployeeHover={handleEmployeeHover}
               onEmployeeContextMenu={openEmployeeListContextMenu}
               className="max-md:!mt-0 max-md:!w-full max-md:shrink-0"

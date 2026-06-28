@@ -7,6 +7,7 @@ describe("getAreaCalendarWeekHeaderParts", () => {
 
     expect(parts.monthYearLabel).toBe("Juni 2026");
     expect(parts.rangeLabel).toBe("8. Juni – 14. Juni 2026");
+    expect(parts.compactRangeLabel).toBe("08.06.-14.06.");
     expect(parts.calendarWeek).toBe(24);
   });
 
@@ -33,5 +34,12 @@ describe("getAreaCalendarWeekHeaderParts", () => {
     expect(parts.rangeLabel).toBe(
       "29. Dezember 2026 – 4. Januar 2027"
     );
+    expect(parts.compactRangeLabel).toBe("29.12.-04.01.27");
+  });
+
+  it("shows compact week range for mid-June week", () => {
+    const parts = getAreaCalendarWeekHeaderParts("2026-06-22", "de-DE");
+
+    expect(parts.compactRangeLabel).toBe("22.06.-28.06.");
   });
 });

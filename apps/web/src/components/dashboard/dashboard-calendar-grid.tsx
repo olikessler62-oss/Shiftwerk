@@ -26,6 +26,7 @@ import {
   CALENDAR_TODAY_DAY_HEADER_BADGE_CLASS,
 } from "@/lib/calendar-day-header-styles";
 import { CALENDAR_INTERACTION_SURFACE_CLASS } from "@/lib/calendar-interaction-ui";
+import type { EmployeeWeeklyHoursDisplay } from "@/lib/employee-weekly-hours-display";
 import {
   employeeWeekHours,
   formatDayHeader,
@@ -207,6 +208,9 @@ type Props = {
   absenceConflictShiftIds?: ReadonlySet<string>;
   swapRequestShiftIds?: ReadonlySet<string>;
   shiftConfirmationEnabled?: boolean;
+  weeklyHoursTooltipDisplayByEmployeeId?: ReadonlyMap<string, EmployeeWeeklyHoursDisplay>;
+  weeklyHoursCardLabelsByEmployeeId?: ReadonlyMap<string, string>;
+  weeklyHoursOverLimitByEmployeeId?: ReadonlyMap<string, boolean>;
 };
 
 function dayHeaderColumnDivider(dayIndex: number, totalDays: number) {
@@ -281,6 +285,9 @@ export function DashboardCalendarGrid({
   absenceConflictShiftIds,
   swapRequestShiftIds,
   shiftConfirmationEnabled = true,
+  weeklyHoursTooltipDisplayByEmployeeId,
+  weeklyHoursCardLabelsByEmployeeId,
+  weeklyHoursOverLimitByEmployeeId,
 }: Props) {
   const [dayColumnInnerWidthPxByDate, setDayColumnInnerWidthPxByDate] =
     useState<Map<string, number>>(() => new Map());
@@ -617,9 +624,18 @@ export function DashboardCalendarGrid({
         {employees.map((emp, rowIndex) => {
           const gridRow = rowIndex + employeeBodyStartRow;
           const isLastEmployee = rowIndex === employees.length - 1;
-          const weekH = employeeWeekHours(emp.id, shifts);
-          const targetH = emp.weekly_hours ?? 40;
-          const overHours = weekH > targetH;
+          const weeklyHoursTooltipDisplay =
+            weeklyHoursTooltipDisplayByEmployeeId?.get(emp.id) ?? null;
+          const weeklyHoursCardLabel =
+            weeklyHoursCardLabelsByEmployeeId?.get(emp.id) ??
+            formatPlanningHoursRatio(
+              employeeWeekHours(emp.id, shifts),
+              emp.weekly_hours ?? 40,
+              locale
+            );
+          const overHours =
+            weeklyHoursOverLimitByEmployeeId?.get(emp.id) ??
+            employeeWeekHours(emp.id, shifts) > (emp.weekly_hours ?? 40);
           const employeeOvernightSpans =
             overnightSpansByEmployee.get(emp.id) ?? [];
           const employeeColor =
@@ -660,6 +676,8 @@ export function DashboardCalendarGrid({
                             )
                           : undefined
                       }
+                      weeklyHoursDisplay={weeklyHoursTooltipDisplay}
+                      weeklyHoursTotalLabel={t("dashboard.weeklyHoursTotalLabel")}
                     />
                   }
                   placement={employeeAvailabilityTooltipPlacement}
@@ -692,12 +710,11 @@ export function DashboardCalendarGrid({
                         </div>
                         <div
                           className={cn(
-                            "truncate text-xs leading-tight",
+                            "truncate text-xs leading-tight tabular-nums",
                             overHours ? "font-medium text-amber-600" : "text-muted"
                           )}
                         >
-                          {t("common.basic")}{" "}
-                          {formatPlanningHoursRatio(weekH, targetH, locale)}
+                          {`${t("common.basic")} ${weeklyHoursCardLabel}`}
                         </div>
                       </div>
                     </div>

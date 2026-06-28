@@ -16,6 +16,7 @@ import {
 import {
   computeDashboardAreaWeekStats,
   computeDashboardLocationWeekRollup,
+  resolveDashboardAreaAmpelLevelFromWindowRows,
   sortDashboardAreaWeekStats,
   type DashboardAreaAmpelLevel,
   type DashboardLocationWeekRollup,
@@ -177,7 +178,7 @@ function buildDaySnapshots(input: {
         areaName: stats.areaName,
         shiftCount: countShiftsOnDate(shifts, dateISO, stats.areaId),
         openSlots,
-        ampelLevel: stats.ampelLevel,
+        ampelLevel: resolveDashboardAreaAmpelLevelFromWindowRows(dayRows),
         hasServiceHours: areaHasEffectiveServiceHoursOnDate(
           serviceHours,
           stats.areaId,

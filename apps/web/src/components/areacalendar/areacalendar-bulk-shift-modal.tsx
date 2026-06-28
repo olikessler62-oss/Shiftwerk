@@ -116,10 +116,14 @@ import {
   type StaffingAssignmentRef,
 } from "@/lib/bulk-staffing-header";
 import {
-  buildEmployeeWeeklyHoursTooltipLabels,
   formatDayHeader,
-  weeklyAssignedMinutesByEmployeeId,
 } from "@/lib/planning-utils";
+import {
+  buildAreaIdToLocationIdMap,
+  buildEmployeeWeeklyHoursDisplayByEmployeeId,
+  buildLocationNameByIdMap,
+  type EmployeeWeeklyHoursDisplay,
+} from "@/lib/employee-weekly-hours-display";
 import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
 import {
   findServiceHourIdForShift,
@@ -129,7 +133,9 @@ import {
   type TagAreaHeaderStaffingEntry,
 } from "@/lib/location-staffing-client";
 import {
+  assignmentWindowsFromShiftRefsForDate,
   findEmployeeWithOverlappingAreaCalendarAssignments,
+  locationDayAssignmentsFromShiftRefsForDate,
   type AreaCalendarAssignmentTimeWindow,
 } from "@/lib/shift-overlap";
 import { cn } from "@/lib/cn";
@@ -967,7 +973,7 @@ type BulkShiftRowEditorProps = {
   locationDayAssignments: LocationDayAssignment[];
   allRows: BulkRow[];
   weekShifts: readonly ShiftAssignWeekShiftRef[];
-  weeklyHoursLineByEmployeeId?: ReadonlyMap<string, string>;
+  weeklyHoursDisplayByEmployeeId?: ReadonlyMap<string, EmployeeWeeklyHoursDisplay>;
   profileQualificationIds: Map<string, Set<string>>;
   profileShiftPreferences: Record<string, ProfileShiftPreferenceEntry[]>;
   withoutServiceHours?: boolean;
@@ -1034,7 +1040,7 @@ function BulkShiftRowEditor({
   locationDayAssignments,
   allRows,
   weekShifts,
-  weeklyHoursLineByEmployeeId,
+  weeklyHoursDisplayByEmployeeId,
   profileQualificationIds,
   profileShiftPreferences,
   withoutServiceHours = false,
@@ -1639,7 +1645,7 @@ function BulkShiftRowEditor({
           profileQualificationIds={profileQualificationIds}
           qualificationNameById={qualificationNameById}
           qualificationSortOrder={qualificationSortOrder}
-          weeklyHoursLineByEmployeeId={weeklyHoursLineByEmployeeId}
+          weeklyHoursDisplayByEmployeeId={resolvedWeeklyHoursDisplayByEmployeeId}
         />
       </td>
       <td className="w-10 shrink-0 px-1 py-1.5 align-middle">
@@ -1760,6 +1766,20 @@ export function AreaCalendarBulkShiftModal({
   );
   const [countryCode, setCountryCode] = useState("DE");
   const [timeZone, setTimeZone] = useState(DEFAULT_ORGANIZATION_TIME_ZONE);
+  const [assignLocations, setAssignLocations] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [organizationWeekShifts, setOrganizationWeekShifts] = useState<
+    {
+      id: string;
+      employee_id: string;
+      shift_date: string;
+      startTime: string;
+      endTime: string;
+      location_id: string | null;
+      location_area_id: string | null;
+    }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [assignRestOfWeekDays, setAssignRestOfWeekDays] = useState(false);
@@ -1768,17 +1788,28 @@ export function AreaCalendarBulkShiftModal({
     dialog.date,
     weekDates
   );
-  const weeklyHoursLineByEmployeeId = useMemo(() => {
-    const assignedMinutes = weeklyAssignedMinutesByEmployeeId(
-      weekShifts,
-      weekDates
-    );
-    return buildEmployeeWeeklyHoursTooltipLabels(
+  const weeklyHoursDisplayByEmployeeIdComputed = useMemo(() => {
+    const displayShifts =
+      organizationWeekShifts.length > 0 ? organizationWeekShifts : weekShifts;
+    return buildEmployeeWeeklyHoursDisplayByEmployeeId({
       employees,
-      assignedMinutes,
-      locale
-    );
-  }, [employees, weekShifts, weekDates, locale]);
+      shifts: displayShifts,
+      weekDates,
+      locationNameById: buildLocationNameByIdMap(assignLocations),
+      areaIdToLocationId: buildAreaIdToLocationIdMap(areas),
+      fallbackLocationId: locationId,
+    });
+  }, [
+    employees,
+    organizationWeekShifts,
+    weekShifts,
+    weekDates,
+    assignLocations,
+    areas,
+    locationId,
+  ]);
+  const resolvedWeeklyHoursDisplayByEmployeeId =
+    weeklyHoursDisplayByEmployeeIdComputed;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [activeRowId, setActiveRowId] = useState<string | null>(() =>
     resolveBulkShiftRowIdForShiftFocus([], dialog.focusShiftId)
@@ -1889,6 +1920,32 @@ export function AreaCalendarBulkShiftModal({
         dialog.areaId
       ),
     [locationDayAssignments, existingAreaShifts, rows, dialog.areaId]
+  );
+
+  const organizationLocationDayAssignments = useMemo(() => {
+    if (organizationWeekShifts.length > 0) {
+      return locationDayAssignmentsFromShiftRefsForDate(
+        organizationWeekShifts,
+        dialog.date
+      );
+    }
+    return locationDayAssignments;
+  }, [organizationWeekShifts, locationDayAssignments, dialog.date]);
+
+  const effectiveOrganizationDayAssignmentsForCompliance = useMemo(
+    () =>
+      filterLocationDayAssignmentsForBulkModal(
+        organizationLocationDayAssignments,
+        existingAreaShifts,
+        rows,
+        dialog.areaId
+      ),
+    [
+      organizationLocationDayAssignments,
+      existingAreaShifts,
+      rows,
+      dialog.areaId,
+    ]
   );
 
   const deletedExistingShiftIds = useMemo(
@@ -2043,6 +2100,8 @@ export function AreaCalendarBulkShiftModal({
         setProfileShiftPreferences(result.profileShiftPreferences);
         setCountryCode(result.countryCode);
         setTimeZone(result.timeZone);
+        setAssignLocations(result.locations);
+        setOrganizationWeekShifts(result.organizationWeekShifts ?? []);
       }
       setLoading(false);
     }
@@ -2100,10 +2159,10 @@ export function AreaCalendarBulkShiftModal({
           countryCode={countryCode}
           timeZone={timeZone}
           areaExistingAssignments={effectiveAreaExistingAssignments}
-          locationDayAssignments={effectiveLocationDayAssignments}
+          locationDayAssignments={organizationLocationDayAssignments}
           allRows={rows}
           weekShifts={weekShifts}
-          weeklyHoursLineByEmployeeId={weeklyHoursLineByEmployeeId}
+          weeklyHoursDisplayByEmployeeId={resolvedWeeklyHoursDisplayByEmployeeId}
           profileQualificationIds={profileQualificationIds}
           profileShiftPreferences={profileShiftPreferences}
           withoutServiceHours={withoutServiceHours}
@@ -2135,10 +2194,10 @@ export function AreaCalendarBulkShiftModal({
       countryCode,
       timeZone,
       effectiveAreaExistingAssignments,
-      effectiveLocationDayAssignments,
+      organizationLocationDayAssignments,
       rows,
       weekShifts,
-      weeklyHoursLineByEmployeeId,
+      resolvedWeeklyHoursDisplayByEmployeeId,
       profileQualificationIds,
       profileShiftPreferences,
       withoutServiceHours,
@@ -2201,7 +2260,7 @@ export function AreaCalendarBulkShiftModal({
             qualifications
           ),
           areaExistingAssignments: effectiveAreaExistingAssignments,
-          locationDayAssignments: effectiveLocationDayAssignments,
+          locationDayAssignments: organizationLocationDayAssignments,
           weekShifts,
           emptyEmployeeId: AREA_CALENDAR_EMPTY_EMPLOYEE_ID,
           createEmptyRow,
@@ -2266,7 +2325,7 @@ export function AreaCalendarBulkShiftModal({
       profileQualificationIds,
       profileShiftPreferences,
       effectiveAreaExistingAssignments,
-      effectiveLocationDayAssignments,
+      organizationLocationDayAssignments,
       qualifications,
       withoutServiceHours,
     ]
@@ -2349,7 +2408,7 @@ export function AreaCalendarBulkShiftModal({
           areaQualifications,
           profileQualificationIds,
           areaExistingAssignments: effectiveAreaExistingAssignments,
-          locationDayAssignments: effectiveLocationDayAssignments,
+          locationDayAssignments: organizationLocationDayAssignments,
           allRows: currentRows,
           weekShifts,
           withoutServiceHours,
@@ -2370,7 +2429,7 @@ export function AreaCalendarBulkShiftModal({
       areaQualifications,
       profileQualificationIds,
       effectiveAreaExistingAssignments,
-      effectiveLocationDayAssignments,
+      organizationLocationDayAssignments,
       weekShifts,
       withoutServiceHours,
     ]
@@ -2473,10 +2532,29 @@ export function AreaCalendarBulkShiftModal({
         }
       );
 
+      const excludeShiftIds = new Set(deletedExistingShiftIds);
+      for (const row of rowsForBatch) {
+        if (row.existingShiftId) excludeShiftIds.add(row.existingShiftId);
+      }
+
+      const orgOverlapBaseline = assignmentWindowsFromShiftRefsForDate(
+        organizationWeekShifts.length > 0
+          ? organizationWeekShifts
+          : locationDayAssignments.map((assignment) => ({
+              employee_id: assignment.employeeId,
+              shift_date: dialog.date,
+              startTime: assignment.startTime,
+              endTime: assignment.endTime,
+              location_area_id: assignment.locationAreaId,
+            })),
+        dialog.date,
+        { excludeShiftIds }
+      );
+
       const overlapEmployeeName = findEmployeeWithOverlappingAreaCalendarAssignments(
         dialog.date,
         completeAssignments,
-        effectiveAreaExistingAssignments,
+        orgOverlapBaseline,
         employeeNameById,
         timeZone
       );
@@ -2605,7 +2683,8 @@ export function AreaCalendarBulkShiftModal({
       dialog.date,
       dialog.areaId,
       locationId,
-      effectiveAreaExistingAssignments,
+      organizationWeekShifts,
+      locationDayAssignments,
       deletedExistingShiftIds,
       employeeNameById,
       timeZone,
@@ -2627,7 +2706,7 @@ export function AreaCalendarBulkShiftModal({
         dialog.date,
         countryCode,
         rows,
-        effectiveLocationDayAssignments,
+        effectiveOrganizationDayAssignmentsForCompliance,
         dialog.areaId,
         employeeNameById,
         t
@@ -2648,7 +2727,7 @@ export function AreaCalendarBulkShiftModal({
       dialog.areaId,
       countryCode,
       rows,
-      effectiveLocationDayAssignments,
+      effectiveOrganizationDayAssignmentsForCompliance,
       employeeNameById,
       t,
       performSave,

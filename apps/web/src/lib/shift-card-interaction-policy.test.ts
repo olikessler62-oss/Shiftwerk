@@ -41,7 +41,7 @@ describe("resolveShiftCardPrimaryClick", () => {
     ).toEqual({ kind: "none" });
   });
 
-  it("routes requested to communication hub and rejected to reassign", () => {
+  it("routes requested and rejected/canceled to communication hub", () => {
     expect(
       resolveShiftCardPrimaryClick(
         { id: "s1", shift_date: "2026-06-20", confirmationStatus: "requested" },
@@ -54,7 +54,14 @@ describe("resolveShiftCardPrimaryClick", () => {
         { id: "s1", shift_date: "2026-06-20", confirmationStatus: "rejected" },
         context("2026-06-20", "2026-06-20")
       )
-    ).toEqual({ kind: "reassign" });
+    ).toEqual({ kind: "communicationHub", category: "rejected" });
+
+    expect(
+      resolveShiftCardPrimaryClick(
+        { id: "s1", shift_date: "2026-06-20", confirmationStatus: "canceled" },
+        context("2026-06-20", "2026-06-20")
+      )
+    ).toEqual({ kind: "communicationHub", category: "canceled" });
   });
 
   it("blocks confirmed and past unconfirmed primary clicks", () => {

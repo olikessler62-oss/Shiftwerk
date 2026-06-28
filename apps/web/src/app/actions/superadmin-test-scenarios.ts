@@ -5,7 +5,10 @@ import { organizationTodayISO, resolveOrganizationTimeZone } from "@schichtwerk/
 import { revalidateAreaCalendarShiftCacheTags } from "@/lib/cached-areacalendar-shifts";
 import { getDatabase } from "@/lib/db";
 import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
-import { runBiergartenHadrianEckScenario } from "@/lib/superadmin-test-scenarios/biergarten-hadrian-eck";
+import {
+  runBiergartenHadrianEckCurrentWeekFullyCoveredScenario,
+  runBiergartenHadrianEckScenario,
+} from "@/lib/superadmin-test-scenarios/biergarten-hadrian-eck";
 
 export type SuperadminTestScenarioActionResult =
   | {
@@ -44,6 +47,37 @@ export async function seedSuperadminBiergartenHadrianScenario(): Promise<Superad
       timeZone,
       todayISO,
     });
+
+    revalidateAreaCalendarShiftCacheTags({
+      organizationId,
+      weekStarts: [result.weekStart],
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
+
+    return { ok: true, ...result };
+  } catch (error) {
+    return actionError("superadmin.errors.seedTestScenarioFailed", error);
+  }
+}
+
+export async function seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario(): Promise<SuperadminTestScenarioActionResult> {
+  try {
+    const { organizationId, userId, organization } =
+      await requireSuperadminDeveloper();
+    const db = await getDatabase();
+    const timeZone = resolveOrganizationTimeZone(organization);
+    const todayISO = organizationTodayISO(timeZone);
+
+    const result = await runBiergartenHadrianEckCurrentWeekFullyCoveredScenario(
+      db,
+      {
+        organizationId,
+        actorId: userId,
+        timeZone,
+        todayISO,
+      }
+    );
 
     revalidateAreaCalendarShiftCacheTags({
       organizationId,

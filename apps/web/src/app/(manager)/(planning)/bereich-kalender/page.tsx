@@ -196,15 +196,31 @@ export default async function BereichKalenderPage({
   const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
 
   const todayISO = organizationTodayISO(timeZone);
-  const communicationHubScope = await loadCommunicationHubScopeData({
-    db,
-    orgId,
-    organization,
-    locationId: selectedLocationId,
-    timeZone,
-    todayISO,
-    areaShiftTemplates,
-  });
+  const [communicationHubScope, organizationShiftRows] = await Promise.all([
+    loadCommunicationHubScopeData({
+      db,
+      orgId,
+      organization,
+      locationId: selectedLocationId,
+      timeZone,
+      todayISO,
+      areaShiftTemplates,
+    }),
+    db.listOrganizationShiftsInDateRange(orgId, from, to),
+  ]);
+
+  const organizationWeekShifts = organizationShiftRows.map((shiftRow) => ({
+    id: shiftRow.id,
+    employee_id: shiftRow.employee_id,
+    shift_date: shiftRow.shift_date,
+    shiftName: "",
+    color: "#64748b",
+    startTime: shiftTimeFromTimestamp(shiftRow.starts_at, timeZone),
+    endTime: shiftTimeFromTimestamp(shiftRow.ends_at, timeZone),
+    location_id: shiftRow.location_id,
+    location_area_id: shiftRow.location_area_id,
+    area_shift_template_id: shiftRow.area_shift_template_id,
+  }));
 
   return (
     <Suspense fallback={<div className="-m-6 p-6 text-sm text-muted">Laden…</div>}>
@@ -231,6 +247,7 @@ export default async function BereichKalenderPage({
         communicationSwapRequests={communicationHubScope.swapRequests}
         communicationCancelActors={communicationHubScope.cancelActors}
         communicationHubLocationShifts={communicationHubScope.locationShifts}
+        organizationWeekShifts={organizationWeekShifts}
         communicationHubAbsences={communicationHubScope.absences}
         managerNotifications={managerNotifications}
       />

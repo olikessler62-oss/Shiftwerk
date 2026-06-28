@@ -83,7 +83,15 @@ import {
   weeklyHoursByEmployeeIdFromEmployees,
   weeklyHoursCheckShiftFromPlanningShift,
   shiftAssignWeekShiftsFromPlanningShifts,
+  planningShiftsForCalendarWeek,
 } from "@/lib/weekly-hours-check-shifts";
+import {
+  buildAreaIdToLocationIdMap,
+  buildEmployeeWeeklyHoursDisplay,
+  buildEmployeeWeeklyHoursCardLabelsByEmployeeId,
+  buildEmployeeWeeklyHoursDisplayByEmployeeId,
+  buildLocationNameByIdMap,
+} from "@/lib/employee-weekly-hours-display";
 import {
   useEffectiveShiftConfirmationEnabled,
   useShiftConfirmationSimulation,
@@ -95,6 +103,7 @@ import { useClearMainNavPendingWhenReady } from "@/lib/app-shell-main-nav-pendin
 import { translateActionError } from "@/lib/translate-action-error";
 import { validateShiftAssignWeeklyHoursClient } from "@/lib/shift-weekly-hours-validation-client";
 import { DEFAULT_ORGANIZATION_TIME_ZONE } from "@/lib/dates";
+import { locationDayAssignmentsFromShiftRefsForDate } from "@/lib/shift-overlap";
 import {
   canOpenShiftCardContextMenu,
   isConfirmedShiftCard,
@@ -195,7 +204,6 @@ import type {
 } from "@schichtwerk/types";
 import { SettingsMessageModal } from "@/components/settings/settings-message-modal";
 import {
-  Alert,
   Button,
   IconButton,
 } from "@/components/ui";
@@ -209,6 +217,7 @@ type Props = {
   employees: Profile[];
   shifts: PlanningShift[];
   locationShifts: PlanningShift[];
+  organizationWeekShifts?: PlanningShift[];
   recurringAvailability: ProfileRecurringAvailability[];
   absences: AbsenceRequest[];
   communicationSwapRequests?: CommunicationSwapRequestRow[];
@@ -364,6 +373,7 @@ export function DashboardView({
   employees: employeesFromProps,
   shifts: shiftsFromProps,
   locationShifts: locationShiftsFromProps,
+  organizationWeekShifts: organizationWeekShiftsFromProps = [],
   recurringAvailability: recurringAvailabilityFromProps,
   absences: absencesFromProps,
   communicationSwapRequests: communicationSwapRequestsFromProps = [],
@@ -392,6 +402,8 @@ export function DashboardView({
   const employees = layer?.employees ?? employeesFromProps;
   const shifts = layer?.shifts ?? shiftsFromProps;
   const locationShifts = layer?.locationShifts ?? locationShiftsFromProps;
+  const organizationWeekShifts =
+    layer?.organizationWeekShifts ?? organizationWeekShiftsFromProps;
   const areas = layer?.areas ?? areasFromProps;
   const selectedAreaId = layer?.selectedAreaId ?? selectedAreaIdFromProps;
   const areaShiftTemplates = layer?.areaShiftTemplates ?? areaShiftTemplatesFromProps;
@@ -637,6 +649,91 @@ export function DashboardView({
       ),
     [visibleShifts, communicationCancelActorsMap]
   );
+
+  const weeklyHoursShifts = useMemo(
+    () => planningShiftsForCalendarWeek(organizationWeekShifts, dates),
+    [organizationWeekShifts, dates]
+  );
+
+  const locationNameById = useMemo(
+    () => buildLocationNameByIdMap(locationsFromProps),
+    [locationsFromProps]
+  );
+
+  const areaIdToLocationId = useMemo(
+    () => buildAreaIdToLocationIdMap(areas),
+    [areas]
+  );
+
+  const weeklyHoursTooltipDisplayByEmployeeId = useMemo(
+    () =>
+      buildEmployeeWeeklyHoursDisplayByEmployeeId({
+        employees,
+        shifts: weeklyHoursShifts.length ? weeklyHoursShifts : locationShifts,
+        weekDates: dates,
+        locationNameById,
+        areaIdToLocationId,
+        fallbackLocationId: selectedLocationId,
+      }),
+    [
+      employees,
+      weeklyHoursShifts,
+      locationShifts,
+      dates,
+      locationNameById,
+      areaIdToLocationId,
+      selectedLocationId,
+    ]
+  );
+
+  const weeklyHoursCardLabelsByEmployeeId = useMemo(
+    () =>
+      buildEmployeeWeeklyHoursCardLabelsByEmployeeId({
+        employees,
+        shifts: weeklyHoursShifts.length ? weeklyHoursShifts : locationShifts,
+        weekDates: dates,
+        locale,
+        locationNameById,
+        areaIdToLocationId,
+        fallbackLocationId: selectedLocationId,
+      }),
+    [
+      employees,
+      weeklyHoursShifts,
+      locationShifts,
+      dates,
+      locale,
+      locationNameById,
+      areaIdToLocationId,
+      selectedLocationId,
+    ]
+  );
+
+  const weeklyHoursOverLimitByEmployeeId = useMemo(() => {
+    const map = new Map<string, boolean>();
+    const hoursShifts = weeklyHoursShifts.length ? weeklyHoursShifts : locationShifts;
+    for (const employee of employees) {
+      const display = buildEmployeeWeeklyHoursDisplay({
+        employeeId: employee.id,
+        shifts: hoursShifts,
+        weekDates: dates,
+        targetHours: employee.weekly_hours ?? 40,
+        locationNameById,
+        areaIdToLocationId,
+        fallbackLocationId: selectedLocationId,
+      });
+      map.set(employee.id, display.totalHours > display.targetHours);
+    }
+    return map;
+  }, [
+    employees,
+    weeklyHoursShifts,
+    locationShifts,
+    dates,
+    locationNameById,
+    areaIdToLocationId,
+    selectedLocationId,
+  ]);
 
   const staffingCalendarShifts = useMemo(
     () =>
@@ -902,8 +999,7 @@ export function DashboardView({
 
   const staffColumnWidthPx = useDashboardStaffColumnWidthPx({
     employees,
-    shifts: calendarPlanningShifts,
-    locale,
+    weeklyHoursCardLabelsByEmployeeId,
     staffColumnHeaderLabel: t("nav.employeeCalendar"),
     employeeHoursLabel: t("common.basic"),
   });
@@ -1161,6 +1257,14 @@ export function DashboardView({
   const weekShiftsForAssignment = useMemo(
     () => shiftAssignWeekShiftsFromPlanningShifts(visibleLocationShifts),
     [visibleLocationShifts]
+  );
+
+  const organizationWeekShiftsForAssignment = useMemo(
+    () =>
+      shiftAssignWeekShiftsFromPlanningShifts(
+        planningShiftsForCalendarWeek(organizationWeekShifts, dates)
+      ),
+    [organizationWeekShifts, dates]
   );
 
   const weeklyHoursByEmployeeId = useMemo(
@@ -2710,12 +2814,6 @@ export function DashboardView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {readOnlyWeek && (
-        <Alert variant="info" className="mx-4 mt-4 md:mx-6">
-          {t("dashboard.readOnlyWeek")}
-        </Alert>
-      )}
-
       <div className={PLANNING_PAGE_CALENDAR_SECTION_CLASS}>
         <div
           className={cn(
@@ -2729,6 +2827,9 @@ export function DashboardView({
             staffColumnHeaderLabel={t("nav.employeeCalendar")}
             dates={dates}
             employees={calendarEmployees}
+            weeklyHoursTooltipDisplayByEmployeeId={weeklyHoursTooltipDisplayByEmployeeId}
+            weeklyHoursCardLabelsByEmployeeId={weeklyHoursCardLabelsByEmployeeId}
+            weeklyHoursOverLimitByEmployeeId={weeklyHoursOverLimitByEmployeeId}
             shifts={calendarPlanningShifts}
             calendarDisplayShifts={calendarDisplayShifts}
             shiftsByCell={calendarShiftsByCell}
@@ -3022,6 +3123,7 @@ export function DashboardView({
             timesComplete={timesComplete}
             canAssign={canAssign}
             hasExistingShift={Boolean(picker.shiftId)}
+            editingShiftId={picker.shiftId ?? null}
             weekDates={dates}
             weekShifts={locationShifts.map((shift) => ({
               id: shift.id,
@@ -3030,6 +3132,9 @@ export function DashboardView({
               startTime: shift.startTime,
               endTime: shift.endTime,
             }))}
+            organizationWeekShifts={organizationWeekShiftsForAssignment}
+            timeZone={organization.timezone ?? DEFAULT_ORGANIZATION_TIME_ZONE}
+            weeklyHoursDisplayByEmployeeId={weeklyHoursTooltipDisplayByEmployeeId}
             presetEmployeeId={
               picker.shiftId ? undefined : picker.employeeId
             }
@@ -3117,7 +3222,7 @@ export function DashboardView({
                   }))
           }
           weekDates={dates}
-          weekShifts={weekShiftsForAssignment}
+          weekShifts={organizationWeekShiftsForAssignment}
           onClose={() => setAddShiftDialog(null)}
           onSaved={handleBulkShiftSaved}
         />
@@ -3161,16 +3266,12 @@ export function DashboardView({
               startTime: shift.startTime,
               endTime: shift.endTime,
             }))}
-          locationDayAssignments={visibleLocationShifts
-            .filter((shift) => shift.shift_date === bulkShiftDialog.date)
-            .map((shift) => ({
-              employeeId: shift.employee_id,
-              startTime: shift.startTime,
-              endTime: shift.endTime,
-              locationAreaId: shift.location_area_id,
-            }))}
+          locationDayAssignments={locationDayAssignmentsFromShiftRefsForDate(
+            organizationWeekShifts,
+            bulkShiftDialog.date
+          )}
           weekDates={dates}
-          weekShifts={weekShiftsForAssignment}
+          weekShifts={organizationWeekShiftsForAssignment}
           onClose={() => setBulkShiftDialog(null)}
           onSaved={handleBulkShiftSaved}
         />

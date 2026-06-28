@@ -313,16 +313,36 @@ async function validateShiftLaborCompliance(
   const overlappingIds = new Set(
     findOverlappingShifts(sameDay, starts_at, ends_at).map((shift) => shift.id)
   );
-  const otherSameDayCount = sameDay.filter(
+  const otherSameDayShifts = sameDay.filter(
     (shift) => !overlappingIds.has(shift.id)
-  ).length;
+  );
+  const otherWindows = otherSameDayShifts.map((shift) => ({
+    startTime: shiftTimeFromTimestamp(shift.starts_at, timeZone),
+    endTime: shiftTimeFromTimestamp(shift.ends_at, timeZone),
+  }));
+  const proposedWindow = { startTime, endTime };
+  const combinedWarnings = [...durationCheck.warnings];
+
+  if (otherWindows.length > 0) {
+    const dayCheck = validateEmployeeDayShiftAssignments({
+      countryCode,
+      shiftDate,
+      weekday,
+      windows: [...otherWindows, proposedWindow],
+    });
+    if (!dayCheck.ok) {
+      return { ok: false, error: dayCheck.error };
+    }
+    combinedWarnings.push(...dayCheck.warnings);
+  }
+
   const isSplitDutyDay =
-    otherSameDayCount > 0 || (options?.sameDayBatchPeerCount ?? 0) > 0;
+    otherSameDayShifts.length > 0 || (options?.sameDayBatchPeerCount ?? 0) > 0;
 
   if (isSplitDutyDay) {
     return {
       ok: true,
-      warnings: durationCheck.warnings.length ? durationCheck.warnings : undefined,
+      warnings: combinedWarnings.length ? combinedWarnings : undefined,
     };
   }
 
@@ -347,7 +367,7 @@ async function validateShiftLaborCompliance(
 
   return {
     ok: true,
-    warnings: durationCheck.warnings.length ? durationCheck.warnings : undefined,
+    warnings: combinedWarnings.length ? combinedWarnings : undefined,
   };
 }
 
@@ -989,24 +1009,37 @@ export async function assignShiftBatch(input: {
         startTime: row.startTime,
         endTime: row.endTime,
       }));
-      if (modalWindows.length < 2) continue;
+
+      const rowExcludeIds = new Set(excludeShiftIds);
+      for (const row of employeeRows) {
+        if (row.existingShiftId) {
+          rowExcludeIds.add(row.existingShiftId);
+        }
+      }
 
       const existingDayShifts = await db.listShiftsForEmployeeDate(
         employeeId,
         input.shiftDate
       );
       const externalWindows = existingDayShifts
-        .filter((shift) => shift.location_area_id !== input.locationAreaId)
+        .filter(
+          (shift) =>
+            !rowExcludeIds.has(shift.id) &&
+            shift.location_area_id !== input.locationAreaId
+        )
         .map((shift) => ({
           startTime: shiftTimeFromTimestamp(shift.starts_at, timeZone),
           endTime: shiftTimeFromTimestamp(shift.ends_at, timeZone),
         }));
 
+      const windows = [...modalWindows, ...externalWindows];
+      if (windows.length === 0) continue;
+
       const dayCheck = validateEmployeeDayShiftAssignments({
         countryCode,
         shiftDate: input.shiftDate,
         weekday,
-        windows: [...modalWindows, ...externalWindows],
+        windows,
       });
 
       if (!dayCheck.ok) {

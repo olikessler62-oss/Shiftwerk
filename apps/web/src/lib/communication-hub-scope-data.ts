@@ -28,7 +28,8 @@ function relation<T>(value: T | T[] | null | undefined): T | null {
 export function mapAreaCalendarShiftRowsToPlanningShifts(
   shiftRows: Awaited<ReturnType<SchichtwerkDatabase["listAreaCalendarShifts"]>>,
   timeZone: string,
-  areaShiftTemplates: readonly AreaShiftTemplateWithBreaks[] = []
+  areaShiftTemplates: readonly AreaShiftTemplateWithBreaks[] = [],
+  locationId?: string | null
 ): PlanningShift[] {
   const shifts: PlanningShift[] = [];
 
@@ -60,6 +61,7 @@ export function mapAreaCalendarShiftRowsToPlanningShifts(
       color: template?.color ?? areaTemplate?.color ?? "#64748b",
       startTime: startFromTs,
       endTime: endFromTs,
+      location_id: locationId ?? null,
       location_area_id: row.location_area_id,
       area_shift_template_id:
         row.area_shift_template_id ?? areaTemplate?.id ?? null,
@@ -128,7 +130,8 @@ export async function loadCommunicationHubScopeData(input: {
   const locationShifts = mapAreaCalendarShiftRowsToPlanningShifts(
     shiftRows,
     timeZone,
-    areaShiftTemplates
+    areaShiftTemplates,
+    locationId
   );
 
   const canceledShiftIds = locationShifts

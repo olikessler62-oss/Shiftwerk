@@ -232,7 +232,7 @@ function AppShellLayout({
         <AppShellBrandBackdrop />
         <div
           className={cn(
-            "relative z-10 flex min-h-0 flex-1 flex-col md:flex-row md:min-h-0"
+            "relative z-10 flex min-h-0 min-w-0 flex-1 flex-col md:flex-row md:min-h-0"
           )}
         >
         <div

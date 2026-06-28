@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Button, CloseIcon } from "@/components/ui";
 import {
@@ -18,8 +18,9 @@ import {
 } from "@/lib/dashboard-panel-styles";
 import { DASHBOARD_UI_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
 import {
-  formatDashboardStaffingIssueDescription,
   dashboardStaffingIssueKindDotClass,
+  formatDashboardStaffingIssueTooltipBlock,
+  partitionDashboardStaffingIssues,
   type DashboardStaffingIssue,
 } from "@/lib/dashboard-area-week-stats";
 import { useAppShellModalLockActive } from "@/lib/app-shell-modal-lock";
@@ -30,12 +31,62 @@ type Props = {
   onClose: () => void;
 };
 
+function IssueSection({
+  heading,
+  issues,
+  t,
+}: {
+  heading: string;
+  issues: readonly DashboardStaffingIssue[];
+  t: ReturnType<typeof useTranslations>;
+}) {
+  if (issues.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <h3 className="text-sm font-semibold text-foreground">{heading}</h3>
+      <ul className="space-y-2">
+        {issues.map((issue) => {
+          const block = formatDashboardStaffingIssueTooltipBlock(issue, (key, params) =>
+            t(key, params)
+          );
+          return (
+            <li
+              key={issue.id}
+              className={cn(
+                "flex items-start gap-2.5 border border-border/70 bg-background/40 px-3 py-2.5",
+                DASHBOARD_PANEL_ROUNDED_CLASS
+              )}
+            >
+              <span
+                className={cn(
+                  "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                  dashboardStaffingIssueKindDotClass(issue.kind)
+                )}
+                aria-hidden
+              />
+              <div className="min-w-0 text-sm leading-snug text-foreground">
+                <p className="font-medium">{block.titleLine}</p>
+                <p className="text-muted">{block.descriptionLine}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 export function DashboardAreaStaffingIssuesModal({
   areaName,
   issues,
   onClose,
 }: Props) {
   const t = useTranslations();
+  const { conflicts, hints } = useMemo(
+    () => partitionDashboardStaffingIssues(issues),
+    [issues]
+  );
 
   useAppShellModalLockActive(true);
 
@@ -80,30 +131,18 @@ export function DashboardAreaStaffingIssuesModal({
             settingsModalBodyPaddingClass()
           )}
         >
-          <ul className="space-y-2">
-            {issues.map((issue) => (
-              <li
-                key={issue.id}
-                className={cn(
-                  "flex items-start gap-2.5 border border-border/70 bg-background/40 px-3 py-2.5",
-                  DASHBOARD_PANEL_ROUNDED_CLASS
-                )}
-              >
-                <span
-                  className={cn(
-                    "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-                    dashboardStaffingIssueKindDotClass(issue.kind)
-                  )}
-                  aria-hidden
-                />
-                <p className="min-w-0 text-sm leading-snug text-foreground">
-                  {formatDashboardStaffingIssueDescription(issue, (key, params) =>
-                    t(key, params)
-                  )}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-4">
+            <IssueSection
+              heading={t("areaCalendar.staffingTooltipConflictsHeading")}
+              issues={conflicts}
+              t={t}
+            />
+            <IssueSection
+              heading={t("areaCalendar.staffingTooltipHintsHeading")}
+              issues={hints}
+              t={t}
+            />
+          </div>
         </div>
 
         <div className={settingsModalFooterClass()}>

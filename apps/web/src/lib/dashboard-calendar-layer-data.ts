@@ -38,6 +38,7 @@ export type DashboardCalendarLayerData = {
   employees: Profile[];
   shifts: PlanningShift[];
   locationShifts: PlanningShift[];
+  organizationWeekShifts: PlanningShift[];
   areas: LocationArea[];
   selectedAreaId: string | null;
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
@@ -159,6 +160,7 @@ export async function loadDashboardCalendarLayerData(input: {
       color: template?.color ?? areaTemplate?.color ?? "#64748b",
       startTime: startFromTs,
       endTime: endFromTs,
+      location_id: selectedLocationId,
       location_area_id: s.location_area_id,
       area_shift_template_id:
         s.area_shift_template_id ?? areaTemplate?.id ?? null,
@@ -197,15 +199,33 @@ export async function loadDashboardCalendarLayerData(input: {
   }
 
   const todayISO = organizationTodayISO(timeZone);
-  const communicationHubScope = await loadCommunicationHubScopeData({
-    db,
-    orgId,
-    organization,
-    locationId: selectedLocationId,
-    timeZone,
-    todayISO,
-    areaShiftTemplates,
-  });
+  const [communicationHubScope, organizationShiftRows] = await Promise.all([
+    loadCommunicationHubScopeData({
+      db,
+      orgId,
+      organization,
+      locationId: selectedLocationId,
+      timeZone,
+      todayISO,
+      areaShiftTemplates,
+    }),
+    db.listOrganizationShiftsInDateRange(orgId, from, to),
+  ]);
+
+  const organizationWeekShifts: PlanningShift[] = organizationShiftRows.map(
+    (shiftRow) => ({
+      id: shiftRow.id,
+      employee_id: shiftRow.employee_id,
+      shift_date: shiftRow.shift_date,
+      shiftName: "",
+      color: "#64748b",
+      startTime: shiftTimeFromTimestamp(shiftRow.starts_at, timeZone),
+      endTime: shiftTimeFromTimestamp(shiftRow.ends_at, timeZone),
+      location_id: shiftRow.location_id,
+      location_area_id: shiftRow.location_area_id,
+      area_shift_template_id: shiftRow.area_shift_template_id,
+    })
+  );
 
   const employees = await resolveDashboardEmployeesForShifts(
     planningEmployees,
@@ -218,6 +238,7 @@ export async function loadDashboardCalendarLayerData(input: {
     employees,
     shifts,
     locationShifts,
+    organizationWeekShifts,
     areas,
     selectedAreaId,
     areaShiftTemplates,

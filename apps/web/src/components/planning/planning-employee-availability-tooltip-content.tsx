@@ -5,6 +5,8 @@ import type { ProfileRecurringAvailability } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { buildPlanningEmployeeAvailabilityTooltipRows } from "@/lib/planning-employee-availability-tooltip";
+import type { EmployeeWeeklyHoursDisplay } from "@/lib/employee-weekly-hours-display";
+import { EmployeeWeeklyHoursLines } from "@/components/planning/employee-weekly-hours-lines";
 
 type Props = {
   slots: readonly ProfileRecurringAvailability[];
@@ -12,6 +14,8 @@ type Props = {
   locale: "de" | "en";
   emptyLabel: string;
   jobsLabel?: string;
+  weeklyHoursDisplay?: EmployeeWeeklyHoursDisplay | null;
+  weeklyHoursTotalLabel?: string;
   className?: string;
 };
 
@@ -21,6 +25,8 @@ export function PlanningEmployeeAvailabilityTooltipContent({
   locale,
   emptyLabel,
   jobsLabel,
+  weeklyHoursDisplay,
+  weeklyHoursTotalLabel,
   className,
 }: Props) {
   const t = useTranslations();
@@ -53,6 +59,19 @@ export function PlanningEmployeeAvailabilityTooltipContent({
           {t("profiles.panelQualificationsOfPrefix")}{" "}
           {jobsLabel.trim() || t("profiles.emptyQualifications")}
         </p>
+      ) : null}
+      {weeklyHoursDisplay && weeklyHoursDisplay.lines.length > 0 ? (
+        <>
+          <p className="mb-1.5 mt-3 text-xs font-semibold text-foreground">
+            {t("dashboard.staffingCandidatesTooltipWeeklyHours")}
+          </p>
+          <EmployeeWeeklyHoursLines
+            display={weeklyHoursDisplay}
+            locale={locale}
+            totalLabel={weeklyHoursTotalLabel ?? t("dashboard.weeklyHoursTotalLabel")}
+            className="text-xs text-foreground"
+          />
+        </>
       ) : null}
     </div>
   );

@@ -2,7 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { seedSuperadminBiergartenHadrianScenario } from "@/app/actions/superadmin-test-scenarios";
+import {
+  seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario,
+  seedSuperadminBiergartenHadrianScenario,
+} from "@/app/actions/superadmin-test-scenarios";
 import { Alert, Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -12,18 +15,68 @@ type Props = {
   disabled?: boolean;
 };
 
+type ScenarioRunner = () => Promise<void>;
+
+function ScenarioCard({
+  title,
+  disabled,
+  pending,
+  onRun,
+  runLabel,
+  pendingLabel,
+}: {
+  title: string;
+  disabled: boolean;
+  pending: boolean;
+  onRun: ScenarioRunner;
+  runLabel: string;
+  pendingLabel: string;
+}) {
+  return (
+    <li
+      className={cn(
+        "border border-border/70 bg-background/40 px-4 py-2.5",
+        DASHBOARD_PANEL_ROUNDED_CLASS
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 text-sm font-semibold text-foreground">{title}</p>
+        <Button
+          type="button"
+          variant="outline"
+          className="shrink-0"
+          disabled={disabled || pending}
+          onClick={onRun}
+        >
+          {pending ? pendingLabel : runLabel}
+        </Button>
+      </div>
+    </li>
+  );
+}
+
 export function SuperadminTestScenariosSection({ disabled = false }: Props) {
   const t = useTranslations();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pendingScenario, setPendingScenario] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
-  function runBiergartenHadrianScenario() {
+  function runScenario(
+    scenarioId: string,
+    action: () => Promise<
+      | { ok: true; weekStart: string; locationCount: number; areaCount: number; shiftCount: number; openSlots: number; coveredSlots: number }
+      | { ok: false; errorKey: string; error?: string }
+    >,
+    successKey: string
+  ) {
     setErrorMessage(null);
     setSuccessMessage(null);
+    setPendingScenario(scenarioId);
     startTransition(async () => {
-      const result = await seedSuperadminBiergartenHadrianScenario();
+      const result = await action();
+      setPendingScenario(null);
       if (!result.ok) {
         setErrorMessage(
           result.error
@@ -33,7 +86,7 @@ export function SuperadminTestScenariosSection({ disabled = false }: Props) {
         return;
       }
       setSuccessMessage(
-        t("nav.superadminTestScenarioBiergartenHadrianSuccess", {
+        t(successKey, {
           weekStart: result.weekStart,
           locationCount: result.locationCount,
           areaCount: result.areaCount,
@@ -46,6 +99,9 @@ export function SuperadminTestScenariosSection({ disabled = false }: Props) {
     });
   }
 
+  const runLabel = t("nav.superadminTestScenarioRun");
+  const pendingLabel = t("nav.superadminTestScenarioPending");
+
   return (
     <div className="space-y-4">
       <p className="text-sm leading-relaxed text-muted">
@@ -55,34 +111,35 @@ export function SuperadminTestScenariosSection({ disabled = false }: Props) {
       {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
       {successMessage ? <Alert variant="success">{successMessage}</Alert> : null}
 
-      <ul className="space-y-3">
-        <li
-          className={cn(
-            "border border-border/70 bg-background/40 px-4 py-3",
-            DASHBOARD_PANEL_ROUNDED_CLASS
-          )}
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <p className="text-sm font-semibold text-foreground">
-                {t("nav.superadminTestScenarioBiergartenHadrianTitle")}
-              </p>
-              <p className="text-sm leading-relaxed text-muted">
-                {t("nav.superadminTestScenarioBiergartenHadrianDescription")}
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={disabled || pending}
-              onClick={runBiergartenHadrianScenario}
-            >
-              {pending
-                ? t("nav.superadminTestScenarioPending")
-                : t("nav.superadminTestScenarioRun")}
-            </Button>
-          </div>
-        </li>
+      <ul className="space-y-2">
+        <ScenarioCard
+          title={t("nav.superadminTestScenarioBiergartenHadrianTitle")}
+          disabled={disabled}
+          pending={pendingScenario === "biergarten-hadrian"}
+          onRun={() =>
+            runScenario(
+              "biergarten-hadrian",
+              seedSuperadminBiergartenHadrianScenario,
+              "nav.superadminTestScenarioBiergartenHadrianSuccess"
+            )
+          }
+          runLabel={runLabel}
+          pendingLabel={pendingLabel}
+        />
+        <ScenarioCard
+          title={t("nav.superadminTestScenarioBiergartenHadrianCurrentWeekTitle")}
+          disabled={disabled}
+          pending={pendingScenario === "biergarten-hadrian-current-week"}
+          onRun={() =>
+            runScenario(
+              "biergarten-hadrian-current-week",
+              seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario,
+              "nav.superadminTestScenarioBiergartenHadrianCurrentWeekSuccess"
+            )
+          }
+          runLabel={runLabel}
+          pendingLabel={pendingLabel}
+        />
       </ul>
     </div>
   );

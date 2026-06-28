@@ -19,15 +19,10 @@ describe("resolvePlanningStaffColumnWidthPx", () => {
           weekly_hours: 38,
         },
       ],
-      shifts: [
-        {
-          employee_id: "emp-2",
-          shift_date: "2026-06-09",
-          startTime: "08:00",
-          endTime: "16:00",
-        },
-      ],
-      locale: "de",
+      weeklyHoursCardLabelsByEmployeeId: new Map([
+        ["emp-1", "0/40 Std"],
+        ["emp-2", "8/38 Std"],
+      ]),
       staffColumnHeaderLabel: "Personal",
       employeeHoursLabel: "Mitarbeiter",
     });
@@ -40,8 +35,7 @@ describe("resolvePlanningStaffColumnWidthPx", () => {
     expect(
       resolvePlanningStaffColumnWidthPx({
         employees: [],
-        shifts: [],
-        locale: "de",
+        weeklyHoursCardLabelsByEmployeeId: new Map(),
         staffColumnHeaderLabel: "Personal",
         employeeHoursLabel: "Mitarbeiter",
       })
@@ -57,8 +51,7 @@ describe("resolvePlanningStaffColumnWidthPx", () => {
           weekly_hours: 40,
         },
       ],
-      shifts: [],
-      locale: "de",
+      weeklyHoursCardLabelsByEmployeeId: new Map([["emp-1", "0/40 Std"]]),
       staffColumnHeaderLabel: "Personal",
       employeeHoursLabel: "Mitarbeiter",
     };

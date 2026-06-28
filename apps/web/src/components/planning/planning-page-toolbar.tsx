@@ -2,13 +2,13 @@
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
-  Fragment,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
+  type ReactNode,
 } from "react";
 import type { Location } from "@schichtwerk/types";
 import { LanguageSelect } from "@/components/i18n/language-select";
@@ -31,7 +31,11 @@ import { APP_PAGE_TOOLBAR_HEADER_CLASS } from "@/lib/app-shell-layout";
 import {
   headerToolbarBellTriggerClass,
   headerToolbarCommunicationButtonClass,
+  headerToolbarCommunicationButtonCompactClass,
   headerToolbarCountBadgeClass,
+  headerToolbarBellTriggerCompactClass,
+  headerToolbarSegmentClass,
+  headerToolbarSegmentDividerClass,
   headerToolbarWeekNavChevronButtonClass,
   headerToolbarWeekNavTodayTextButtonClass,
 } from "@/lib/header-toolbar-styles";
@@ -40,9 +44,7 @@ import { useMainNavPendingTarget } from "@/lib/app-shell-main-nav-pending";
 import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { isSettingsModalOpen } from "@/lib/settings-modal-navigation";
 import { usePlanningToolbarPageBridgeState } from "@/lib/planning-toolbar-page-bridge";
-import { useHeaderLanguageShadeGeometry } from "@/lib/use-header-language-shade-geometry";
-import { useHeaderLeadingShadeChainGeometry } from "@/lib/use-header-leading-shade-chain-geometry";
-import { useHeaderTrailingShadeChainGeometry } from "@/lib/use-header-trailing-shade-chain-geometry";
+import { usePlanningToolbarCompactLayout } from "@/lib/use-planning-toolbar-compact-layout";
 import { shouldShowLocationInPlanningUi } from "@/lib/planning-location-ui";
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -50,6 +52,69 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return Boolean(
     target.closest("select, input, textarea, [contenteditable='true']")
   );
+}
+
+function HeaderToolbarDivider() {
+  return <div className={headerToolbarSegmentDividerClass} aria-hidden />;
+}
+
+function HeaderToolbarSegment({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div className={cn(headerToolbarSegmentClass, className)}>{children}</div>;
+}
+
+/** Schicht-Stati-Label — auf schmalen Viewports am Bindestrich umbrechen. */
+function HeaderLabelHyphenBreak({
+  label,
+  compact,
+  className,
+  maxWidthClass = "max-w-[2.85rem]",
+}: {
+  label: string;
+  compact: boolean;
+  className?: string;
+  maxWidthClass?: string;
+}) {
+  if (!compact) {
+    return <span className={className}>{label}</span>;
+  }
+
+  const dashIndex = label.indexOf("-");
+  if (dashIndex === -1) {
+    return (
+      <span
+        className={cn(
+          "block text-center text-[11px] leading-tight",
+          maxWidthClass,
+          className
+        )}
+      >
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        "inline-flex flex-col items-center text-center text-[11px] leading-tight",
+        maxWidthClass,
+        className
+      )}
+    >
+      <span>{label.slice(0, dashIndex + 1)}</span>
+      <span>{label.slice(dashIndex + 1)}</span>
+    </span>
+  );
+}
+
+function ShiftStatiHeaderLabel({ label, compact }: { label: string; compact: boolean }) {
+  return <HeaderLabelHyphenBreak label={label} compact={compact} />;
 }
 
 type Props = {
@@ -68,6 +133,7 @@ export function PlanningPageToolbar({ locations }: Props) {
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const shellLocked = useIsAppShellLocked();
   const controlsDisabled = pending || shellLocked;
+  const compactToolbar = usePlanningToolbarCompactLayout();
   const [weekPickerOpen, setWeekPickerOpen] = useState(false);
   useAppShellModalLockActive(weekPickerOpen);
   const todayISO = useMemo(
@@ -75,16 +141,7 @@ export function PlanningPageToolbar({ locations }: Props) {
     [organization.timezone]
   );
   const headerRef = useRef<HTMLElement>(null);
-  const beforeLanguageRef = useRef<HTMLDivElement>(null);
-  const prevWeekMeasureRef = useRef<HTMLDivElement>(null);
-  const todayMeasureRef = useRef<HTMLDivElement>(null);
-  const nextWeekMeasureRef = useRef<HTMLDivElement>(null);
-  const dateMeasureRef = useRef<HTMLDivElement>(null);
-  const locationMeasureRef = useRef<HTMLDivElement>(null);
-  const areaMeasureRef = useRef<HTMLDivElement>(null);
-  const shiftStatiMeasureRef = useRef<HTMLDivElement>(null);
-  const bellMeasureRef = useRef<HTMLDivElement>(null);
-  const languageMeasureRef = useRef<HTMLDivElement>(null);
+  const scrollRowRef = useRef<HTMLDivElement>(null);
   const bridge = usePlanningToolbarPageBridgeState();
   const pendingTarget = useMainNavPendingTarget();
   const frozenToolbarPathnameRef = useRef(pathname);
@@ -189,6 +246,38 @@ export function PlanningPageToolbar({ locations }: Props) {
     hasLocationPlacement && shouldShowLocationInPlanningUi(locations.length);
   const hasEmployeeAreaPlacement =
     isEmployeeCalendar && features.areas && (bridge.areas?.length ?? 0) > 0;
+  const hasCommunication = Boolean(bridge.onOpenCommunication);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+
+    function resetHorizontalScrollIfFits() {
+      if (header.scrollWidth <= header.clientWidth + 1) {
+        header.scrollLeft = 0;
+      }
+    }
+
+    resetHorizontalScrollIfFits();
+    window.addEventListener("resize", resetHorizontalScrollIfFits);
+    const observer = new ResizeObserver(resetHorizontalScrollIfFits);
+    observer.observe(header);
+    return () => {
+      window.removeEventListener("resize", resetHorizontalScrollIfFits);
+      observer.disconnect();
+    };
+  }, [
+    compactToolbar,
+    showLocationSelect,
+    hasEmployeeAreaPlacement,
+    hasCommunication,
+    shiftConfirmationEnabled,
+    locale,
+    weekHeader.rangeLabel,
+    weekHeader.compactRangeLabel,
+    locations.length,
+    bridge.communicationItemCount,
+  ]);
 
   const prevWeekButton = (
     <button
@@ -198,7 +287,7 @@ export function PlanningPageToolbar({ locations }: Props) {
       aria-label={t("common.prevWeek")}
       className={headerToolbarWeekNavChevronButtonClass}
     >
-      <ChevronIcon direction="left" />
+      <ChevronIcon direction="left" compact={compactToolbar} />
     </button>
   );
 
@@ -221,7 +310,7 @@ export function PlanningPageToolbar({ locations }: Props) {
       aria-label={t("common.nextWeek")}
       className={headerToolbarWeekNavChevronButtonClass}
     >
-      <ChevronIcon direction="right" />
+      <ChevronIcon direction="right" compact={compactToolbar} />
     </button>
   );
 
@@ -235,11 +324,20 @@ export function PlanningPageToolbar({ locations }: Props) {
       aria-expanded={weekPickerOpen}
       title={weekLabelTitle}
       className={cn(
-        "header-toolbar-date-trigger min-w-0 shrink-0 cursor-pointer rounded-sm px-1 py-0.5 text-left text-sm leading-none text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))] disabled:cursor-not-allowed disabled:opacity-50"
+        "header-toolbar-date-trigger min-w-0 shrink-0 cursor-pointer rounded-sm px-1 py-0.5 text-left text-sm leading-none text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))] disabled:cursor-not-allowed disabled:opacity-50",
+        compactToolbar && "max-md:flex max-md:flex-col max-md:items-center max-md:justify-center max-md:px-0.5"
       )}
     >
-      <span className="font-semibold">{weekHeader.rangeLabel}</span>
-      <span className="ml-1.5 text-xs font-normal tabular-nums">
+      <span className="lg:hidden">
+        <HeaderLabelHyphenBreak
+          label={weekHeader.compactRangeLabel}
+          compact={compactToolbar}
+          className="font-semibold tabular-nums"
+          maxWidthClass="max-w-[3.1rem]"
+        />
+      </span>
+      <span className="hidden font-semibold lg:inline">{weekHeader.rangeLabel}</span>
+      <span className="ml-1.5 hidden text-xs font-normal tabular-nums lg:inline">
         {t("dashboard.headerCalendarWeek", {
           week: String(weekHeader.calendarWeek),
         })}
@@ -254,134 +352,28 @@ export function PlanningPageToolbar({ locations }: Props) {
     selectedAreaId: bridge.selectedAreaId ?? null,
     disabled: controlsDisabled,
     onAreaChange: (areaId: string) => bridge.onAreaChange?.(areaId),
-    locationMeasureRef,
-    areaMeasureRef,
     showLocationSelect,
   };
 
-  const locationSelectControl = showLocationSelect ? (
-    isEmployeeCalendar && features.areas ? (
-      <DashboardHeaderPlacement
-        {...employeePlacementProps}
-        presentation="locationOnly"
-      />
-    ) : (
-      <LocationSelect
-        locations={locations}
-        selectedLocationId={selectedLocationId}
-        variant="header"
-      />
-    )
-  ) : null;
-
-  const areaSelectControl =
-    hasEmployeeAreaPlacement ? (
-      <DashboardHeaderPlacement
-        {...employeePlacementProps}
-        presentation="areaOnly"
-      />
-    ) : null;
-
-  const leadingMeasureSlots = useMemo(
-    () => [
-      { key: "prevWeek", ref: prevWeekMeasureRef, enabled: true },
-      { key: "date", ref: dateMeasureRef, enabled: true },
-      { key: "nextWeek", ref: nextWeekMeasureRef, enabled: true },
-      { key: "today", ref: todayMeasureRef, enabled: true },
-      {
-        key: "location",
-        ref: locationMeasureRef,
-        enabled: showLocationSelect,
-      },
-      { key: "area", ref: areaMeasureRef, enabled: hasEmployeeAreaPlacement },
-    ],
-    [hasEmployeeAreaPlacement, showLocationSelect]
-  );
-
-  const placementTrailingLightAfterKey = useMemo((): "location" | "area" | null => {
-    if (isEmployeeCalendar && hasEmployeeAreaPlacement) return "area";
-    if (showLocationSelect) return "location";
-    return null;
-  }, [hasEmployeeAreaPlacement, isEmployeeCalendar, showLocationSelect]);
-
-  const leadingShadeChainGeometry = useHeaderLeadingShadeChainGeometry(
-    headerRef,
-    leadingMeasureSlots,
-    [
-      locale,
-      weekHeader.rangeLabel,
-      weekHeader.calendarWeek,
-      selectedLocationId,
-      bridge.selectedAreaId,
-      bridge.areas?.length,
-      locations.length,
-      controlsDisabled,
-      atEarliestWeek,
-      toolbarPathname,
-      features.areas,
-    ],
-    { placementTrailingLightAfterKey, leadingLightBeforeFirst: true, alwaysLightAfterKey: "today" }
-  );
-
-  const useLeadingShadeOverlays = Boolean(leadingShadeChainGeometry?.slots.length);
-
-  const renderLeadingOverlayControl = useCallback(
-    (key: string) => {
-      switch (key) {
-        case "prevWeek":
-          return prevWeekButton;
-        case "today":
-          return todayButton;
-        case "nextWeek":
-          return nextWeekButton;
-        case "date":
-          return dateLabel;
-        case "location":
-          return locationSelectControl;
-        case "area":
-          return areaSelectControl;
-        default:
-          return null;
-      }
-    },
-    [
-      atEarliestWeek,
-      bridge.areas,
-      bridge.onAreaChange,
-      bridge.selectedAreaId,
-      controlsDisabled,
-      dateLabel,
-      openWeekPicker,
-      weekPickerOpen,
-      features.areas,
-      hasEmployeeAreaPlacement,
-      hasLocationPlacement,
-      isEmployeeCalendar,
-      locationSelectControl,
-      areaSelectControl,
-      locations,
-      nextWeekButton,
-      prevWeekButton,
-      selectedLocationId,
-      todayButton,
-    ]
-  );
-
-  const hasCommunication = Boolean(bridge.onOpenCommunication);
+  const shiftStatiLabel = t("shiftConfirmation.communication.headerButton");
 
   const shiftStatiButton = hasCommunication ? (
     <button
       type="button"
       onClick={() => bridge.onOpenCommunication?.()}
       disabled={controlsDisabled || bridge.communicationDisabled}
-      className={headerToolbarCommunicationButtonClass}
+      className={cn(
+        headerToolbarCommunicationButtonClass,
+        compactToolbar && headerToolbarCommunicationButtonCompactClass
+      )}
     >
-      {t("shiftConfirmation.communication.headerButton")}
+      <ShiftStatiHeaderLabel label={shiftStatiLabel} compact={compactToolbar} />
       {shiftConfirmationEnabled && (bridge.communicationItemCount ?? 0) > 0 ? (
         <span
           className={cn(
             "flex h-4 min-w-4 items-center justify-center leading-none",
-            headerToolbarCountBadgeClass
+            headerToolbarCountBadgeClass,
+            compactToolbar && "max-md:absolute max-md:right-0 max-md:top-0 max-md:h-3.5 max-md:min-w-3.5 max-md:text-[9px]"
           )}
         >
           {(bridge.communicationItemCount ?? 0) > 99
@@ -399,63 +391,18 @@ export function PlanningPageToolbar({ locations }: Props) {
         initialNotifications={bridge.managerNotifications ?? []}
         onOpenCommunication={bridge.onOpenCommunication!}
         onNavigateToWeek={bridge.onNavigateToWeek}
-        triggerClassName={headerToolbarBellTriggerClass}
+        triggerClassName={cn(
+          headerToolbarBellTriggerClass,
+          compactToolbar && headerToolbarBellTriggerCompactClass
+        )}
       />
     ) : null;
 
-  const languageShadeGeometry = useHeaderLanguageShadeGeometry(
-    headerRef,
-    beforeLanguageRef,
-    languageMeasureRef,
-    [
-      bridge.onOpenCommunication,
-      shiftConfirmationEnabled,
-      locale,
-      bridge.communicationItemCount,
-    ]
-  );
-
-  const trailingShadeChainGeometry = useHeaderTrailingShadeChainGeometry(
-    headerRef,
-    languageShadeGeometry?.left ?? null,
-    shiftStatiMeasureRef,
-    bellMeasureRef,
-    {
-      hasBell: Boolean(bellControl),
-      hasStati: Boolean(shiftStatiButton),
-    },
-    [
-      bridge.onOpenCommunication,
-      shiftConfirmationEnabled,
-      locale,
-      bridge.communicationItemCount,
-      bridge.communicationDisabled,
-      controlsDisabled,
-      bridge.managerNotifications?.length,
-    ]
-  );
-
-  const useTrailingShadeOverlays = Boolean(
-    languageShadeGeometry && trailingShadeChainGeometry
-  );
-
-  const placementMeasureRow =
+  const placementControl =
     isEmployeeCalendar && features.areas ? (
-      <div
-        className={cn(useLeadingShadeOverlays && "pointer-events-none opacity-0")}
-        aria-hidden={useLeadingShadeOverlays ? true : undefined}
-      >
-        <DashboardHeaderPlacement {...employeePlacementProps} />
-      </div>
+      <DashboardHeaderPlacement {...employeePlacementProps} />
     ) : showLocationSelect ? (
-      <div
-        ref={locationMeasureRef}
-        className={cn(
-          "planning-toolbar-placement-slot flex h-8 shrink-0 items-center",
-          useLeadingShadeOverlays && "pointer-events-none opacity-0"
-        )}
-        aria-hidden={useLeadingShadeOverlays ? true : undefined}
-      >
+      <div className="planning-toolbar-placement-slot flex h-8 shrink-0 items-center">
         <LocationSelect
           locations={locations}
           selectedLocationId={selectedLocationId}
@@ -466,247 +413,87 @@ export function PlanningPageToolbar({ locations }: Props) {
 
   return (
     <>
-    <header
-      ref={headerRef}
-      className={cn(
-        APP_PAGE_TOOLBAR_HEADER_CLASS,
-        shellLocked && "pointer-events-none opacity-50"
-      )}
-      aria-hidden={shellLocked || undefined}
-      {...(shellLocked ? { inert: true } : {})}
-    >
-      <div
+      <header
+        ref={headerRef}
         className={cn(
-          "planning-toolbar-primary-row relative z-[1] flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden md:gap-3",
-          "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          APP_PAGE_TOOLBAR_HEADER_CLASS,
+          "min-w-0 w-full",
+          shellLocked && "pointer-events-none opacity-50"
         )}
+        aria-hidden={shellLocked || undefined}
+        {...(shellLocked ? { inert: true } : {})}
       >
-        <div
-          ref={prevWeekMeasureRef}
-          className={cn(useLeadingShadeOverlays && "pointer-events-none opacity-0")}
-          aria-hidden={useLeadingShadeOverlays ? true : undefined}
-        >
-          {prevWeekButton}
-        </div>
-        <div
-          ref={dateMeasureRef}
-          className={cn(useLeadingShadeOverlays && "pointer-events-none opacity-0")}
-          aria-hidden={useLeadingShadeOverlays ? true : undefined}
-        >
-          {dateLabel}
-        </div>
-        <div
-          ref={nextWeekMeasureRef}
-          className={cn(useLeadingShadeOverlays && "pointer-events-none opacity-0")}
-          aria-hidden={useLeadingShadeOverlays ? true : undefined}
-        >
-          {nextWeekButton}
-        </div>
-        <div
-          ref={todayMeasureRef}
-          className={cn(useLeadingShadeOverlays && "pointer-events-none opacity-0")}
-          aria-hidden={useLeadingShadeOverlays ? true : undefined}
-        >
-          {todayButton}
-        </div>
-        {placementMeasureRow}
-      </div>
-
-      {leadingShadeChainGeometry ? (
-        <>
-          {leadingShadeChainGeometry.leadingLight ? (
-            <div
-              aria-hidden
-              className="planning-toolbar-leading-light-overlay pointer-events-none absolute inset-y-0 w-[2px]"
-              style={{ left: leadingShadeChainGeometry.leadingLight.left }}
-            />
-          ) : null}
-          {leadingShadeChainGeometry.slots.map((slot) => (
-            <Fragment key={slot.key}>
-              <div
-                className="planning-toolbar-shade-zone absolute inset-y-0"
-                style={{
-                  left: slot.shade.left,
-                  width: slot.shade.width,
-                }}
-              >
-                <div
-                  aria-hidden
-                  className="planning-toolbar-leading-shade pointer-events-none absolute inset-0"
-                />
-                <div className="relative z-[1] flex h-full items-center justify-center">
-                  {renderLeadingOverlayControl(slot.key)}
-                </div>
-              </div>
-              {slot.lightAfter ? (
-                <div
-                  aria-hidden
-                  className="planning-toolbar-leading-light-overlay pointer-events-none absolute inset-y-0 w-[2px]"
-                  style={{ left: slot.lightAfter.left }}
-                />
-              ) : null}
-            </Fragment>
-          ))}
-          {leadingShadeChainGeometry.alwaysLightAfter ? (
-            <div
-              aria-hidden
-              className="planning-toolbar-leading-light-overlay pointer-events-none absolute inset-y-0 w-[2px]"
-              style={{ left: leadingShadeChainGeometry.alwaysLightAfter.left }}
-            />
-          ) : null}
-          {leadingShadeChainGeometry.placementTrailingLight ? (
-            <div
-              aria-hidden
-              className="planning-toolbar-leading-light-overlay pointer-events-none absolute inset-y-0 w-[2px]"
-              style={{
-                left: leadingShadeChainGeometry.placementTrailingLight.left,
-              }}
-            />
-          ) : null}
-        </>
-      ) : null}
-
-      {trailingShadeChainGeometry ? (
-        <>
-          {trailingShadeChainGeometry.lightAfterLastShade ? (
-            <div
-              aria-hidden
-              className="planning-toolbar-language-light-overlay pointer-events-none absolute inset-y-0 w-[2px]"
-              style={{
-                left: trailingShadeChainGeometry.lightAfterLastShade.left,
-              }}
-            />
-          ) : null}
-          {trailingShadeChainGeometry.statiShade ? (
-            <div
-              className="planning-toolbar-shade-zone absolute inset-y-0"
-              style={{
-                left: trailingShadeChainGeometry.statiShade.left,
-                width: trailingShadeChainGeometry.statiShade.width,
-              }}
-            >
-              <div
-                aria-hidden
-                className="planning-toolbar-language-shade pointer-events-none absolute inset-0"
-              />
-              <div className="relative z-[1] flex h-full items-center justify-center">
-                {shiftStatiButton}
-              </div>
-            </div>
-          ) : null}
-          {trailingShadeChainGeometry.lightBeforeBell ? (
-            <div
-              aria-hidden
-              className="planning-toolbar-language-light-overlay pointer-events-none absolute inset-y-0 w-[2px]"
-              style={{
-                left: trailingShadeChainGeometry.lightBeforeBell.left,
-              }}
-            />
-          ) : null}
-          {trailingShadeChainGeometry.bellShade ? (
-            <div
-              className="planning-toolbar-shade-zone absolute inset-y-0"
-              style={{
-                left: trailingShadeChainGeometry.bellShade.left,
-                width: trailingShadeChainGeometry.bellShade.width,
-              }}
-            >
-              <div
-                aria-hidden
-                className="planning-toolbar-language-shade pointer-events-none absolute inset-0"
-              />
-              <div className="relative z-[1] flex h-full items-center justify-center">
-                {bellControl}
-              </div>
-            </div>
-          ) : null}
-        </>
-      ) : null}
-
-      {languageShadeGeometry ? (
-        <>
-          <div
-            aria-hidden
-            className="planning-toolbar-language-light-overlay pointer-events-none absolute inset-y-0 w-[2px]"
-            style={{ left: languageShadeGeometry.left - 2 }}
-          />
-          <div
-            className="planning-toolbar-shade-zone absolute inset-y-0 -right-4 md:-right-6"
-            style={{ left: languageShadeGeometry.left }}
-          >
-            <div
-              aria-hidden
-              className="planning-toolbar-language-shade pointer-events-none absolute inset-0"
-            />
-            <div className="relative z-[1] flex h-full items-center justify-center">
-              <LanguageSelect variant="header" className="shrink-0" />
-            </div>
-          </div>
-        </>
-      ) : null}
-
-      <div className="relative z-[1] flex shrink-0 items-center gap-2">
-        <div
-          ref={beforeLanguageRef}
-          className="flex shrink-0 items-center gap-2"
-        >
-          {hasCommunication ? (
+        <div ref={scrollRowRef} className="planning-toolbar-scroll-row">
+          <HeaderToolbarDivider />
+          <HeaderToolbarSegment className="pl-3 md:pl-6">{prevWeekButton}</HeaderToolbarSegment>
+          <HeaderToolbarDivider />
+          <HeaderToolbarSegment>{dateLabel}</HeaderToolbarSegment>
+          <HeaderToolbarDivider />
+          <HeaderToolbarSegment>{nextWeekButton}</HeaderToolbarSegment>
+          {!compactToolbar ? (
             <>
-              {shiftStatiButton ? (
-                <div
-                  ref={shiftStatiMeasureRef}
-                  className={cn(
-                    useTrailingShadeOverlays && "pointer-events-none opacity-0"
-                  )}
-                  aria-hidden={useTrailingShadeOverlays ? true : undefined}
-                >
-                  {shiftStatiButton}
-                </div>
-              ) : null}
-              {bellControl ? (
-                <div
-                  ref={bellMeasureRef}
-                  className={cn(
-                    "shrink-0",
-                    useTrailingShadeOverlays && "pointer-events-none opacity-0"
-                  )}
-                  aria-hidden={useTrailingShadeOverlays ? true : undefined}
-                >
-                  {bellControl}
-                </div>
-              ) : null}
+              <HeaderToolbarDivider />
+              <HeaderToolbarSegment>{todayButton}</HeaderToolbarSegment>
             </>
           ) : null}
+          {placementControl ? (
+            <>
+              <HeaderToolbarDivider />
+              <HeaderToolbarSegment className="min-w-max">{placementControl}</HeaderToolbarSegment>
+              <HeaderToolbarDivider />
+            </>
+          ) : null}
+
+          <div className="planning-toolbar-row-spacer hidden md:block" aria-hidden />
+
+          {shiftStatiButton ? (
+            <>
+              <HeaderToolbarDivider />
+              <HeaderToolbarSegment className="relative min-w-max">
+                {shiftStatiButton}
+              </HeaderToolbarSegment>
+              <HeaderToolbarDivider />
+            </>
+          ) : !placementControl ? (
+            <HeaderToolbarDivider />
+          ) : null}
+          {bellControl ? (
+            <>
+              <HeaderToolbarSegment className="min-w-max px-1.5 md:px-2">
+                {bellControl}
+              </HeaderToolbarSegment>
+              <HeaderToolbarDivider />
+            </>
+          ) : null}
+          <HeaderToolbarSegment
+            className={cn(
+              "min-w-max pr-3 md:pr-6",
+              compactToolbar ? "max-w-none" : "max-w-[7.5rem]"
+            )}
+          >
+            <LanguageSelect variant="header" compact={compactToolbar} className="shrink-0" />
+          </HeaderToolbarSegment>
         </div>
-        <div
-          ref={languageMeasureRef}
-          className={cn(
-            "pointer-events-none w-[7.5rem] max-w-[7.5rem] shrink-0",
-            languageShadeGeometry && "opacity-0"
-          )}
-          aria-hidden={languageShadeGeometry ? true : undefined}
-        >
-          <LanguageSelect variant="header" className="shrink-0" />
-        </div>
-      </div>
-    </header>
-    <PlanningWeekPickerPanel
-      open={weekPickerOpen}
-      onClose={closeWeekPicker}
-      selectedWeekStart={weekStart}
-      todayISO={todayISO}
-      onSelectWeek={selectWeekFromPicker}
-      disabled={pending}
-    />
-  </>
+      </header>
+      <PlanningWeekPickerPanel
+        open={weekPickerOpen}
+        onClose={closeWeekPicker}
+        selectedWeekStart={weekStart}
+        todayISO={todayISO}
+        onSelectWeek={selectWeekFromPicker}
+        disabled={pending}
+      />
+    </>
   );
 }
 
-function ChevronIcon({ direction }: { direction: "left" | "right" }) {
+function ChevronIcon({ direction, compact }: { direction: "left" | "right"; compact?: boolean }) {
+  const width = compact ? 6 : 8;
+  const height = compact ? 9 : 12;
   return (
     <svg
-      width="8"
-      height="12"
+      width={width}
+      height={height}
       viewBox="0 0 8 12"
       fill="currentColor"
       aria-hidden

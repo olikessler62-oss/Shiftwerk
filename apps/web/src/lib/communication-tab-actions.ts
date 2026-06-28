@@ -14,9 +14,9 @@ const CATEGORY_ACTIONS: Record<
   swaps: [],
   proposed: ["requestConfirmation", "delete"],
   requested: ["cancel"],
-  rejected: ["reassign", "delete"],
+  rejected: ["delete"],
   pending: ["cancel", "requestConfirmation"],
-  canceled: ["reassign", "delete"],
+  canceled: ["delete"],
 };
 
 export function communicationTabActions(

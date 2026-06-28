@@ -3953,6 +3953,25 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []) as EmployeeShiftRecord[];
   }
 
+  async listOrganizationShiftsInDateRange(
+    organizationId: string,
+    fromDate: string,
+    toDate: string
+  ) {
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at"
+      )
+      .eq("organization_id", organizationId)
+      .gte("shift_date", fromDate)
+      .lte("shift_date", toDate)
+      .order("shift_date")
+      .order("starts_at");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as EmployeeShiftRecord[];
+  }
+
   async listShiftsForEmployeeRestCheck(
     employeeId: string,
     startsAt: string,

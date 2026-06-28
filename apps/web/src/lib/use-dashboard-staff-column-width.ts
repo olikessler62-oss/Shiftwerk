@@ -15,8 +15,7 @@ export function useDashboardStaffColumnWidthPx(
     () => estimatePlanningStaffColumnWidthPx(input),
     [
       input.employees,
-      input.shifts,
-      input.locale,
+      input.weeklyHoursCardLabelsByEmployeeId,
       input.staffColumnHeaderLabel,
       input.employeeHoursLabel,
     ]
@@ -28,8 +27,7 @@ export function useDashboardStaffColumnWidthPx(
   }, [
     estimatedWidthPx,
     input.employees,
-    input.shifts,
-    input.locale,
+    input.weeklyHoursCardLabelsByEmployeeId,
     input.staffColumnHeaderLabel,
     input.employeeHoursLabel,
   ]);

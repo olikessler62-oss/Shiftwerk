@@ -182,17 +182,6 @@ function coverageTarget(requiredCount: number, seed: number): number {
   return requiredCount;
 }
 
-function shuffle<T>(items: readonly T[], seed: number): T[] {
-  const copy = [...items];
-  let state = seed || 1;
-  for (let index = copy.length - 1; index > 0; index--) {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    const swapIndex = state % (index + 1);
-    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
-  }
-  return copy;
-}
-
 function profileHasQualification(
   qualIdsByProfile: Map<string, string[]>,
   profileId: string,
@@ -444,22 +433,65 @@ async function configureAreaStaffing(
   await db.replaceLocationAreaStaffing(areaId, locationId, staffingRules);
 }
 
-async function deleteLocationShiftsInWeek(
+async function deleteOrganizationShiftsInDateRange(
+  db: SchichtwerkDatabase,
+  organizationId: string,
+  fromDate: string,
+  toDate: string,
+  deletedBy: string
+) {
+  const shifts = await db.listOrganizationShiftsForSuperadmin(organizationId);
+  for (const shift of shifts) {
+    if (shift.shift_date < fromDate || shift.shift_date > toDate) continue;
+    await db.deleteShift(shift.id, organizationId, deletedBy);
+  }
+}
+
+function existingShiftsOutsideDateRange(
+  shifts: Awaited<ReturnType<SchichtwerkDatabase["listOrganizationShiftsForSuperadmin"]>>,
+  fromDate: string,
+  toDate: string
+): ExistingShiftRef[] {
+  return shifts
+    .filter((shift) => shift.shift_date < fromDate || shift.shift_date > toDate)
+    .map((shift) => ({
+      id: shift.id,
+      employee_id: shift.employee_id,
+      location_id: shift.location_id ?? "",
+      shift_date: shift.shift_date,
+      starts_at: shift.starts_at,
+      ends_at: shift.ends_at,
+    }));
+}
+
+async function deleteAllLocationShifts(
   db: SchichtwerkDatabase,
   organizationId: string,
   locationIds: readonly string[],
-  weekStart: string,
   deletedBy: string
 ) {
-  const weekEnd = addDaysISO(weekStart, 6);
   const shifts = await db.listOrganizationShiftsForSuperadmin(organizationId);
   const locationIdSet = new Set(locationIds);
 
   for (const shift of shifts) {
     if (!shift.location_id || !locationIdSet.has(shift.location_id)) continue;
-    if (shift.shift_date < weekStart || shift.shift_date > weekEnd) continue;
     await db.deleteShift(shift.id, organizationId, deletedBy);
   }
+}
+
+function orderEmployeesByWeeklyHoursForAssign(
+  employees: readonly Profile[],
+  weekStart: string,
+  existingShifts: readonly ExistingShiftRef[],
+  plannedShifts: readonly PlannedShift[]
+): Profile[] {
+  return [...employees].sort((a, b) => {
+    const hoursDiff =
+      employeeWeekHours(a.id, weekStart, existingShifts, plannedShifts) -
+      employeeWeekHours(b.id, weekStart, existingShifts, plannedShifts);
+    if (hoursDiff !== 0) return hoursDiff;
+    return a.full_name.localeCompare(b.full_name, "de");
+  });
 }
 
 function planRandomShifts(input: {
@@ -502,7 +534,7 @@ function planRandomShifts(input: {
             openSlots += Math.max(0, qualRule.count - targetCount);
             coveredSlots += targetCount;
 
-            const candidates = shuffle(
+            const candidates = orderEmployeesByWeeklyHoursForAssign(
               input.employees.filter((employee) =>
                 profileHasQualification(
                   input.qualIdsByProfile,
@@ -510,7 +542,9 @@ function planRandomShifts(input: {
                   qualificationId
                 )
               ),
-              seed
+              input.weekStart,
+              input.existingShifts,
+              planned
             );
 
             let assigned = 0;
@@ -555,16 +589,141 @@ function planRandomShifts(input: {
   return { planned, openSlots, coveredSlots };
 }
 
-export async function runBiergartenHadrianEckScenario(
-  db: SchichtwerkDatabase,
-  input: {
-    organizationId: string;
-    actorId: string;
-    timeZone: string;
-    todayISO: string;
+function planFullyCoveredShifts(input: {
+  locations: readonly { id: string; areas: readonly { id: string; name: string }[] }[];
+  openDates: readonly string[];
+  weekStart: string;
+  timeZone: string;
+  employees: readonly Profile[];
+  qualIdsByProfile: Map<string, string[]>;
+  qualificationIdsByName: Map<string, string>;
+  existingShifts: readonly ExistingShiftRef[];
+  barQualName: string;
+}): { planned: PlannedShift[]; openSlots: number; coveredSlots: number } {
+  const planned: PlannedShift[] = [];
+  let openSlots = 0;
+  let coveredSlots = 0;
+
+  for (const location of input.locations) {
+    for (const area of location.areas) {
+      const ruleFactory = STAFFING_BY_AREA_KEY[areaKey(area.name)];
+      const staffingRules = ruleFactory ? ruleFactory(input.barQualName) : [];
+
+      for (const date of input.openDates) {
+        for (const rule of staffingRules) {
+          for (const qualRule of rule.qualifications) {
+            const qualificationId = input.qualificationIdsByName.get(
+              qualRule.qualName
+            );
+            if (!qualificationId) continue;
+
+            const seed = slotSeed([
+              location.id,
+              area.id,
+              date,
+              rule.start,
+              rule.end,
+              qualRule.qualName,
+            ]);
+            const targetCount = qualRule.count;
+
+            const candidates = orderEmployeesByWeeklyHoursForAssign(
+              input.employees.filter((employee) =>
+                profileHasQualification(
+                  input.qualIdsByProfile,
+                  employee.id,
+                  qualificationId
+                )
+              ),
+              input.weekStart,
+              input.existingShifts,
+              planned
+            );
+
+            let assigned = 0;
+            for (const employee of candidates) {
+              if (assigned >= targetCount) break;
+              if (
+                !canAssignEmployee({
+                  employee,
+                  qualificationId,
+                  shiftDate: date,
+                  startTime: rule.start,
+                  endTime: rule.end,
+                  weekStart: input.weekStart,
+                  timeZone: input.timeZone,
+                  qualIdsByProfile: input.qualIdsByProfile,
+                  existingShifts: input.existingShifts,
+                  plannedShifts: planned,
+                })
+              ) {
+                continue;
+              }
+
+              planned.push({
+                employeeId: employee.id,
+                locationId: location.id,
+                areaId: area.id,
+                shiftDate: date,
+                startTime: rule.start,
+                endTime: rule.end,
+              });
+              assigned += 1;
+            }
+
+            coveredSlots += assigned;
+            openSlots += Math.max(0, targetCount - assigned);
+          }
+        }
+      }
+    }
   }
-): Promise<BiergartenHadrianScenarioResult> {
-  const qualifications = await db.listQualifications(input.organizationId);
+
+  return { planned, openSlots, coveredSlots };
+}
+
+async function configureBiergartenHadrianLocations(
+  db: SchichtwerkDatabase,
+  organizationId: string,
+  qualificationIdsByName: Map<string, string>,
+  barQualName: string
+): Promise<{ id: string; areas: { id: string; name: string }[] }[]> {
+  const configuredLocations: {
+    id: string;
+    areas: { id: string; name: string }[];
+  }[] = [];
+
+  for (const locationName of BIERGARTEN_HADRIAN_SCENARIO_LOCATION_NAMES) {
+    const location = await ensureLocation(db, organizationId, locationName);
+    const areas = await ensureAreas(db, location.id);
+
+    for (const area of areas) {
+      await configureAreaServiceHours(db, location.id, area.id);
+      await configureAreaShiftTemplates(db, location.id, area.id);
+      await configureAreaStaffing(
+        db,
+        location.id,
+        area.id,
+        area.name,
+        qualificationIdsByName,
+        barQualName
+      );
+    }
+
+    configuredLocations.push({ id: location.id, areas });
+  }
+
+  return configuredLocations;
+}
+
+async function resolveBiergartenHadrianQualifications(
+  db: SchichtwerkDatabase,
+  organizationId: string
+): Promise<{
+  qualificationIdsByName: Map<string, string>;
+  barQualName: string;
+}> {
+  const qualifications = await db.listQualifications(organizationId);
   const qualificationIdsByName = new Map(
     qualifications.map((qualification) => [qualification.name, qualification.id])
   );
@@ -586,66 +745,74 @@ export async function runBiergartenHadrianEckScenario(
     );
   }
 
-  const configuredLocations: {
-    id: string;
-    areas: { id: string; name: string }[];
-  }[] = [];
+  return { qualificationIdsByName, barQualName };
+}
 
-  for (const locationName of BIERGARTEN_HADRIAN_SCENARIO_LOCATION_NAMES) {
-    const location = await ensureLocation(db, input.organizationId, locationName);
-    const areas = await ensureAreas(db, location.id);
-
-    for (const area of areas) {
-      await configureAreaServiceHours(db, location.id, area.id);
-      await configureAreaShiftTemplates(db, location.id, area.id);
-      await configureAreaStaffing(
-        db,
-        location.id,
-        area.id,
-        area.name,
-        qualificationIdsByName,
-        barQualName
-      );
-    }
-
-    configuredLocations.push({ id: location.id, areas });
+async function insertPlannedConfirmedShifts(
+  db: SchichtwerkDatabase,
+  organizationId: string,
+  actorId: string,
+  timeZone: string,
+  planned: readonly PlannedShift[]
+) {
+  for (const shift of planned) {
+    const timestamps = buildShiftTimestamps(
+      shift.shiftDate,
+      shift.startTime,
+      shift.endTime,
+      timeZone
+    );
+    await db.insertShift({
+      organization_id: organizationId,
+      employee_id: shift.employeeId,
+      location_id: shift.locationId,
+      location_area_id: shift.areaId,
+      shift_date: shift.shiftDate,
+      starts_at: timestamps.starts_at,
+      ends_at: timestamps.ends_at,
+      created_by: actorId,
+      confirmation_status: "confirmed",
+      confirmation_status_updated_at: new Date().toISOString(),
+    });
   }
+}
+
+export async function runBiergartenHadrianEckScenario(
+  db: SchichtwerkDatabase,
+  input: {
+    organizationId: string;
+    actorId: string;
+    timeZone: string;
+    todayISO: string;
+  }
+): Promise<BiergartenHadrianScenarioResult> {
+  const { qualificationIdsByName, barQualName } =
+    await resolveBiergartenHadrianQualifications(db, input.organizationId);
+
+  const configuredLocations = await configureBiergartenHadrianLocations(
+    db,
+    input.organizationId,
+    qualificationIdsByName,
+    barQualName
+  );
 
   const weekStart = isoWeekStartFromShiftDate(input.todayISO);
+  const weekEnd = addDaysISO(weekStart, 6);
   const openDates = openDatesInWeek(weekStart).filter(
     (date) => date >= input.todayISO
   );
   const seedDates =
     openDates.length >= 3 ? openDates : openDatesInWeek(weekStart);
 
-  const locationIds = configuredLocations.map((location) => location.id);
   const existingBeforeDelete = await db.listOrganizationShiftsForSuperadmin(
     input.organizationId
   );
-  const weekEnd = addDaysISO(weekStart, 6);
 
-  const existingOutsideScenario = existingBeforeDelete
-    .filter(
-      (shift) =>
-        !shift.location_id ||
-        !locationIds.includes(shift.location_id) ||
-        shift.shift_date < weekStart ||
-        shift.shift_date > weekEnd
-    )
-    .map((shift) => ({
-      id: shift.id,
-      employee_id: shift.employee_id,
-      location_id: shift.location_id ?? "",
-      shift_date: shift.shift_date,
-      starts_at: shift.starts_at,
-      ends_at: shift.ends_at,
-    }));
-
-  await deleteLocationShiftsInWeek(
+  await deleteOrganizationShiftsInDateRange(
     db,
     input.organizationId,
-    locationIds,
     weekStart,
+    weekEnd,
     input.actorId
   );
 
@@ -661,30 +828,106 @@ export async function runBiergartenHadrianEckScenario(
     employees,
     qualIdsByProfile,
     qualificationIdsByName,
-    existingShifts: existingOutsideScenario,
+    existingShifts: existingShiftsOutsideDateRange(
+      existingBeforeDelete,
+      weekStart,
+      weekEnd
+    ),
     barQualName,
   });
 
-  for (const shift of planned) {
-    const timestamps = buildShiftTimestamps(
-      shift.shiftDate,
-      shift.startTime,
-      shift.endTime,
-      input.timeZone
-    );
-    await db.insertShift({
-      organization_id: input.organizationId,
-      employee_id: shift.employeeId,
-      location_id: shift.locationId,
-      location_area_id: shift.areaId,
-      shift_date: shift.shiftDate,
-      starts_at: timestamps.starts_at,
-      ends_at: timestamps.ends_at,
-      created_by: input.actorId,
-      confirmation_status: "confirmed",
-      confirmation_status_updated_at: new Date().toISOString(),
-    });
+  await insertPlannedConfirmedShifts(
+    db,
+    input.organizationId,
+    input.actorId,
+    input.timeZone,
+    planned
+  );
+
+  return {
+    weekStart,
+    locationCount: configuredLocations.length,
+    areaCount: configuredLocations.reduce(
+      (sum, location) => sum + location.areas.length,
+      0
+    ),
+    shiftCount: planned.length,
+    openSlots,
+    coveredSlots,
+  };
+}
+
+/** Wie Biergarten/Hadrian-Eck, aber alle Schichten der Standorte löschen und nur die aktuelle KW voll besetzt (confirmed) anlegen. */
+export async function runBiergartenHadrianEckCurrentWeekFullyCoveredScenario(
+  db: SchichtwerkDatabase,
+  input: {
+    organizationId: string;
+    actorId: string;
+    timeZone: string;
+    todayISO: string;
   }
+): Promise<BiergartenHadrianScenarioResult> {
+  const { qualificationIdsByName, barQualName } =
+    await resolveBiergartenHadrianQualifications(db, input.organizationId);
+
+  const configuredLocations = await configureBiergartenHadrianLocations(
+    db,
+    input.organizationId,
+    qualificationIdsByName,
+    barQualName
+  );
+
+  const weekStart = isoWeekStartFromShiftDate(input.todayISO);
+  const weekEnd = addDaysISO(weekStart, 6);
+  const seedDates = openDatesInWeek(weekStart);
+  const locationIds = configuredLocations.map((location) => location.id);
+
+  const existingBeforeDelete = await db.listOrganizationShiftsForSuperadmin(
+    input.organizationId
+  );
+
+  await deleteAllLocationShifts(
+    db,
+    input.organizationId,
+    locationIds,
+    input.actorId
+  );
+
+  await deleteOrganizationShiftsInDateRange(
+    db,
+    input.organizationId,
+    weekStart,
+    weekEnd,
+    input.actorId
+  );
+
+  const employees = await db.listPlanningEmployees(input.organizationId);
+  const qualIdsByProfile =
+    await db.listProfileQualificationIdsByOrganization(input.organizationId);
+
+  const { planned, openSlots, coveredSlots } = planFullyCoveredShifts({
+    locations: configuredLocations,
+    openDates: seedDates,
+    weekStart,
+    timeZone: input.timeZone,
+    employees,
+    qualIdsByProfile,
+    qualificationIdsByName,
+    existingShifts: existingShiftsOutsideDateRange(
+      existingBeforeDelete,
+      weekStart,
+      weekEnd
+    ),
+    barQualName,
+  });
+
+  await insertPlannedConfirmedShifts(
+    db,
+    input.organizationId,
+    input.actorId,
+    input.timeZone,
+    planned
+  );
 
   return {
     weekStart,

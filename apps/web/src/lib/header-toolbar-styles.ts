@@ -19,10 +19,10 @@ export const headerToolbarSelectClass = cn(
   "header-toolbar-combobox-trigger w-full appearance-none truncate py-0 pl-3 pr-8 text-sm font-medium leading-8 text-foreground disabled:cursor-not-allowed disabled:opacity-50"
 );
 
-/** Standort/Bereich/Sprache — nur Text, eckig; Hover/Open: Blau-Türkis, ohne Rahmen. */
+/** Sprache/Standort/Bereich — nur Text, eckig; Hover/Open: Blau-Türkis, ohne Rahmen. */
 const headerToolbarTextSelectTriggerClass = cn(
   HEADER_TOOLBAR_CONTROL_H,
-  "header-toolbar-combobox-trigger w-full appearance-none truncate py-0 pl-3 pr-8 text-sm font-medium leading-8 text-white",
+  "header-toolbar-combobox-trigger w-full appearance-none truncate py-0 pl-3 pr-8 text-base font-medium leading-8 text-white",
   "rounded-none border-0 bg-transparent shadow-none transition-colors duration-150",
   "hover:border-0 hover:bg-transparent hover:text-[var(--header-toolbar-text-action-hover,#9ee8ff)] hover:shadow-none",
   "focus-visible:outline-none focus-visible:ring-0 focus-visible:border-0 focus-visible:bg-transparent focus-visible:text-[var(--header-toolbar-text-action-hover,#9ee8ff)]",
@@ -35,6 +35,7 @@ export const headerToolbarLanguageSelectTriggerClass = cn(
   "header-toolbar-language-trigger"
 );
 
+/** Standort + Bereich — weiß, Hover Blau-Türkis. */
 export const headerToolbarPlacementSelectTriggerClass = cn(
   headerToolbarTextSelectTriggerClass,
   "header-toolbar-placement-trigger"
@@ -115,12 +116,30 @@ export const headerToolbarWeekNavGroupClass =
 /** Wochen-Pfeile — Icon-Aktion ohne Fläche (wie Glocke). */
 export const headerToolbarWeekNavChevronButtonClass = cn(
   "header-toolbar-week-nav-chevron relative inline-flex h-8 w-8 shrink-0 cursor-pointer select-none items-center justify-center",
+  "max-md:h-6 max-md:w-6",
   "m-0 appearance-none border-0 bg-transparent p-0 text-white shadow-none outline-none ring-0",
   "transition-colors duration-150",
   "hover:bg-transparent hover:text-[var(--header-toolbar-text-action-hover,#9ee8ff)]",
   "focus-visible:bg-transparent focus-visible:text-[var(--header-toolbar-text-action-hover,#9ee8ff)] focus-visible:outline-none focus-visible:ring-0",
   "disabled:cursor-not-allowed disabled:opacity-50"
 );
+
+/** Schicht-Stati — kompakt zweizeilig (Mobile). */
+export const headerToolbarCommunicationButtonCompactClass = cn(
+  "max-md:!relative max-md:!flex-col max-md:!items-center max-md:gap-0 max-md:py-0.5",
+  "max-md:max-w-[2.85rem] max-md:text-center max-md:text-[11px] max-md:leading-tight"
+);
+
+export const headerToolbarBellTriggerCompactClass =
+  "max-md:!h-7 max-md:!w-7 max-md:!min-h-7 max-md:!min-w-7";
+
+/** Segment-Trenner — volle Header-Höhe. */
+export const headerToolbarSegmentDividerClass =
+  "planning-toolbar-segment-divider shrink-0 self-stretch";
+
+/** Ein Control-Segment mit seitlichem Innenabstand. */
+export const headerToolbarSegmentClass =
+  "flex h-full shrink-0 items-center px-2 md:px-4";
 
 /** Heute — Text-Aktion ohne Fläche. */
 export const headerToolbarWeekNavTodayTextButtonClass = cn(

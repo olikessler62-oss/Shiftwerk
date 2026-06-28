@@ -16,6 +16,7 @@ import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 import {
   weeklyHoursByEmployeeIdFromProfiles,
   weeklyHoursCheckShiftFromPlanningShift,
+  planningShiftsForCalendarWeek,
 } from "@/lib/weekly-hours-check-shifts";
 import { useAppShellModalLockActive, useAppShellWaitCursorActive } from "@/lib/app-shell-modal-lock";
 import { useClearMainNavPendingWhenReady } from "@/lib/app-shell-main-nav-pending";
@@ -194,6 +195,11 @@ export function DashboardSummaryShell({
     [visibleCommunicationHubLocationShifts]
   );
 
+  const weeklyHoursShifts = useMemo(
+    () => planningShiftsForCalendarWeek(visibleCommunicationHubLocationShifts, dates),
+    [visibleCommunicationHubLocationShifts, dates]
+  );
+
   const weeklyHoursByEmployeeId = useMemo(
     () => weeklyHoursByEmployeeIdFromProfiles(employees),
     [employees]
@@ -283,6 +289,7 @@ export function DashboardSummaryShell({
         selectedLocationName={selectedLocationName}
         areas={areas}
         calendarShifts={calendarPlanningShifts}
+        weeklyHoursShifts={weeklyHoursShifts}
         serviceHours={serviceHours}
         staffingRules={staffingRules}
         staffingOverrides={staffingOverrides}

@@ -3,12 +3,11 @@
 import { useMemo } from "react";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { AreaCalendarEmployeeLegendCard } from "@/components/areacalendar/areacalendar-employee-legend-card";
-import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
+import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-modal-shell";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
   collectWeekLegendEmployeesFromAreaCalendarShifts,
-  areaCalendarEmployeeWeekHours,
   AREA_CALENDAR_EMPLOYEE_LIST_WIDTH_PX,
   AREA_CALENDAR_EMPLOYEE_LIST_TOP_OFFSET_PX,
 } from "@/lib/areacalendar-week-employee-legend";
@@ -19,8 +18,18 @@ import {
 } from "@/lib/planning-employee-availability-tooltip";
 import { createPlanningShiftJobContextMaps } from "@/lib/planning-shift-card-display";
 import { SHIFT_CARD_LIST_GAP_PX } from "@/lib/shift-card-row-layout";
+import {
+  buildAreaIdToLocationIdMap,
+  buildEmployeeWeeklyHoursDisplay,
+  buildEmployeeWeeklyHoursCardLabelsByEmployeeId,
+  buildEmployeeWeeklyHoursDisplayByEmployeeId,
+  buildLocationNameByIdMap,
+} from "@/lib/employee-weekly-hours-display";
+import type { PlanningShift } from "@/lib/planning-shift-card";
 import type {
   AbsenceRequest,
+  Location,
+  LocationArea,
   Profile,
   ProfileRecurringAvailability,
   Qualification,
@@ -35,6 +44,11 @@ type Props = {
   profileQualificationIds?: Record<string, string[]>;
   locale: string;
   employeeHoursLabel: string;
+  weekDates: readonly string[];
+  selectedLocationId: string | null;
+  areas: readonly LocationArea[];
+  locations: readonly Location[];
+  organizationWeekShifts?: readonly PlanningShift[];
   onEmployeeHover?: (employeeId: string | null) => void;
   onEmployeeContextMenu?: (
     employeeId: string,
@@ -53,6 +67,11 @@ export function AreaCalendarEmployeeLegendSidebar({
   profileQualificationIds = {},
   locale,
   employeeHoursLabel,
+  weekDates,
+  selectedLocationId,
+  areas,
+  locations,
+  organizationWeekShifts = [],
   onEmployeeHover,
   onEmployeeContextMenu,
   className,
@@ -75,6 +94,91 @@ export function AreaCalendarEmployeeLegendSidebar({
     () => createPlanningShiftJobContextMaps(qualifications),
     [qualifications]
   );
+  const locationNameById = useMemo(
+    () => buildLocationNameByIdMap(locations),
+    [locations]
+  );
+  const areaIdToLocationId = useMemo(
+    () => buildAreaIdToLocationIdMap(areas),
+    [areas]
+  );
+  const weeklyHoursShifts = useMemo(
+    () =>
+      organizationWeekShifts.length > 0 ? organizationWeekShifts : shifts.map(
+          (shift) => ({
+            employee_id: shift.employeeId,
+            shift_date: shift.shift_date,
+            startTime: shift.startTime,
+            endTime: shift.endTime,
+            location_id: selectedLocationId,
+            location_area_id: shift.locationAreaId,
+          })
+        ),
+    [organizationWeekShifts, shifts, selectedLocationId]
+  );
+  const weeklyHoursTooltipDisplayByEmployeeId = useMemo(
+    () =>
+      buildEmployeeWeeklyHoursDisplayByEmployeeId({
+        employees,
+        shifts: weeklyHoursShifts,
+        weekDates,
+        locationNameById,
+        areaIdToLocationId,
+        fallbackLocationId: selectedLocationId,
+      }),
+    [
+      employees,
+      weeklyHoursShifts,
+      weekDates,
+      locationNameById,
+      areaIdToLocationId,
+      selectedLocationId,
+    ]
+  );
+  const weeklyHoursCardLabelsByEmployeeId = useMemo(
+    () =>
+      buildEmployeeWeeklyHoursCardLabelsByEmployeeId({
+        employees,
+        shifts: weeklyHoursShifts,
+        weekDates,
+        locale,
+        locationNameById,
+        areaIdToLocationId,
+        fallbackLocationId: selectedLocationId,
+      }),
+    [
+      employees,
+      weeklyHoursShifts,
+      weekDates,
+      locale,
+      locationNameById,
+      areaIdToLocationId,
+      selectedLocationId,
+    ]
+  );
+  const weeklyHoursOverLimitByEmployeeId = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const employee of employees) {
+      const display = buildEmployeeWeeklyHoursDisplay({
+        employeeId: employee.id,
+        shifts: weeklyHoursShifts,
+        weekDates,
+        targetHours: employee.weekly_hours ?? 40,
+        locationNameById,
+        areaIdToLocationId,
+        fallbackLocationId: selectedLocationId,
+      });
+      map.set(employee.id, display.totalHours > display.targetHours);
+    }
+    return map;
+  }, [
+    employees,
+    weeklyHoursShifts,
+    weekDates,
+    locationNameById,
+    areaIdToLocationId,
+    selectedLocationId,
+  ]);
   const availabilityTooltipLocale = locale === "en" ? "en" : "de";
   const emptyAvailabilityTooltipLabel = t("profiles.emptyAvailability");
   const showEmployeeJobs = qualifications.length > 0;
@@ -105,21 +209,20 @@ export function AreaCalendarEmployeeLegendSidebar({
           style={{ gap: SHIFT_CARD_LIST_GAP_PX }}
         >
           {employees.map((employee) => {
-            const weekHours = areaCalendarEmployeeWeekHours(
-              employee.id,
-              shifts,
-              absences
-            );
-            const targetHours = employee.weekly_hours ?? 40;
+            const weeklyHoursCardLabel =
+              weeklyHoursCardLabelsByEmployeeId.get(employee.id) ?? "—";
+            const weeklyHoursTooltipDisplay =
+              weeklyHoursTooltipDisplayByEmployeeId.get(employee.id) ?? null;
+            const displayCardLabel = `${employeeHoursLabel} ${weeklyHoursCardLabel}`;
+            const overHours =
+              weeklyHoursOverLimitByEmployeeId.get(employee.id) ?? false;
 
             return (
               <AreaCalendarEmployeeLegendCard
                 key={employee.id}
                 employee={employee}
-                weekHours={weekHours}
-                targetHours={targetHours}
-                locale={locale}
-                employeeHoursLabel={employeeHoursLabel}
+                weeklyHoursCardLabel={displayCardLabel}
+                overHours={overHours}
                 availabilityTooltip={
                   <PlanningEmployeeAvailabilityTooltipContent
                     slots={availabilityByProfileId.get(employee.id) ?? []}
@@ -136,6 +239,8 @@ export function AreaCalendarEmployeeLegendSidebar({
                           )
                         : undefined
                     }
+                    weeklyHoursDisplay={weeklyHoursTooltipDisplay}
+                    weeklyHoursTotalLabel={t("dashboard.weeklyHoursTotalLabel")}
                   />
                 }
                 onMouseEnter={() => onEmployeeHover?.(employee.id)}

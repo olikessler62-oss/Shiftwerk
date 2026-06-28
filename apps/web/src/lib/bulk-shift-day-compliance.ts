@@ -1,5 +1,6 @@
 import { areAreaCalendarShiftTimesComplete } from "@/lib/available-employees-for-shift";
-import { AREA_CALENDAR_EMPTY_EMPLOYEE_ID } from "@/components/areacalendar/areacalendar-add-shift-modal";
+
+const EMPTY_EMPLOYEE_ID = "";
 import {
   validateEmployeeDayShiftAssignments,
   weekdayIndexFromDate,
@@ -19,6 +20,88 @@ type BulkShiftRowLike = {
   startTime: string;
   endTime: string;
 };
+
+export function organizationDayShiftWindowsForEmployee(
+  employeeId: string,
+  organizationDayAssignments: readonly LocationDayAssignment[]
+): DayShiftTimeWindow[] {
+  return organizationDayAssignments
+    .filter(
+      (assignment) =>
+        assignment.employeeId === employeeId &&
+        areAreaCalendarShiftTimesComplete(assignment.startTime, assignment.endTime)
+    )
+    .map((assignment) => ({
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+    }));
+}
+
+export function employeeMeetsOrganizationDayShiftCompliance(input: {
+  countryCode: string;
+  shiftDate: string;
+  employeeId: string;
+  windowStart: string;
+  windowEnd: string;
+  organizationDayAssignments: readonly LocationDayAssignment[];
+}): boolean {
+  if (
+    !areAreaCalendarShiftTimesComplete(input.windowStart, input.windowEnd)
+  ) {
+    return false;
+  }
+
+  const otherWindows = organizationDayShiftWindowsForEmployee(
+    input.employeeId,
+    input.organizationDayAssignments
+  );
+  const proposed = {
+    startTime: input.windowStart,
+    endTime: input.windowEnd,
+  };
+  const windows =
+    otherWindows.length > 0 ? [...otherWindows, proposed] : [proposed];
+
+  const result = validateEmployeeDayShiftAssignments({
+    countryCode: input.countryCode,
+    shiftDate: input.shiftDate,
+    weekday: weekdayIndexFromDate(input.shiftDate),
+    windows,
+  });
+
+  return result.ok;
+}
+
+export function filterEmployeesByOrganizationDayShiftCompliance<
+  T extends { id: string },
+>(
+  employees: readonly T[],
+  context: {
+    countryCode: string;
+    shiftDate: string;
+    windowStart: string;
+    windowEnd: string;
+    organizationDayAssignments: readonly LocationDayAssignment[];
+  }
+): T[] {
+  return employees.filter((employee) =>
+    employeeMeetsOrganizationDayShiftCompliance({
+      ...context,
+      employeeId: employee.id,
+    })
+  );
+}
+
+function externalDayAssignmentsForBulkCompliance(
+  organizationDayAssignments: readonly LocationDayAssignment[],
+  currentAreaId: string
+): LocationDayAssignment[] {
+  return organizationDayAssignments.filter(
+    (assignment) =>
+      assignment.locationAreaId !== currentAreaId &&
+      areAreaCalendarShiftTimesComplete(assignment.startTime, assignment.endTime)
+  );
+}
 
 function formatHours(hours: number): string {
   return hours.toFixed(1).replace(".0", "");
@@ -75,7 +158,7 @@ export function findBulkShiftDayComplianceViolation(
   shiftDate: string,
   countryCode: string,
   modalRows: readonly BulkShiftRowLike[],
-  locationDayAssignments: readonly LocationDayAssignment[],
+  organizationDayAssignments: readonly LocationDayAssignment[],
   currentAreaId: string,
   employeeNameById: ReadonlyMap<string, string>,
   translate: (
@@ -84,9 +167,22 @@ export function findBulkShiftDayComplianceViolation(
   ) => string
 ): string | null {
   const modalWindowsByEmployee = new Map<string, DayShiftTimeWindow[]>();
+  const externalByEmployee = new Map<string, DayShiftTimeWindow[]>();
+
+  for (const assignment of externalDayAssignmentsForBulkCompliance(
+    organizationDayAssignments,
+    currentAreaId
+  )) {
+    const windows = externalByEmployee.get(assignment.employeeId) ?? [];
+    windows.push({
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+    });
+    externalByEmployee.set(assignment.employeeId, windows);
+  }
 
   for (const row of modalRows) {
-    if (row.employeeId === AREA_CALENDAR_EMPTY_EMPLOYEE_ID) continue;
+    if (row.employeeId === EMPTY_EMPLOYEE_ID) continue;
     if (!areAreaCalendarShiftTimesComplete(row.startTime, row.endTime)) continue;
 
     const windows = modalWindowsByEmployee.get(row.employeeId) ?? [];
@@ -94,31 +190,22 @@ export function findBulkShiftDayComplianceViolation(
     modalWindowsByEmployee.set(row.employeeId, windows);
   }
 
-  for (const [employeeId, modalWindows] of modalWindowsByEmployee) {
-    const externalWindows = locationDayAssignments
-      .filter(
-        (assignment) =>
-          assignment.employeeId === employeeId &&
-          assignment.locationAreaId !== currentAreaId &&
-          areAreaCalendarShiftTimesComplete(
-            assignment.startTime,
-            assignment.endTime
-          )
-      )
-      .map((assignment) => ({
-        startTime: assignment.startTime,
-        endTime: assignment.endTime,
-      }));
+  const employeeIds = new Set([
+    ...modalWindowsByEmployee.keys(),
+    ...externalByEmployee.keys(),
+  ]);
 
+  for (const employeeId of employeeIds) {
+    const modalWindows = modalWindowsByEmployee.get(employeeId) ?? [];
+    const externalWindows = externalByEmployee.get(employeeId) ?? [];
     const windows = [...modalWindows, ...externalWindows];
-    const requiresDayLevelCheck =
-      modalWindows.length >= 2 || windows.length >= 2;
+    if (windows.length === 0) continue;
 
     const result = validateEmployeeDayShiftAssignments({
       countryCode,
       shiftDate,
       weekday: weekdayIndexFromDate(shiftDate),
-      windows: requiresDayLevelCheck ? windows : modalWindows,
+      windows,
     });
 
     if (!result.ok) {

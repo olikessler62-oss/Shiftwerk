@@ -38,14 +38,14 @@ export const PLANNING_PAGE_CALENDAR_CONTENT_PADDING_CLASS =
  * App-Shell Root: Mobile Seiten-Scroll; ab md unverändert (volle Viewport-Höhe, kein Body-Scroll).
  */
 export const APP_SHELL_ROOT_CLASS =
-  "app-shell-root relative isolate flex min-h-dvh flex-col overflow-y-auto md:h-dvh md:min-h-0 md:overflow-hidden md:flex-row";
+  "app-shell-root relative isolate flex min-h-dvh w-full max-w-full flex-col overflow-x-clip overflow-y-auto md:h-dvh md:min-h-0 md:overflow-hidden md:flex-row";
 
 /** Hauptinhalt rechts/unten — Desktop weiterhin flex-1 + overflow-hidden. */
 export const APP_SHELL_CONTENT_COLUMN_CLASS =
-  "app-shell-content-column flex min-w-0 flex-col max-md:flex-none md:min-h-0 md:flex-1";
+  "app-shell-content-column flex min-w-0 flex-col overflow-x-clip max-md:flex-none md:min-h-0 md:flex-1";
 
 export const APP_SHELL_MAIN_CLASS =
-  "flex flex-col p-4 max-md:overflow-visible md:min-h-0 md:flex-1 md:overflow-hidden md:p-6";
+  "flex min-w-0 flex-col overflow-x-clip p-4 max-md:overflow-y-visible md:min-h-0 md:flex-1 md:overflow-hidden md:p-6";
 
 /** Scrollbar-Styling für Sidebar-Nav (siehe globals.css .app-shell-sidebar-scroll). */
 export const APP_SHELL_SIDEBAR_SCROLL_CLASS = "app-shell-sidebar-scroll";
@@ -79,12 +79,19 @@ export const AREA_CALENDAR_VIEW_CONTENT_CLASS = PLANNING_CALENDAR_VIEW_CONTENT_C
 /** Mitarbeiter-Kalender Inhalt (ohne Toolbar-Hintergrund). */
 export const EMPLOYEE_CALENDAR_VIEW_CONTENT_CLASS = PLANNING_CALENDAR_VIEW_CONTENT_CLASS;
 
-/** Dashboard — gleiche Content-Fläche wie Bereich-/Mitarbeiter-Kalender. */
-export const DASHBOARD_VIEW_CONTENT_CLASS = PLANNING_CALENDAR_VIEW_CONTENT_CLASS;
+/** Dashboard — gleiche Content-Fläche wie Bereich-/Mitarbeiter-Kalender; Mobile: Seiten-Scroll statt verschachtelt. */
+export const DASHBOARD_VIEW_CONTENT_CLASS = `${PLANNING_CALENDAR_VIEW_CONTENT_CLASS} max-md:overflow-visible`;
 
-/** Planungsseiten-Wrapper: Toolbar + Inhalt, negative Ränder zum Main-Padding. */
+/** Planungsseiten-Wrapper: Toolbar + Inhalt. */
 export const PLANNING_PAGES_SHELL_CLASS =
-  "-m-4 flex min-h-0 flex-1 flex-col md:-m-6 md:min-h-[calc(100%+3rem)]";
+  "flex min-h-0 min-w-0 w-full flex-1 flex-col";
+
+/** Toolbar bündig mit Logo — siehe globals.css .planning-toolbar-bleed-shell */
+export const PLANNING_TOOLBAR_BLEED_SHELL_CLASS = "planning-toolbar-bleed-shell";
+
+/** Planungsseiten-Inhalt — gleicher Horizontal-Bleed wie Toolbar, Hintergrund füllt Ecken. */
+export const PLANNING_PAGE_CONTENT_BLEED_CLASS =
+  "-mx-4 bg-background px-4 md:-mx-6 md:px-6";
 
 /** @deprecated Nur noch für Skeleton — Wrapper ohne Toolbar-Hintergrund. */
 export const DASHBOARD_VIEW_ROOT_CLASS =
@@ -97,6 +104,6 @@ export const AREA_CALENDAR_VIEW_ROOT_CLASS =
 /** Höhen-Pendant für Sidebar-Trennlinie unter dem Logo (Bereich-Kalender). */
 export const APP_SHELL_BRAND_HEADER_CONTENT_ALIGN_CLASS = "h-2 md:h-4";
 
-/** Wochen-Toolbar im Hauptbereich — gemeinsames Top-Panel mit Logo (Backdrop durchscheinend). */
+/** Wochen-Toolbar — feste Band-Höhe, horizontal scrollbar wenn nötig. */
 export const APP_PAGE_TOOLBAR_HEADER_CLASS =
-  `${APP_SHELL_TOP_PANEL_CLASS} app-page-toolbar-header app-shell-top-panel-toolbar flex shrink-0 flex-row items-center justify-between gap-2 border-b border-border px-4 md:gap-3 md:px-6`;
+  `${APP_SHELL_TOP_PANEL_CLASS} app-page-toolbar-header app-shell-top-panel-toolbar planning-toolbar-segmented flex h-[var(--app-shell-brand-band-height)] max-h-[var(--app-shell-brand-band-height)] min-h-[var(--app-shell-brand-band-height)] shrink-0 flex-row items-stretch border-b border-border px-0`;

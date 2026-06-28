@@ -11,9 +11,15 @@ import { cn } from "@/lib/cn";
 type Props = {
   className?: string;
   variant?: "default" | "header";
+  /** Schmalere Breite in der kompakten Headerbar (< lg). */
+  compact?: boolean;
 };
 
-export function LanguageSelect({ className, variant = "default" }: Props) {
+export function LanguageSelect({
+  className,
+  variant = "default",
+  compact = false,
+}: Props) {
   const { locale, setLocale } = useLocale();
   const t = useTranslations();
 
@@ -33,8 +39,14 @@ export function LanguageSelect({ className, variant = "default" }: Props) {
         options={languageOptions}
         onChange={(value) => setLocale(value as Locale)}
         aria-label={t("common.language")}
-        wrapperClassName={cn("max-w-[7.5rem]", className)}
-        selectClassName={headerToolbarLanguageSelectTriggerClass}
+        wrapperClassName={cn(
+          compact ? "max-w-[5.25rem]" : "max-w-[7.5rem]",
+          className
+        )}
+        selectClassName={cn(
+          headerToolbarLanguageSelectTriggerClass,
+          compact && "pl-2 pr-6"
+        )}
       />
     );
   }

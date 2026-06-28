@@ -357,6 +357,22 @@ export function employeeEligibleForBulkShiftAssignment(
     }
   }
 
+  for (const existing of context.otherAreaAssignments) {
+    if (existing.employeeId !== employeeId) continue;
+    if (
+      areaCalendarShiftWindowsOverlap(
+        context.shiftDate,
+        windowStart,
+        windowEnd,
+        existing.startTime,
+        existing.endTime,
+        context.timeZone
+      )
+    ) {
+      return false;
+    }
+  }
+
   const otherAreaWindows = assignmentWindowsForEmployee(
     employeeId,
     context.otherAreaAssignments
@@ -534,16 +550,32 @@ export function filterPlanningAssignShiftEmployees<
     simplePlanning: boolean;
     qualificationId: string;
     profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
+    shiftDate?: string;
+    organizationDayAssignments?: readonly AreaCalendarAreaAssignmentWindow[];
+    timeZone?: string;
   }
 ): T[] {
   if (!areAreaCalendarShiftTimesComplete(windowStart, windowEnd)) return [];
 
-  const available = filterAreaCalendarShiftAssignEmployeesByWindow(
+  let available = filterAreaCalendarShiftAssignEmployeesByWindow(
     employees,
     weekday,
     windowStart,
     windowEnd
   );
+
+  if (options.shiftDate && options.organizationDayAssignments?.length) {
+    available = filterAreaCalendarShiftAssignEmployeesByWindowWithoutOverlap(
+      available,
+      weekday,
+      windowStart,
+      windowEnd,
+      options.shiftDate,
+      options.organizationDayAssignments,
+      options.timeZone
+    );
+  }
+
   if (options.simplePlanning) return available;
   if (!options.qualificationId) return [];
 

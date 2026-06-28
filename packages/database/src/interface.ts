@@ -742,6 +742,11 @@ export interface SchichtwerkDatabase {
     fromDate: string,
     toDate: string
   ): Promise<EmployeeShiftRecord[]>;
+  listOrganizationShiftsInDateRange(
+    organizationId: string,
+    fromDate: string,
+    toDate: string
+  ): Promise<EmployeeShiftRecord[]>;
   /** Schichten mit End-/Startfenster vor/nach der neuen Schicht (für Ruhezeitprüfung). */
   listShiftsForEmployeeRestCheck(
     employeeId: string,

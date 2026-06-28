@@ -3,6 +3,7 @@ import { weekdayIndexFromDate } from "@/lib/location-staffing-client";
 import {
   computeDashboardAreaWeekStats,
   computeDashboardLocationWeekRollup,
+  resolveDashboardAreaAmpelLevelFromWindowRows,
   sortDashboardAreaWeekStats,
 } from "./dashboard-area-week-stats";
 
@@ -240,11 +241,10 @@ describe("computeDashboardAreaWeekStats", () => {
       assigned: 2,
       required: 2,
       status: "overstaffed",
-      hasConflict: true,
+      hasConflict: false,
     });
-    expect(stats.staffingWindowRows[0].staffingConflicts?.length).toBeGreaterThan(
-      0
-    );
+    expect(stats.staffingWindowRows[0].staffingHints?.length).toBeGreaterThan(0);
+    expect(stats.staffingWindowRows[0].staffingConflicts).toBeUndefined();
   });
 
   it("lists understaffed and met windows in staffing rows", () => {
@@ -620,5 +620,49 @@ describe("sortDashboardAreaWeekStats", () => {
     ]);
 
     expect(sorted.map((entry) => entry.areaId)).toEqual(["a", "b"]);
+  });
+});
+
+describe("resolveDashboardAreaAmpelLevelFromWindowRows", () => {
+  it("returns met for a fully covered day even when the week has other gaps", () => {
+    const metDayRows = [
+      {
+        rowKind: "staffing_window" as const,
+        dateISO: "2026-06-24",
+        serviceHourId: "hour-1",
+        weekdayLabel: "Mi.",
+        timeFrom: "12:00",
+        timeTo: "15:00",
+        shiftName: "Mittel",
+        assigned: 2,
+        required: 2,
+        status: "met" as const,
+        hasConflict: false,
+      },
+    ];
+
+    expect(resolveDashboardAreaAmpelLevelFromWindowRows(metDayRows)).toBe("met");
+  });
+
+  it("returns partial for a day with planned but uncovered slots", () => {
+    const partialDayRows = [
+      {
+        rowKind: "staffing_window" as const,
+        dateISO: "2026-06-25",
+        serviceHourId: "hour-1",
+        weekdayLabel: "Do.",
+        timeFrom: "12:00",
+        timeTo: "15:00",
+        shiftName: "Mittel",
+        assigned: 1,
+        required: 2,
+        status: "planned" as const,
+        hasConflict: false,
+      },
+    ];
+
+    expect(resolveDashboardAreaAmpelLevelFromWindowRows(partialDayRows)).toBe(
+      "partial"
+    );
   });
 });

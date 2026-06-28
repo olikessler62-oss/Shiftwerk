@@ -9,6 +9,7 @@ import {
   fetchDashboardStaffingCandidateContext,
   fetchDashboardStaffingCandidateEmployeeTooltip,
   type AreaCalendarShiftAssignEmployee,
+  type OrganizationWeekShiftRef,
   type ProfileShiftPreferenceEntry,
 } from "@/app/actions/areacalendar-shift-assign";
 import { DashboardStaffingCandidateEmployeeTooltipContent } from "@/components/dashboard/dashboard-staffing-candidate-employee-tooltip-content";
@@ -54,13 +55,28 @@ import {
   areAreaCalendarShiftTimesComplete,
   profileAvailabilityWeekdayFromAreaCalendarDate,
 } from "@/lib/available-employees-for-shift";
-import { formatDayHeader, formatPlanningHoursRatio } from "@/lib/planning-utils";
+import { weekDates } from "@/lib/dates";
+import {
+  isoWeekStartFromShiftDate,
+} from "@schichtwerk/database";
+import { formatDayHeader } from "@/lib/planning-utils";
+import type { EmployeeWeeklyHoursDisplay } from "@/lib/employee-weekly-hours-display";
+import {
+  buildAreaIdToLocationIdMap,
+  buildEmployeeWeeklyHoursDisplay,
+  buildEmployeeWeeklyHoursDisplayByEmployeeId,
+  buildEmployeeWeeklyHoursDisplayLinesByEmployeeId,
+  buildLocationNameByIdMap,
+  employeeWeeklyHoursAssignedMinutes,
+} from "@/lib/employee-weekly-hours-display";
+import { EmployeeWeeklyHoursLines } from "@/components/planning/employee-weekly-hours-lines";
 import { useAppShellModalLockActive } from "@/lib/app-shell-modal-lock";
 import { translateActionError } from "@/lib/translate-action-error";
 import { useSimulatedProposedOnAssignRequest } from "@/lib/shift-confirmation-simulation-context";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type {
   AreaShiftTemplateWithBreaks,
+  LocationArea,
   LocationAreaStaffing,
   LocationAreaStaffingOverride,
   Qualification,
@@ -70,6 +86,10 @@ import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 export type DashboardStaffingCandidatesPlanningContext = {
   weekStart: string;
   dates: readonly string[];
+  /** Organisationsweite Schichten der Planungswoche — Wochenstunden wie beim Speichern. */
+  weeklyHoursShifts?: readonly PlanningShift[];
+  locations?: readonly { id: string; name: string }[];
+  planningAreas?: readonly LocationArea[];
   locationId: string;
   areaId: string;
   areaName: string;
@@ -99,7 +119,26 @@ type LoadedContext = {
   profileShiftPreferences: Record<string, ProfileShiftPreferenceEntry[]>;
   countryCode: string;
   timeZone: string;
+  organizationWeekShifts: PlanningShift[];
+  locations: { id: string; name: string }[];
 };
+
+function organizationWeekShiftsToPlanningShifts(
+  shifts: readonly OrganizationWeekShiftRef[]
+): PlanningShift[] {
+  return shifts.map((shift) => ({
+    id: shift.id,
+    employee_id: shift.employee_id,
+    shift_date: shift.shift_date,
+    shiftName: "",
+    color: "#64748b",
+    startTime: shift.startTime,
+    endTime: shift.endTime,
+    location_id: shift.location_id,
+    location_area_id: shift.location_area_id,
+    area_shift_template_id: shift.area_shift_template_id,
+  }));
+}
 
 type Props = {
   row: DashboardStaffingWindowRow;
@@ -125,7 +164,6 @@ export function DashboardStaffingRowCandidatesModal({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [pendingEmployeeId, setPendingEmployeeId] = useState<string | null>(null);
-  const loadCacheRef = useRef(new Map<string, LoadedContext>());
 
   const assignmentPresets = useMemo(
     (): AreaCalendarAssignmentPreset[] =>
@@ -171,27 +209,115 @@ export function DashboardStaffingRowCandidatesModal({
     return map;
   }, [loadedContext, planning.profileQualificationIds]);
 
-  const weeklyAssignedMinutes = useMemo(
-    () => weeklyAssignedMinutesByEmployeeId(planning.calendarShifts, planning.dates),
-    [planning.calendarShifts, planning.dates]
+  const weeklyHoursWeekDates = useMemo(() => {
+    const isoWeekStart = isoWeekStartFromShiftDate(row.dateISO);
+    return weekDates(isoWeekStart);
+  }, [row.dateISO]);
+
+  const shiftsForWeeklyHoursDisplay = useMemo(() => {
+    if (loadedContext?.organizationWeekShifts.length) {
+      return loadedContext.organizationWeekShifts;
+    }
+    if (planning.weeklyHoursShifts?.length) {
+      return planning.weeklyHoursShifts;
+    }
+    return planning.calendarShifts;
+  }, [
+    loadedContext?.organizationWeekShifts,
+    planning.weeklyHoursShifts,
+    planning.calendarShifts,
+  ]);
+
+  const shiftsForWeeklyHoursValidation = shiftsForWeeklyHoursDisplay;
+
+  const locationNameById = useMemo(() => {
+    const locations =
+      loadedContext?.locations.length
+        ? loadedContext.locations
+        : planning.locations ?? [];
+    return buildLocationNameByIdMap(locations);
+  }, [loadedContext?.locations, planning.locations]);
+
+  const areaIdToLocationId = useMemo(
+    () =>
+      buildAreaIdToLocationIdMap(
+        (planning.planningAreas ?? []).map((area) => ({
+          id: area.id,
+          location_id: area.location_id,
+        }))
+      ),
+    [planning.planningAreas]
   );
 
-  const weeklyHoursLabelByEmployeeId = useMemo(() => {
-    const map = new Map<string, string>();
+  const weeklyAssignedMinutes = useMemo(() => {
+    const map = new Map<string, number>();
     if (!loadedContext) return map;
 
-    const tooltipLocale = locale === "en" ? "en" : "de";
     for (const employee of loadedContext.employees) {
-      const assignedMinutes = weeklyAssignedMinutes.get(employee.id) ?? 0;
-      const assignedHours = Math.round((assignedMinutes / 60) * 10) / 10;
-      const targetHours = employee.weekly_hours ?? 40;
-      map.set(
-        employee.id,
-        formatPlanningHoursRatio(assignedHours, targetHours, tooltipLocale)
-      );
+      const display = buildEmployeeWeeklyHoursDisplay({
+        employeeId: employee.id,
+        shifts: shiftsForWeeklyHoursDisplay,
+        weekDates: weeklyHoursWeekDates,
+        targetHours: employee.weekly_hours ?? 40,
+        locationNameById,
+        areaIdToLocationId,
+        fallbackLocationId: planning.locationId,
+      });
+      map.set(employee.id, employeeWeeklyHoursAssignedMinutes(display));
     }
     return map;
-  }, [loadedContext, weeklyAssignedMinutes, locale]);
+  }, [
+    loadedContext,
+    shiftsForWeeklyHoursDisplay,
+    weeklyHoursWeekDates,
+    locationNameById,
+    areaIdToLocationId,
+    planning.locationId,
+  ]);
+
+  const weeklyHoursDisplayByEmployeeId = useMemo(() => {
+    if (!loadedContext) return new Map<string, EmployeeWeeklyHoursDisplay>();
+
+    return buildEmployeeWeeklyHoursDisplayByEmployeeId({
+      employees: loadedContext.employees,
+      shifts: shiftsForWeeklyHoursDisplay,
+      weekDates: weeklyHoursWeekDates,
+      locationNameById,
+      areaIdToLocationId,
+      fallbackLocationId: planning.locationId,
+    });
+  }, [
+    loadedContext,
+    shiftsForWeeklyHoursDisplay,
+    weeklyHoursWeekDates,
+    locationNameById,
+    areaIdToLocationId,
+    planning.locationId,
+  ]);
+
+  const weeklyHoursLabelByEmployeeId = useMemo(() => {
+    if (!loadedContext) return new Map<string, string[]>();
+
+    return buildEmployeeWeeklyHoursDisplayLinesByEmployeeId({
+      employees: loadedContext.employees,
+      shifts: shiftsForWeeklyHoursDisplay,
+      weekDates: weeklyHoursWeekDates,
+      locale,
+      locationNameById,
+      totalLabel: t("dashboard.weeklyHoursTotalLabel"),
+      areaIdToLocationId,
+      fallbackLocationId: planning.locationId,
+    });
+  }, [
+    loadedContext,
+    shiftsForWeeklyHoursDisplay,
+    weeklyHoursWeekDates,
+    locale,
+    locationNameById,
+    areaIdToLocationId,
+    planning.locationId,
+    t,
+  ]);
 
   const employeeColorById = useMemo(() => {
     const map = new Map<string, string | null>();
@@ -235,8 +361,8 @@ export function DashboardStaffingRowCandidatesModal({
         areaShifts: planning.calendarShifts.filter(
           (shift) => shift.location_area_id === planning.areaId
         ),
-        locationShifts: planning.calendarShifts,
-        weekDates: planning.dates,
+        locationShifts: shiftsForWeeklyHoursValidation,
+        weekDates: weeklyHoursWeekDates,
         timeZone: loadedContext.timeZone,
         countryCode: loadedContext.countryCode,
       });
@@ -259,7 +385,16 @@ export function DashboardStaffingRowCandidatesModal({
     }
 
     return result;
-  }, [loadedContext, slots, row, planning, mergedProfileQualificationIds, weeklyAssignedMinutes]);
+  }, [
+    loadedContext,
+    slots,
+    row,
+    planning,
+    mergedProfileQualificationIds,
+    weeklyAssignedMinutes,
+    shiftsForWeeklyHoursValidation,
+    weeklyHoursWeekDates,
+  ]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -270,13 +405,6 @@ export function DashboardStaffingRowCandidatesModal({
   }, [onClose]);
 
   useEffect(() => {
-    const cacheKey = row.dateISO;
-    const cached = loadCacheRef.current.get(cacheKey);
-    if (cached) {
-      setLoadedContext(cached);
-      return;
-    }
-
     let cancelled = false;
     setLoadError(null);
     setLoadedContext(null);
@@ -296,8 +424,11 @@ export function DashboardStaffingRowCandidatesModal({
         profileShiftPreferences: result.profileShiftPreferences,
         countryCode: result.countryCode,
         timeZone: result.timeZone,
+        organizationWeekShifts: organizationWeekShiftsToPlanningShifts(
+          result.organizationWeekShifts ?? []
+        ),
+        locations: result.locations,
       };
-      loadCacheRef.current.set(cacheKey, next);
       setLoadedContext(next);
     });
 
@@ -331,7 +462,7 @@ export function DashboardStaffingRowCandidatesModal({
         areaShiftTemplateId: resolveAreaShiftTemplateId(),
         locationId: planning.locationId,
         locationAreaId: planning.simplePlanning ? null : planning.areaId,
-        weekDates: planning.dates,
+        weekDates: weeklyHoursWeekDates,
         simulatedProposedOnAssign,
         relaxAppRegistrationGate,
       });
@@ -351,6 +482,7 @@ export function DashboardStaffingRowCandidatesModal({
       pendingEmployeeId,
       row,
       resolveAreaShiftTemplateId,
+      weeklyHoursWeekDates,
       simulatedProposedOnAssign,
       relaxAppRegistrationGate,
       onClose,
@@ -540,6 +672,7 @@ export function DashboardStaffingRowCandidatesModal({
                   dateISO={row.dateISO}
                   qualifications={planning.qualifications}
                   weeklyHoursLabelByEmployeeId={weeklyHoursLabelByEmployeeId}
+                  weeklyHoursDisplayByEmployeeId={weeklyHoursDisplayByEmployeeId}
                   weeklyAssignedMinutesByEmployeeId={weeklyAssignedMinutes}
                   weeklyHoursTargetByEmployeeId={weeklyHoursTargetByEmployeeId}
                   employeeColorById={employeeColorById}
@@ -651,6 +784,7 @@ function CandidateList({
   dateISO,
   qualifications,
   weeklyHoursLabelByEmployeeId,
+  weeklyHoursDisplayByEmployeeId,
   weeklyAssignedMinutesByEmployeeId,
   weeklyHoursTargetByEmployeeId,
   employeeColorById,
@@ -662,7 +796,8 @@ function CandidateList({
   onAssign: (employeeId: string) => void;
   dateISO: string;
   qualifications: readonly Qualification[];
-  weeklyHoursLabelByEmployeeId: ReadonlyMap<string, string>;
+  weeklyHoursLabelByEmployeeId: ReadonlyMap<string, readonly string[]>;
+  weeklyHoursDisplayByEmployeeId: ReadonlyMap<string, EmployeeWeeklyHoursDisplay>;
   weeklyAssignedMinutesByEmployeeId: ReadonlyMap<string, number>;
   weeklyHoursTargetByEmployeeId: ReadonlyMap<string, number>;
   employeeColorById: ReadonlyMap<string, string | null>;
@@ -717,7 +852,9 @@ function CandidateList({
                 const cacheEntry = tooltipCache[candidate.id];
                 const isTopPick = candidateIndex === 0;
                 const weeklyHoursLabel =
-                  weeklyHoursLabelByEmployeeId.get(candidate.id) ?? null;
+                  weeklyHoursLabelByEmployeeId.get(candidate.id) ?? [];
+                const weeklyHoursDisplay =
+                  weeklyHoursDisplayByEmployeeId.get(candidate.id) ?? null;
                 const assignedMinutes =
                   weeklyAssignedMinutesByEmployeeId.get(candidate.id) ?? 0;
                 const targetHours =
@@ -768,7 +905,7 @@ function CandidateList({
                                   }
                                   error={cacheEntry?.status === "error"}
                                   qualifications={qualifications}
-                                  weeklyHoursLine={weeklyHoursLabel}
+                                  weeklyHoursDisplay={weeklyHoursDisplay}
                                 />
                               }
                             >
@@ -787,18 +924,15 @@ function CandidateList({
                             </Tooltip>
                           </div>
                           <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                            {weeklyHoursLabel ? (
-                              <span
-                                className={cn(
-                                  "text-[0.6875rem] tabular-nums leading-tight text-muted-foreground",
-                                  weeklyHoursLineClassName(
-                                    assignedMinutes,
-                                    targetHours
-                                  )
+                            {weeklyHoursLabel.length > 0 ? (
+                              <EmployeeWeeklyHoursLines
+                                lines={weeklyHoursLabel}
+                                className="text-[0.6875rem] text-muted-foreground"
+                                lineClassName={weeklyHoursLineClassName(
+                                  assignedMinutes,
+                                  targetHours
                                 )}
-                              >
-                                {weeklyHoursLabel}
-                              </span>
+                              />
                             ) : null}
                           </div>
                         </div>

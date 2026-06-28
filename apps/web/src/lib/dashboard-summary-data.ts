@@ -43,6 +43,7 @@ export type DashboardSummaryPageBundle = {
   summaryShifts: DashboardSummaryShift[];
   areas: LocationArea[];
   locationShifts: PlanningShift[];
+  organizationWeekShifts: PlanningShift[];
   employees: Profile[];
   absences: AbsenceRequest[];
   communicationSwapRequests: CommunicationSwapRequestRow[];
@@ -62,6 +63,7 @@ const EMPTY_DASHBOARD_SUMMARY_PAGE_BUNDLE: DashboardSummaryPageBundle = {
   summaryShifts: [],
   areas: [],
   locationShifts: [],
+  organizationWeekShifts: [],
   employees: [],
   absences: [],
   communicationSwapRequests: [],
@@ -152,6 +154,7 @@ export async function loadDashboardSummaryPageBundle(input: {
       color: template?.color ?? areaTemplate?.color ?? "#64748b",
       startTime: startFromTs,
       endTime: endFromTs,
+      location_id: locationId,
       location_area_id: shiftRow.location_area_id,
       area_shift_template_id:
         shiftRow.area_shift_template_id ?? areaTemplate?.id ?? null,
@@ -199,15 +202,33 @@ export async function loadDashboardSummaryPageBundle(input: {
   });
 
   const todayISO = organizationTodayISO(timeZone);
-  const communicationHubScope = await loadCommunicationHubScopeData({
-    db,
-    orgId,
-    organization,
-    locationId,
-    timeZone,
-    todayISO,
-    areaShiftTemplates,
-  });
+  const [communicationHubScope, organizationShiftRows] = await Promise.all([
+    loadCommunicationHubScopeData({
+      db,
+      orgId,
+      organization,
+      locationId,
+      timeZone,
+      todayISO,
+      areaShiftTemplates,
+    }),
+    db.listOrganizationShiftsInDateRange(orgId, from, to),
+  ]);
+
+  const organizationWeekShifts: PlanningShift[] = organizationShiftRows.map(
+    (shiftRow) => ({
+      id: shiftRow.id,
+      employee_id: shiftRow.employee_id,
+      shift_date: shiftRow.shift_date,
+      shiftName: "",
+      color: "#64748b",
+      startTime: shiftTimeFromTimestamp(shiftRow.starts_at, timeZone),
+      endTime: shiftTimeFromTimestamp(shiftRow.ends_at, timeZone),
+      location_id: shiftRow.location_id,
+      location_area_id: shiftRow.location_area_id,
+      area_shift_template_id: shiftRow.area_shift_template_id,
+    })
+  );
 
   const employees = await resolveDashboardEmployeesForShifts(
     planningEmployees,
@@ -231,6 +252,7 @@ export async function loadDashboardSummaryPageBundle(input: {
     summaryShifts,
     areas,
     locationShifts,
+    organizationWeekShifts,
     employees,
     absences,
     communicationSwapRequests: communicationHubScope.swapRequests,

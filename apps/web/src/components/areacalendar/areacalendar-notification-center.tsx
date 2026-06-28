@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import type { ManagerNotification } from "@schichtwerk/types";
 import {
   dismissManagerNotification,
@@ -10,6 +11,7 @@ import { BellIcon, CloseIcon, IconButton } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { headerToolbarCountBadgeClass } from "@/lib/header-toolbar-styles";
+import { useHeaderToolbarDropdownPosition } from "@/lib/use-header-toolbar-dropdown-position";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import type { CommunicationOpenOptions } from "@/lib/communication-hub";
 
@@ -57,7 +59,19 @@ export function AreaCalendarNotificationCenter({
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState(initialNotifications);
   const [pending, startTransition] = useTransition();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const notificationPanelWidth = useCallback(
+    () => Math.min(window.innerWidth - 32, 352),
+    []
+  );
+  const dropdownStyle = useHeaderToolbarDropdownPosition(
+    open,
+    triggerRef,
+    { align: "end", resolveWidth: notificationPanelWidth },
+    [notifications.length]
+  );
 
   useEffect(() => {
     setNotifications(initialNotifications);
@@ -67,9 +81,14 @@ export function AreaCalendarNotificationCenter({
     if (!open) return;
 
     function onPointerDown(event: MouseEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target as Node;
+      if (
+        triggerRef.current?.contains(target) ||
+        panelRef.current?.contains(target)
+      ) {
+        return;
       }
+      setOpen(false);
     }
 
     function onKeyDown(event: KeyboardEvent) {
@@ -129,36 +148,15 @@ export function AreaCalendarNotificationCenter({
 
   const unreadCount = notifications.length;
 
-  return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
+  const notificationPanel =
+    open && dropdownStyle ? (
+      <div
+        ref={panelRef}
+        role="menu"
         aria-label={t("shiftConfirmation.notifications.centerTitle")}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        data-open={open ? "true" : undefined}
-        onClick={() => setOpen((value) => !value)}
-        className={cn("relative", triggerClassName)}
+        style={dropdownStyle}
+        className="overflow-hidden rounded-lg border border-border bg-surface shadow-lg"
       >
-        <BellIcon />
-        {unreadCount > 0 ? (
-          <span
-            className={cn(
-              "absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center leading-none",
-              headerToolbarCountBadgeClass
-            )}
-          >
-            {unreadCount > 9 ? "9+" : unreadCount}
-          </span>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div
-          role="menu"
-          aria-label={t("shiftConfirmation.notifications.centerTitle")}
-          className="absolute right-0 top-full z-[120] mt-1 w-[min(100vw-2rem,22rem)] overflow-hidden rounded-lg border border-border bg-surface shadow-lg"
-        >
           <div className="flex items-center justify-between border-b border-border px-3 py-2">
             <p className="text-sm font-semibold text-foreground">
               {t("shiftConfirmation.notifications.centerTitle")}
@@ -216,8 +214,36 @@ export function AreaCalendarNotificationCenter({
               </ul>
             )}
           </div>
-        </div>
-      ) : null}
+      </div>
+    ) : null;
+
+  return (
+    <div ref={triggerRef} className="relative">
+      <button
+        type="button"
+        aria-label={t("shiftConfirmation.notifications.centerTitle")}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        data-open={open ? "true" : undefined}
+        onClick={() => setOpen((value) => !value)}
+        className={cn("relative", triggerClassName)}
+      >
+        <BellIcon />
+        {unreadCount > 0 ? (
+          <span
+            className={cn(
+              "absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center leading-none",
+              headerToolbarCountBadgeClass
+            )}
+          >
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        ) : null}
+      </button>
+
+      {typeof document !== "undefined" && notificationPanel
+        ? createPortal(notificationPanel, document.body)
+        : null}
     </div>
   );
 }

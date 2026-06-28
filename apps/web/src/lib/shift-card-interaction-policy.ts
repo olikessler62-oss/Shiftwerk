@@ -105,8 +105,9 @@ export function resolveShiftCardPrimaryClick(
     case "confirmed":
       return { kind: "none" };
     case "rejected":
+      return { kind: "communicationHub", category: "rejected" };
     case "canceled":
-      return { kind: "reassign" };
+      return { kind: "communicationHub", category: "canceled" };
     default:
       return { kind: "edit" };
   }

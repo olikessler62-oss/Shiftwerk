@@ -11,6 +11,8 @@ import {
 import { absenceTypeLabelKey } from "@/lib/shift-absence-conflict";
 import { useTranslations, useLocale } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import type { EmployeeWeeklyHoursDisplay } from "@/lib/employee-weekly-hours-display";
+import { EmployeeWeeklyHoursLines } from "@/components/planning/employee-weekly-hours-lines";
 
 type Props = {
   employeeName: string;
@@ -18,7 +20,7 @@ type Props = {
   loading: boolean;
   error: boolean;
   qualifications: readonly Qualification[];
-  weeklyHoursLine?: string | null;
+  weeklyHoursDisplay?: EmployeeWeeklyHoursDisplay | null;
   className?: string;
 };
 
@@ -54,7 +56,9 @@ function TooltipBody({
   sections,
   emptyAvailabilityLabel,
   weeklyHoursLabel,
-  weeklyHoursLine,
+  weeklyHoursDisplay,
+  weeklyHoursTotalLabel,
+  locale,
 }: {
   sections: DashboardStaffingCandidateEmployeeTooltipSections & {
     absenceLabel: string;
@@ -66,7 +70,9 @@ function TooltipBody({
   };
   emptyAvailabilityLabel: string;
   weeklyHoursLabel: string;
-  weeklyHoursLine?: string | null;
+  weeklyHoursDisplay?: EmployeeWeeklyHoursDisplay | null;
+  weeklyHoursTotalLabel: string;
+  locale: string;
 }) {
   return (
     <div className="space-y-2.5">
@@ -79,13 +85,13 @@ function TooltipBody({
         ) : (
           <table className="border-collapse">
             <tbody>
-              {sections.availabilityLines.map((row, index) => (
-                <tr key={`${row.weekday}-${row.timeRange}-${index}`}>
-                  <td className="whitespace-nowrap pr-4 align-top">
-                    {row.weekday}
+              {sections.availabilityLines.map((line, index) => (
+                <tr key={`${line}:${index}`}>
+                  <td className="whitespace-nowrap pr-3 align-top">
+                    {line.weekday}
                   </td>
                   <td className="whitespace-nowrap align-top tabular-nums">
-                    {row.timeRange}
+                    {line.timeRange}
                   </td>
                 </tr>
               ))}
@@ -93,8 +99,14 @@ function TooltipBody({
           </table>
         )}
       </TooltipSection>
-      {weeklyHoursLine ? (
-        <TooltipSection label={weeklyHoursLabel}>{weeklyHoursLine}</TooltipSection>
+      {weeklyHoursDisplay && weeklyHoursDisplay.lines.length > 0 ? (
+        <TooltipSection label={weeklyHoursLabel}>
+          <EmployeeWeeklyHoursLines
+            display={weeklyHoursDisplay}
+            locale={locale}
+            totalLabel={weeklyHoursTotalLabel}
+          />
+        </TooltipSection>
       ) : null}
       <TooltipSection label={sections.jobsLabel}>{sections.jobs}</TooltipSection>
       <TooltipSection label={sections.wishTimeLabel}>
@@ -116,77 +128,79 @@ export function DashboardStaffingCandidateEmployeeTooltipContent({
   loading,
   error,
   qualifications,
-  weeklyHoursLine,
+  weeklyHoursDisplay,
   className,
 }: Props) {
   const t = useTranslations();
   const { locale } = useLocale();
-  const tooltipLocale = locale === "en" ? "en" : "de";
+  const intlLocale = locale === "en" ? "en" : "de";
+  const weeklyHoursTotalLabel = t("dashboard.weeklyHoursTotalLabel");
 
   const sections = useMemo(() => {
     if (!payload) return null;
-    const formatted = formatDashboardStaffingCandidateEmployeeTooltipSections(
+    return formatDashboardStaffingCandidateEmployeeTooltipSections({
       payload,
-      {
-        locale: tooltipLocale,
-        qualifications,
-        locations: payload.locations,
-        areas: payload.areas,
-        labels: {
-          anyDay: t("profiles.shiftPreferenceAnyDay"),
-          noTime: t("profiles.shiftPreferenceNoTime"),
-          emptyPlacement: t("profiles.shiftPreferenceNone"),
-          noAbsence: t("dashboard.staffingCandidatesTooltipNoAbsence"),
-          emptyAvailability: t("profiles.emptyAvailability"),
-          emptyQualifications: t("profiles.emptyQualifications"),
-          absenceType: (type) => t(absenceTypeLabelKey(type)),
-        },
-      }
-    );
-    return {
-      ...formatted,
-      absenceLabel: t("dashboard.staffingCandidatesTooltipAbsence"),
-      availabilityLabel: t("dashboard.staffingCandidatesTooltipAvailability"),
-      jobsLabel: t("dashboard.staffingCandidatesTooltipJobs"),
-      wishTimeLabel: t("dashboard.staffingCandidatesTooltipWishTime"),
-      wishLocationLabel: t("dashboard.staffingCandidatesTooltipWishLocation"),
-      wishAreaLabel: t("dashboard.staffingCandidatesTooltipWishArea"),
-    };
-  }, [payload, tooltipLocale, qualifications, t]);
+      qualifications,
+      locale: intlLocale,
+      absenceTypeLabel: (type) => t(absenceTypeLabelKey(type)),
+    });
+  }, [payload, qualifications, intlLocale, t]);
 
   const weeklyHoursLabel = t("dashboard.staffingCandidatesTooltipWeeklyHours");
+  const emptyAvailabilityLabel = t("profiles.emptyAvailability");
+
+  if (loading) {
+    return (
+      <div className={cn("text-xs text-muted-foreground", className)}>
+        {t("common.loading")}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={cn("text-xs text-red-600", className)}>
+        {t("common.loadError")}
+      </div>
+    );
+  }
+
+  if (!sections) {
+    return (
+      <div className={cn("space-y-2.5 text-xs", className)}>
+        <p className="font-medium text-foreground">{employeeName}</p>
+        {weeklyHoursDisplay && weeklyHoursDisplay.lines.length > 0 ? (
+          <TooltipSection label={weeklyHoursLabel}>
+            <EmployeeWeeklyHoursLines
+              display={weeklyHoursDisplay}
+              locale={intlLocale}
+              totalLabel={weeklyHoursTotalLabel}
+            />
+          </TooltipSection>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
-    <div className={cn("max-w-xs text-xs leading-snug", className)}>
-      <p className="mb-2 border-b border-border/60 pb-1.5 font-semibold text-foreground">
-        {employeeName}
-      </p>
-      {loading ? (
-        <div className="space-y-2.5">
-          {weeklyHoursLine ? (
-            <TooltipSection label={weeklyHoursLabel}>{weeklyHoursLine}</TooltipSection>
-          ) : null}
-          <p className="text-muted-foreground">
-            {t("dashboard.staffingCandidatesTooltipLoading")}
-          </p>
-        </div>
-      ) : error ? (
-        <div className="space-y-2.5">
-          {weeklyHoursLine ? (
-            <TooltipSection label={weeklyHoursLabel}>{weeklyHoursLine}</TooltipSection>
-          ) : null}
-          <p className="text-muted-foreground">
-            {t("dashboard.staffingCandidatesTooltipError")}
-          </p>
-        </div>
-      ) : sections ? (
-        <TooltipBody
-          sections={sections}
-          emptyAvailabilityLabel={t("profiles.emptyAvailability")}
-          weeklyHoursLabel={weeklyHoursLabel}
-          weeklyHoursLine={weeklyHoursLine}
-        />
-      ) : null}
+    <div className={cn("text-xs", className)}>
+      <p className="mb-2 font-medium text-foreground">{employeeName}</p>
+      <TooltipBody
+        sections={{
+          ...sections,
+          absenceLabel: t("dashboard.staffingCandidatesTooltipAbsence"),
+          availabilityLabel: t("dashboard.staffingCandidatesTooltipAvailability"),
+          jobsLabel: t("dashboard.staffingCandidatesTooltipJobs"),
+          wishTimeLabel: t("dashboard.staffingCandidatesTooltipWishTime"),
+          wishLocationLabel: t("dashboard.staffingCandidatesTooltipWishLocation"),
+          wishAreaLabel: t("dashboard.staffingCandidatesTooltipWishArea"),
+        }}
+        emptyAvailabilityLabel={emptyAvailabilityLabel}
+        weeklyHoursLabel={weeklyHoursLabel}
+        weeklyHoursDisplay={weeklyHoursDisplay}
+        weeklyHoursTotalLabel={weeklyHoursTotalLabel}
+        locale={intlLocale}
+      />
     </div>
   );
 }

@@ -104,7 +104,10 @@ function checkboxLabelKey(category: CommunicationHubCategory) {
   if (category === "pending") {
     return "shiftConfirmation.communication.rowResend";
   }
-  if (category === "rejected" || category === "canceled" || category === "conflicts") {
+  if (category === "rejected" || category === "canceled") {
+    return "shiftConfirmation.communication.rowSelect";
+  }
+  if (category === "conflicts") {
     return "shiftConfirmation.communication.rowReassign";
   }
   return "shiftConfirmation.communication.rowSelect";

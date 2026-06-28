@@ -6,14 +6,12 @@ import { cn } from "@/lib/cn";
 import type { AreaCalendarWeekLegendEmployee } from "@/lib/areacalendar-week-employee-legend";
 import {
   AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_HEIGHT_PX,
-  AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_LIST_ITEM_HEIGHT_PX,
   AREA_CALENDAR_EMPLOYEE_LEGEND_PRIMARY_FONT_PX,
   AREA_CALENDAR_EMPLOYEE_LEGEND_SECONDARY_FONT_PX,
 } from "@/lib/areacalendar-week-employee-legend";
 import { splitEmployeeDisplayName } from "@/lib/shift-card-display-content";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
 import { SHIFT_CARD_SHADOW_BLEED_PX } from "@/lib/shift-card-row-layout";
-import { formatPlanningHoursRatio } from "@/lib/planning-utils";
 
 const EMPLOYEE_LEGEND_CARD_FRAME_CLASS =
   "box-border w-full overflow-hidden rounded border border-black/[0.07]";
@@ -27,10 +25,8 @@ const SHIFT_CARD_SURFACE_CLASS =
 
 type Props = {
   employee: AreaCalendarWeekLegendEmployee;
-  weekHours: number;
-  targetHours: number;
-  locale: string;
-  employeeHoursLabel: string;
+  weeklyHoursCardLabel: string;
+  overHours: boolean;
   availabilityTooltip: ReactNode;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -39,10 +35,8 @@ type Props = {
 
 export function AreaCalendarEmployeeLegendCard({
   employee,
-  weekHours,
-  targetHours,
-  locale,
-  employeeHoursLabel,
+  weeklyHoursCardLabel,
+  overHours,
   availabilityTooltip,
   onMouseEnter,
   onMouseLeave,
@@ -50,9 +44,8 @@ export function AreaCalendarEmployeeLegendCard({
 }: Props) {
   const employeeColor = employee.color?.trim() || EMPLOYEE_COLOR_FALLBACK;
   const { firstName, lastName } = splitEmployeeDisplayName(employee.full_name);
-  const overHours = weekHours > targetHours;
-  const hoursLabel = formatPlanningHoursRatio(weekHours, targetHours, locale);
   const cardHeightPx = AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_HEIGHT_PX;
+  const listItemHeightPx = cardHeightPx + SHIFT_CARD_SHADOW_BLEED_PX;
 
   return (
     <Tooltip
@@ -66,7 +59,7 @@ export function AreaCalendarEmployeeLegendCard({
         className="shrink-0 self-start"
         style={{
           width: `calc(100% - ${SHIFT_CARD_SHADOW_BLEED_PX}px)`,
-          height: AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_LIST_ITEM_HEIGHT_PX,
+          height: listItemHeightPx,
         }}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
@@ -114,12 +107,12 @@ export function AreaCalendarEmployeeLegendCard({
               </div>
               <div
                 className={cn(
-                  "min-w-0 truncate leading-tight",
+                  "min-w-0 truncate leading-tight tabular-nums",
                   overHours ? "font-medium text-amber-600" : "text-black/85"
                 )}
                 style={{ fontSize: AREA_CALENDAR_EMPLOYEE_LEGEND_SECONDARY_FONT_PX }}
               >
-                {employeeHoursLabel} {hoursLabel}
+                {weeklyHoursCardLabel}
               </div>
             </div>
           </div>

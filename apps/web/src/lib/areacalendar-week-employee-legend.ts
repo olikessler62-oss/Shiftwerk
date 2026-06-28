@@ -22,6 +22,8 @@ export const AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_LIST_ITEM_HEIGHT_PX =
 /** Kalender-Schichtkarte: 11px / 10px — Liste jeweils +2px. */
 export const AREA_CALENDAR_EMPLOYEE_LEGEND_PRIMARY_FONT_PX = 13;
 export const AREA_CALENDAR_EMPLOYEE_LEGEND_SECONDARY_FONT_PX = 12;
+/** Zusätzliche Höhe pro weiterer Wochenstunden-Zeile in der Legende. */
+export const AREA_CALENDAR_EMPLOYEE_LEGEND_HOURS_LINE_HEIGHT_PX = 12;
 /** Feste Zeilenhöhe in der Bereich-Kalender-Mitarbeiterliste. */
 export const DASHBOARD_SIDEBAR_EMPLOYEE_ROW_HEIGHT_PX = 44;
 export const DASHBOARD_SIDEBAR_EMPLOYEE_MAX_VISIBLE = 10;
@@ -112,6 +114,20 @@ export function areaCalendarEmployeeWeekHours(
     total += shiftHoursFromWindow(shift.startTime, shift.endTime);
   }
   return Math.round(total * 10) / 10;
+}
+
+export function areaCalendarEmployeeLegendCardHeightPx(
+  weeklyHoursLineCount: number
+): number {
+  const lineCount = Math.max(1, weeklyHoursLineCount);
+  if (lineCount <= 1) {
+    return AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_HEIGHT_PX;
+  }
+  const extraLines = lineCount - 1;
+  return (
+    AREA_CALENDAR_EMPLOYEE_LEGEND_CARD_HEIGHT_PX +
+    extraLines * AREA_CALENDAR_EMPLOYEE_LEGEND_HOURS_LINE_HEIGHT_PX
+  );
 }
 
 /** Mitarbeiter mit mindestens einer Schicht in der Kalenderwoche. */

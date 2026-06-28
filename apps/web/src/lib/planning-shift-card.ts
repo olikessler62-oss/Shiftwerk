@@ -9,6 +9,7 @@ export type PlanningShift = {
   color: string;
   startTime: string;
   endTime: string;
+  location_id?: string | null;
   location_area_id: string | null;
   area_shift_template_id: string | null;
   confirmationStatus?: ShiftConfirmationStatus;

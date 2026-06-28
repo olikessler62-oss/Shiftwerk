@@ -128,6 +128,12 @@ export const de = {
       "Zwei Standorte mit je Restaurant, Küche und Bar; Schichtvorlagen Früh/Mittel/Spät; Servicezeiten Mo–Mi, Fr–So (Do geschlossen); zufällige Schichten aus dem Mitarbeiter-Pool mit offenen und gedeckten Fenstern.",
     superadminTestScenarioBiergartenHadrianSuccess:
       "Szenario angelegt (KW ab {weekStart}): {locationCount} Standorte, {areaCount} Bereiche, {shiftCount} Schichten — {coveredSlots} gedeckte und {openSlots} offene Bedarfsslots.",
+    superadminTestScenarioBiergartenHadrianCurrentWeekTitle:
+      "Biergarten & Hadrian-Eck · aktuelle KW voll besetzt",
+    superadminTestScenarioBiergartenHadrianCurrentWeekDescription:
+      "Wie Biergarten & Hadrian-Eck, löscht aber zuerst alle Schichten beider Standorte und legt nur für die aktuelle Kalenderwoche Schichten an — vollständig besetzt, Status bestätigt.",
+    superadminTestScenarioBiergartenHadrianCurrentWeekSuccess:
+      "Szenario angelegt (KW ab {weekStart}): {locationCount} Standorte, {areaCount} Bereiche, {shiftCount} bestätigte Schichten — {coveredSlots} besetzte Bedarfsslots, {openSlots} offen.",
     superadminShiftsHint:
       "Alle Schichten der Organisation — Status direkt per Auswahl ändern (Testmodus).",
     superadminShiftColumnLocationArea: "Standort / Bereich",
@@ -321,12 +327,23 @@ export const de = {
     staffingOverstaffedBadgeTooltip: "Mehr Personal als benötigt",
     staffingOverstaffedGaugeFootnote: "Mehr Personal, als Bedarf",
     staffingConflictOverstaffedLine:
-      "{time} · {name} · {position}: über Bedarf",
+      "{time} · {name} · {position}: mehr Personal, als benötigt",
     staffingConflictMismatchLine:
       "{time} · {name} · zugerechnet als {position}, fehlt: {missing}",
     staffingConflictNoQualLine:
       "{time} · {name} · keine passende Qualifikation (fehlt: {missing})",
     staffingTooltipConflictsHeading: "Konflikte",
+    staffingTooltipHintsHeading: "Hinweise",
+    staffingTooltipConflictMismatchTitle: "Qualifikationskonflikt",
+    staffingTooltipConflictMismatchDescription:
+      "{time} · {name} · zugerechnet als {position}, fehlt: {missing}",
+    staffingTooltipConflictNoQualTitle: "Keine passende Qualifikation",
+    staffingTooltipConflictNoQualDescription:
+      "{time} · {name} · fehlt: {missing}",
+    staffingTooltipHintOverstaffedTitle: "Überbedarf",
+    staffingTooltipHintOverstaffedDescription:
+      "{time} · {name} · {position}",
+    staffingTooltipHintOverstaffedNote: "mehr Personal, als benötigt",
     staffingTooltipQualConfirmed:
       "{assigned}/{required} für {name}{shiftTime} bestätigt",
     staffingTooltipQualUnconfirmed:
@@ -1103,7 +1120,7 @@ export const de = {
       canceled: "Abgesagte Schichten",
       unresolved: "Ungeklärte Schichten",
     },
-    ampelHeaderStaffingConflicts: "Hinweise zur Einteilung",
+    ampelHeaderStaffingConflicts: "Konflikte & Hinweise zur Einteilung",
     ampelBadgePartial: "Lücken",
     ampelStaffingWeekCaption: "Besetzt/Bedarf",
     calendarNavEmployee: "Mitarbeiter-Kal.",
@@ -1120,28 +1137,33 @@ export const de = {
       canceled: "abges.",
       unresolved: "unkl.",
     },
-    staffingIssuesModalTitle: "Hinweise zur Einteilung · {area}",
+    staffingIssuesModalTitle: "Konflikte & Hinweise · {area}",
     staffingIssuesModalSubtitle:
-      "Überbesetzungen und Qualifikationen, die nicht zum Bedarf passen.",
-    staffingIssuesButtonLabelOne: "Hinweise zur Einteilung anzeigen",
-    staffingIssuesButtonLabelMany: "{count} Hinweise zur Einteilung anzeigen",
+      "Qualifikationskonflikte und Überbedarf bei der Schichtplanung.",
+    staffingIssuesButtonLabelOne: "Konflikte & Hinweise zur Einteilung anzeigen",
+    staffingIssuesButtonLabelMany:
+      "{count} Konflikte & Hinweise zur Einteilung anzeigen",
     staffingIssueUnderstaffedWindow:
       "{weekday} · {time} · {shift}: {assigned}/{required} besetzt",
     staffingIssueUnderstaffedQual:
       "{weekday} · {time} · {shift} · {qualification}: {assigned}/{required}",
     staffingIssueOverstaffed:
-      "{weekday} · {time} · {shift} · {name} · {position}: über Bedarf",
+      "{weekday} · {time} · {shift} · {name} · {position}: mehr Personal, als benötigt",
+    staffingIssueOverstaffedTitle: "Überbedarf",
     staffingIssueMismatch:
       "{weekday} · {time} · {shift} · {name} · zugerechnet als {position}, fehlt: {missing}",
+    staffingIssueMismatchTitle: "Qualifikationskonflikt",
     staffingIssueNoQual:
       "{weekday} · {time} · {shift} · {name} · keine passende Qualifikation (fehlt: {missing})",
-    staffingIssueInlineOverstaffed: "{name} · {position}: über Bedarf",
+    staffingIssueNoQualTitle: "Keine passende Qualifikation",
+    staffingIssueInlineOverstaffed:
+      "{name} · {position}: mehr Personal, als benötigt",
     staffingIssueInlineMismatch:
       "{name} · zugerechnet als {position}, fehlt: {missing}",
     staffingIssueInlineNoQual:
       "{name} · keine passende Qualifikation (fehlt: {missing})",
-    staffingRowConflictsBadge: "{count} Hinweise",
-    staffingRowConflictsPopoverTitle: "Hinweise zur Einteilung",
+    staffingRowConflictsBadge: "{count} Konflikte & Hinweise",
+    staffingRowConflictsPopoverTitle: "Konflikte & Hinweise zur Einteilung",
     staffingWindowIssuesTitle: "Offene Punkte",
     staffingWindowIssuesButtonLabel: "Offene Punkte für Schichtfenster anzeigen",
     staffingWindowIssuesEmpty: "Keine offenen Punkte in diesem Schichtfenster.",
@@ -1183,6 +1205,7 @@ export const de = {
     staffingCandidatesTooltipAbsence: "Abwesenheit",
     staffingCandidatesTooltipAvailability: "Verfügbarkeit",
     staffingCandidatesTooltipWeeklyHours: "Wochenstunden",
+    weeklyHoursTotalLabel: "Summe",
     staffingCandidatesTooltipJobs: "Jobs",
     staffingCandidatesTooltipWishTime: "Wunschzeit",
     staffingCandidatesTooltipWishLocation: "Wunschort",

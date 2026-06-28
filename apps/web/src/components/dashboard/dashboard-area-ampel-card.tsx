@@ -13,7 +13,7 @@ import {
 } from "@/components/dashboard/dashboard-staffing-row-candidates-modal";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { DASHBOARD_PANEL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
+import { DASHBOARD_AREA_CARD_HEADER_FRAME_CLASS, DASHBOARD_PANEL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 import type {
   DashboardAreaAmpelLevel,
   DashboardAreaWeekStats,
@@ -241,6 +241,218 @@ function staffingRowShowsCandidatesButton(
   );
 }
 
+type StaffingWindowRowViewProps = {
+  row: DashboardStaffingWindowRow;
+  rowIndex: number;
+  rows: readonly DashboardStaffingWindowRow[];
+  isPastDay: boolean;
+  isToday: boolean;
+  isNoServiceHours: boolean;
+  showShiftColumn: boolean;
+  noServiceHoursLabel: string;
+  shiftConfirmationEnabled: boolean;
+  windowIssuesEnabled: boolean;
+  candidatesButtonLabel: string;
+  staffingIssuesButtonLabel: string;
+  windowIssuesButtonLabel: string;
+  onOpenCandidates?: (row: DashboardStaffingWindowRow) => void;
+  onOpenStaffingIssues?: (row: DashboardStaffingWindowRow) => void;
+  onOpenWindowIssues?: (row: DashboardStaffingWindowRow) => void;
+};
+
+function resolveStaffingWindowRowFlags(
+  row: DashboardStaffingWindowRow,
+  rowIndex: number,
+  rows: readonly DashboardStaffingWindowRow[],
+  todayISO: string,
+  shiftConfirmationEnabled: boolean,
+  windowIssuesEnabled: boolean
+) {
+  const isPastDay = isPastCalendarDate(row.dateISO, todayISO);
+  const isToday = row.dateISO === todayISO;
+  const isNoServiceHours = row.rowKind === "no_service_hours";
+  const showDayLabel =
+    rowIndex === 0 || rows[rowIndex - 1]?.dateISO !== row.dateISO;
+  const showCandidatesButton = staffingRowShowsCandidatesButton(row, isPastDay);
+  const showIssuesButton =
+    (row.staffingConflicts?.length ?? 0) > 0 ||
+    (row.staffingHints?.length ?? 0) > 0;
+  const showWindowIssuesButton =
+    windowIssuesEnabled &&
+    staffingRowShowsIssuesButton(row, shiftConfirmationEnabled) &&
+    !showIssuesButton;
+
+  return {
+    isPastDay,
+    isToday,
+    isNoServiceHours,
+    showDayLabel,
+    showCandidatesButton,
+    showIssuesButton,
+    showWindowIssuesButton,
+  };
+}
+
+function StaffingWindowRowActions({
+  showCandidatesButton,
+  showIssuesButton,
+  showWindowIssuesButton,
+  candidatesButtonLabel,
+  staffingIssuesButtonLabel,
+  windowIssuesButtonLabel,
+  row,
+  onOpenCandidates,
+  onOpenStaffingIssues,
+  onOpenWindowIssues,
+}: {
+  showCandidatesButton: boolean;
+  showIssuesButton: boolean;
+  showWindowIssuesButton: boolean;
+  candidatesButtonLabel: string;
+  staffingIssuesButtonLabel: string;
+  windowIssuesButtonLabel: string;
+  row: DashboardStaffingWindowRow;
+  onOpenCandidates?: (row: DashboardStaffingWindowRow) => void;
+  onOpenStaffingIssues?: (row: DashboardStaffingWindowRow) => void;
+  onOpenWindowIssues?: (row: DashboardStaffingWindowRow) => void;
+}) {
+  if (!showCandidatesButton && !showIssuesButton && !showWindowIssuesButton) {
+    return null;
+  }
+
+  return (
+    <div className="flex shrink-0 flex-col items-center justify-center gap-0.5">
+      {showCandidatesButton ? (
+        <DashboardStaffingRowCandidatesButton
+          variant="candidates"
+          ariaLabel={candidatesButtonLabel}
+          onClick={() => onOpenCandidates?.(row)}
+        />
+      ) : null}
+      {showIssuesButton ? (
+        <DashboardStaffingRowCandidatesButton
+          variant="staffingIssues"
+          ariaLabel={staffingIssuesButtonLabel}
+          onClick={() => onOpenStaffingIssues?.(row)}
+        />
+      ) : null}
+      {showWindowIssuesButton ? (
+        <DashboardStaffingRowCandidatesButton
+          variant="windowIssues"
+          ariaLabel={windowIssuesButtonLabel}
+          onClick={() => onOpenWindowIssues?.(row)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function StaffingWindowMobileList({
+  rows,
+  noServiceHoursLabel,
+  shiftConfirmationEnabled,
+  windowIssuesEnabled,
+  showShiftColumn,
+  candidatesButtonLabel,
+  staffingIssuesButtonLabel,
+  windowIssuesButtonLabel,
+  onOpenCandidates,
+  onOpenStaffingIssues,
+  onOpenWindowIssues,
+  todayISO,
+}: Omit<
+  StaffingWindowRowViewProps,
+  | "row"
+  | "rowIndex"
+  | "isPastDay"
+  | "isToday"
+  | "isNoServiceHours"
+> & {
+  rows: DashboardStaffingWindowRow[];
+  todayISO: string;
+}) {
+  if (rows.length === 0) return null;
+
+  return (
+    <ul className="divide-y divide-border/50 md:hidden">
+      {rows.map((row, rowIndex) => {
+        const flags = resolveStaffingWindowRowFlags(
+          row,
+          rowIndex,
+          rows,
+          todayISO,
+          shiftConfirmationEnabled,
+          windowIssuesEnabled
+        );
+
+        return (
+          <li
+            key={`${row.dateISO}:${row.serviceHourId}`}
+            className={cn(
+              "flex items-start gap-2 px-3 py-2",
+              flags.isPastDay && "bg-muted/14",
+              flags.isNoServiceHours
+                ? NO_SERVICE_HOURS_TEXT_CLASS
+                : "text-foreground"
+            )}
+          >
+            <div className="min-w-0 flex-1">
+              {flags.showDayLabel ? (
+                <p
+                  className={cn(
+                    "text-xs font-medium",
+                    flags.isToday &&
+                      !flags.isNoServiceHours &&
+                      CALENDAR_TODAY_WEEKDAY_TEXT_CLASS
+                  )}
+                >
+                  {row.weekdayLabel}
+                </p>
+              ) : null}
+              <p
+                className={cn(
+                  "text-sm",
+                  !flags.isNoServiceHours && "tabular-nums"
+                )}
+              >
+                {flags.isNoServiceHours
+                  ? noServiceHoursLabel
+                  : `${row.timeFrom} – ${row.timeTo}`}
+              </p>
+              {showShiftColumn && !flags.isNoServiceHours && row.shiftName ? (
+                <p className="truncate text-xs text-muted">{row.shiftName}</p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              {flags.isNoServiceHours && !row.hasUnplannedShifts ? null : (
+                <span
+                  className={staffingCountClassName(
+                    row,
+                    flags.isPastDay,
+                    shiftConfirmationEnabled
+                  )}
+                >
+                  {row.assigned}/{row.required}
+                </span>
+              )}
+              <StaffingWindowRowActions
+                {...flags}
+                candidatesButtonLabel={candidatesButtonLabel}
+                staffingIssuesButtonLabel={staffingIssuesButtonLabel}
+                windowIssuesButtonLabel={windowIssuesButtonLabel}
+                row={row}
+                onOpenCandidates={onOpenCandidates}
+                onOpenStaffingIssues={onOpenStaffingIssues}
+                onOpenWindowIssues={onOpenWindowIssues}
+              />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function StaffingWindowTable({
   rows,
   dayColumnLabel,
@@ -283,11 +495,26 @@ function StaffingWindowTable({
   return (
     <div
       className={cn(
-        "overflow-hidden border border-border/70 bg-background/30 max-md:overflow-x-auto",
+        "overflow-hidden border border-border/70 bg-background/30",
         DASHBOARD_PANEL_ROUNDED_CLASS,
         MODAL_SCROLLBAR_CLASS
       )}
     >
+      <StaffingWindowMobileList
+        rows={rows}
+        noServiceHoursLabel={noServiceHoursLabel}
+        shiftConfirmationEnabled={shiftConfirmationEnabled}
+        windowIssuesEnabled={windowIssuesEnabled}
+        showShiftColumn={showShiftColumn}
+        candidatesButtonLabel={candidatesButtonLabel}
+        staffingIssuesButtonLabel={staffingIssuesButtonLabel}
+        windowIssuesButtonLabel={windowIssuesButtonLabel}
+        onOpenCandidates={onOpenCandidates}
+        onOpenStaffingIssues={onOpenStaffingIssues}
+        onOpenWindowIssues={onOpenWindowIssues}
+        todayISO={todayISO}
+      />
+      <div className="hidden overflow-x-auto md:block">
       <table className="w-full table-fixed border-collapse text-sm">
         <colgroup>
           <col className="w-[13%]" />
@@ -317,29 +544,22 @@ function StaffingWindowTable({
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => {
-            const isPastDay = isPastCalendarDate(row.dateISO, todayISO);
-            const isToday = row.dateISO === todayISO;
-            const isNoServiceHours = row.rowKind === "no_service_hours";
-            const showDayLabel =
-              rowIndex === 0 || rows[rowIndex - 1]?.dateISO !== row.dateISO;
-            const showCandidatesButton = staffingRowShowsCandidatesButton(
+            const flags = resolveStaffingWindowRowFlags(
               row,
-              isPastDay
+              rowIndex,
+              rows,
+              todayISO,
+              shiftConfirmationEnabled,
+              windowIssuesEnabled
             );
-            const showIssuesButton =
-              (row.staffingConflicts?.length ?? 0) > 0;
-            const showWindowIssuesButton =
-              windowIssuesEnabled &&
-              staffingRowShowsIssuesButton(row, shiftConfirmationEnabled) &&
-              !showIssuesButton;
 
             return (
             <tr
               key={`${row.dateISO}:${row.serviceHourId}`}
               className={cn(
                 "border-b border-border/40 last:border-b-0",
-                isPastDay && "bg-muted/14",
-                isNoServiceHours
+                flags.isPastDay && "bg-muted/14",
+                flags.isNoServiceHours
                   ? NO_SERVICE_HOURS_TEXT_CLASS
                   : "text-foreground"
               )}
@@ -347,27 +567,27 @@ function StaffingWindowTable({
               <td
                 className={cn(
                   "px-2.5 py-0.5 font-medium",
-                  isToday &&
-                    showDayLabel &&
-                    !isNoServiceHours &&
+                  flags.isToday &&
+                    flags.showDayLabel &&
+                    !flags.isNoServiceHours &&
                     CALENDAR_TODAY_WEEKDAY_TEXT_CLASS
                 )}
               >
-                {showDayLabel ? row.weekdayLabel : null}
+                {flags.showDayLabel ? row.weekdayLabel : null}
               </td>
               <td
                 className={cn(
                   "whitespace-nowrap px-2.5 py-0.5",
-                  !isNoServiceHours && "tabular-nums"
+                  !flags.isNoServiceHours && "tabular-nums"
                 )}
               >
-                {isNoServiceHours
+                {flags.isNoServiceHours
                   ? noServiceHoursLabel
                   : `${row.timeFrom} – ${row.timeTo}`}
               </td>
               {showShiftColumn ? (
                 <td className="min-w-0 px-2.5 py-0.5">
-                  {isNoServiceHours ? null : row.shiftName ? (
+                  {flags.isNoServiceHours ? null : row.shiftName ? (
                     <span className="block truncate" title={row.shiftName}>
                       {row.shiftName}
                     </span>
@@ -375,11 +595,11 @@ function StaffingWindowTable({
                 </td>
               ) : null}
               <td className="w-[5.25rem] px-2 py-0.5 text-right tabular-nums">
-                {isNoServiceHours && !row.hasUnplannedShifts ? null : (
+                {flags.isNoServiceHours && !row.hasUnplannedShifts ? null : (
                   <span
                     className={staffingCountClassName(
                       row,
-                      isPastDay,
+                      flags.isPastDay,
                       shiftConfirmationEnabled
                     )}
                   >
@@ -388,48 +608,38 @@ function StaffingWindowTable({
                 )}
               </td>
               <td className="w-8 px-0 py-0.5 align-middle">
-                <div className="flex min-h-6 flex-col items-center justify-center gap-0.5">
-                  {showCandidatesButton ? (
-                    <DashboardStaffingRowCandidatesButton
-                      variant="candidates"
-                      ariaLabel={candidatesButtonLabel}
-                      onClick={() => onOpenCandidates?.(row)}
-                    />
-                  ) : null}
-                  {showIssuesButton ? (
-                    <DashboardStaffingRowCandidatesButton
-                      variant="staffingIssues"
-                      ariaLabel={staffingIssuesButtonLabel}
-                      onClick={() => onOpenStaffingIssues?.(row)}
-                    />
-                  ) : null}
-                  {showWindowIssuesButton ? (
-                    <DashboardStaffingRowCandidatesButton
-                      variant="windowIssues"
-                      ariaLabel={windowIssuesButtonLabel}
-                      onClick={() => onOpenWindowIssues?.(row)}
-                    />
-                  ) : null}
-                </div>
+                <StaffingWindowRowActions
+                  {...flags}
+                  candidatesButtonLabel={candidatesButtonLabel}
+                  staffingIssuesButtonLabel={staffingIssuesButtonLabel}
+                  windowIssuesButtonLabel={windowIssuesButtonLabel}
+                  row={row}
+                  onOpenCandidates={onOpenCandidates}
+                  onOpenStaffingIssues={onOpenStaffingIssues}
+                  onOpenWindowIssues={onOpenWindowIssues}
+                />
               </td>
             </tr>
             );
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
 
 const CARD_CONTENT_CLASS = "flex min-w-0 flex-1 flex-col";
 
-const CARD_HEADER_CLASS =
-  "grid h-[5.25rem] min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 overflow-y-hidden border-b border-[#5c6678] bg-[#c7d4e5] px-4 py-2";
+const CARD_HEADER_CLASS = cn(
+  "grid min-h-0 min-w-0 grid-cols-1 items-start gap-2 overflow-y-hidden px-3 py-2 md:h-[5.25rem] md:grid-cols-[minmax(0,1fr)_auto] md:gap-3 md:px-4",
+  DASHBOARD_AREA_CARD_HEADER_FRAME_CLASS
+);
 
 const CARD_HEADER_MAIN_CLASS = "flex min-w-0 flex-col justify-between py-0.5";
 
 const CARD_HEADER_STATUS_COLUMN_CLASS =
-  "flex w-max min-h-0 max-h-full shrink-0 flex-col items-stretch justify-start gap-0 self-stretch overflow-y-auto py-0.5";
+  "flex w-full min-h-0 max-h-full shrink-0 flex-col items-stretch justify-start gap-0 self-stretch overflow-y-auto py-0.5 md:w-max";
 
 function areaCardStatusBadgeProps(
   level: DashboardAreaAmpelLevel,
@@ -460,7 +670,7 @@ function areaCardStatusBadgeProps(
 }
 
 const AREA_HEADER_STATUS_BADGE_CLASS =
-  "flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium leading-4";
+  "flex shrink-0 items-center gap-1.5 text-xs font-medium leading-4 max-md:whitespace-normal md:whitespace-nowrap";
 
 function AreaCardHeaderStatusLine({
   dotClassName,
@@ -796,7 +1006,10 @@ export function DashboardAreaAmpelCard({
                 candidatesPlanning ? (row) => setCandidatesRow(row) : undefined
               }
               onOpenStaffingIssues={(row) =>
-                openStaffingIssuesModal(row.staffingConflicts ?? [])
+                openStaffingIssuesModal([
+                  ...(row.staffingConflicts ?? []),
+                  ...(row.staffingHints ?? []),
+                ])
               }
               onOpenWindowIssues={openWindowIssuesForRow}
               todayISO={todayISO}

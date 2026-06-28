@@ -54,7 +54,12 @@ import { pickEmployeeForBulkPrefill } from "@/lib/bulk-shift-row-prefill";
 import { computeBulkStaffingHeaderEntries } from "@/lib/bulk-staffing-header";
 import { resolveAddShiftFormInitialValues } from "@/lib/bulk-shift-staffing";
 import { isEmployeeWishFulfilled } from "@/lib/profile-shift-preference-matching";
-import type { AreaCalendarAssignmentTimeWindow } from "@/lib/shift-overlap";
+import {
+  assignmentWindowsFromShiftRefsForDate,
+  type AreaCalendarAssignmentTimeWindow,
+  locationDayAssignmentsFromShiftRefsForDate,
+} from "@/lib/shift-overlap";
+import { filterEmployeesByOrganizationDayShiftCompliance } from "@/lib/bulk-shift-day-compliance";
 import { DEFAULT_ORGANIZATION_TIME_ZONE } from "@/lib/dates";
 import {
   areaShiftTemplatesForArea,
@@ -64,10 +69,15 @@ import {
   type AreaCalendarAssignmentPreset,
 } from "@/lib/areacalendar-assignment-presets";
 import {
-  buildEmployeeWeeklyHoursTooltipLabels,
   formatDayHeader,
-  weeklyAssignedMinutesByEmployeeId,
 } from "@/lib/planning-utils";
+import {
+  buildAreaIdToLocationIdMap,
+  buildEmployeeWeeklyHoursDisplayByEmployeeId,
+  buildLocationNameByIdMap,
+  type EmployeeWeeklyHoursDisplay,
+} from "@/lib/employee-weekly-hours-display";
+import { EmployeeWeeklyHoursLines } from "@/components/planning/employee-weekly-hours-lines";
 import { resolvePlanningEmployeeJobsTooltipLabelFromMap } from "@/lib/planning-employee-availability-tooltip";
 import { validateAreaCalendarShiftServiceHours } from "@/lib/service-hours-shift-validation";
 import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
@@ -182,7 +192,7 @@ type EmployeeAvailabilityHintProps = {
   tooltipRef: RefObject<HTMLDivElement | null>;
   weekdayLabelStyle: WeekdayLabelStyle;
   jobsLabel?: string;
-  weeklyHoursLine?: string | null;
+  weeklyHoursDisplay?: EmployeeWeeklyHoursDisplay | null;
 };
 
 function EmployeeAvailabilityHint({
@@ -192,7 +202,7 @@ function EmployeeAvailabilityHint({
   tooltipRef,
   weekdayLabelStyle,
   jobsLabel,
-  weeklyHoursLine,
+  weeklyHoursDisplay,
 }: EmployeeAvailabilityHintProps) {
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
@@ -218,7 +228,7 @@ function EmployeeAvailabilityHint({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [anchorEl, tooltipRef, availabilities, employeeName, jobsLabel, weeklyHoursLine, localeKey, t]);
+  }, [anchorEl, tooltipRef, availabilities, employeeName, jobsLabel, weeklyHoursDisplay, localeKey, t]);
 
   return createPortal(
     <div
@@ -259,12 +269,17 @@ function EmployeeAvailabilityHint({
           </p>
         </>
       ) : null}
-      {weeklyHoursLine ? (
+      {weeklyHoursDisplay && weeklyHoursDisplay.lines.length > 0 ? (
         <>
           <p className="mb-1.5 mt-3 text-xs font-semibold text-foreground">
             {t("dashboard.staffingCandidatesTooltipWeeklyHours")}
           </p>
-          <p className="text-xs text-foreground">{weeklyHoursLine}</p>
+          <EmployeeWeeklyHoursLines
+            display={weeklyHoursDisplay}
+            locale={localeKey}
+            totalLabel={t("dashboard.weeklyHoursTotalLabel")}
+            className="text-xs text-foreground"
+          />
         </>
       ) : null}
     </div>,
@@ -426,7 +441,7 @@ type EmployeeComboboxProps = {
   profileQualificationIds?: ReadonlyMap<string, ReadonlySet<string>>;
   qualificationNameById?: ReadonlyMap<string, string>;
   qualificationSortOrder?: ReadonlyMap<string, number>;
-  weeklyHoursLineByEmployeeId?: ReadonlyMap<string, string>;
+  weeklyHoursDisplayByEmployeeId?: ReadonlyMap<string, EmployeeWeeklyHoursDisplay>;
 };
 
 function availabilitiesForWeekday(
@@ -476,7 +491,7 @@ export function AreaCalendarShiftEmployeeCombobox({
   profileQualificationIds,
   qualificationNameById,
   qualificationSortOrder,
-  weeklyHoursLineByEmployeeId,
+  weeklyHoursDisplayByEmployeeId,
 }: EmployeeComboboxProps) {
   const [open, setOpen] = useState(false);
   const [hintAvailabilities, setHintAvailabilities] = useState<
@@ -575,10 +590,10 @@ export function AreaCalendarShiftEmployeeCombobox({
     qualificationSortOrder,
   ]);
 
-  const hintWeeklyHoursLine = useMemo(() => {
-    if (!hintEmployeeId || !weeklyHoursLineByEmployeeId) return null;
-    return weeklyHoursLineByEmployeeId.get(hintEmployeeId) ?? null;
-  }, [hintEmployeeId, weeklyHoursLineByEmployeeId]);
+  const hintWeeklyHoursDisplay = useMemo(() => {
+    if (!hintEmployeeId || !weeklyHoursDisplayByEmployeeId) return null;
+    return weeklyHoursDisplayByEmployeeId.get(hintEmployeeId) ?? null;
+  }, [hintEmployeeId, weeklyHoursDisplayByEmployeeId]);
 
   const closeAvailabilityMenu = useCallback(() => {
     setAvailabilityMenuAnchor(null);
@@ -756,7 +771,7 @@ export function AreaCalendarShiftEmployeeCombobox({
           tooltipRef={hintTooltipRef}
           weekdayLabelStyle={weekdayLabelStyle}
           jobsLabel={hintJobsLabel}
-          weeklyHoursLine={hintWeeklyHoursLine}
+          weeklyHoursDisplay={hintWeeklyHoursDisplay}
         />
       ) : null}
       {availabilityMenuAnchor ? (
@@ -1194,6 +1209,21 @@ export function AreaCalendarAddShiftModal({
     Record<string, ProfileShiftPreferenceEntry[]>
   >({});
   const [timeZone, setTimeZone] = useState(DEFAULT_ORGANIZATION_TIME_ZONE);
+  const [countryCode, setCountryCode] = useState("DE");
+  const [assignLocations, setAssignLocations] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [organizationWeekShifts, setOrganizationWeekShifts] = useState<
+    {
+      id: string;
+      employee_id: string;
+      shift_date: string;
+      startTime: string;
+      endTime: string;
+      location_id: string | null;
+      location_area_id: string | null;
+    }[]
+  >([]);
   const [employeeId, setEmployeeId] = useState(EMPTY_EMPLOYEE_ID);
   const [employeeManuallySelected, setEmployeeManuallySelected] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
@@ -1216,6 +1246,24 @@ export function AreaCalendarAddShiftModal({
 
   const timesComplete = areAreaCalendarShiftTimesComplete(startTime, endTime);
 
+  const organizationDayOverlapAssignments = useMemo(
+    () =>
+      assignmentWindowsFromShiftRefsForDate(
+        organizationWeekShifts.length > 0 ? organizationWeekShifts : weekShifts,
+        dialog.date
+      ),
+    [organizationWeekShifts, weekShifts, dialog.date]
+  );
+
+  const organizationDayAssignments = useMemo(
+    () =>
+      locationDayAssignmentsFromShiftRefsForDate(
+        organizationWeekShifts.length > 0 ? organizationWeekShifts : weekShifts,
+        dialog.date
+      ),
+    [organizationWeekShifts, weekShifts, dialog.date]
+  );
+
   const matchingEmployees = useMemo(() => {
     const byWindow = filterAreaCalendarShiftAssignEmployeesByWindowWithoutOverlap(
       employees,
@@ -1223,15 +1271,23 @@ export function AreaCalendarAddShiftModal({
       startTime,
       endTime,
       dialog.date,
-      areaExistingAssignments,
+      organizationDayOverlapAssignments,
       timeZone
     );
-    return filterEmployeesWithinWeeklyHoursForShift(byWindow, {
-      weekShifts,
+    const withinWeeklyHours = filterEmployeesWithinWeeklyHoursForShift(byWindow, {
+      weekShifts:
+        organizationWeekShifts.length > 0 ? organizationWeekShifts : weekShifts,
       shiftDate: dialog.date,
       startTime,
       endTime,
       timeZone,
+    });
+    return filterEmployeesByOrganizationDayShiftCompliance(withinWeeklyHours, {
+      countryCode,
+      shiftDate: dialog.date,
+      windowStart: startTime,
+      windowEnd: endTime,
+      organizationDayAssignments,
     });
   }, [
     employees,
@@ -1239,22 +1295,34 @@ export function AreaCalendarAddShiftModal({
     startTime,
     endTime,
     dialog.date,
-    areaExistingAssignments,
+    organizationDayOverlapAssignments,
+    organizationDayAssignments,
     timeZone,
+    organizationWeekShifts,
     weekShifts,
+    countryCode,
   ]);
 
-  const weeklyHoursLineByEmployeeId = useMemo(() => {
-    const assignedMinutes = weeklyAssignedMinutesByEmployeeId(
-      weekShifts,
-      weekDates
-    );
-    return buildEmployeeWeeklyHoursTooltipLabels(
+  const weeklyHoursDisplayByEmployeeId = useMemo(() => {
+    const displayShifts =
+      organizationWeekShifts.length > 0 ? organizationWeekShifts : weekShifts;
+    return buildEmployeeWeeklyHoursDisplayByEmployeeId({
       employees,
-      assignedMinutes,
-      locale
-    );
-  }, [employees, weekShifts, weekDates, locale]);
+      shifts: displayShifts,
+      weekDates,
+      locationNameById: buildLocationNameByIdMap(assignLocations),
+      areaIdToLocationId: buildAreaIdToLocationIdMap(areas),
+      fallbackLocationId: locationId,
+    });
+  }, [
+    employees,
+    organizationWeekShifts,
+    weekShifts,
+    weekDates,
+    assignLocations,
+    areas,
+    locationId,
+  ]);
 
   const availabilityNotice = useShiftAssignAvailabilityNotice({
     weekday,
@@ -1293,6 +1361,9 @@ export function AreaCalendarAddShiftModal({
         setEmployees(result.employees);
         setProfileShiftPreferences(result.profileShiftPreferences);
         setTimeZone(result.timeZone);
+        setCountryCode(result.countryCode);
+        setAssignLocations(result.locations);
+        setOrganizationWeekShifts(result.organizationWeekShifts ?? []);
       }
       setLoadingEmployees(false);
     }
@@ -1702,7 +1773,7 @@ export function AreaCalendarAddShiftModal({
               profileQualificationIds={profileQualificationIdsMap}
               qualificationNameById={qualificationNameById}
               qualificationSortOrder={qualificationSortOrder}
-              weeklyHoursLineByEmployeeId={weeklyHoursLineByEmployeeId}
+              weeklyHoursDisplayByEmployeeId={weeklyHoursDisplayByEmployeeId}
             />
             {!wishFulfilled ? (
               <p className="mt-1 text-xs text-muted">

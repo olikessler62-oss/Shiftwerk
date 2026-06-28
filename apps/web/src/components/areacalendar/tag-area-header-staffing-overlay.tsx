@@ -4,7 +4,8 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, type RefObject
 import {
   formatStaffingEntriesTooltipSections,
   formatStaffingEntryTooltipSection,
-  formatStaffingConflictTooltipLines,
+  formatStaffingAssignmentTooltipBlocks,
+  type StaffingAssignmentTooltipBlock,
   type StaffingTooltipSection,
 } from "@/lib/bulk-staffing-header";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
@@ -35,16 +36,47 @@ type Props = {
 
 const EMPTY_DISPLAY: StaffingHeaderDisplay = { mode: "empty" };
 
+function AssignmentTooltipSection({
+  heading,
+  blocks,
+}: {
+  heading: string;
+  blocks: readonly StaffingAssignmentTooltipBlock[];
+}) {
+  if (blocks.length === 0) return null;
+
+  return (
+    <div className="mt-2.5 border-t border-border/60 pt-2">
+      <p className="mb-1.5 font-semibold text-foreground">{heading}</p>
+      <ul className="space-y-2">
+        {blocks.map((block, blockIndex) => (
+          <li key={`${block.titleLine}:${blockIndex}`}>
+            <p className="font-medium text-foreground">{block.titleLine}</p>
+            <p className="text-muted-foreground">{block.descriptionLine}</p>
+            {block.noteLine ? (
+              <p className="text-muted-foreground">{block.noteLine}</p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function StaffingTooltipContent({
   title,
   sections,
+  conflictBlocks,
+  hintBlocks,
   conflictsHeading,
-  conflictLines,
+  hintsHeading,
 }: {
   title: string;
   sections: StaffingTooltipSection[];
-  conflictsHeading?: string;
-  conflictLines?: string[];
+  conflictBlocks?: readonly StaffingAssignmentTooltipBlock[];
+  hintBlocks?: readonly StaffingAssignmentTooltipBlock[];
+  conflictsHeading: string;
+  hintsHeading: string;
 }) {
   return (
     <div className="max-w-xs text-xs leading-snug">
@@ -73,23 +105,11 @@ function StaffingTooltipContent({
           </div>
         ))}
       </div>
-      {conflictLines && conflictLines.length > 0 ? (
-        <div className="mt-2.5 border-t border-border/60 pt-2">
-          <p className="mb-1 font-semibold text-foreground">
-            {conflictsHeading}
-          </p>
-          <ul className="space-y-0.5">
-            {conflictLines.map((line, lineIndex) => (
-              <li
-                key={`${line}:${lineIndex}`}
-                className="text-muted-foreground"
-              >
-                {line}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <AssignmentTooltipSection
+        heading={conflictsHeading}
+        blocks={conflictBlocks ?? []}
+      />
+      <AssignmentTooltipSection heading={hintsHeading} blocks={hintBlocks ?? []} />
     </div>
   );
 }
@@ -174,10 +194,11 @@ export function TagAreaHeaderStaffingOverlay({
 
   const staffingTooltipTitle = t("locations.panelStaffing");
   const conflictsHeading = t("areaCalendar.staffingTooltipConflictsHeading");
+  const hintsHeading = t("areaCalendar.staffingTooltipHintsHeading");
 
-  const formatConflictLines = useCallback(
+  const formatAssignmentBlocks = useCallback(
     (targetEntries: TagAreaHeaderStaffingEntry[]) =>
-      formatStaffingConflictTooltipLines(targetEntries, (key, params) =>
+      formatStaffingAssignmentTooltipBlocks(targetEntries, (key, params) =>
         t(key, params)
       ),
     [t]
@@ -198,9 +219,9 @@ export function TagAreaHeaderStaffingOverlay({
     [entries]
   );
 
-  const allEntriesConflictLines = useMemo(
-    () => formatConflictLines(entries),
-    [entries, formatConflictLines]
+  const allEntriesAssignmentBlocks = useMemo(
+    () => formatAssignmentBlocks(entries),
+    [entries, formatAssignmentBlocks]
   );
 
   const allEntriesTooltipSections = useMemo(
@@ -214,15 +235,16 @@ export function TagAreaHeaderStaffingOverlay({
         title={staffingTooltipTitle}
         sections={allEntriesTooltipSections}
         conflictsHeading={conflictsHeading}
-        conflictLines={
-          allEntriesConflictLines.length > 0 ? allEntriesConflictLines : undefined
-        }
+        hintsHeading={hintsHeading}
+        conflictBlocks={allEntriesAssignmentBlocks.conflicts}
+        hintBlocks={allEntriesAssignmentBlocks.hints}
       />
     ),
     [
       allEntriesTooltipSections,
-      allEntriesConflictLines,
+      allEntriesAssignmentBlocks,
       conflictsHeading,
+      hintsHeading,
       staffingTooltipTitle,
     ]
   );
@@ -231,21 +253,24 @@ export function TagAreaHeaderStaffingOverlay({
     (serviceHourId: string) => {
       const entry = entryByServiceHourId.get(serviceHourId);
       if (!entry) return undefined;
-      const conflictLines = formatConflictLines([entry]);
+      const { conflicts, hints } = formatAssignmentBlocks([entry]);
       return (
         <StaffingTooltipContent
           title={staffingTooltipTitle}
           sections={[formatStaffingEntryTooltipSection(entry, formatCoverage)]}
           conflictsHeading={conflictsHeading}
-          conflictLines={conflictLines.length > 0 ? conflictLines : undefined}
+          hintsHeading={hintsHeading}
+          conflictBlocks={conflicts}
+          hintBlocks={hints}
         />
       );
     },
     [
       entryByServiceHourId,
       formatCoverage,
-      formatConflictLines,
+      formatAssignmentBlocks,
       conflictsHeading,
+      hintsHeading,
       staffingTooltipTitle,
     ]
   );

@@ -203,8 +203,18 @@ export function getAreaCalendarWeekHeaderParts(
     ? `${dayMonthFmt.format(start)} – ${dayMonthYearFmt.format(end)}`
     : `${dayMonthYearFmt.format(start)} – ${dayMonthYearFmt.format(end)}`;
 
+  const compactDayMonthFmt = new Intl.DateTimeFormat(intlLocale, {
+    day: "2-digit",
+    month: "2-digit",
+  });
+  const compactRangeLabel =
+    startYear !== endYear
+      ? `${compactDayMonthFmt.format(start)}-${compactDayMonthFmt.format(end)}${new Intl.DateTimeFormat(intlLocale, { year: "2-digit" }).format(end)}`
+      : `${compactDayMonthFmt.format(start)}-${compactDayMonthFmt.format(end)}`;
+
   return {
     rangeLabel,
+    compactRangeLabel,
     monthYearLabel,
     year: startYear,
     calendarWeek: getISOWeek(start),

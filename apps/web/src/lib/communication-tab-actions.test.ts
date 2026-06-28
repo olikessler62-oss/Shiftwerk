@@ -17,12 +17,12 @@ describe("communicationTabActions", () => {
       "delete",
     ]);
     expect(communicationTabActions("requested")).toEqual(["cancel"]);
-    expect(communicationTabActions("rejected")).toEqual(["reassign", "delete"]);
+    expect(communicationTabActions("rejected")).toEqual(["delete"]);
     expect(communicationTabActions("pending")).toEqual([
       "cancel",
       "requestConfirmation",
     ]);
-    expect(communicationTabActions("canceled")).toEqual(["reassign", "delete"]);
+    expect(communicationTabActions("canceled")).toEqual(["delete"]);
   });
 
   it("shows selection for every actionable tab", () => {

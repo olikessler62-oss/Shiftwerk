@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { Alert } from "@/components/ui";
 import { DashboardAreaAmpelCard } from "@/components/dashboard/dashboard-area-ampel-card";
 import { DashboardLocationKpiStrip } from "@/components/dashboard/dashboard-location-kpi-strip";
 import { DashboardSummaryHeader } from "@/components/dashboard/dashboard-summary-header";
@@ -52,6 +51,7 @@ type Props = {
   selectedLocationName?: string;
   areas: LocationArea[];
   calendarShifts: PlanningShift[];
+  weeklyHoursShifts?: readonly PlanningShift[];
   serviceHours: AreaServiceHourRef[];
   staffingRules: LocationAreaStaffing[];
   staffingOverrides: LocationAreaStaffingOverride[];
@@ -76,6 +76,7 @@ export function DashboardSummaryView({
   selectedLocationName = "",
   areas,
   calendarShifts,
+  weeklyHoursShifts,
   serviceHours,
   staffingRules,
   staffingOverrides,
@@ -226,6 +227,7 @@ export function DashboardSummaryView({
     return {
       weekStart,
       dates,
+      weeklyHoursShifts,
       locationId: selectedLocationId,
       simplePlanning,
       calendarShifts,
@@ -246,6 +248,7 @@ export function DashboardSummaryView({
     staffingEnabled,
     weekStart,
     dates,
+    weeklyHoursShifts,
     simplePlanning,
     calendarShifts,
     staffingRules,
@@ -292,12 +295,6 @@ export function DashboardSummaryView({
 
   return (
     <>
-      {readOnlyWeek ? (
-        <Alert variant="info" className="mx-4 mt-4 md:mx-6">
-          {t("dashboard.readOnlyWeek")}
-        </Alert>
-      ) : null}
-
       <div
         className={cn(
           "flex min-h-0 flex-1 flex-col gap-4 px-4 pb-6 md:px-6",

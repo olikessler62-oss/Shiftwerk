@@ -77,7 +77,7 @@ describe("staffingRowShowsIssuesButton", () => {
           staffingConflicts: [
             {
               id: "c-1",
-              kind: "overstaffed",
+              kind: "qualification_mismatch",
               dateISO: "2026-06-25",
               weekdayLabel: "Mi",
               timeLabel: "08:00–16:00",
@@ -89,6 +89,28 @@ describe("staffingRowShowsIssuesButton", () => {
         true
       )
     ).toBe(true);
+  });
+
+  it("does not show for staffing hints alone (overstaffing)", () => {
+    expect(
+      staffingRowShowsIssuesButton(
+        {
+          ...baseRow,
+          staffingHints: [
+            {
+              id: "h-1",
+              kind: "overstaffed",
+              dateISO: "2026-06-25",
+              weekdayLabel: "Mi",
+              timeLabel: "08:00–16:00",
+              shiftName: "Früh",
+              employeeName: "Anna",
+            },
+          ],
+        },
+        true
+      )
+    ).toBe(false);
   });
 
   it("shows for confirmation counts when enabled", () => {
@@ -137,12 +159,12 @@ describe("confirmationActionsForShift", () => {
     expect(actions).toEqual(["cancel", "requestConfirmation"]);
   });
 
-  it("maps rejected to reassign and delete", () => {
+  it("maps rejected to delete only", () => {
     const actions = confirmationActionsForShift(
       shift({ id: "s-1", employee_id: "emp-1", confirmationStatus: "rejected" }),
       context
     );
-    expect(actions).toEqual(["reassign", "delete"]);
+    expect(actions).toEqual(["delete"]);
   });
 });
 
@@ -235,12 +257,23 @@ describe("filterStaffingWindowIssueListItemsByConfirmationStatus", () => {
         staffingConflicts: [
           {
             id: "c-1",
-            kind: "overstaffed",
+            kind: "qualification_mismatch",
             dateISO: "2026-06-25",
             weekdayLabel: "Mi",
             timeLabel: "08:00–16:00",
             shiftName: "Früh",
             employeeName: "Anna",
+          },
+        ],
+        staffingHints: [
+          {
+            id: "h-1",
+            kind: "overstaffed",
+            dateISO: "2026-06-25",
+            weekdayLabel: "Mi",
+            timeLabel: "08:00–16:00",
+            shiftName: "Früh",
+            employeeName: "Ben",
           },
         ],
         confirmationCounts: { pending: 1, rejected: 1 },
