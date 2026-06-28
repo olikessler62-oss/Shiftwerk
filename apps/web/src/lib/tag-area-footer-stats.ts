@@ -117,6 +117,48 @@ export function computeTagAreaDayFooterStatsForDate(
   };
 }
 
+/** Standort-Woche — Stunden/Entgelt/Zuschläge aus Schichten + lazy Compensation-Map. */
+export function computeLocationCompensationRollup(
+  dates: readonly string[],
+  shifts: readonly TagAreaShiftRef[],
+  compensationByKey: AreaCalendarShiftCompensationByKey,
+  defaultCurrency = DEFAULT_ORGANIZATION_CURRENCY
+): TagAreaDayFooterStats {
+  let totalHours = 0;
+  let baseCost = 0;
+  let surchargeCost = 0;
+  let hasCompensation = false;
+  let currency = defaultCurrency;
+
+  for (const dateISO of dates) {
+    const dayStats = computeTagAreaDayFooterStatsForDate(
+      dateISO,
+      shifts,
+      compensationByKey,
+      defaultCurrency
+    );
+    totalHours += dayStats.totalHours;
+    baseCost += dayStats.baseCost;
+    surchargeCost += dayStats.surchargeCost;
+    if (dayStats.hasCompensation) {
+      hasCompensation = true;
+      currency = dayStats.currency;
+    }
+  }
+
+  const roundedBaseCost = Math.round(baseCost * 100) / 100;
+  const roundedSurchargeCost = Math.round(surchargeCost * 100) / 100;
+
+  return {
+    totalHours: Math.round(totalHours * 10) / 10,
+    baseCost: roundedBaseCost,
+    surchargeCost: roundedSurchargeCost,
+    totalCost: Math.round((roundedBaseCost + roundedSurchargeCost) * 100) / 100,
+    hasCompensation,
+    currency,
+  };
+}
+
 export function formatTagAreaFooterMoney(
   amount: number,
   locale: "de" | "en"

@@ -14,6 +14,7 @@ import {
 } from "@/lib/communication-hub";
 import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
 import { PlanningRightSidePanel } from "@/components/planning/planning-side-panel";
+import { PLANNING_SIDE_PANEL_SUBTITLE_CLASS } from "@/components/settings/settings-list-ui";
 import { CommunicationResponsesTab } from "./communication-responses-tab";
 
 import type { AbsenceRequest, LocationArea } from "@schichtwerk/types";
@@ -95,7 +96,12 @@ export function CommunicationHubModal({
       title={t("shiftConfirmation.communication.title")}
       subtitleNode={
         locationName ? (
-          <p className="mt-0.5 truncate font-semibold text-base text-[#0f766e]">
+          <p
+            className={cn(
+              PLANNING_SIDE_PANEL_SUBTITLE_CLASS,
+              "truncate font-semibold text-[#0f766e]"
+            )}
+          >
             {locationName}
           </p>
         ) : undefined

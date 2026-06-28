@@ -48,15 +48,23 @@ import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 import { shouldDisplayShiftOnPlanningCalendar } from "@/lib/shift-cancellation-policy";
 import { useLocallyRemovedShifts } from "@/lib/use-locally-removed-shifts";
 import {
-  APP_SHELL_CONTENT_OFFSET_CLASS,
+  PLANNING_PAGE_CALENDAR_BODY_CLASS,
+  PLANNING_PAGE_CALENDAR_CONTENT_PADDING_CLASS,
   PLANNING_PAGE_CALENDAR_MAIN_CLASS,
   PLANNING_PAGE_CALENDAR_SECTION_CLASS,
+  PLANNING_PAGE_CALENDAR_SURFACE_CLASS,
+  APP_SHELL_CONTENT_OFFSET_CLASS,
 } from "@/lib/app-shell-layout";
 import { cn } from "@/lib/cn";
 import { usePlanningEmployeeListContextMenu } from "@/lib/use-planning-employee-list-context-menu";
 import { useDelayedEmployeeHighlight } from "@/lib/use-delayed-employee-highlight";
-import { filterAreaCalendarShiftsByActiveAreas } from "@/lib/areacalendar-week-employee-legend";
+import { filterAreaCalendarShiftsForEmployeeLegend } from "@/lib/areacalendar-week-employee-legend";
+import { shouldShowLocationInPlanningUi } from "@/lib/planning-location-ui";
 import { resolveSingleActiveAreaIds } from "@/lib/resolve-areacalendar-location";
+import {
+  planningShiftToAreaCalendarCard,
+  type PlanningShift,
+} from "@/lib/planning-shift-card";
 
 type Props = {
   weekStart: string;
@@ -80,6 +88,8 @@ type Props = {
   recurringAvailability?: readonly ProfileRecurringAvailability[];
   communicationSwapRequests?: CommunicationSwapRequestRow[];
   communicationCancelActors?: Record<string, "employee" | "manager">;
+  communicationHubLocationShifts?: PlanningShift[];
+  communicationHubAbsences?: AbsenceRequest[];
   managerNotifications?: ManagerNotification[];
 };
 
@@ -105,6 +115,8 @@ export function AreaCalendarView({
   recurringAvailability = [],
   communicationSwapRequests = [],
   communicationCancelActors = {},
+  communicationHubLocationShifts = [],
+  communicationHubAbsences = [],
   managerNotifications = [],
 }: Props) {
   const router = useRouter();
@@ -152,8 +164,17 @@ export function AreaCalendarView({
       resolveSingleActiveAreaIds(areas, initialActiveAreaId)
     );
 
+  const [employeeLegendActiveDayDates, setEmployeeLegendActiveDayDates] =
+    useState<Set<string>>(() => new Set(dates));
+
+  const showLocationInUi = shouldShowLocationInPlanningUi(locations.length);
+
   const handleActiveAreaIdsChange = useCallback((activeAreaIds: Set<string>) => {
     setEmployeeLegendActiveAreaIds(new Set(activeAreaIds));
+  }, []);
+
+  const handleActiveDayDatesChange = useCallback((activeDayDates: Set<string>) => {
+    setEmployeeLegendActiveDayDates(new Set(activeDayDates));
   }, []);
 
   const calendarShifts = useMemo(
@@ -161,6 +182,7 @@ export function AreaCalendarView({
       visibleShifts.filter((shift) =>
         shouldDisplayShiftOnPlanningCalendar({
           id: shift.id,
+          shiftDate: shift.shift_date,
           confirmationStatus: shift.confirmationStatus,
           cancelActors: communicationCancelActorsMap,
           cancelledBy: shift.displayState?.openCancellation?.cancelledBy,
@@ -171,11 +193,16 @@ export function AreaCalendarView({
 
   const employeeLegendShifts = useMemo(
     () =>
-      filterAreaCalendarShiftsByActiveAreas(
+      filterAreaCalendarShiftsForEmployeeLegend(
         calendarShifts,
-        employeeLegendActiveAreaIds
+        employeeLegendActiveAreaIds,
+        employeeLegendActiveDayDates
       ),
-    [calendarShifts, employeeLegendActiveAreaIds]
+    [
+      calendarShifts,
+      employeeLegendActiveAreaIds,
+      employeeLegendActiveDayDates,
+    ]
   );
 
   const compensationShiftRefs = useMemo(
@@ -190,19 +217,52 @@ export function AreaCalendarView({
   );
   const shiftCompensation = useLazyShiftCompensation(compensationShiftRefs);
 
-  const weeklyHoursCheckShifts = useMemo(
-    () => visibleShifts.map(weeklyHoursCheckShiftFromAreaCalendarCard),
-    [visibleShifts]
+  const profilesById = useMemo(
+    () => new Map(profiles.map((profile) => [profile.id, profile])),
+    [profiles]
   );
+
+  const communicationHubShifts = useMemo(() => {
+    const cards: AreaCalendarShiftCard[] = [];
+    for (const shift of communicationHubLocationShifts) {
+      if (removedIds.has(shift.id)) continue;
+      if (
+        !shouldDisplayShiftOnPlanningCalendar({
+          id: shift.id,
+          shiftDate: shift.shift_date,
+          confirmationStatus: shift.confirmationStatus,
+          cancelActors: communicationCancelActorsMap,
+          cancelledBy: shift.displayState?.openCancellation?.cancelledBy,
+        })
+      ) {
+        continue;
+      }
+      const employee = profilesById.get(shift.employee_id);
+      if (employee) {
+        cards.push(planningShiftToAreaCalendarCard(shift, employee));
+      }
+    }
+    return cards;
+  }, [
+    communicationHubLocationShifts,
+    removedIds,
+    communicationCancelActorsMap,
+    profilesById,
+  ]);
 
   const weeklyHoursByEmployeeId = useMemo(
     () => weeklyHoursByEmployeeIdFromProfiles(profiles),
     [profiles]
   );
 
+  const weeklyHoursCheckShifts = useMemo(
+    () => communicationHubShifts.map(weeklyHoursCheckShiftFromAreaCalendarCard),
+    [communicationHubShifts]
+  );
+
   const communicationHubOptions = useMemo(
     () => ({
-      absences,
+      absences: communicationHubAbsences,
       swapRequests: communicationSwapRequests,
       cancelActors: communicationCancelActorsMap,
       todayISO: weeklyHoursTodayISO,
@@ -210,7 +270,7 @@ export function AreaCalendarView({
       weeklyHoursCheckShifts,
     }),
     [
-      absences,
+      communicationHubAbsences,
       communicationSwapRequests,
       communicationCancelActorsMap,
       weeklyHoursTodayISO,
@@ -221,9 +281,9 @@ export function AreaCalendarView({
   const communicationItemCount = useMemo(
     () =>
       shiftConfirmationEnabled
-        ? communicationBadgeCount(visibleShifts, communicationHubOptions)
+        ? communicationBadgeCount(communicationHubShifts, communicationHubOptions)
         : 0,
-    [shiftConfirmationEnabled, visibleShifts, communicationHubOptions]
+    [shiftConfirmationEnabled, communicationHubShifts, communicationHubOptions]
   );
 
   const { highlightedEmployeeId, handleEmployeeHover } = useDelayedEmployeeHighlight();
@@ -271,37 +331,44 @@ export function AreaCalendarView({
   });
 
   return (
-    <div onContextMenu={(event) => event.preventDefault()}>
-      <section className={cn("relative flex flex-col px-2 md:px-4", PLANNING_PAGE_CALENDAR_SECTION_CLASS)}>
-        <div className="flex min-h-0 flex-1 flex-col gap-2 max-md:overflow-visible md:flex-row md:gap-3">
-          <AreaCalendarEmployeeLegendSidebar
-            shifts={employeeLegendShifts}
-            profiles={profiles}
-            absences={absences}
-            recurringAvailability={recurringAvailability}
-            qualifications={qualifications}
-            profileQualificationIds={profileQualificationIds}
-            locale={locale}
-            employeeHoursLabel={t("common.basic")}
-            emptyLabel={t("areaCalendar.weekEmployeeLegendEmpty")}
-            onEmployeeHover={handleEmployeeHover}
-            onEmployeeContextMenu={openEmployeeListContextMenu}
-            className={cn(
-              APP_SHELL_CONTENT_OFFSET_CLASS,
-              "max-md:!mt-0 max-md:!w-full max-md:shrink-0"
-            )}
-          />
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <section className={PLANNING_PAGE_CALENDAR_SECTION_CLASS}>
+        <div
+          className={cn(
+            PLANNING_PAGE_CALENDAR_MAIN_CLASS,
+            PLANNING_PAGE_CALENDAR_CONTENT_PADDING_CLASS,
+            APP_SHELL_CONTENT_OFFSET_CLASS
+          )}
+        >
           <div
             className={cn(
-              PLANNING_PAGE_CALENDAR_MAIN_CLASS,
-              APP_SHELL_CONTENT_OFFSET_CLASS
+              PLANNING_PAGE_CALENDAR_BODY_CLASS,
+              "gap-2 max-md:overflow-visible md:flex-row md:gap-3"
             )}
           >
-            <AreaCalendar
+            <AreaCalendarEmployeeLegendSidebar
+              shifts={employeeLegendShifts}
+              profiles={profiles}
+              absences={absences}
+              recurringAvailability={recurringAvailability}
+              qualifications={qualifications}
+              profileQualificationIds={profileQualificationIds}
+              locale={locale}
+              employeeHoursLabel={t("common.basic")}
+              onEmployeeHover={handleEmployeeHover}
+              onEmployeeContextMenu={openEmployeeListContextMenu}
+              className="max-md:!mt-0 max-md:!w-full max-md:shrink-0"
+            />
+            <div className={PLANNING_PAGE_CALENDAR_SURFACE_CLASS}>
+              <AreaCalendar
               weekStart={weekStart}
               dates={dates}
               locationId={selectedLocationId}
               locationName={selectedLocation?.name ?? ""}
+              showLocationName={showLocationInUi}
               areas={areas}
               staffingRules={staffingRules}
               serviceHours={serviceHours}
@@ -325,9 +392,12 @@ export function AreaCalendarView({
               }
               initialActiveAreaId={initialActiveAreaId}
               onActiveAreaIdsChange={handleActiveAreaIdsChange}
+              onActiveDayDatesChange={handleActiveDayDatesChange}
             />
+            </div>
           </div>
         </div>
+      </section>
         <SettingsModalsLayer
           data={{
             locations,
@@ -347,10 +417,12 @@ export function AreaCalendarView({
             key={`communication-${communicationOptions?.category ?? communicationOptions?.responseTab ?? "auto"}-${communicationOptions?.preselectedShiftIds?.join(",") ?? ""}`}
             weekStart={weekStart}
             locationId={selectedLocationId}
-            locationName={selectedLocation?.name}
+            locationName={
+              showLocationInUi ? selectedLocation?.name : undefined
+            }
             areas={areas}
-            shifts={visibleShifts}
-            absences={absences}
+            shifts={communicationHubShifts}
+            absences={communicationHubAbsences}
             swapRequests={communicationSwapRequests}
             cancelActors={communicationCancelActorsMap}
             todayISO={weeklyHoursTodayISO}
@@ -377,7 +449,6 @@ export function AreaCalendarView({
             onOpenQualifications={openEmployeeQualifications}
           />
         ) : null}
-      </section>
     </div>
   );
 }

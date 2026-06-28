@@ -35,7 +35,6 @@ type Props = {
   profileQualificationIds?: Record<string, string[]>;
   locale: string;
   employeeHoursLabel: string;
-  emptyLabel: string;
   onEmployeeHover?: (employeeId: string | null) => void;
   onEmployeeContextMenu?: (
     employeeId: string,
@@ -54,7 +53,6 @@ export function AreaCalendarEmployeeLegendSidebar({
   profileQualificationIds = {},
   locale,
   employeeHoursLabel,
-  emptyLabel,
   onEmployeeHover,
   onEmployeeContextMenu,
   className,
@@ -81,6 +79,10 @@ export function AreaCalendarEmployeeLegendSidebar({
   const emptyAvailabilityTooltipLabel = t("profiles.emptyAvailability");
   const showEmployeeJobs = qualifications.length > 0;
 
+  if (employees.length === 0) {
+    return null;
+  }
+
   return (
     <aside
       className={cn(
@@ -92,66 +94,62 @@ export function AreaCalendarEmployeeLegendSidebar({
         marginTop: AREA_CALENDAR_EMPLOYEE_LIST_TOP_OFFSET_PX,
       }}
     >
-      {employees.length === 0 ? (
-        <p className="px-1 text-xs text-muted">{emptyLabel}</p>
-      ) : (
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto pb-1",
+          MODAL_SCROLLBAR_CLASS
+        )}
+      >
         <div
-          className={cn(
-            "min-h-0 flex-1 overflow-y-auto pb-1",
-            MODAL_SCROLLBAR_CLASS
-          )}
+          className="flex flex-col"
+          style={{ gap: SHIFT_CARD_LIST_GAP_PX }}
         >
-          <div
-            className="flex flex-col"
-            style={{ gap: SHIFT_CARD_LIST_GAP_PX }}
-          >
-            {employees.map((employee) => {
-              const weekHours = areaCalendarEmployeeWeekHours(
-                employee.id,
-                shifts,
-                absences
-              );
-              const targetHours = employee.weekly_hours ?? 40;
+          {employees.map((employee) => {
+            const weekHours = areaCalendarEmployeeWeekHours(
+              employee.id,
+              shifts,
+              absences
+            );
+            const targetHours = employee.weekly_hours ?? 40;
 
-              return (
-                <AreaCalendarEmployeeLegendCard
-                  key={employee.id}
-                  employee={employee}
-                  weekHours={weekHours}
-                  targetHours={targetHours}
-                  locale={locale}
-                  employeeHoursLabel={employeeHoursLabel}
-                  availabilityTooltip={
-                    <PlanningEmployeeAvailabilityTooltipContent
-                      slots={availabilityByProfileId.get(employee.id) ?? []}
-                      employeeName={employee.full_name}
-                      locale={availabilityTooltipLocale}
-                      emptyLabel={emptyAvailabilityTooltipLabel}
-                      jobsLabel={
-                        showEmployeeJobs
-                          ? resolvePlanningEmployeeJobsTooltipLabel(
-                              employee.id,
-                              profileQualificationIds,
-                              qualificationMaps.qualificationNameById,
-                              qualificationMaps.qualificationSortOrder
-                            )
-                          : undefined
-                      }
-                    />
-                  }
-                  onMouseEnter={() => onEmployeeHover?.(employee.id)}
-                  onMouseLeave={() => onEmployeeHover?.(null)}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onEmployeeContextMenu?.(employee.id, event.clientX, event.clientY);
-                  }}
-                />
-              );
-            })}
-          </div>
+            return (
+              <AreaCalendarEmployeeLegendCard
+                key={employee.id}
+                employee={employee}
+                weekHours={weekHours}
+                targetHours={targetHours}
+                locale={locale}
+                employeeHoursLabel={employeeHoursLabel}
+                availabilityTooltip={
+                  <PlanningEmployeeAvailabilityTooltipContent
+                    slots={availabilityByProfileId.get(employee.id) ?? []}
+                    employeeName={employee.full_name}
+                    locale={availabilityTooltipLocale}
+                    emptyLabel={emptyAvailabilityTooltipLabel}
+                    jobsLabel={
+                      showEmployeeJobs
+                        ? resolvePlanningEmployeeJobsTooltipLabel(
+                            employee.id,
+                            profileQualificationIds,
+                            qualificationMaps.qualificationNameById,
+                            qualificationMaps.qualificationSortOrder
+                          )
+                        : undefined
+                    }
+                  />
+                }
+                onMouseEnter={() => onEmployeeHover?.(employee.id)}
+                onMouseLeave={() => onEmployeeHover?.(null)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onEmployeeContextMenu?.(employee.id, event.clientX, event.clientY);
+                }}
+              />
+            );
+          })}
         </div>
-      )}
+      </div>
     </aside>
   );
 }

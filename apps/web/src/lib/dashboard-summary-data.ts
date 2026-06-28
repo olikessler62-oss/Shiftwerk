@@ -4,7 +4,8 @@ import { formatTimeRange } from "@/lib/planning-utils";
 import { loadDashboardLocationScopedData } from "@/lib/dashboard-location-data";
 import { shouldDisplayShiftOnPlanningCalendar } from "@/lib/shift-cancellation-policy";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
-import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data";
+import { loadCommunicationHubScopeData } from "@/lib/communication-hub-scope-data";
+import { organizationTodayISO } from "@schichtwerk/database";
 import { resolveDashboardEmployeesForShifts } from "@/lib/dashboard-page-employees";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
@@ -46,6 +47,8 @@ export type DashboardSummaryPageBundle = {
   absences: AbsenceRequest[];
   communicationSwapRequests: CommunicationSwapRequestRow[];
   communicationCancelActors: Record<string, "employee" | "manager">;
+  communicationHubLocationShifts: PlanningShift[];
+  communicationHubAbsences: AbsenceRequest[];
   managerNotifications: ManagerNotification[];
   serviceHours: AreaServiceHourRef[];
   staffingRules: LocationAreaStaffing[];
@@ -63,6 +66,8 @@ const EMPTY_DASHBOARD_SUMMARY_PAGE_BUNDLE: DashboardSummaryPageBundle = {
   absences: [],
   communicationSwapRequests: [],
   communicationCancelActors: {},
+  communicationHubLocationShifts: [],
+  communicationHubAbsences: [],
   managerNotifications: [],
   serviceHours: [],
   staffingRules: [],
@@ -161,6 +166,7 @@ export async function loadDashboardSummaryPageBundle(input: {
     if (
       !shouldDisplayShiftOnPlanningCalendar({
         id: shiftRow.id,
+        shiftDate: shiftRow.shift_date,
         confirmationStatus: confirmationFields.confirmationStatus,
         cancelledBy: confirmationFields.displayState?.openCancellation
           ?.cancelledBy,
@@ -192,49 +198,34 @@ export async function loadDashboardSummaryPageBundle(input: {
     return left.startTime.localeCompare(right.startTime);
   });
 
+  const todayISO = organizationTodayISO(timeZone);
+  const communicationHubScope = await loadCommunicationHubScopeData({
+    db,
+    orgId,
+    organization,
+    locationId,
+    timeZone,
+    todayISO,
+    areaShiftTemplates,
+  });
+
   const employees = await resolveDashboardEmployeesForShifts(
     planningEmployees,
-    locationShifts,
+    mergeSummaryPlanningShiftsById(locationShifts, communicationHubScope.locationShifts),
     (id) => db.getProfileById(id),
     orgId
   );
 
-  const canceledShiftIds = locationShifts
-    .filter((shift) => shift.confirmationStatus === "canceled")
-    .filter((shift) => !shift.displayState?.openCancellation?.cancelledBy)
-    .map((shift) => shift.id);
-
-  const [
-    absences,
-    swapRequestRows,
-    cancelActorEntries,
-    managerNotifications,
-  ] = await Promise.all([
+  const [absences, managerNotifications] = await Promise.all([
     db.listOrganizationAbsences(orgId, {
       statuses: ["approved"],
       overlappingFrom: from,
       overlappingTo: to,
     }),
     organization.shift_confirmation_enabled
-      ? db.listOrganizationSwapRequests(orgId, {
-          statuses: ["pending"],
-          locationId,
-          from,
-          to,
-        })
-      : Promise.resolve([]),
-    organization.shift_confirmation_enabled
-      ? db.listShiftCancelActors(orgId, canceledShiftIds)
-      : Promise.resolve(new Map<string, "employee" | "manager">()),
-    organization.shift_confirmation_enabled
       ? db.listManagerNotificationsForRecipient(userId, { limit: 50 })
       : Promise.resolve([]),
   ]);
-
-  const communicationSwapRequests = mapSwapRequestsToCommunicationRows(
-    swapRequestRows,
-    timeZone
-  );
 
   return {
     summaryShifts,
@@ -242,8 +233,10 @@ export async function loadDashboardSummaryPageBundle(input: {
     locationShifts,
     employees,
     absences,
-    communicationSwapRequests,
-    communicationCancelActors: Object.fromEntries(cancelActorEntries),
+    communicationSwapRequests: communicationHubScope.swapRequests,
+    communicationCancelActors: communicationHubScope.cancelActors,
+    communicationHubLocationShifts: communicationHubScope.locationShifts,
+    communicationHubAbsences: communicationHubScope.absences,
     managerNotifications,
     serviceHours,
     staffingRules,
@@ -252,6 +245,22 @@ export async function loadDashboardSummaryPageBundle(input: {
     qualifications,
     profileQualificationIds: Object.fromEntries(profileQualificationIdsMap),
   };
+}
+
+function mergeSummaryPlanningShiftsById(
+  primary: readonly PlanningShift[],
+  secondary: readonly PlanningShift[]
+): PlanningShift[] {
+  const byId = new Map<string, PlanningShift>();
+  for (const shift of primary) {
+    byId.set(shift.id, shift);
+  }
+  for (const shift of secondary) {
+    if (!byId.has(shift.id)) {
+      byId.set(shift.id, shift);
+    }
+  }
+  return [...byId.values()];
 }
 
 export function emptyDashboardSummaryPageBundle(): DashboardSummaryPageBundle {

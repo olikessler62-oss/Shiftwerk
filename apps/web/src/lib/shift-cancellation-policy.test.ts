@@ -5,6 +5,10 @@ import {
   translateShiftCancelError,
 } from "@/lib/shift-cancellation-policy";
 
+const futureDate = "2099-06-20";
+const pastDate = "2020-06-20";
+const now = new Date("2026-06-25T12:00:00.000Z");
+
 const t = (key: string, params?: Record<string, string | number>) => {
   if (key === "shiftConfirmation.cancel.pastShift") {
     return "Vergangene Schichten können nicht abgesagt werden.";
@@ -28,6 +32,7 @@ describe("shouldDisplayShiftOnPlanningCalendar", () => {
     expect(
       shouldDisplayShiftOnPlanningCalendar({
         id: "employee-canceled",
+        shiftDate: futureDate,
         confirmationStatus: "canceled",
         cancelActors,
       })
@@ -36,6 +41,7 @@ describe("shouldDisplayShiftOnPlanningCalendar", () => {
     expect(
       shouldDisplayShiftOnPlanningCalendar({
         id: "manager-canceled",
+        shiftDate: futureDate,
         confirmationStatus: "canceled",
         cancelActors,
       })
@@ -46,6 +52,7 @@ describe("shouldDisplayShiftOnPlanningCalendar", () => {
     expect(
       shouldDisplayShiftOnPlanningCalendar({
         id: "manager-canceled",
+        shiftDate: futureDate,
         confirmationStatus: "canceled",
         cancelledBy: "manager",
       })
@@ -54,6 +61,7 @@ describe("shouldDisplayShiftOnPlanningCalendar", () => {
     expect(
       shouldDisplayShiftOnPlanningCalendar({
         id: "employee-canceled",
+        shiftDate: futureDate,
         confirmationStatus: "canceled",
         cancelledBy: "employee",
       })
@@ -64,7 +72,47 @@ describe("shouldDisplayShiftOnPlanningCalendar", () => {
     expect(
       shouldDisplayShiftOnPlanningCalendar({
         id: "confirmed-shift",
+        shiftDate: futureDate,
         confirmationStatus: "confirmed",
+      })
+    ).toBe(true);
+  });
+
+  it("hides past proposed shifts from the calendar", () => {
+    expect(
+      shouldDisplayShiftOnPlanningCalendar({
+        id: "past-proposed",
+        shiftDate: pastDate,
+        confirmationStatus: "proposed",
+        now,
+      })
+    ).toBe(false);
+    expect(
+      shouldDisplayShiftOnPlanningCalendar({
+        id: "future-proposed",
+        shiftDate: futureDate,
+        confirmationStatus: "proposed",
+        now,
+      })
+    ).toBe(true);
+  });
+
+  it("keeps past rejected and employee-canceled shifts visible", () => {
+    expect(
+      shouldDisplayShiftOnPlanningCalendar({
+        id: "past-rejected",
+        shiftDate: pastDate,
+        confirmationStatus: "rejected",
+        now,
+      })
+    ).toBe(true);
+    expect(
+      shouldDisplayShiftOnPlanningCalendar({
+        id: "past-employee-canceled",
+        shiftDate: pastDate,
+        confirmationStatus: "canceled",
+        cancelledBy: "employee",
+        now,
       })
     ).toBe(true);
   });

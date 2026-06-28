@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import {
+  cleanupSuperadminConfirmationConflicts,
   confirmAllSuperadminShiftStatuses,
   getSuperadminShiftSnapshotMeta,
   listSuperadminShifts,
+  previewSuperadminConfirmationConflictCleanup,
   saveSuperadminShiftSnapshot,
   updateSuperadminShiftConfirmationStatus,
 } from "@/app/actions/superadmin-shifts";
@@ -20,6 +22,10 @@ import {
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import {
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
+  settingsConfirmDialogClass,
+  settingsModalFooterClass,
+  settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
   settingsResponsiveTableWrapClass,
 } from "./settings-list-ui";
 
@@ -45,6 +51,12 @@ export function SuperadminShiftsSection({ disabled = false }: Props) {
   const [loading, startLoadTransition] = useTransition();
   const [snapshotPending, startSnapshotTransition] = useTransition();
   const [confirmAllPending, startConfirmAllTransition] = useTransition();
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
+  const [cleanupPreviewCount, setCleanupPreviewCount] = useState<number | null>(
+    null
+  );
+  const [cleanupPreviewPending, startCleanupPreviewTransition] = useTransition();
+  const [cleanupPending, startCleanupTransition] = useTransition();
 
   const loadSnapshotMeta = useCallback(async () => {
     const result = await getSuperadminShiftSnapshotMeta();
@@ -153,6 +165,56 @@ export function SuperadminShiftsSection({ disabled = false }: Props) {
     });
   }
 
+  function handleOpenCleanupConfirm() {
+    setSaveError(null);
+    setSnapshotMessage(null);
+    setCleanupPreviewCount(null);
+    setCleanupConfirmOpen(true);
+    startCleanupPreviewTransition(async () => {
+      const result = await previewSuperadminConfirmationConflictCleanup();
+      if (!result.ok) {
+        setCleanupConfirmOpen(false);
+        setSaveError(
+          result.error
+            ? `${t(result.errorKey)} ${result.error}`
+            : t(result.errorKey)
+        );
+        return;
+      }
+      setCleanupPreviewCount(result.conflictCount ?? 0);
+    });
+  }
+
+  function handleCleanupConfirm() {
+    setSaveError(null);
+    setSnapshotMessage(null);
+    startCleanupTransition(async () => {
+      const result = await cleanupSuperadminConfirmationConflicts();
+      setCleanupConfirmOpen(false);
+      if (!result.ok) {
+        setSaveError(
+          result.error
+            ? `${t(result.errorKey)} ${result.error}`
+            : t(result.errorKey)
+        );
+        return;
+      }
+
+      const cleanedCount = result.cleanedCount ?? 0;
+      if (cleanedCount > 0) {
+        setSnapshotMessage(
+          t("nav.superadminCleanupConfirmationConflictsDone", {
+            count: cleanedCount,
+          })
+        );
+        loadShifts();
+        return;
+      }
+
+      setSnapshotMessage(t("nav.superadminCleanupConfirmationConflictsNone"));
+    });
+  }
+
   function handleSaveSnapshot() {
     setSaveError(null);
     setSnapshotMessage(null);
@@ -192,7 +254,9 @@ export function SuperadminShiftsSection({ disabled = false }: Props) {
     loading ||
     savingShiftId != null ||
     snapshotPending ||
-    confirmAllPending;
+    confirmAllPending ||
+    cleanupPending ||
+    cleanupPreviewPending;
 
   const snapshotSavedLabel =
     snapshotMeta && snapshotMeta.shiftCount > 0
@@ -236,6 +300,16 @@ export function SuperadminShiftsSection({ disabled = false }: Props) {
             {confirmAllPending
               ? t("nav.superadminConfirmAllShiftStatusesPending")
               : t("nav.superadminConfirmAllShiftStatuses")}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={controlsDisabled || shifts.length === 0}
+            onClick={handleOpenCleanupConfirm}
+          >
+            {cleanupPending
+              ? t("nav.superadminCleanupConfirmationConflictsPending")
+              : t("nav.superadminCleanupConfirmationConflicts")}
           </Button>
         </div>
       </div>
@@ -327,6 +401,75 @@ export function SuperadminShiftsSection({ disabled = false }: Props) {
               })}
             </tbody>
           </table>
+        </div>
+      ) : null}
+
+      {cleanupConfirmOpen ? (
+        <div
+          className={settingsNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !cleanupPending) {
+              setCleanupConfirmOpen(false);
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="superadmin-cleanup-confirmation-conflicts-title"
+            className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setCleanupConfirmOpen(false)}
+              closeDisabled={cleanupPending}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
+              <h3
+                id="superadmin-cleanup-confirmation-conflicts-title"
+                className="text-base font-semibold text-foreground"
+              >
+                {t("nav.superadminCleanupConfirmationConflictsConfirmTitle")}
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted">
+                {cleanupPreviewPending || cleanupPreviewCount == null
+                  ? t("common.loading")
+                  : cleanupPreviewCount > 0
+                    ? t("nav.superadminCleanupConfirmationConflictsConfirmBody", {
+                        count: cleanupPreviewCount,
+                      })
+                    : t("nav.superadminCleanupConfirmationConflictsNone")}
+              </p>
+              <div
+                className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={cleanupPending}
+                  onClick={() => setCleanupConfirmOpen(false)}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  disabled={
+                    cleanupPending ||
+                    cleanupPreviewPending ||
+                    cleanupPreviewCount == null ||
+                    cleanupPreviewCount === 0
+                  }
+                  onClick={handleCleanupConfirm}
+                >
+                  {cleanupPending
+                    ? t("nav.superadminCleanupConfirmationConflictsPending")
+                    : t("nav.superadminCleanupConfirmationConflictsRun")}
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

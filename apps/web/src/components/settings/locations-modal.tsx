@@ -59,6 +59,7 @@ import {
   settingsDataRowClass,
   settingsIndicatorCellClass,
   settingsPanelHeaderClass,
+  PLANNING_SIDE_PANEL_SUBTITLE_CLASS,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -624,7 +625,13 @@ export function LocationsModal({
     const staffingReady = areaId in staffingCache;
     const templatesReady = areaId in shiftTemplatesCache;
     const qualificationTemplatesReady = areaId in qualificationTemplatesCache;
-    if (hoursReady && staffingReady && templatesReady && qualificationTemplatesReady) {
+    if (
+      hoursReady &&
+      staffingReady &&
+      templatesReady &&
+      qualificationTemplatesReady
+    ) {
+      setDisplayedAreaId((current) => current ?? areaId);
       return;
     }
 
@@ -643,36 +650,53 @@ export function LocationsModal({
       qualificationTemplatesReady
         ? Promise.resolve(null)
         : fetchAreaQualificationTemplates(selectedLocationId, areaId),
-    ]).then(([hoursResult, staffingResult, templatesResult, qualificationResult]) => {
-      if (cancelled) return;
-      const hours =
-        hoursResult?.ok === true ? (hoursResult.hours ?? []) : [];
-      const staffing =
-        staffingResult?.ok === true ? (staffingResult.staffing ?? []) : [];
-      const templates =
-        templatesResult?.ok === true ? (templatesResult.templates ?? []) : [];
-      const qualificationTemplates =
-        qualificationResult?.ok === true
-          ? (qualificationResult.templates ?? [])
-          : [];
-      setServiceHoursCache((prev) => {
-        if (areaId in prev) return prev;
-        return { ...prev, [areaId]: hours };
+    ])
+      .then(([hoursResult, staffingResult, templatesResult, qualificationResult]) => {
+        if (cancelled) return;
+        const hours =
+          hoursResult?.ok === true ? (hoursResult.hours ?? []) : [];
+        const staffing =
+          staffingResult?.ok === true ? (staffingResult.staffing ?? []) : [];
+        const templates =
+          templatesResult?.ok === true ? (templatesResult.templates ?? []) : [];
+        const qualificationTemplates =
+          qualificationResult?.ok === true
+            ? (qualificationResult.templates ?? [])
+            : [];
+        setServiceHoursCache((prev) => {
+          if (areaId in prev) return prev;
+          return { ...prev, [areaId]: hours };
+        });
+        setStaffingCache((prev) => {
+          if (areaId in prev) return prev;
+          return { ...prev, [areaId]: staffing };
+        });
+        setShiftTemplatesCache((prev) => {
+          if (areaId in prev) return prev;
+          return { ...prev, [areaId]: templates };
+        });
+        setQualificationTemplatesCache((prev) => {
+          if (areaId in prev) return prev;
+          return { ...prev, [areaId]: qualificationTemplates };
+        });
+        setDisplayedAreaId(areaId);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setServiceHoursCache((prev) =>
+          areaId in prev ? prev : { ...prev, [areaId]: [] }
+        );
+        setStaffingCache((prev) =>
+          areaId in prev ? prev : { ...prev, [areaId]: [] }
+        );
+        setShiftTemplatesCache((prev) =>
+          areaId in prev ? prev : { ...prev, [areaId]: [] }
+        );
+        setQualificationTemplatesCache((prev) =>
+          areaId in prev ? prev : { ...prev, [areaId]: [] }
+        );
+        setDisplayedAreaId(areaId);
       });
-      setStaffingCache((prev) => {
-        if (areaId in prev) return prev;
-        return { ...prev, [areaId]: staffing };
-      });
-      setShiftTemplatesCache((prev) => {
-        if (areaId in prev) return prev;
-        return { ...prev, [areaId]: templates };
-      });
-      setQualificationTemplatesCache((prev) => {
-        if (areaId in prev) return prev;
-        return { ...prev, [areaId]: qualificationTemplates };
-      });
-      setDisplayedAreaId(areaId);
-    });
 
     return () => {
       cancelled = true;
@@ -788,8 +812,8 @@ export function LocationsModal({
 
   const detailSubtitleNode =
     detailPanel && selectedLocation && selectedArea ? (
-      <div className="mt-0.5 text-sm text-muted">
-        <p>{detailContextSubtitle}</p>
+      <div className={PLANNING_SIDE_PANEL_SUBTITLE_CLASS}>
+        <p className="break-words">{detailContextSubtitle}</p>
         {detailPanel === "qualificationTemplates" ? (
           <p className="mt-1 text-xs">{t("locations.areaQualificationTemplatesHint")}</p>
         ) : null}

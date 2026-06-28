@@ -179,14 +179,15 @@ export function serviceHourIdsForAreaOnDate(
 }
 
 export function findServiceHourIdForShift(
-  serviceHours: readonly AreaServiceHourRef[],
+  serviceHours: readonly AreaServiceHourRef[] | null | undefined,
   areaId: string,
   dateISO: string,
   startTime: string,
   endTime: string
 ): string | null {
+  const hours = serviceHours ?? [];
   const weekday = serviceWeekdayForDate(dateISO);
-  for (const hour of serviceHours) {
+  for (const hour of hours) {
     if (
       hour.location_area_id !== areaId ||
       normalizeWeekday(hour.weekday) !== weekday ||
@@ -209,7 +210,7 @@ export function findServiceHourIdForShift(
   }
 
   const previousWeekday = serviceHourPreviousWeekday(weekday);
-  for (const hour of serviceHours) {
+  for (const hour of hours) {
     if (
       hour.location_area_id !== areaId ||
       normalizeWeekday(hour.weekday) !== previousWeekday ||
@@ -453,6 +454,36 @@ export function hasStaffingHeaderServiceHoursOnDate(
   );
 }
 
+/** Bereich hat am Tag planbare Servicezeit-Fenster (Start + Ende). */
+export function areaHasEffectiveServiceHoursOnDate(
+  serviceHours: readonly AreaServiceHourRef[],
+  areaId: string,
+  dateISO: string
+): boolean {
+  return hasStaffingHeaderServiceHoursOnDate(serviceHours, dateISO, areaId);
+}
+
+/** Mindestens ein Bereich mit planbaren Servicezeiten am Tag. */
+export function hasEffectiveServiceHoursOnDate(
+  serviceHours: readonly AreaServiceHourRef[],
+  dateISO: string,
+  areaIds: readonly string[] = []
+): boolean {
+  if (areaIds.length === 0) {
+    const weekday = serviceWeekdayForDate(dateISO);
+    return serviceHours.some(
+      (hour) =>
+        Boolean(hour.id) &&
+        Boolean(hour.start_time?.trim()) &&
+        Boolean(hour.end_time?.trim()) &&
+        normalizeServiceHourWeekday(hour.weekday) === weekday
+    );
+  }
+  return areaIds.some((areaId) =>
+    areaHasEffectiveServiceHoursOnDate(serviceHours, areaId, dateISO)
+  );
+}
+
 export type StaffingRule = {
   location_area_id: string;
   service_hour_id: string;
@@ -572,10 +603,26 @@ export type StaffingQualificationCoverage = {
   required: number;
 };
 
+export type StaffingConflictKind =
+  | "overstaffed"
+  | "qualification_mismatch"
+  | "no_matching_qualification";
+
+/** Einzelner Konflikt für Tooltip-Fußnote (wer, wann, welche Position). */
+export type StaffingConflictDetail = {
+  kind: StaffingConflictKind;
+  employeeName: string;
+  timeLabel: string;
+  assignedQualificationName?: string;
+  missingQualificationName?: string;
+};
+
 export type TagAreaHeaderStaffingEntry = {
   serviceHourId: string;
   label: string;
   assigned: number;
+  /** Bestätigt + offene Planung — für Rot/Grün-Projektion. */
+  projectedAssigned?: number;
   required: number;
   /** Ausführliches Zeitlabel (Bulk-Modal). */
   timeLabel?: string;
@@ -585,6 +632,10 @@ export type TagAreaHeaderStaffingEntry = {
   shiftTemplateLabel?: string;
   /** Bedarf und Einsatz je Funktion (Bulk-Modal-Tooltip). */
   qualifications?: StaffingQualificationCoverage[];
+  /** Funktions-Einsatz inkl. geplanter Schichten. */
+  projectedQualifications?: StaffingQualificationCoverage[];
+  /** Konkrete Über-/Fehlbelegungen für Kalender-Tooltip-Fußnote. */
+  conflictDetails?: StaffingConflictDetail[];
 };
 
 /** Personalbedarf und Einsatz je Servicezeit-Fenster für Tag-Bereich-Header (Bereich-Kalender). */
@@ -668,6 +719,28 @@ export function resolveCalendarStaffingTimeLabel(
   const raw =
     entry.calendarTimeLabel ?? staffingLabelWithoutWeekday(entry.label);
   return compactStaffingTimeRangeLabel(raw);
+}
+
+/** Schicht- und/oder Uhrzeit für Tooltip-Zeilen (ohne äußere Klammern). */
+export function resolveStaffingTooltipQualificationShiftTime(
+  entry: Pick<
+    TagAreaHeaderStaffingEntry,
+    "shiftTemplateLabel" | "calendarTimeLabel" | "timeLabel" | "label"
+  >
+): string | null {
+  const rawTime =
+    entry.calendarTimeLabel ??
+    entry.timeLabel ??
+    (entry.label ? staffingLabelWithoutWeekday(entry.label) : null);
+  const timePart = rawTime?.trim()
+    ? compactStaffingTimeRangeLabel(rawTime.trim())
+    : null;
+  const shiftPart = entry.shiftTemplateLabel?.trim() || null;
+
+  if (shiftPart && timePart) return `${shiftPart} ${timePart}`;
+  if (shiftPart) return shiftPart;
+  if (timePart) return timePart;
+  return null;
 }
 
 export function createServiceHourStaffingLabel(

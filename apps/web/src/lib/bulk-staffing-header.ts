@@ -11,16 +11,30 @@ import {
   serviceWeekdayForDate,
   tagAreaHeaderStaffingEntries,
   type AreaServiceHourRef,
+  type StaffingConflictDetail,
   type StaffingQualificationCoverage,
   type TagAreaHeaderStaffingEntry,
 } from "@/lib/location-staffing-client";
-import type { LocationAreaStaffing, Qualification } from "@schichtwerk/types";
+import {
+  isTagAreaHeaderStaffingEntryPlannedCoverage,
+  isTagAreaHeaderStaffingEntryUnderstaffed,
+} from "@/lib/tag-area-header-staffing-display";
+import {
+  countsTowardStaffingConfirmation,
+  countsTowardStaffingProjection,
+} from "@/lib/staffing-shift-confirmation";
+import type {
+  LocationAreaStaffing,
+  Qualification,
+  ShiftConfirmationStatus,
+} from "@schichtwerk/types";
 
 export type StaffingAssignmentRef = {
   startTime: string;
   endTime: string;
   employeeId?: string;
   qualificationId?: string;
+  confirmationStatus?: ShiftConfirmationStatus;
 };
 
 export type DemandWindowRef = {
@@ -194,6 +208,7 @@ type PlanningStaffingShiftRef = {
   employee_id: string;
   startTime: string;
   endTime: string;
+  confirmationStatus?: ShiftConfirmationStatus;
 };
 
 /** Schichten, die im Schichtplan-Kalender für Bereich/Tag sichtbar gezählt werden. */
@@ -247,7 +262,21 @@ export function staffingAssignmentsForAreaDay(
       startTime: shift.startTime,
       endTime: shift.endTime,
       employeeId: shift.employee_id,
+      confirmationStatus: shift.confirmationStatus,
     }));
+}
+
+function filterStaffingAssignments(
+  assignments: readonly StaffingAssignmentRef[],
+  mode: "confirmed" | "projected"
+): StaffingAssignmentRef[] {
+  const predicate =
+    mode === "confirmed"
+      ? countsTowardStaffingConfirmation
+      : countsTowardStaffingProjection;
+  return assignments.filter((assignment) =>
+    predicate(assignment.confirmationStatus)
+  );
 }
 
 export function buildDemandWindowsForAreaDay(
@@ -402,6 +431,233 @@ export function buildStaffingQualificationBreakdown(
     }));
 }
 
+function formatAssignmentTimeLabel(
+  assignment: StaffingAssignmentRef,
+  formatCalendarTimeLabel?: (startTime: string, endTime: string) => string
+): string {
+  if (formatCalendarTimeLabel) {
+    return formatCalendarTimeLabel(assignment.startTime, assignment.endTime);
+  }
+  return `${assignment.startTime}–${assignment.endTime}`;
+}
+
+function resolveStaffingEmployeeName(
+  employeeId: string | undefined,
+  employeeNameById: ReadonlyMap<string, string> | undefined
+): string {
+  const id = employeeId?.trim();
+  if (!id) return "—";
+  return employeeNameById?.get(id) ?? id;
+}
+
+function qualificationLabel(
+  qualificationId: string,
+  qualificationNameById: ReadonlyMap<string, string>
+): string {
+  return qualificationNameById.get(qualificationId) ?? qualificationId;
+}
+
+/** Konkrete Über-/Fehlbelegungen je Schicht für Kalender-Tooltip-Fußnote. */
+export function buildStaffingConflictDetails(input: {
+  hourAssignments: readonly StaffingAssignmentRef[];
+  qualRules: readonly LocationAreaStaffing[];
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
+  qualificationNameById: ReadonlyMap<string, string>;
+  employeeNameById?: ReadonlyMap<string, string>;
+  formatCalendarTimeLabel?: (startTime: string, endTime: string) => string;
+  totalRequired: number;
+}): StaffingConflictDetail[] {
+  const {
+    hourAssignments,
+    qualRules,
+    profileQualificationIds,
+    qualificationNameById,
+    employeeNameById,
+    formatCalendarTimeLabel,
+    totalRequired,
+  } = input;
+
+  if (hourAssignments.length === 0) return [];
+
+  if (qualRules.length === 0) {
+    if (hourAssignments.length <= totalRequired) return [];
+    return hourAssignments.slice(totalRequired).map((assignment) => ({
+      kind: "overstaffed" as const,
+      employeeName: resolveStaffingEmployeeName(
+        assignment.employeeId,
+        employeeNameById
+      ),
+      timeLabel: formatAssignmentTimeLabel(
+        assignment,
+        formatCalendarTimeLabel
+      ),
+    }));
+  }
+
+  const mapping = mapAssignmentQualificationIds(
+    hourAssignments,
+    qualRules,
+    profileQualificationIds
+  );
+  const assignedByQual = countQualificationCoverage(
+    hourAssignments,
+    qualRules,
+    profileQualificationIds
+  );
+  const requiredByQual = new Map(
+    qualRules.map((rule) => [
+      rule.qualification_id,
+      normalizeRequiredCount(rule.required_count),
+    ])
+  );
+  const understaffedQualIds = qualRules
+    .filter(
+      (rule) =>
+        (assignedByQual.get(rule.qualification_id) ?? 0) <
+        normalizeRequiredCount(rule.required_count)
+    )
+    .map((rule) => rule.qualification_id);
+
+  const indicesByQual = new Map<string, number[]>();
+  for (const [index, qualId] of mapping) {
+    const bucket = indicesByQual.get(qualId);
+    if (bucket) {
+      bucket.push(index);
+    } else {
+      indicesByQual.set(qualId, [index]);
+    }
+  }
+
+  const conflicts: StaffingConflictDetail[] = [];
+  const surplusIndices = new Set<number>();
+
+  for (const [qualId, indices] of indicesByQual) {
+    const required = requiredByQual.get(qualId) ?? 0;
+    if (indices.length <= required) continue;
+    for (const index of indices.slice(required)) {
+      surplusIndices.add(index);
+      const assignment = hourAssignments[index]!;
+      conflicts.push({
+        kind: "overstaffed",
+        employeeName: resolveStaffingEmployeeName(
+          assignment.employeeId,
+          employeeNameById
+        ),
+        timeLabel: formatAssignmentTimeLabel(
+          assignment,
+          formatCalendarTimeLabel
+        ),
+        assignedQualificationName: qualificationLabel(
+          qualId,
+          qualificationNameById
+        ),
+      });
+    }
+  }
+
+  for (let index = 0; index < hourAssignments.length; index++) {
+    if (mapping.has(index) || surplusIndices.has(index)) continue;
+    const assignment = hourAssignments[index]!;
+    const employeeId = assignment.employeeId?.trim();
+    conflicts.push({
+      kind: "no_matching_qualification",
+      employeeName: resolveStaffingEmployeeName(
+        assignment.employeeId,
+        employeeNameById
+      ),
+      timeLabel: formatAssignmentTimeLabel(
+        assignment,
+        formatCalendarTimeLabel
+      ),
+      missingQualificationName:
+        employeeId &&
+        requiredQualificationNamesMissingForEmployee(
+          employeeId,
+          qualRules,
+          profileQualificationIds,
+          qualificationNameById
+        ),
+    });
+  }
+
+  if (hourAssignments.length >= totalRequired) {
+    for (const [index, qualId] of mapping) {
+      if (surplusIndices.has(index)) continue;
+      const assignment = hourAssignments[index]!;
+      const employeeId = assignment.employeeId?.trim();
+      if (!employeeId) continue;
+
+      const employeeQuals = profileQualificationIds.get(employeeId);
+      if (!employeeQuals?.has(qualId)) {
+        conflicts.push({
+          kind: "qualification_mismatch",
+          employeeName: resolveStaffingEmployeeName(
+            assignment.employeeId,
+            employeeNameById
+          ),
+          timeLabel: formatAssignmentTimeLabel(
+            assignment,
+            formatCalendarTimeLabel
+          ),
+          assignedQualificationName: qualificationLabel(
+            qualId,
+            qualificationNameById
+          ),
+          missingQualificationName: qualificationLabel(
+            qualId,
+            qualificationNameById
+          ),
+        });
+        continue;
+      }
+
+      const couldFillUnderstaffedQualIds = understaffedQualIds.filter(
+        (missingQualId) =>
+          missingQualId !== qualId && employeeQuals.has(missingQualId)
+      );
+      if (couldFillUnderstaffedQualIds.length === 0) continue;
+
+      conflicts.push({
+        kind: "qualification_mismatch",
+        employeeName: resolveStaffingEmployeeName(
+          assignment.employeeId,
+          employeeNameById
+        ),
+        timeLabel: formatAssignmentTimeLabel(
+          assignment,
+          formatCalendarTimeLabel
+        ),
+        assignedQualificationName: qualificationLabel(
+          qualId,
+          qualificationNameById
+        ),
+        missingQualificationName: couldFillUnderstaffedQualIds
+          .map((missingQualId) =>
+            qualificationLabel(missingQualId, qualificationNameById)
+          )
+          .join(", "),
+      });
+    }
+  }
+
+  return conflicts;
+}
+
+function requiredQualificationNamesMissingForEmployee(
+  employeeId: string,
+  qualRules: readonly LocationAreaStaffing[],
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>,
+  qualificationNameById: ReadonlyMap<string, string>
+): string | undefined {
+  const employeeQuals = profileQualificationIds.get(employeeId);
+  const missing = qualRules
+    .filter((rule) => normalizeRequiredCount(rule.required_count) > 0)
+    .map((rule) => rule.qualification_id)
+    .filter((qualId) => !employeeQuals?.has(qualId))
+    .map((qualId) => qualificationLabel(qualId, qualificationNameById));
+  return missing.length > 0 ? missing.join(", ") : undefined;
+}
+
 export function computeBulkStaffingHeaderEntries(input: {
   staffingRules: readonly LocationAreaStaffing[];
   areaId: string;
@@ -411,6 +667,7 @@ export function computeBulkStaffingHeaderEntries(input: {
   assignmentPresets: readonly AreaCalendarAssignmentPreset[];
   qualifications: readonly Qualification[];
   profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
+  employeeNameById?: ReadonlyMap<string, string>;
   formatTimeLabel: (weekdayLabel: string, startTime: string, endTime: string) => string;
   weekdayLabel: (weekday: number) => string;
   formatCalendarTimeLabel?: (startTime: string, endTime: string) => string;
@@ -424,6 +681,7 @@ export function computeBulkStaffingHeaderEntries(input: {
     assignmentPresets,
     qualifications,
     profileQualificationIds,
+    employeeNameById,
     formatTimeLabel,
     weekdayLabel,
     formatCalendarTimeLabel,
@@ -454,8 +712,20 @@ export function computeBulkStaffingHeaderEntries(input: {
     staffingRules,
     areaId
   );
-  const allocation = allocateAssignmentsToDemandWindows(
+  const confirmedAssignments = filterStaffingAssignments(
     assignments,
+    "confirmed"
+  );
+  const projectedAssignments = filterStaffingAssignments(
+    assignments,
+    "projected"
+  );
+  const confirmedAllocation = allocateAssignmentsToDemandWindows(
+    confirmedAssignments,
+    demandWindows
+  );
+  const projectedAllocation = allocateAssignmentsToDemandWindows(
+    projectedAssignments,
     demandWindows
   );
 
@@ -482,13 +752,17 @@ export function computeBulkStaffingHeaderEntries(input: {
       areaId,
       entry.serviceHourId
     );
-    const hourAssignments = (allocation.get(entry.serviceHourId) ?? []).map(
-      (index) => assignments[index]!
-    );
+    const confirmedHourAssignments = (
+      confirmedAllocation.get(entry.serviceHourId) ?? []
+    ).map((index) => confirmedAssignments[index]!);
+    const projectedHourAssignments = (
+      projectedAllocation.get(entry.serviceHourId) ?? []
+    ).map((index) => projectedAssignments[index]!);
 
     return {
       ...entry,
-      assigned: hourAssignments.length,
+      assigned: confirmedHourAssignments.length,
+      projectedAssigned: projectedHourAssignments.length,
       timeLabel: demandTimes
         ? formatTimeLabel(weekdayName, demandTimes.startTime, demandTimes.endTime)
         : entry.label,
@@ -503,45 +777,271 @@ export function computeBulkStaffingHeaderEntries(input: {
           )
         : undefined,
       qualifications: buildStaffingQualificationBreakdown(
-        hourAssignments,
+        confirmedHourAssignments,
         qualRules,
         profileQualificationIds,
         qualificationNameById,
         qualificationSortOrder
       ),
+      projectedQualifications: buildStaffingQualificationBreakdown(
+        projectedHourAssignments,
+        qualRules,
+        profileQualificationIds,
+        qualificationNameById,
+        qualificationSortOrder
+      ),
+      conflictDetails: buildStaffingConflictDetails({
+        hourAssignments: confirmedHourAssignments,
+        qualRules,
+        profileQualificationIds,
+        qualificationNameById,
+        employeeNameById,
+        formatCalendarTimeLabel,
+        totalRequired: entry.required,
+      }),
     };
   });
 }
 
-export function formatStaffingEntryTooltipContent(
-  entry: TagAreaHeaderStaffingEntry,
-  formatQualLine: (name: string, assigned: number, required: number) => string
-): string {
-  const timeHeader =
-    entry.calendarTimeLabel ?? entry.timeLabel ?? entry.label;
-  const headerLines = entry.shiftTemplateLabel
-    ? [entry.shiftTemplateLabel, timeHeader]
-    : [timeHeader];
-  const qualLines = entry.qualifications
-    ?.filter((qualification) => qualification.required > 0)
-    .map((qualification) =>
-      formatQualLine(
-        qualification.name,
-        qualification.assigned,
-        qualification.required
-      )
-    );
-  if (qualLines?.length) {
-    return [...headerLines, ...qualLines].join("\n");
-  }
-  return [...headerLines, `${entry.assigned}/${entry.required}`].join("\n");
+export type StaffingTooltipSection = {
+  periodLine: string;
+  coverageLines: string[];
+};
+
+export type StaffingTooltipCoverageFormatter = {
+  confirmed: (
+    assigned: number,
+    required: number,
+    name: string,
+    shiftTime: string
+  ) => string;
+  unconfirmed: (
+    assigned: number,
+    required: number,
+    name: string,
+    shiftTime: string
+  ) => string;
+  vacant: (
+    count: number,
+    required: number,
+    name: string,
+    shiftTime: string
+  ) => string;
+  totalConfirmed: (assigned: number, required: number, shiftTime: string) => string;
+  totalUnconfirmed: (
+    assigned: number,
+    required: number,
+    shiftTime: string
+  ) => string;
+  totalVacant: (count: number, required: number, shiftTime: string) => string;
+};
+
+type StaffingTooltipQualRow = {
+  name: string;
+  required: number;
+  confirmed: number;
+  projected: number;
+};
+
+function mergeQualificationRowsForTooltip(
+  entry: TagAreaHeaderStaffingEntry
+): StaffingTooltipQualRow[] {
+  const confirmedById = new Map(
+    (entry.qualifications ?? []).map((qualification) => [
+      qualification.qualificationId,
+      qualification.assigned,
+    ])
+  );
+  const projectedById = new Map(
+    (entry.projectedQualifications ?? entry.qualifications ?? []).map(
+      (qualification) => [qualification.qualificationId, qualification.assigned]
+    )
+  );
+  const source =
+    entry.projectedQualifications ?? entry.qualifications ?? [];
+
+  return source
+    .filter((qualification) => qualification.required > 0)
+    .map((qualification) => ({
+      name: qualification.name,
+      required: qualification.required,
+      confirmed: confirmedById.get(qualification.qualificationId) ?? 0,
+      projected:
+        projectedById.get(qualification.qualificationId) ??
+        confirmedById.get(qualification.qualificationId) ??
+        0,
+    }));
 }
 
-export function formatStaffingEntriesTooltipContent(
+function appendQualCoverageLines(
+  lines: string[],
+  row: StaffingTooltipQualRow,
+  format: StaffingTooltipCoverageFormatter,
+  options: { understaffed: boolean; planned: boolean }
+): void {
+  const unconfirmed = Math.max(0, row.projected - row.confirmed);
+  const vacant = Math.max(0, row.required - row.projected);
+
+  if (options.understaffed) {
+    if (row.confirmed > 0) {
+      lines.push(format.confirmed(row.confirmed, row.required, row.name, ""));
+    }
+    if (unconfirmed > 0) {
+      lines.push(
+        format.unconfirmed(unconfirmed, row.required, row.name, "")
+      );
+    }
+    if (vacant > 0) {
+      lines.push(format.vacant(vacant, row.required, row.name, ""));
+    }
+    if (
+      row.confirmed === 0 &&
+      unconfirmed === 0 &&
+      vacant === 0 &&
+      row.required > 0
+    ) {
+      lines.push(format.vacant(row.required, row.required, row.name, ""));
+    }
+    return;
+  }
+
+  if (options.planned) {
+    if (row.confirmed > 0) {
+      lines.push(format.confirmed(row.confirmed, row.required, row.name, ""));
+    }
+    if (unconfirmed > 0) {
+      lines.push(
+        format.unconfirmed(unconfirmed, row.required, row.name, "")
+      );
+    }
+    return;
+  }
+
+  if (row.confirmed > 0 || row.required > 0) {
+    lines.push(format.confirmed(row.confirmed, row.required, row.name, ""));
+  }
+}
+
+function appendAggregateCoverageLines(
+  lines: string[],
+  entry: TagAreaHeaderStaffingEntry,
+  format: StaffingTooltipCoverageFormatter,
+  options: { understaffed: boolean; planned: boolean }
+): void {
+  const confirmed = entry.assigned;
+  const projected = entry.projectedAssigned ?? entry.assigned;
+  const required = entry.required;
+  const unconfirmed = Math.max(0, projected - confirmed);
+  const vacant = Math.max(0, required - projected);
+
+  if (options.understaffed) {
+    if (confirmed > 0) {
+      lines.push(format.totalConfirmed(confirmed, required, ""));
+    }
+    if (unconfirmed > 0) {
+      lines.push(format.totalUnconfirmed(unconfirmed, required, ""));
+    }
+    if (vacant > 0) {
+      lines.push(format.totalVacant(vacant, required, ""));
+    }
+    if (confirmed === 0 && unconfirmed === 0 && vacant === 0 && required > 0) {
+      lines.push(format.totalVacant(required, required, ""));
+    }
+    return;
+  }
+
+  if (options.planned) {
+    if (confirmed > 0) {
+      lines.push(format.totalConfirmed(confirmed, required, ""));
+    }
+    if (unconfirmed > 0) {
+      lines.push(format.totalUnconfirmed(unconfirmed, required, ""));
+    }
+    return;
+  }
+
+  lines.push(format.totalConfirmed(confirmed, required, ""));
+}
+
+export function buildStaffingEntryTooltipCoverageLines(
+  entry: TagAreaHeaderStaffingEntry,
+  format: StaffingTooltipCoverageFormatter
+): string[] {
+  const understaffed = isTagAreaHeaderStaffingEntryUnderstaffed(entry);
+  const planned = isTagAreaHeaderStaffingEntryPlannedCoverage(entry);
+  const options = { understaffed, planned };
+  const qualRows = mergeQualificationRowsForTooltip(entry);
+  const lines: string[] = [];
+
+  if (qualRows.length > 0) {
+    for (const row of qualRows) {
+      appendQualCoverageLines(lines, row, format, options);
+    }
+    return lines;
+  }
+
+  appendAggregateCoverageLines(lines, entry, format, options);
+  return lines;
+}
+
+export function formatStaffingEntryTooltipSection(
+  entry: TagAreaHeaderStaffingEntry,
+  format: StaffingTooltipCoverageFormatter
+): StaffingTooltipSection {
+  const timeLabel = entry.calendarTimeLabel ?? entry.timeLabel ?? entry.label;
+  const periodLine = entry.shiftTemplateLabel
+    ? `${entry.shiftTemplateLabel}, ${timeLabel}`
+    : timeLabel;
+  return {
+    periodLine,
+    coverageLines: buildStaffingEntryTooltipCoverageLines(entry, format),
+  };
+}
+
+export function formatStaffingEntriesTooltipSections(
   entries: readonly TagAreaHeaderStaffingEntry[],
-  formatQualLine: (name: string, assigned: number, required: number) => string
-): string {
-  return entries
-    .map((entry) => formatStaffingEntryTooltipContent(entry, formatQualLine))
-    .join("\n\n");
+  format: StaffingTooltipCoverageFormatter
+): StaffingTooltipSection[] {
+  return entries.map((entry) =>
+    formatStaffingEntryTooltipSection(entry, format)
+  );
+}
+
+type StaffingConflictTooltipTranslator = (
+  key:
+    | "areaCalendar.staffingConflictOverstaffedLine"
+    | "areaCalendar.staffingConflictMismatchLine"
+    | "areaCalendar.staffingConflictNoQualLine",
+  params: Record<string, string>
+) => string;
+
+export function formatStaffingConflictTooltipLines(
+  entries: readonly TagAreaHeaderStaffingEntry[],
+  t: StaffingConflictTooltipTranslator
+): string[] {
+  return entries.flatMap((entry) =>
+    (entry.conflictDetails ?? []).map((detail) => {
+      switch (detail.kind) {
+        case "overstaffed":
+          return t("areaCalendar.staffingConflictOverstaffedLine", {
+            time: detail.timeLabel,
+            name: detail.employeeName,
+            position: detail.assignedQualificationName ?? "—",
+          });
+        case "qualification_mismatch":
+          return t("areaCalendar.staffingConflictMismatchLine", {
+            time: detail.timeLabel,
+            name: detail.employeeName,
+            position: detail.assignedQualificationName ?? "—",
+            missing: detail.missingQualificationName ?? "—",
+          });
+        case "no_matching_qualification":
+          return t("areaCalendar.staffingConflictNoQualLine", {
+            time: detail.timeLabel,
+            name: detail.employeeName,
+            missing: detail.missingQualificationName ?? "—",
+          });
+      }
+    })
+  );
 }

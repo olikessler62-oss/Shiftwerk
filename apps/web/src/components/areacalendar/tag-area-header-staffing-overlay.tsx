@@ -2,8 +2,10 @@
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
-  formatStaffingEntriesTooltipContent,
-  formatStaffingEntryTooltipContent,
+  formatStaffingEntriesTooltipSections,
+  formatStaffingEntryTooltipSection,
+  formatStaffingConflictTooltipLines,
+  type StaffingTooltipSection,
 } from "@/lib/bulk-staffing-header";
 import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
 import {
@@ -11,6 +13,7 @@ import {
   resolveStaffingFillGaugeVariant,
   isTagAreaHeaderStaffingAssignmentMismatch,
   isTagAreaHeaderStaffingOverstaffed,
+  isTagAreaHeaderStaffingPlannedCoverage,
   isTagAreaHeaderStaffingUnderstaffed,
   type StaffingHeaderDisplay,
 } from "@/lib/tag-area-header-staffing-display";
@@ -34,25 +37,60 @@ const EMPTY_DISPLAY: StaffingHeaderDisplay = { mode: "empty" };
 
 function StaffingTooltipContent({
   title,
-  body,
-  footnote,
+  sections,
+  conflictsHeading,
+  conflictLines,
 }: {
   title: string;
-  body: string;
-  footnote?: string;
+  sections: StaffingTooltipSection[];
+  conflictsHeading?: string;
+  conflictLines?: string[];
 }) {
   return (
-    <>
-      <p className="mb-1.5 border-b border-border/60 pb-1.5 text-xs font-semibold text-foreground">
+    <div className="max-w-xs text-xs leading-snug">
+      <p className="mb-2 border-b border-border/60 pb-1.5 font-semibold text-foreground">
         {title}
       </p>
-      <span className="block whitespace-pre-line">{body}</span>
-      {footnote ? (
-        <p className="mt-1.5 border-t border-border/60 pt-1.5 text-xs text-muted-foreground">
-          {footnote}
-        </p>
+      <div className="space-y-2.5">
+        {sections.map((section, sectionIndex) => (
+          <div
+            key={`${section.periodLine}:${sectionIndex}`}
+            className={
+              sectionIndex > 0 ? "border-t border-border/40 pt-2.5" : undefined
+            }
+          >
+            <p className="font-medium text-foreground">{section.periodLine}</p>
+            <ul className="mt-1 space-y-0.5">
+              {section.coverageLines.map((line, lineIndex) => (
+                <li
+                  key={`${line}:${lineIndex}`}
+                  className="tabular-nums text-muted-foreground"
+                >
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      {conflictLines && conflictLines.length > 0 ? (
+        <div className="mt-2.5 border-t border-border/60 pt-2">
+          <p className="mb-1 font-semibold text-foreground">
+            {conflictsHeading}
+          </p>
+          <ul className="space-y-0.5">
+            {conflictLines.map((line, lineIndex) => (
+              <li
+                key={`${line}:${lineIndex}`}
+                className="text-muted-foreground"
+              >
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -70,13 +108,62 @@ export function TagAreaHeaderStaffingOverlay({
   const [containerWidth, setContainerWidth] = useState(0);
   const [contentOverflows, setContentOverflows] = useState(false);
 
-  const formatQualLine = useCallback(
-    (name: string, assigned: number, required: number) =>
-      t("areaCalendar.bulkShiftStaffingTooltipLine", {
-        name,
-        assigned,
-        required,
-      }),
+  const formatCoverage = useMemo(
+    () => ({
+      confirmed: (
+        assigned: number,
+        required: number,
+        name: string,
+        shiftTime: string
+      ) =>
+        t("areaCalendar.staffingTooltipQualConfirmed", {
+          assigned,
+          required,
+          name,
+          shiftTime,
+        }),
+      unconfirmed: (
+        assigned: number,
+        required: number,
+        name: string,
+        shiftTime: string
+      ) =>
+        t("areaCalendar.staffingTooltipQualUnconfirmed", {
+          assigned,
+          required,
+          name,
+          shiftTime,
+        }),
+      vacant: (count: number, required: number, name: string, shiftTime: string) =>
+        t("areaCalendar.staffingTooltipQualVacant", {
+          count,
+          required,
+          name,
+          shiftTime,
+        }),
+      totalConfirmed: (assigned: number, required: number, shiftTime: string) =>
+        t("areaCalendar.staffingTooltipTotalConfirmed", {
+          assigned,
+          required,
+          shiftTime,
+        }),
+      totalUnconfirmed: (
+        assigned: number,
+        required: number,
+        shiftTime: string
+      ) =>
+        t("areaCalendar.staffingTooltipTotalUnconfirmed", {
+          assigned,
+          required,
+          shiftTime,
+        }),
+      totalVacant: (count: number, required: number, shiftTime: string) =>
+        t("areaCalendar.staffingTooltipTotalVacant", {
+          count,
+          required,
+          shiftTime,
+        }),
+    }),
     [t]
   );
 
@@ -86,7 +173,15 @@ export function TagAreaHeaderStaffingOverlay({
   );
 
   const staffingTooltipTitle = t("locations.panelStaffing");
-  const overstaffedGaugeFootnote = t("areaCalendar.staffingOverstaffedGaugeFootnote");
+  const conflictsHeading = t("areaCalendar.staffingTooltipConflictsHeading");
+
+  const formatConflictLines = useCallback(
+    (targetEntries: TagAreaHeaderStaffingEntry[]) =>
+      formatStaffingConflictTooltipLines(targetEntries, (key, params) =>
+        t(key, params)
+      ),
+    [t]
+  );
 
   const hasOverstaffed = useMemo(
     () => isTagAreaHeaderStaffingOverstaffed(entries),
@@ -103,43 +198,56 @@ export function TagAreaHeaderStaffingOverlay({
     [entries]
   );
 
-  const showPureOverstaffedFootnote =
-    hasOverstaffed && !hasUnderstaffed && !hasAssignmentMismatch;
+  const allEntriesConflictLines = useMemo(
+    () => formatConflictLines(entries),
+    [entries, formatConflictLines]
+  );
+
+  const allEntriesTooltipSections = useMemo(
+    () => formatStaffingEntriesTooltipSections(entries, formatCoverage),
+    [entries, formatCoverage]
+  );
 
   const allEntriesTooltip = useMemo(
     () => (
       <StaffingTooltipContent
         title={staffingTooltipTitle}
-        body={formatStaffingEntriesTooltipContent(entries, formatQualLine)}
-        footnote={
-          showPureOverstaffedFootnote ? overstaffedGaugeFootnote : undefined
+        sections={allEntriesTooltipSections}
+        conflictsHeading={conflictsHeading}
+        conflictLines={
+          allEntriesConflictLines.length > 0 ? allEntriesConflictLines : undefined
         }
       />
     ),
     [
-      entries,
-      formatQualLine,
-      overstaffedGaugeFootnote,
-      showPureOverstaffedFootnote,
+      allEntriesTooltipSections,
+      allEntriesConflictLines,
+      conflictsHeading,
       staffingTooltipTitle,
     ]
   );
 
   const entryTooltip = useCallback(
-    (serviceHourId: string, showOverstaffedFootnote: boolean) => {
+    (serviceHourId: string) => {
       const entry = entryByServiceHourId.get(serviceHourId);
       if (!entry) return undefined;
+      const conflictLines = formatConflictLines([entry]);
       return (
         <StaffingTooltipContent
           title={staffingTooltipTitle}
-          body={formatStaffingEntryTooltipContent(entry, formatQualLine)}
-          footnote={
-            showOverstaffedFootnote ? overstaffedGaugeFootnote : undefined
-          }
+          sections={[formatStaffingEntryTooltipSection(entry, formatCoverage)]}
+          conflictsHeading={conflictsHeading}
+          conflictLines={conflictLines.length > 0 ? conflictLines : undefined}
         />
       );
     },
-    [entryByServiceHourId, formatQualLine, overstaffedGaugeFootnote, staffingTooltipTitle]
+    [
+      entryByServiceHourId,
+      formatCoverage,
+      formatConflictLines,
+      conflictsHeading,
+      staffingTooltipTitle,
+    ]
   );
 
   const entryKey = useMemo(
@@ -203,11 +311,19 @@ export function TagAreaHeaderStaffingOverlay({
   const showIndicator =
     dayCollapsed || display.mode === "indicator" || contentOverflows;
 
-  const indicatorAlertClass = hasUnderstaffed || hasAssignmentMismatch
-    ? "text-red-600"
-    : hasOverstaffed
+  const hasPlannedCoverage = useMemo(
+    () => isTagAreaHeaderStaffingPlannedCoverage(entries),
+    [entries]
+  );
+
+  const indicatorAlertClass =
+    hasAssignmentMismatch || hasOverstaffed
       ? "text-[#CA8A04]"
-      : "text-neutral-600";
+      : hasUnderstaffed
+        ? "text-red-600"
+        : hasPlannedCoverage
+          ? "text-yellow-500"
+          : "text-neutral-600";
 
   const assignInteractiveClusterRef = useCallback(
     (node: HTMLElement | null) => {
@@ -294,10 +410,7 @@ export function TagAreaHeaderStaffingOverlay({
                 className="pointer-events-auto flex h-full min-w-0 shrink-0 self-stretch items-center justify-center"
               >
                 <Tooltip
-                  content={entryTooltip(
-                    segment.serviceHourId,
-                    variant === "overstaffed"
-                  )}
+                  content={entryTooltip(segment.serviceHourId)}
                   suppressOpen={staffingHeaderMenuOpen}
                   className="pointer-events-auto"
                 >

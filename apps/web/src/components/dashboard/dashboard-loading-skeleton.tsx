@@ -4,6 +4,7 @@ import {
   PLANNING_PAGES_SHELL_CLASS,
 } from "@/lib/app-shell-layout";
 import { cn } from "@/lib/cn";
+import { DASHBOARD_PANEL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 
 export function DashboardLoadingSkeleton() {
   return (
@@ -24,8 +25,8 @@ export function DashboardLoadingSkeleton() {
       </header>
 
       <div className={cn(DASHBOARD_VIEW_CONTENT_CLASS, "gap-3 p-4 md:p-6")}>
-        <div className="h-10 w-full max-w-md animate-pulse rounded-lg bg-muted/60" />
-        <div className="min-h-[320px] flex-1 animate-pulse rounded-xl bg-muted/50 md:min-h-[480px]" />
+        <div className={cn("h-10 w-full max-w-md animate-pulse bg-muted/60", DASHBOARD_PANEL_ROUNDED_CLASS)} />
+        <div className={cn("min-h-[320px] flex-1 animate-pulse bg-muted/50 md:min-h-[480px]", DASHBOARD_PANEL_ROUNDED_CLASS)} />
       </div>
     </div>
   );

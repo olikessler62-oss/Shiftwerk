@@ -31,7 +31,8 @@ export type ShiftConfirmationStatus =
   | "confirmed"
   | "rejected"
   | "pending"
-  | "canceled";
+  | "canceled"
+  | "unresolved";
 
 /** Planungs-Lifecycle auf der Schicht (Sprint 1 — parallel zu confirmation_status). */
 export type ShiftLifecycleStatus = "planned" | "confirmed" | "cancelled";

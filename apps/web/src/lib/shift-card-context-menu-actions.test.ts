@@ -64,6 +64,17 @@ describe("canOpenShiftCardContextMenu", () => {
       })
     ).toBe(true);
   });
+
+  it("blocks past confirmed even with legacy delete fallback", () => {
+    expect(
+      canOpenShiftCardContextMenu("confirmed", null, {
+        shiftDate: "2026-06-10",
+        cellDate: "2026-06-10",
+        isPastShiftDate,
+        legacyDeleteFallback: true,
+      })
+    ).toBe(false);
+  });
 });
 
 describe("shiftCardContextMenuActions", () => {

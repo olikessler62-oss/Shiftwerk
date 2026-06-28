@@ -8,7 +8,7 @@ import {
 import { validateQualificationUniqueness } from "@schichtwerk/database";
 import type { Qualification } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
-import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS, settingsModalHeaderPaddingClass } from "./settings-list-ui";
 import { cn } from "@/lib/cn";
 import {
   Alert,
@@ -89,7 +89,12 @@ export function QualificationFormModal({
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3
             id="qualification-form-title"
             className={SETTINGS_MODAL_TITLE_CLASS}

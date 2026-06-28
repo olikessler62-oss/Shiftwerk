@@ -15,8 +15,13 @@ import {
   areaCalendarAlertDialogClass,
   areaCalendarNestedModalOverlayClass,
   settingsModalFooterClass,
+  SettingsConfirmDialogCloseHeader,
 } from "@/components/settings/settings-list-ui";
-import { PlanningSidePanel } from "@/components/planning/planning-side-panel";
+import {
+  PlanningSidePanel,
+  PlanningSidePanelNestedAlertPortal,
+  PLANNING_SIDE_PANEL_FOOTER_CLASS,
+} from "@/components/planning/planning-side-panel";
 import { cn } from "@/lib/cn";
 import {
   Alert,
@@ -28,7 +33,17 @@ import {
   TimeInput,
   tooltipContentClassName,
 } from "@/components/ui";
-import { Tooltip, HOVER_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  HOVER_TOOLTIP_OPEN_DELAY_MS,
+  SHIFT_ASSIGN_EMPLOYEE_COMBO_HINT_OPEN_DELAY_MS,
+} from "@/components/ui/tooltip";
+import {
+  beginEmployeeComboboxHintRequest,
+  isEmployeeComboboxHintGenerationCurrent,
+  registerActiveEmployeeComboboxHint,
+  unregisterEmployeeComboboxHint,
+} from "@/lib/employee-combobox-hint-coordinator";
 import {
   areAreaCalendarShiftTimesComplete,
   filterAreaCalendarShiftAssignEmployeesByWindowWithoutOverlap,
@@ -48,7 +63,11 @@ import {
   areaShiftTemplateIdForAssign,
   type AreaCalendarAssignmentPreset,
 } from "@/lib/areacalendar-assignment-presets";
-import { formatDayHeader } from "@/lib/planning-utils";
+import {
+  buildEmployeeWeeklyHoursTooltipLabels,
+  formatDayHeader,
+  weeklyAssignedMinutesByEmployeeId,
+} from "@/lib/planning-utils";
 import { resolvePlanningEmployeeJobsTooltipLabelFromMap } from "@/lib/planning-employee-availability-tooltip";
 import { validateAreaCalendarShiftServiceHours } from "@/lib/service-hours-shift-validation";
 import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
@@ -163,6 +182,7 @@ type EmployeeAvailabilityHintProps = {
   tooltipRef: RefObject<HTMLDivElement | null>;
   weekdayLabelStyle: WeekdayLabelStyle;
   jobsLabel?: string;
+  weeklyHoursLine?: string | null;
 };
 
 function EmployeeAvailabilityHint({
@@ -172,6 +192,7 @@ function EmployeeAvailabilityHint({
   tooltipRef,
   weekdayLabelStyle,
   jobsLabel,
+  weeklyHoursLine,
 }: EmployeeAvailabilityHintProps) {
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
@@ -197,7 +218,7 @@ function EmployeeAvailabilityHint({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [anchorEl, tooltipRef, availabilities, employeeName, jobsLabel, localeKey, t]);
+  }, [anchorEl, tooltipRef, availabilities, employeeName, jobsLabel, weeklyHoursLine, localeKey, t]);
 
   return createPortal(
     <div
@@ -236,6 +257,14 @@ function EmployeeAvailabilityHint({
           <p className="text-xs text-foreground">
             {jobsLabel.trim() ? jobsLabel : t("profiles.emptyQualifications")}
           </p>
+        </>
+      ) : null}
+      {weeklyHoursLine ? (
+        <>
+          <p className="mb-1.5 mt-3 text-xs font-semibold text-foreground">
+            {t("dashboard.staffingCandidatesTooltipWeeklyHours")}
+          </p>
+          <p className="text-xs text-foreground">{weeklyHoursLine}</p>
         </>
       ) : null}
     </div>,
@@ -342,6 +371,8 @@ function EmployeeAvailabilityContextMenu({
 export type AreaCalendarAddShiftDialogState = {
   areaId: string | null;
   date: string;
+  /** Tag ohne Servicezeit — keine Servicezeit-Validierung beim Speichern. */
+  withoutServiceHours?: boolean;
 };
 
 export type AreaCalendarBulkShiftDialogState = {
@@ -395,6 +426,7 @@ type EmployeeComboboxProps = {
   profileQualificationIds?: ReadonlyMap<string, ReadonlySet<string>>;
   qualificationNameById?: ReadonlyMap<string, string>;
   qualificationSortOrder?: ReadonlyMap<string, number>;
+  weeklyHoursLineByEmployeeId?: ReadonlyMap<string, string>;
 };
 
 function availabilitiesForWeekday(
@@ -444,6 +476,7 @@ export function AreaCalendarShiftEmployeeCombobox({
   profileQualificationIds,
   qualificationNameById,
   qualificationSortOrder,
+  weeklyHoursLineByEmployeeId,
 }: EmployeeComboboxProps) {
   const [open, setOpen] = useState(false);
   const [hintAvailabilities, setHintAvailabilities] = useState<
@@ -459,6 +492,7 @@ export function AreaCalendarShiftEmployeeCombobox({
   const listRef = useRef<HTMLUListElement>(null);
   const hintTooltipRef = useRef<HTMLDivElement>(null);
   const hintOpenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissHintRef = useRef<() => void>(() => {});
   const dropdownPosition = useFloatingDropdownPosition(open, triggerRef);
   const closeDropdown = useCallback(() => setOpen(false), []);
   useComboboxCloseOnPointerDistance(open, closeDropdown, [triggerRef, listRef]);
@@ -480,6 +514,17 @@ export function AreaCalendarShiftEmployeeCombobox({
     }
   }, []);
 
+  const hideHint = useCallback(() => {
+    clearHintOpenDelay();
+    unregisterEmployeeComboboxHint(dismissHintRef.current);
+    setHintAvailabilities(null);
+    setHintAnchorEl(null);
+    setHintEmployeeName("");
+    setHintEmployeeId("");
+  }, [clearHintOpenDelay]);
+
+  dismissHintRef.current = hideHint;
+
   const showHint = useCallback(
     (
       availabilities: AreaCalendarEmployeeAvailabilityEntry[],
@@ -487,26 +532,26 @@ export function AreaCalendarShiftEmployeeCombobox({
       employeeName: string,
       employeeId: string
     ) => {
+      const generation = beginEmployeeComboboxHintRequest();
       clearHintOpenDelay();
       hintOpenTimeoutRef.current = setTimeout(() => {
+        if (!isEmployeeComboboxHintGenerationCurrent(generation)) return;
+        registerActiveEmployeeComboboxHint(dismissHintRef.current);
         setHintAnchorEl(anchorEl);
         setHintEmployeeName(employeeName);
         setHintEmployeeId(employeeId);
         setHintAvailabilities(availabilities);
-      }, HOVER_TOOLTIP_OPEN_DELAY_MS);
+      }, SHIFT_ASSIGN_EMPLOYEE_COMBO_HINT_OPEN_DELAY_MS);
     },
     [clearHintOpenDelay]
   );
 
-  const hideHint = useCallback(() => {
-    clearHintOpenDelay();
-    setHintAvailabilities(null);
-    setHintAnchorEl(null);
-    setHintEmployeeName("");
-    setHintEmployeeId("");
+  useEffect(() => {
+    return () => {
+      unregisterEmployeeComboboxHint(dismissHintRef.current);
+      clearHintOpenDelay();
+    };
   }, [clearHintOpenDelay]);
-
-  useEffect(() => () => clearHintOpenDelay(), [clearHintOpenDelay]);
 
   const hintJobsLabel = useMemo(() => {
     if (
@@ -529,6 +574,11 @@ export function AreaCalendarShiftEmployeeCombobox({
     qualificationNameById,
     qualificationSortOrder,
   ]);
+
+  const hintWeeklyHoursLine = useMemo(() => {
+    if (!hintEmployeeId || !weeklyHoursLineByEmployeeId) return null;
+    return weeklyHoursLineByEmployeeId.get(hintEmployeeId) ?? null;
+  }, [hintEmployeeId, weeklyHoursLineByEmployeeId]);
 
   const closeAvailabilityMenu = useCallback(() => {
     setAvailabilityMenuAnchor(null);
@@ -627,6 +677,9 @@ export function AreaCalendarShiftEmployeeCombobox({
           }
           showHint(dayAvailabilities, triggerRef.current, selected.full_name, selected.id);
         }}
+        onMouseLeave={() => {
+          hideHint();
+        }}
         onClick={() => {
           if (!disabled) setOpen((prev) => !prev);
         }}
@@ -675,6 +728,9 @@ export function AreaCalendarShiftEmployeeCombobox({
                         employee.id
                       );
                     }}
+                    onMouseLeave={() => {
+                      hideHint();
+                    }}
                     onClick={() => {
                       onChange(employee.id);
                       setOpen(false);
@@ -700,6 +756,7 @@ export function AreaCalendarShiftEmployeeCombobox({
           tooltipRef={hintTooltipRef}
           weekdayLabelStyle={weekdayLabelStyle}
           jobsLabel={hintJobsLabel}
+          weeklyHoursLine={hintWeeklyHoursLine}
         />
       ) : null}
       {availabilityMenuAnchor ? (
@@ -723,6 +780,7 @@ type ShiftTypeComboboxProps = {
   disabled?: boolean;
   rootClassName?: string;
   triggerClassName?: string;
+  showColorSwatch?: boolean;
 };
 
 export const DASHBOARD_TABLE_COMBO_TRIGGER_CLASS = "gap-1.5 px-2";
@@ -763,6 +821,7 @@ export function AreaCalendarShiftTypeCombobox({
   disabled = false,
   rootClassName,
   triggerClassName,
+  showColorSwatch = true,
 }: ShiftTypeComboboxProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -801,14 +860,16 @@ export function AreaCalendarShiftTypeCombobox({
             if (!disabled) setOpen((prev) => !prev);
           }}
         >
-        {selectedType ? (
-          <ShiftPresetColorSwatch
-            name={selectedType.name}
-            color={selectedType.color}
-          />
-        ) : (
-          <ShiftPresetColorSwatch empty />
-        )}
+        {showColorSwatch ? (
+          selectedType ? (
+            <ShiftPresetColorSwatch
+              name={selectedType.name}
+              color={selectedType.color}
+            />
+          ) : (
+            <ShiftPresetColorSwatch empty />
+          )
+        ) : null}
         <span className="min-w-0 flex-1 truncate">{displayText}</span>
         <ChevronDownIcon className="h-4 w-4 shrink-0 text-muted" />
       </button>
@@ -836,7 +897,9 @@ export function AreaCalendarShiftTypeCombobox({
                       setOpen(false);
                     }}
                   >
-                    <ShiftPresetColorSwatch name={type.name} color={type.color} />
+                    {showColorSwatch ? (
+                      <ShiftPresetColorSwatch name={type.name} color={type.color} />
+                    ) : null}
                     <span className="min-w-0 flex-1 truncate">{type.name}</span>
                     {value === type.id ? (
                       <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
@@ -853,7 +916,7 @@ export function AreaCalendarShiftTypeCombobox({
                     setOpen(false);
                   }}
                 >
-                  <ShiftPresetColorSwatch empty />
+                  {showColorSwatch ? <ShiftPresetColorSwatch empty /> : null}
                   <span className="min-w-0 flex-1 truncate">{placeholder}</span>
                   {isPlaceholder ? (
                     <CheckIcon className="h-4 w-4 shrink-0 text-primary" />
@@ -1181,6 +1244,18 @@ export function AreaCalendarAddShiftModal({
     weekShifts,
   ]);
 
+  const weeklyHoursLineByEmployeeId = useMemo(() => {
+    const assignedMinutes = weeklyAssignedMinutesByEmployeeId(
+      weekShifts,
+      weekDates
+    );
+    return buildEmployeeWeeklyHoursTooltipLabels(
+      employees,
+      assignedMinutes,
+      locale
+    );
+  }, [employees, weekShifts, weekDates, locale]);
+
   const availabilityNotice = useShiftAssignAvailabilityNotice({
     weekday,
     startTime,
@@ -1432,7 +1507,7 @@ export function AreaCalendarAddShiftModal({
       return;
     }
 
-    if (!simplePlanning) {
+    if (!simplePlanning && !dialog.withoutServiceHours) {
       const serviceHoursCheck = validateAreaCalendarShiftServiceHours(
         serviceHours,
         dialog.areaId ?? "",
@@ -1446,12 +1521,15 @@ export function AreaCalendarAddShiftModal({
       }
     }
 
-    await performAssign();
+    await performAssign(
+      dialog.withoutServiceHours ? { withoutServiceHours: true } : undefined
+    );
   }, [
     employeeId,
     timesComplete,
     dialog.date,
     dialog.areaId,
+    dialog.withoutServiceHours,
     startTime,
     endTime,
     serviceHours,
@@ -1522,10 +1600,11 @@ export function AreaCalendarAddShiftModal({
           !saving &&
           !outsideServiceHoursConfirm &&
           !availabilityConflictPrompt &&
-          !weeklyHoursAlertMessage
+          !weeklyHoursAlertMessage &&
+          !complianceNotice
         }
         footer={
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className={PLANNING_SIDE_PANEL_FOOTER_CLASS}>
             {showAssignRestOfWeekDaysOption ? (
               <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
                 <Checkbox
@@ -1563,9 +1642,6 @@ export function AreaCalendarAddShiftModal({
       >
         <div className="space-y-4">
           {error ? <Alert variant="error">{error}</Alert> : null}
-          {complianceNotice ? (
-            <Alert variant="info">{complianceNotice}</Alert>
-          ) : null}
           {!simplePlanning && assignmentPresets.length === 0 ? (
             <Alert variant="info">{t("areaCalendar.noShiftTemplatesForArea")}</Alert>
           ) : null}
@@ -1626,6 +1702,7 @@ export function AreaCalendarAddShiftModal({
               profileQualificationIds={profileQualificationIdsMap}
               qualificationNameById={qualificationNameById}
               qualificationSortOrder={qualificationSortOrder}
+              weeklyHoursLineByEmployeeId={weeklyHoursLineByEmployeeId}
             />
             {!wishFulfilled ? (
               <p className="mt-1 text-xs text-muted">
@@ -1642,6 +1719,7 @@ export function AreaCalendarAddShiftModal({
       </PlanningSidePanel>
 
       {outsideServiceHoursConfirm ? (
+        <PlanningSidePanelNestedAlertPortal>
         <div
           className={areaCalendarNestedModalOverlayClass()}
           role="presentation"
@@ -1655,9 +1733,15 @@ export function AreaCalendarAddShiftModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="areacalendar-add-shift-service-hours-confirm"
-            className={areaCalendarAlertDialogClass()}
+            className={cn(areaCalendarAlertDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setOutsideServiceHoursConfirm(false)}
+              closeDisabled={saving}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="areacalendar-add-shift-service-hours-confirm"
               className="text-sm text-foreground"
@@ -1689,11 +1773,14 @@ export function AreaCalendarAddShiftModal({
                 {t("common.yes")}
               </Button>
             </div>
+            </div>
           </div>
         </div>
+        </PlanningSidePanelNestedAlertPortal>
       ) : null}
 
       {availabilityConflictPrompt ? (
+        <PlanningSidePanelNestedAlertPortal>
         <div
           className={areaCalendarNestedModalOverlayClass()}
           role="presentation"
@@ -1707,9 +1794,15 @@ export function AreaCalendarAddShiftModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="areacalendar-add-shift-availability-conflict"
-            className={areaCalendarAlertDialogClass()}
+            className={cn(areaCalendarAlertDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setAvailabilityConflictPrompt(false)}
+              closeDisabled={saving}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="areacalendar-add-shift-availability-conflict"
               className="text-sm text-red-600"
@@ -1730,11 +1823,14 @@ export function AreaCalendarAddShiftModal({
                 {t("common.ok")}
               </Button>
             </div>
+            </div>
           </div>
         </div>
+        </PlanningSidePanelNestedAlertPortal>
       ) : null}
 
       {weeklyHoursAlertMessage ? (
+        <PlanningSidePanelNestedAlertPortal>
         <div
           className={areaCalendarNestedModalOverlayClass()}
           role="presentation"
@@ -1743,9 +1839,15 @@ export function AreaCalendarAddShiftModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="areacalendar-add-shift-weekly-hours-alert"
-            className={areaCalendarAlertDialogClass()}
+            className={cn(areaCalendarAlertDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setWeeklyHoursAlertMessage(null)}
+              closeDisabled={saving}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="areacalendar-add-shift-weekly-hours-alert"
               className="text-sm text-red-600"
@@ -1766,8 +1868,67 @@ export function AreaCalendarAddShiftModal({
                 {t("common.ok")}
               </Button>
             </div>
+            </div>
           </div>
         </div>
+        </PlanningSidePanelNestedAlertPortal>
+      ) : null}
+
+      {complianceNotice ? (
+        <PlanningSidePanelNestedAlertPortal>
+        <div
+          className={areaCalendarNestedModalOverlayClass()}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !saving) {
+              setComplianceNotice(null);
+              onClose();
+            }
+          }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="areacalendar-add-shift-compliance-notice"
+            className={cn(areaCalendarAlertDialogClass(), "overflow-hidden p-0")}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => {
+                setComplianceNotice(null);
+                onClose();
+              }}
+              closeDisabled={saving}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
+            <p
+              id="areacalendar-add-shift-compliance-notice"
+              className="text-sm text-foreground"
+            >
+              {complianceNotice}
+            </p>
+            <div
+              className={settingsModalFooterClass(
+                "mt-5 border-0 px-0 pb-0 pt-0 sm:justify-end"
+              )}
+            >
+              <Button
+                type="button"
+                variant="primary"
+                disabled={saving}
+                onClick={() => {
+                  setComplianceNotice(null);
+                  onClose();
+                }}
+              >
+                {t("common.ok")}
+              </Button>
+            </div>
+            </div>
+          </div>
+        </div>
+        </PlanningSidePanelNestedAlertPortal>
       ) : null}
     </>
   );

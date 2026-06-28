@@ -14,6 +14,7 @@ export function canConfirmPastShiftAsManager(input: {
   now?: Date;
 }): boolean {
   if (!isShiftDateInPast(input.shiftDate, input.now)) return false;
+  if (input.confirmationStatus === "unresolved") return true;
   const effective = resolveEffectiveConfirmationStatus(
     input.confirmationStatus,
     input.requestedAt,

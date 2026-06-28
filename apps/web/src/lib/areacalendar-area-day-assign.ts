@@ -1,6 +1,6 @@
 import { isPastCalendarDate } from "@/lib/dates";
 import {
-  isAreaOpenOnDate,
+  areaHasEffectiveServiceHoursOnDate,
   type AreaServiceHourRef,
 } from "@/lib/location-staffing-client";
 import type { PlanningDayAssignBlockReason } from "@/lib/planning-day-assign-block-reason";
@@ -16,18 +16,23 @@ export function canOpenAssignShiftContextMenu(
 ): boolean {
   if (!isAreaActive || !isDayActive) return false;
   if (isPastCalendarDate(dateISO)) return false;
-  if (isAreaOpenOnDate(serviceHours, areaId, dateISO)) return true;
+  if (areaHasEffectiveServiceHoursOnDate(serviceHours, areaId, dateISO)) {
+    return true;
+  }
   return shiftCountInArea > 0;
 }
 
 /** Bestätigung vor erstem Einsatz an einem Planungstag ohne Servicezeit (Dashboard, heute/Zukunft). */
 export function canPromptNoServiceHoursShiftAssignForDay(
   dateISO: string,
-  dayHasServiceHours: boolean,
-  shiftCountInCell: number
+  areaId: string,
+  shiftCountInCell: number,
+  serviceHours: readonly AreaServiceHourRef[]
 ): boolean {
-  if (isPastCalendarDate(dateISO)) return false;
-  if (dayHasServiceHours) return false;
+  if (!areaId || isPastCalendarDate(dateISO)) return false;
+  if (areaHasEffectiveServiceHoursOnDate(serviceHours, areaId, dateISO)) {
+    return false;
+  }
   return shiftCountInCell === 0;
 }
 
@@ -42,8 +47,27 @@ export function canPromptNoServiceHoursShiftAssign(
 ): boolean {
   if (!isAreaActive || !isDayActive) return false;
   if (isPastCalendarDate(dateISO)) return false;
-  if (isAreaOpenOnDate(serviceHours, areaId, dateISO)) return false;
+  if (areaHasEffectiveServiceHoursOnDate(serviceHours, areaId, dateISO)) {
+    return false;
+  }
   return shiftCountInArea === 0;
+}
+
+/**
+ * Tag gilt für Zuweisung als aktiv: Checkbox oder erster Einsatz ohne Servicezeit
+ * (Bereichskalender — auch zugeklappte Spalte).
+ */
+export function isAreaCalendarAssignDayActive(
+  dateISO: string,
+  isDayChecked: boolean,
+  areaId: string,
+  shiftCountInArea: number,
+  serviceHours: readonly AreaServiceHourRef[]
+): boolean {
+  if (isDayChecked) return true;
+  if (isPastCalendarDate(dateISO)) return false;
+  if (shiftCountInArea > 0) return false;
+  return !areaHasEffectiveServiceHoursOnDate(serviceHours, areaId, dateISO);
 }
 
 /** Rechtsklick-Kontextmenü (Servicezeit-Tag oder erster Einsatz ohne Servicezeit). */
@@ -85,8 +109,7 @@ export function canShowAreaDayAssignContextMenu(
 export function canShowEmployeeDayCellAssignContextMenu(
   areaId: string | null,
   dateISO: string,
-  isDayExpanded: boolean,
-  dayHasServiceHours: boolean,
+  isDayChecked: boolean,
   shiftCountInArea: number,
   employeeBlockReason: PlanningDayAssignBlockReason | null,
   serviceHours: readonly AreaServiceHourRef[],
@@ -95,7 +118,21 @@ export function canShowEmployeeDayCellAssignContextMenu(
   if (!areaId || isPastCalendarDate(dateISO)) return false;
   if (employeeBlockReason === "absent") return false;
 
-  if (dayHasServiceHours) {
+  const isAssignDayActive = isAreaCalendarAssignDayActive(
+    dateISO,
+    isDayChecked,
+    areaId,
+    shiftCountInArea,
+    serviceHours
+  );
+
+  const areaHasEffectiveService = areaHasEffectiveServiceHoursOnDate(
+    serviceHours,
+    areaId,
+    dateISO
+  );
+
+  if (areaHasEffectiveService) {
     if (shiftCountInArea > 0) return true;
     if (employeeBlockReason === "no_availability") return false;
   }
@@ -104,7 +141,7 @@ export function canShowEmployeeDayCellAssignContextMenu(
     areaId,
     dateISO,
     true,
-    isDayExpanded,
+    isAssignDayActive,
     serviceHours,
     shiftCountInArea,
     simplePlanning
@@ -121,6 +158,8 @@ export function canOpenBulkShiftFromShiftCard(
   shiftCountInArea: number
 ): boolean {
   if (!isAreaActive || !isDayActive) return false;
-  if (isAreaOpenOnDate(serviceHours, areaId, dateISO)) return true;
+  if (areaHasEffectiveServiceHoursOnDate(serviceHours, areaId, dateISO)) {
+    return true;
+  }
   return shiftCountInArea > 0;
 }

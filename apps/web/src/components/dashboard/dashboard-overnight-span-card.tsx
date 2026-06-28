@@ -33,7 +33,10 @@ import { PLANNING_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/planning-overn
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import {
   shiftConfirmationTooltipStatusLabelKey,
+  SHIFT_CARD_UNRESOLVED_OPACITY,
+  shiftConfirmationShowsUnresolvedCardStyle,
 } from "@/lib/shift-confirmation-display";
+import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
 import {
   buildShiftCardTimeGradientCss,
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
@@ -99,8 +102,18 @@ export function DashboardOvernightSpanCard({
   const [textOverflows, setTextOverflows] = useState(false);
 
   const isPastShift = isPastShiftDate(cellDate);
-  const confirmationStatusLine = shift.confirmationStatus
-    ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
+  const calendarConfirmationStatus = resolveShiftCardConfirmationStatusForCalendar(
+    shift,
+    cellDate
+  );
+  const showUnresolvedCardStyle = shiftConfirmationShowsUnresolvedCardStyle(
+    calendarConfirmationStatus
+  );
+  const confirmationStatusLine = calendarConfirmationStatus
+    ? t(shiftConfirmationTooltipStatusLabelKey(calendarConfirmationStatus))
+    : undefined;
+  const inlineStatusLabel = showUnresolvedCardStyle
+    ? confirmationStatusLine
     : undefined;
   const jobsLabel = resolvePlanningShiftJobsLabel(shift, shiftJobContext);
   const jobsLine = jobsLabel.trim()
@@ -112,7 +125,7 @@ export function DashboardOvernightSpanCard({
     {
       employeeName,
       confirmationStatusLine,
-      confirmationStatus: shift.confirmationStatus,
+      confirmationStatus: calendarConfirmationStatus,
       jobsLabel,
       isPastShift,
       formatTemplateTooltipLine: (templateName) =>
@@ -243,6 +256,9 @@ export function DashboardOvernightSpanCard({
         style={{
           boxShadow: cardBoxShadow,
           minHeight: PLANNING_CELL_HEIGHT_PX,
+          ...(showUnresolvedCardStyle
+            ? { opacity: SHIFT_CARD_UNRESOLVED_OPACITY }
+            : undefined),
         }}
       >
         <button
@@ -300,10 +316,11 @@ export function DashboardOvernightSpanCard({
               timeLabel={cardContent.timeLabel}
               jobsLine={jobsLine}
               compact={!showTwoLineDetail}
+              inlineStatusLabel={inlineStatusLabel}
             />
           ) : null}
           {showOverflowIndicator ? <DashboardShiftCardOverflowIndicator /> : null}
-          <DashboardShiftCardConfirmationOverlay status={shift.confirmationStatus} />
+          <DashboardShiftCardConfirmationOverlay status={calendarConfirmationStatus} />
         </DashboardShiftCardTextArea>
         </button>
       </div>

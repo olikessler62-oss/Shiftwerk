@@ -15,6 +15,15 @@ export function shiftConfirmationShowsOverlay(
   );
 }
 
+/** Vergangene Schichten mit unbeantworteter Anfrage — halbtransparent, ohne Overlay. */
+export const SHIFT_CARD_UNRESOLVED_OPACITY = 0.5;
+
+export function shiftConfirmationShowsUnresolvedCardStyle(
+  status: ShiftConfirmationStatus | undefined | null
+): boolean {
+  return status === "unresolved";
+}
+
 export function shiftConfirmationBadgeSymbol(
   status: ShiftConfirmationStatus
 ): string {
@@ -29,6 +38,8 @@ export function shiftConfirmationBadgeSymbol(
       return "✕";
     case "canceled":
       return "⊘";
+    case "unresolved":
+      return "!";
     default:
       return "";
   }

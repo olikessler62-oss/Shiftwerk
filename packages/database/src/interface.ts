@@ -828,6 +828,14 @@ export interface SchichtwerkDatabase {
     now?: Date
   ): Promise<ShiftConfirmationPendingJobResult>;
 
+  runShiftUnresolvedPastJob(
+    now?: Date
+  ): Promise<import("./shift-unresolved-status").ShiftUnresolvedPastJobResult>;
+
+  runShiftPastProposedCleanupJob(
+    now?: Date
+  ): Promise<import("./shift-past-proposed-cleanup").ShiftPastProposedCleanupJobResult>;
+
   listManagerNotificationsForRecipient(
     recipientProfileId: string,
     options?: { limit?: number; includeDismissed?: boolean }

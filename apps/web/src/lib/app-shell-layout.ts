@@ -15,8 +15,24 @@ export const APP_SHELL_BRAND_SURFACE_CLASS = "app-shell-brand-surface";
 export const APP_HEADER_DARK_PREVIEW_CLASS =
   `${APP_SHELL_BRAND_SURFACE_CLASS} app-header-dark-preview`;
 
+/** Logo + Wochen-Toolbar: gemeinsames Top-Panel auf dem Brand-Backdrop-Verlauf. */
+export const APP_SHELL_TOP_PANEL_CLASS =
+  "app-shell-top-panel app-header-dark-preview";
+
 /** Abstand unter der KW-Toolbar bis Kalender-Inhalt (Dashboard; Bereich-Kalender nur Kalender-Spalte). */
 export const APP_SHELL_CONTENT_OFFSET_CLASS = "pt-2 md:pt-4";
+
+/** Gemeinsame Content-Seitenüberschrift (Dashboard, Bereich-/Mitarbeiter-Kalender). */
+export const PLANNING_PAGE_CONTENT_HEADER_CLASS =
+  "flex min-h-7 shrink-0 items-center";
+
+/** Abstand Toolbar → Überschrift und Überschrift → Kalender (Kalenderseiten). */
+export const PLANNING_PAGE_CONTENT_HEADER_OFFSET_CLASS =
+  `${APP_SHELL_CONTENT_OFFSET_CLASS} mb-2`;
+
+/** Horizontaler Innenabstand Kalenderseiten (Mitarbeiter- + Bereich-Kalender). */
+export const PLANNING_PAGE_CALENDAR_CONTENT_PADDING_CLASS =
+  "px-3 pb-3 md:px-4 md:pb-4";
 
 /**
  * App-Shell Root: Mobile Seiten-Scroll; ab md unverändert (volle Viewport-Höhe, kein Body-Scroll).
@@ -45,17 +61,30 @@ export const PLANNING_PAGE_CALENDAR_SECTION_CLASS =
 export const PLANNING_PAGE_CALENDAR_MAIN_CLASS =
   "flex min-w-0 flex-1 flex-col max-md:min-h-[min(70dvh,40rem)] max-md:overflow-visible md:min-h-0 md:overflow-hidden";
 
-/** Bereich-Kalender Inhalt (ohne Toolbar-Hintergrund). */
-export const AREA_CALENDAR_VIEW_CONTENT_CLASS =
-  "relative z-10 flex min-h-0 flex-1 flex-col bg-background pb-[10px]";
+/** Kalenderfläche unter der Seitenüberschrift — Resthöhe bis zum unteren Rand. */
+export const PLANNING_PAGE_CALENDAR_BODY_CLASS =
+  "flex min-h-0 flex-1 flex-col";
 
-/** Dashboard / Mitarbeiter-Kalender Inhalt (ohne Toolbar-Hintergrund). */
-export const DASHBOARD_VIEW_CONTENT_CLASS =
-  "relative z-10 flex min-h-0 flex-1 flex-col bg-subtle";
+/** Innere Kalender-Surface (Grid) — füllt die Body-Spalte. */
+export const PLANNING_PAGE_CALENDAR_SURFACE_CLASS =
+  "flex min-h-0 min-w-0 flex-1 flex-col";
+
+/** Bereich- + Mitarbeiter-Kalender: gemeinsamer Content-Wrapper unter der Toolbar. */
+export const PLANNING_CALENDAR_VIEW_CONTENT_CLASS =
+  "relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden bg-background";
+
+/** Bereich-Kalender Inhalt (ohne Toolbar-Hintergrund). */
+export const AREA_CALENDAR_VIEW_CONTENT_CLASS = PLANNING_CALENDAR_VIEW_CONTENT_CLASS;
+
+/** Mitarbeiter-Kalender Inhalt (ohne Toolbar-Hintergrund). */
+export const EMPLOYEE_CALENDAR_VIEW_CONTENT_CLASS = PLANNING_CALENDAR_VIEW_CONTENT_CLASS;
+
+/** Dashboard — gleiche Content-Fläche wie Bereich-/Mitarbeiter-Kalender. */
+export const DASHBOARD_VIEW_CONTENT_CLASS = PLANNING_CALENDAR_VIEW_CONTENT_CLASS;
 
 /** Planungsseiten-Wrapper: Toolbar + Inhalt, negative Ränder zum Main-Padding. */
 export const PLANNING_PAGES_SHELL_CLASS =
-  "-m-4 flex min-h-0 flex-1 flex-col md:-m-6";
+  "-m-4 flex min-h-0 flex-1 flex-col md:-m-6 md:min-h-[calc(100%+3rem)]";
 
 /** @deprecated Nur noch für Skeleton — Wrapper ohne Toolbar-Hintergrund. */
 export const DASHBOARD_VIEW_ROOT_CLASS =
@@ -68,6 +97,6 @@ export const AREA_CALENDAR_VIEW_ROOT_CLASS =
 /** Höhen-Pendant für Sidebar-Trennlinie unter dem Logo (Bereich-Kalender). */
 export const APP_SHELL_BRAND_HEADER_CONTENT_ALIGN_CLASS = "h-2 md:h-4";
 
-/** Wochen-Toolbar im Hauptbereich (Dashboard / Bereich-Kalender). */
+/** Wochen-Toolbar im Hauptbereich — gemeinsames Top-Panel mit Logo (Backdrop durchscheinend). */
 export const APP_PAGE_TOOLBAR_HEADER_CLASS =
-  `${APP_HEADER_DARK_PREVIEW_CLASS} app-page-toolbar-header flex shrink-0 flex-row items-center justify-between gap-2 border-b border-border px-4 md:gap-3 md:px-6`;
+  `${APP_SHELL_TOP_PANEL_CLASS} app-page-toolbar-header app-shell-top-panel-toolbar flex shrink-0 flex-row items-center justify-between gap-2 border-b border-border px-4 md:gap-3 md:px-6`;

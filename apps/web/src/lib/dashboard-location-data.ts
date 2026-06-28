@@ -31,11 +31,12 @@ export const EMPTY_DASHBOARD_LOCATION_SCOPED_DATA: DashboardLocationScopedData =
 };
 
 function uniqueServiceHoursById(
-  serviceHours: readonly AreaServiceHourRef[]
+  serviceHours: readonly AreaServiceHourRef[] | null | undefined
 ): AreaServiceHourRef[] {
+  const hours = serviceHours ?? [];
   const seen = new Set<string>();
   const result: AreaServiceHourRef[] = [];
-  for (const hour of serviceHours) {
+  for (const hour of hours) {
     const id = hour.id?.trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);

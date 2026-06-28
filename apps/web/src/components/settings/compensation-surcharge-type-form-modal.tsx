@@ -15,7 +15,7 @@ import type { CompensationSurchargeType } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
 import { formatSurchargeTriggerLabel, formatSurchargeUnitLabel, formatSurchargeAmountFieldLabel } from "@/lib/profile-surcharge-display";
 import { formatAmountForInput } from "@/lib/profile-hourly-rate-display";
-import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS, settingsModalHeaderPaddingClass } from "./settings-list-ui";
 import { cn } from "@/lib/cn";
 import {
   Alert,
@@ -122,7 +122,12 @@ export function CompensationSurchargeTypeFormModal({
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3
             id="compensation-surcharge-type-form-title"
             className={SETTINGS_MODAL_TITLE_CLASS}

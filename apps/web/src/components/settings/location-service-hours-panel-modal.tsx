@@ -37,6 +37,7 @@ import {
   settingsResponsiveWindowFieldsClass,
   settingsSubModalDialogClass,
   settingsSubModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "./settings-list-ui";
 import { settingsFixedNestedOverlayClass } from "./settings-modal-shell";
 import { useDeferredSettingsModalRender } from "./use-deferred-settings-modal-render";
@@ -859,9 +860,15 @@ export function LocationServiceHoursPanelModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="location-service-hours-overnight-desc"
-            className={settingsConfirmDialogClass()}
+            className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setOvernightConfirmOpen(false)}
+              closeDisabled={saving}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="location-service-hours-overnight-desc"
               className="whitespace-pre-line text-sm leading-relaxed text-foreground"
@@ -889,6 +896,7 @@ export function LocationServiceHoursPanelModal({
                 <CheckIcon />
                 {t("common.yes")}
               </Button>
+            </div>
             </div>
           </div>
         </div>

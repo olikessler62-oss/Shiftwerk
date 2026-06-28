@@ -5,7 +5,7 @@ import { createRole, updateRole } from "@/app/actions/roles";
 import { validateRoleUniqueness } from "@schichtwerk/database";
 import type { Role, RolePermissionLevel } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
-import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS } from "./settings-list-ui";
+import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS, settingsModalHeaderPaddingClass } from "./settings-list-ui";
 import { cn } from "@/lib/cn";
 import {
   Alert,
@@ -107,7 +107,12 @@ export function RoleFormModal({
         )}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-border",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
           <h3 id="role-form-title" className={SETTINGS_MODAL_TITLE_CLASS}>
             {mode === "create" ? t("roles.createTitle") : t("roles.editTitle")}
           </h3>

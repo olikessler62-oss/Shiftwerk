@@ -40,6 +40,7 @@ export function resolveShiftLifecycleFromLegacy(
 ): ShiftLifecycleStatus {
   if (confirmationStatus === "confirmed") return "confirmed";
   if (confirmationStatus === "canceled") return "cancelled";
+  if (confirmationStatus === "unresolved") return "planned";
   return "planned";
 }
 
@@ -124,6 +125,8 @@ export function resolveLegacyConfirmationStatusFromLegacyFields(input: {
 }): ShiftConfirmationStatus | undefined {
   const { confirmationStatus, requestedAt, now = new Date() } = input;
   if (!confirmationStatus) return undefined;
+
+  if (confirmationStatus === "unresolved") return "unresolved";
 
   if (confirmationStatus === "requested" && requestedAt) {
     if (isShiftConfirmationPendingDue(requestedAt, now)) {
@@ -284,12 +287,16 @@ export function mapLegacyConfirmationStatusToLifecycleAndRequestStatus(input: {
   if (
     confirmationStatus === "requested" ||
     confirmationStatus === "pending" ||
-    confirmationStatus === "rejected"
+    confirmationStatus === "rejected" ||
+    confirmationStatus === "unresolved"
   ) {
     let status: ShiftRequestStatus;
     if (confirmationStatus === "rejected") {
       status = "rejected";
-    } else if (confirmationStatus === "pending") {
+    } else if (
+      confirmationStatus === "pending" ||
+      confirmationStatus === "unresolved"
+    ) {
       status = "expired";
     } else if (
       requestedAt &&

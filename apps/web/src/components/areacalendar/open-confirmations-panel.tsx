@@ -6,7 +6,7 @@ import { Button, CloseIcon, IconButton } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
-import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
+import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_HEADER_BG_CLASS } from "@/components/settings/settings-list-ui";
 
 type PanelTab = "pending" | "rejected" | "proposed";
 
@@ -94,7 +94,12 @@ export function OpenConfirmationsPanel({
         className="fixed inset-y-0 right-0 z-[95] flex w-full max-w-md flex-col border-l border-border bg-surface shadow-xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <div
+          className={cn(
+            "flex items-start justify-between gap-3 border-b border-border px-4 py-3",
+            SETTINGS_MODAL_HEADER_BG_CLASS
+          )}
+        >
           <div>
             <h2 id="open-confirmations-title" className="text-lg font-semibold text-foreground">
               {t("shiftConfirmation.panel.title")}

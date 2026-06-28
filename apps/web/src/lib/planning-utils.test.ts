@@ -6,6 +6,7 @@ describe("getAreaCalendarWeekHeaderParts", () => {
     const parts = getAreaCalendarWeekHeaderParts("2026-06-08", "de-DE");
 
     expect(parts.monthYearLabel).toBe("Juni 2026");
+    expect(parts.rangeLabel).toBe("8. Juni – 14. Juni 2026");
     expect(parts.calendarWeek).toBe(24);
   });
 
@@ -13,6 +14,9 @@ describe("getAreaCalendarWeekHeaderParts", () => {
     const parts = getAreaCalendarWeekHeaderParts("2026-12-28", "de-DE");
 
     expect(parts.monthYearLabel).toBe("Dezember 2026/Januar 2027");
+    expect(parts.rangeLabel).toBe(
+      "28. Dezember 2026 – 3. Januar 2027"
+    );
     expect(parts.calendarWeek).toBe(53);
   });
 
@@ -20,5 +24,14 @@ describe("getAreaCalendarWeekHeaderParts", () => {
     const parts = getAreaCalendarWeekHeaderParts("2026-11-30", "de-DE");
 
     expect(parts.monthYearLabel).toBe("November/Dezember 2026");
+    expect(parts.rangeLabel).toBe("30. November – 6. Dezember 2026");
+  });
+
+  it("shows year on both ends when the week crosses a year boundary", () => {
+    const parts = getAreaCalendarWeekHeaderParts("2026-12-29", "de-DE");
+
+    expect(parts.rangeLabel).toBe(
+      "29. Dezember 2026 – 4. Januar 2027"
+    );
   });
 });

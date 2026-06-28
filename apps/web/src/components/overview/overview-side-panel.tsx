@@ -16,6 +16,7 @@ type Props = {
   closeAriaLabel: string;
   contentReady?: boolean;
   panelClassName?: string;
+  headerClassName?: string;
   bodyClassName?: string;
   headerAside?: ReactNode;
   footer?: ReactNode;
@@ -26,6 +27,7 @@ type Props = {
 export function OverviewSidePanel({
   contentReady = true,
   panelClassName,
+  headerClassName,
   bodyClassName,
   ...props
 }: Props) {
@@ -45,6 +47,7 @@ export function OverviewSidePanel({
         panelClassName
       )}
       bodyClassName={cn(settingsModalBodyPaddingClass(), "bg-background", bodyClassName)}
+      headerClassName={headerClassName}
       {...props}
     />
   );

@@ -12,6 +12,7 @@ const STROKE_WIDTH = 2.5;
 
 const STAFFING_FILL_GAUGE_RING_COLOR: Record<StaffingFillGaugeVariant, string> = {
   understaffed: "#dc2626",
+  planned: "#FFCC00",
   met: "#16a34a",
   overstaffed: "#CA8A04",
 };
@@ -66,18 +67,19 @@ export function StaffingFillGauge({
             cx={center}
             cy={center}
             r={radius}
-            fill="none"
+            fill={variant === "planned" ? ringColor : "none"}
             stroke={ringColor}
             strokeWidth={STROKE_WIDTH}
-            strokeDasharray={circumference}
+            strokeDasharray={variant === "planned" ? undefined : circumference}
             strokeDashoffset={0}
           />
         </svg>
         <span
           className={cn(
-            "pointer-events-none absolute inset-0 z-0 flex items-center justify-center tabular-nums leading-none",
+            "pointer-events-none absolute inset-0 z-10 flex items-center justify-center tabular-nums leading-none",
             countTextClass,
             variant === "understaffed" && "text-red-600",
+            variant === "planned" && "text-yellow-900",
             variant === "overstaffed" && "text-black/80",
             variant === "met" && "text-foreground"
           )}
@@ -87,7 +89,7 @@ export function StaffingFillGauge({
       </div>
       {label ? (
         <span
-          className="max-w-[3.5rem] truncate text-center text-[9px] font-medium leading-none text-neutral-700"
+          className="block max-w-[3.5rem] truncate pb-px text-center text-[9px] font-medium leading-tight text-neutral-700"
           title={label}
         >
           {label}

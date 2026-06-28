@@ -74,6 +74,7 @@ export function TagAreaHeaderStrip({
     <div
       className={cn(
         "absolute inset-x-0 top-0 overflow-visible border-b border-border",
+        noServiceHoursLabel && "pointer-events-none",
         headerAlertBadge ? "z-40" : "z-30",
         resolvedBackgroundColor ? undefined : "bg-background",
         className

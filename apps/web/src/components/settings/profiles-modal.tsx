@@ -52,6 +52,7 @@ import {
   settingsDataRowClass,
   settingsIndicatorCellClass,
   settingsPanelHeaderClass,
+  PLANNING_SIDE_PANEL_SUBTITLE_CLASS,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -612,8 +613,8 @@ export function ProfilesModal({
   const detailSubtitleNode =
     detailPanel && detailPanel !== "invite" && detailContextProfile
       ? (
-        <div className="mt-0.5 text-sm text-muted">
-          <p>
+        <div className={PLANNING_SIDE_PANEL_SUBTITLE_CLASS}>
+          <p className="break-words">
             {detailContextProfile.full_name}
             {detailContextProfile.role_name
               ? ` · ${detailContextProfile.role_name}`

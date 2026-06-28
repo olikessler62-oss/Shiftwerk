@@ -6,6 +6,7 @@ export type SuperadminShiftRecord = {
   starts_at: string;
   ends_at: string;
   confirmation_status: ShiftConfirmationStatus;
+  confirmation_status_updated_at: string | null;
   requested_at: string | null;
   employee_id: string;
   employee_name: string;

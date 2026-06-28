@@ -3,6 +3,7 @@ import {
   areaRowContentHeightPx,
   areaRowRequiredHeightPx,
   areaRowShiftStackHeightPx,
+  AREA_ROW_COLLAPSED_HEIGHT_PX,
   AREA_ROW_MIN_HEIGHT_PX,
   AREA_ROW_LIST_FIT_SLACK_PX,
   AREA_ROW_VERTICAL_CHROME_PX,
@@ -176,7 +177,7 @@ describe("shift-card-row-layout", () => {
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(availableBodyHeightPx);
   });
 
-  it("T5: collapsed rows stay at 68 px and expanded rows take slack", () => {
+  it("T5: collapsed rows stay at 20 px and expanded rows take slack", () => {
     const areas = [{ id: "restaurant" }, { id: "bar" }];
     const availableBodyHeightPx = 700;
     const layouts = computeAreaRowLayouts(
@@ -190,9 +191,9 @@ describe("shift-card-row-layout", () => {
     );
 
     expect(layouts.get("restaurant")!.heightPx).toBe(
-      availableBodyHeightPx - AREA_ROW_MIN_HEIGHT_PX,
+      availableBodyHeightPx - AREA_ROW_COLLAPSED_HEIGHT_PX,
     );
-    expect(layouts.get("bar")!.heightPx).toBe(AREA_ROW_MIN_HEIGHT_PX);
+    expect(layouts.get("bar")!.heightPx).toBe(AREA_ROW_COLLAPSED_HEIGHT_PX);
     expect(totalAssignedRowHeightPx(areas, layouts)).toBe(700);
   });
 

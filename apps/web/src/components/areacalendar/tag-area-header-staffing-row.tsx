@@ -158,7 +158,11 @@ export function TagAreaHeaderStaffingRow({
   return (
     <div
       ref={rowRef}
-        className={cn("relative flex h-full w-full min-w-0 overflow-visible", className)}
+      className={cn(
+        "relative flex h-full w-full min-w-0 overflow-visible",
+        noServiceHoursLabel && "pointer-events-none",
+        className
+      )}
     >
       {showServiceHoursSideTooltips ? (
         <>
@@ -188,30 +192,38 @@ export function TagAreaHeaderStaffingRow({
         {noServiceHoursLabel ? (
           dayCollapsed ? (
             headerTooltip ? (
-              <Tooltip content={headerTooltip} className="pointer-events-auto shrink-0">
+              <Tooltip content={headerTooltip} className="pointer-events-none shrink-0">
                 <span
-                  className="shrink-0 self-center cursor-default text-2xl font-bold leading-none text-black"
+                  className="pointer-events-none shrink-0 self-center cursor-default text-2xl font-bold leading-none text-black"
                   aria-label={noServiceHoursLabel}
+                  title={noServiceHoursLabel}
                 >
                   ×
                 </span>
               </Tooltip>
             ) : (
               <span
-                className="shrink-0 self-center text-2xl font-bold leading-none text-black"
+                className="pointer-events-none shrink-0 self-center text-2xl font-bold leading-none text-black"
                 aria-label={noServiceHoursLabel}
+                title={noServiceHoursLabel}
               >
                 ×
               </span>
             )
           ) : headerTooltip ? (
-            <Tooltip content={headerTooltip} className="pointer-events-auto shrink-0">
-              <span className="shrink-0 self-center cursor-default whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black">
+            <Tooltip content={headerTooltip} className="pointer-events-none shrink-0">
+              <span
+                className="pointer-events-none shrink-0 self-center cursor-default whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black"
+                title={noServiceHoursLabel}
+              >
                 {noServiceHoursLabel}
               </span>
             </Tooltip>
           ) : (
-            <span className="shrink-0 self-center whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black">
+            <span
+              className="pointer-events-none shrink-0 self-center whitespace-nowrap rounded px-1 py-px text-[11px] font-medium leading-none text-black"
+              title={noServiceHoursLabel}
+            >
               {noServiceHoursLabel}
             </span>
           )

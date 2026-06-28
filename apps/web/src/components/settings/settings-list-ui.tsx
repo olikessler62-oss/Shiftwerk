@@ -7,12 +7,14 @@ import {
   Checkbox,
   ChevronDownIcon,
   ChevronUpIcon,
+  CloseIcon,
   IconButton,
   ListIcon,
   Tooltip,
   TrashIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { settingsModalHeaderPaddingClass } from "@/components/settings/settings-modal-shell";
 export {
   SETTINGS_LIST_ITEM_ID_ATTR,
   applyCreatedListSelection,
@@ -21,19 +23,119 @@ export {
   useScrollToSettingsListItem,
 } from "@/lib/settings-list-scroll";
 
-export const SETTINGS_MODAL_TITLE_CLASS = "text-xl font-semibold text-foreground";
+/** Modal- und Slide-Panel-Überschriften — skaliert auf schmalen Viewports. */
+export const SETTINGS_MODAL_TITLE_CLASS =
+  "text-base font-semibold leading-tight text-foreground sm:text-lg md:text-xl";
+
+type SettingsModalHeaderProps = {
+  title?: ReactNode;
+  titleId?: string;
+  subtitle?: ReactNode;
+  onClose: () => void;
+  closeDisabled?: boolean;
+  closeAriaLabel: string;
+  className?: string;
+  children?: ReactNode;
+};
+
+/** Modal-Kopf mit Schließen-Button oben rechts. */
+export function SettingsModalHeader({
+  title,
+  titleId,
+  subtitle,
+  onClose,
+  closeDisabled = false,
+  closeAriaLabel,
+  className,
+  children,
+}: SettingsModalHeaderProps) {
+  return (
+    <div
+      className={cn(
+        "flex items-start justify-between gap-3 border-b border-border",
+        settingsModalHeaderPaddingClass(),
+        className
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        {children ?? (
+          <>
+            {title != null ? (
+              <h2 id={titleId} className={SETTINGS_MODAL_TITLE_CLASS}>
+                {title}
+              </h2>
+            ) : null}
+            {subtitle != null ? (
+              typeof subtitle === "string" ? (
+                <p className="mt-1 text-sm text-muted">{subtitle}</p>
+              ) : (
+                subtitle
+              )
+            ) : null}
+          </>
+        )}
+      </div>
+      <IconButton
+        size="sm"
+        onClick={onClose}
+        disabled={closeDisabled}
+        aria-label={closeAriaLabel}
+        className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
+      >
+        <CloseIcon className="h-[18px] w-[18px]" />
+      </IconButton>
+    </div>
+  );
+}
+
+/** Nur Schließen-Button für kleine Bestätigungsdialoge. */
+export function SettingsConfirmDialogCloseHeader({
+  onClose,
+  closeDisabled = false,
+  closeAriaLabel,
+}: {
+  onClose: () => void;
+  closeDisabled?: boolean;
+  closeAriaLabel: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-start justify-end border-b border-border",
+        settingsModalHeaderPaddingClass()
+      )}
+    >
+      <IconButton
+        size="sm"
+        onClick={onClose}
+        disabled={closeDisabled}
+        aria-label={closeAriaLabel}
+        className="border-transparent bg-transparent hover:bg-subtle"
+      >
+        <CloseIcon className="h-[18px] w-[18px]" />
+      </IconButton>
+    </div>
+  );
+}
+
+/** Untertitel in Slide-Panels (PlanningSidePanel). */
+export const PLANNING_SIDE_PANEL_SUBTITLE_CLASS =
+  "mt-0.5 min-w-0 break-words text-xs text-muted sm:text-sm";
 
 export {
   MODAL_SCROLLBAR_CLASS,
   SETTINGS_MODAL_MAX_WIDTH,
   settingsConfirmDialogClass,
+  settingsFixedNestedOverlayClass,
   settingsMasterDetailLayoutClass,
   settingsMasterDetailListsClass,
   settingsModalBackdropClass,
   settingsModalBodyPaddingClass,
   settingsModalDialogClass,
   settingsModalFooterClass,
+  settingsModalHeaderClass,
   settingsModalHeaderPaddingClass,
+  SETTINGS_MODAL_HEADER_BG_CLASS,
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
   settingsResponsiveTableWrapClass,

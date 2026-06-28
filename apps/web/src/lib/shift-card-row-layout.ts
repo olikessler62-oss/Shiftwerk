@@ -6,7 +6,7 @@ export const SHIFT_CARD_EXTRA_HEIGHT_PX = 1;
 /** Zwei Textzeilen + vertikales Padding — leicht über Reserve, damit nichts abgeschnitten wird. */
 export const SHIFT_CARD_TWO_LINE_HEIGHT_PX = 30 + SHIFT_CARD_EXTRA_HEIGHT_PX;
 /** Zusätzliche Höhe für Schichtkarten im Bereich-Kalender (Breite unverändert). */
-export const AREA_CALENDAR_SHIFT_CARD_EXTRA_HEIGHT_PX = 5;
+export const AREA_CALENDAR_SHIFT_CARD_EXTRA_HEIGHT_PX = 11;
 export const AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX =
   SHIFT_CARD_TWO_LINE_HEIGHT_PX + AREA_CALENDAR_SHIFT_CARD_EXTRA_HEIGHT_PX;
 export const SHIFT_CARD_LIST_GAP_PX = 4;
@@ -40,6 +40,8 @@ export const AREA_ROW_FOOTER_STRIP_PX = 22;
 export const AREA_ROW_EMPTY_HEIGHT_PX = 68;
 /** Harte Untergrenze für jede Bereichszeile (Fenster verkleinern, Platz knapp). */
 export const AREA_ROW_MIN_HEIGHT_PX = AREA_ROW_EMPTY_HEIGHT_PX;
+/** Eingeklappte Bereichszeile — Checkbox + Bereichsname in einer Zeile. */
+export const AREA_ROW_COLLAPSED_HEIGHT_PX = 20;
 /** Größter Bereich muss mindestens so viel höher sein als der zweitgrößte. */
 export const DOMINANT_AREA_MIN_LEAD_RATIO = 1.25;
 
@@ -158,7 +160,18 @@ function isCollapsedAreaRow(
   return !layoutActiveAreaIds.has(areaId);
 }
 
-/** Checkbox eingeklappt oder service-dormant (keine Servicezeit/Schichten ab heute, keine Schichten in Vergangenheit der Woche) — Zeile fix 68 px. */
+function fixedAreaRowHeightPx(
+  areaId: string,
+  layoutActiveAreaIds: ReadonlySet<string>,
+  layoutMinHeightAreaIds: ReadonlySet<string>,
+): number {
+  if (isCollapsedAreaRow(areaId, layoutActiveAreaIds)) {
+    return AREA_ROW_COLLAPSED_HEIGHT_PX;
+  }
+  return AREA_ROW_MIN_HEIGHT_PX;
+}
+
+/** Checkbox eingeklappt (20 px) oder service-dormant (68 px) — Zeile fix, kein Slack. */
 function isAreaRowFixedAtMinHeight(
   areaId: string,
   layoutActiveAreaIds: ReadonlySet<string>,
@@ -359,7 +372,14 @@ function computePhase1MinTotalPx(
         layoutMinHeightAreaIds,
       )
     ) {
-      return sum + AREA_ROW_MIN_HEIGHT_PX;
+      return (
+        sum +
+        fixedAreaRowHeightPx(
+          area.id,
+          layoutActiveAreaIds,
+          layoutMinHeightAreaIds,
+        )
+      );
     }
     if (isShiftAreaRow(area.id, layoutActiveAreaIds, maxShiftCountByAreaId)) {
       return sum + (requiredByArea.get(area.id) ?? AREA_ROW_MIN_HEIGHT_PX);
@@ -566,7 +586,14 @@ function applyPhase1Layout(
         layoutMinHeightAreaIds,
       )
     ) {
-      heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+      heights.set(
+        area.id,
+        fixedAreaRowHeightPx(
+          area.id,
+          layoutActiveAreaIds,
+          layoutMinHeightAreaIds,
+        ),
+      );
       continue;
     }
 
@@ -589,7 +616,12 @@ function applyPhase1Layout(
           layoutActiveAreaIds,
           layoutMinHeightAreaIds,
         )
-          ? sum + AREA_ROW_MIN_HEIGHT_PX
+          ? sum +
+            fixedAreaRowHeightPx(
+              area.id,
+              layoutActiveAreaIds,
+              layoutMinHeightAreaIds,
+            )
           : sum,
       0,
     );
@@ -608,7 +640,12 @@ function applyPhase1Layout(
         layoutActiveAreaIds,
         layoutMinHeightAreaIds,
       )
-        ? sum + AREA_ROW_MIN_HEIGHT_PX
+        ? sum +
+          fixedAreaRowHeightPx(
+            area.id,
+            layoutActiveAreaIds,
+            layoutMinHeightAreaIds,
+          )
         : sum,
     0,
   );
@@ -818,7 +855,12 @@ function applyPhase2Layout(
           layoutActiveAreaIds,
           layoutMinHeightAreaIds,
         )
-          ? sum + AREA_ROW_MIN_HEIGHT_PX
+          ? sum +
+            fixedAreaRowHeightPx(
+              area.id,
+              layoutActiveAreaIds,
+              layoutMinHeightAreaIds,
+            )
           : sum,
       0,
     );
@@ -850,7 +892,14 @@ function applyPhase2Layout(
         layoutMinHeightAreaIds,
       )
     ) {
-      heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+      heights.set(
+        area.id,
+        fixedAreaRowHeightPx(
+          area.id,
+          layoutActiveAreaIds,
+          layoutMinHeightAreaIds,
+        ),
+      );
       continue;
     }
 
@@ -955,7 +1004,14 @@ export function computeAreaRowLayouts(
           layoutMinHeightAreaIds,
         )
       ) {
-        heights.set(area.id, AREA_ROW_MIN_HEIGHT_PX);
+        heights.set(
+          area.id,
+          fixedAreaRowHeightPx(
+            area.id,
+            layoutActiveAreaIds,
+            layoutMinHeightAreaIds,
+          ),
+        );
       } else if (
         isShiftAreaRow(area.id, layoutActiveAreaIds, maxShiftCountByAreaId)
       ) {
@@ -997,10 +1053,12 @@ export function computeAreaRowLayouts(
   }
 
   for (const area of areas) {
+    const collapsed = isCollapsedAreaRow(area.id, layoutActiveAreaIds);
     const requiredPx = requiredByArea.get(area.id) ?? AREA_ROW_EMPTY_HEIGHT_PX;
-    const heightPx = clampAreaRowHeightPx(
-      heights.get(area.id) ?? requiredPx,
-    );
+    const rawHeight = heights.get(area.id) ?? requiredPx;
+    const heightPx = collapsed
+      ? AREA_ROW_COLLAPSED_HEIGHT_PX
+      : clampAreaRowHeightPx(rawHeight);
     result.set(area.id, buildAreaRowLayout(requiredPx, heightPx));
   }
 
@@ -1008,6 +1066,9 @@ export function computeAreaRowLayouts(
 }
 
 export function buildAreaRowGridTrack(layout: AreaRowLayout): string {
+  if (layout.heightPx < AREA_ROW_MIN_HEIGHT_PX) {
+    return `${layout.heightPx}px`;
+  }
   return `${clampAreaRowHeightPx(layout.heightPx)}px`;
 }
 

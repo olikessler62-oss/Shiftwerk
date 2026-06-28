@@ -7,16 +7,21 @@ import { DashboardCellShiftRow } from "@/components/dashboard/dashboard-cell-shi
 import { DashboardEmployeeRowOvernightOverlay } from "@/components/dashboard/dashboard-employee-row-overnight-overlay";
 import { DashboardDayColumnWidthReporter } from "@/components/dashboard/dashboard-day-column-width-reporter";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
-import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement } from "@/components/ui/tooltip";
+import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement, EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import { isPastCalendarDate } from "@/lib/dates";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { canOpenShiftCardContextMenu } from "@/lib/shift-card-context-menu-actions";
 import { cn } from "@/lib/cn";
 import {
+  DASHBOARD_CELL_BLOCKED_INFO_PANEL_CLASS,
+  DASHBOARD_PANEL_ROUNDED_CLASS,
+} from "@/lib/dashboard-panel-styles";
+import {
   CALENDAR_DAY_HEADER_ACTIVE_CLASS,
   CALENDAR_DAY_HEADER_CELL_CLASS,
   CALENDAR_DAY_HEADER_MUTED_CLASS,
   CALENDAR_DAY_HEADER_ROW_HEIGHT,
+  CALENDAR_STAFFING_HEADER_CLASS,
   CALENDAR_HOLIDAY_DAY_HEADER_LABEL_CLASS,
   CALENDAR_TODAY_DAY_HEADER_BADGE_CLASS,
 } from "@/lib/calendar-day-header-styles";
@@ -34,7 +39,6 @@ import { TagAreaFooterStrip } from "@/components/areacalendar/tag-area-footer-st
 import {
   PLANNING_CALENDAR_GRID_TRANSITION_CLASS,
   PLANNING_CELL_CONTENT_TRANSITION_CLASS,
-  PLANNING_CELL_BLOCKED_INFO_PANEL_CLASS,
   PLANNING_CELL_ABSENT_ACTIVE_PANEL_CLASS,
   PLANNING_CELL_HEIGHT_PX,
   PLANNING_CELL_PADDING_PX,
@@ -139,6 +143,7 @@ type Props = {
   dailyStaffingByDate?: Map<string, TagAreaHeaderStaffingEntry[]>;
   dailyFooterLabelsByDate?: Map<string, TagAreaFooterLabels>;
   weeklySummary?: PlanningWeeklySummary;
+  staffColumnHeaderLabel: string;
   t: (key: string, params?: Record<string, string>) => string;
   isDayReadOnly: (date: string) => boolean;
   getDayAssignBlockReason: (
@@ -163,6 +168,11 @@ type Props = {
     date: string
   ) => boolean;
   onDayAssignContextMenu?: (
+    date: string,
+    clientX: number,
+    clientY: number
+  ) => void;
+  onDayAssignClick?: (
     date: string,
     clientX: number,
     clientY: number
@@ -244,6 +254,7 @@ export function DashboardCalendarGrid({
   dailyStaffingByDate,
   dailyFooterLabelsByDate,
   weeklySummary,
+  staffColumnHeaderLabel,
   t,
   isDayReadOnly,
   getDayAssignBlockReason,
@@ -253,6 +264,7 @@ export function DashboardCalendarGrid({
   onCellContextMenu,
   canOpenCellAssignContextMenu,
   onDayAssignContextMenu,
+  onDayAssignClick,
   onShiftContextMenu,
   onEmployeeRowContextMenu,
   onStaffingHeaderContextMenu,
@@ -368,7 +380,8 @@ export function DashboardCalendarGrid({
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-400 bg-surface shadow-sm",
+        "flex min-h-0 flex-1 flex-col overflow-hidden border border-slate-400 bg-surface shadow-sm",
+        DASHBOARD_PANEL_ROUNDED_CLASS,
         CALENDAR_INTERACTION_SURFACE_CLASS,
         !isCalendarVisible && "invisible"
       )}
@@ -395,19 +408,19 @@ export function DashboardCalendarGrid({
         >
         <div
           className={cn(
-            "sticky left-0 top-0 z-[45] flex items-center bg-calendar-active-header px-4 text-left text-xs font-semibold uppercase tracking-wide text-muted",
+            "sticky left-0 top-0 z-[45] flex items-center bg-calendar-active-header px-4 text-left text-sm font-semibold tracking-tight text-foreground md:text-[0.9375rem]",
             !showStaffingHeaderRow && PLANNING_HEADER_ROW_BORDER_CLASS,
             PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS
           )}
           style={{ gridColumn: 1, gridRow: 1, height: CALENDAR_DAY_HEADER_ROW_HEIGHT }}
         >
-          {t("dashboard.staffColumn")}
+          <span className="min-w-0 truncate">{staffColumnHeaderLabel}</span>
         </div>
 
         {showStaffingHeaderRow ? (
           <div
             className={cn(
-              "sticky left-0 z-[45] border-t border-slate-300 bg-calendar-active-header",
+              "sticky left-0 z-[45] border-t border-slate-300 bg-calendar-staffing-header",
               PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
               PLANNING_STAFF_COLUMN_BOTTOM_EDGE_CLASS
             )}
@@ -500,7 +513,6 @@ export function DashboardCalendarGrid({
                 dayHasStaffingHeaderServiceHours?.[dayIndex] ??
                 dayHasServiceHours[dayIndex] ??
                 false;
-              const mutedHeader = !staffingHeaderHasServiceHours;
               const staffingEntries = dailyStaffingByDate?.get(date) ?? [];
               const staffingHeaderAlertBadge =
                 staffingEntries.length > 0 &&
@@ -529,10 +541,8 @@ export function DashboardCalendarGrid({
                     staffingHeaderAlertBadge ? "z-[41]" : "z-40",
                     PLANNING_HEADER_ROW_BORDER_CLASS,
                     showNoServiceHoursInHeader
-                      ? undefined
-                      : mutedHeader
-                        ? CALENDAR_DAY_HEADER_MUTED_CLASS
-                        : CALENDAR_DAY_HEADER_ACTIVE_CLASS,
+                      ? "cursor-pointer"
+                      : CALENDAR_STAFFING_HEADER_CLASS,
                     dayHeaderColumnDivider(dayIndex, dates.length)
                   )}
                   style={{
@@ -550,6 +560,19 @@ export function DashboardCalendarGrid({
                           event.preventDefault();
                           event.stopPropagation();
                           onDayAssignContextMenu(
+                            date,
+                            event.clientX,
+                            event.clientY
+                          );
+                        }
+                      : undefined
+                  }
+                  onClick={
+                    showNoServiceHoursInHeader && onDayAssignClick
+                      ? (event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onDayAssignClick(
                             date,
                             event.clientX,
                             event.clientY
@@ -620,6 +643,7 @@ export function DashboardCalendarGrid({
                 <Tooltip
                   className="flex min-h-0 w-full self-stretch"
                   contentClassName={employeeAvailabilityTooltipContentClassName}
+                  openDelayMs={EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS}
                   content={
                     <PlanningEmployeeAvailabilityTooltipContent
                       slots={availabilityByProfileId.get(emp.id) ?? []}
@@ -696,8 +720,13 @@ export function DashboardCalendarGrid({
                   cellHasShift
                     ? null
                     : getDayAssignBlockReason(emp.id, date);
-                const isNoServiceDay = !dayHasServiceHours[dayIndex];
-                const effectiveBlockReason = isNoServiceDay ? null : blockReason;
+                const isNoServiceDayForArea =
+                  dayHasStaffingHeaderServiceHours != null
+                    ? !(dayHasStaffingHeaderServiceHours[dayIndex] ?? false)
+                    : !dayHasServiceHours[dayIndex];
+                const effectiveBlockReason = isNoServiceDayForArea
+                  ? null
+                  : blockReason;
                 const isPastDay = isPastCalendarDate(date, todayISO);
                 const dayReadOnly = isDayReadOnly(date);
                 const isDayExpanded = layoutActiveDayDates.has(date);
@@ -720,7 +749,7 @@ export function DashboardCalendarGrid({
                 const showCellFreePlus =
                   DASHBOARD_CELL_FREE_PLUS_ENABLED &&
                   !isPastDay &&
-                  !isNoServiceDay;
+                  !isNoServiceDayForArea;
                 const emptyAreaLabel = t("dashboard.addShiftTitle");
                 const handleCellAssignInteraction = (
                   event: React.MouseEvent<HTMLElement>,
@@ -781,6 +810,7 @@ export function DashboardCalendarGrid({
                   if (isPastDay) return;
                   if (effectiveBlockReason === "absent") return;
                   if (
+                    !isNoServiceDayForArea &&
                     canOpenCellAssignContextMenu &&
                     !canOpenCellAssignContextMenu(emp.id, date)
                   ) {
@@ -910,6 +940,7 @@ export function DashboardCalendarGrid({
                     data-planning-cell={planningCellDataAttribute(emp.id, date)}
                     className={cn(
                       "relative flex min-h-0 flex-col self-stretch overflow-hidden",
+                      isNoServiceDayForArea && !isPastDay && "cursor-pointer",
                       isEmployeeHighlighted && isDayExpanded && "overflow-visible",
                       dayColumnDivider(dayIndex, dates.length),
                       !isLastEmployee && PLANNING_ROW_DIVIDER_CLASS
@@ -936,9 +967,10 @@ export function DashboardCalendarGrid({
                         onWidthChange={handleDayColumnWidthChange}
                       />
                     ) : null}
-                    {!isDayExpanded &&
+                    {                    !isDayExpanded &&
                     (cellSegments.length > 0 ||
-                      collapsedOvernightAnchors.length > 0) ? (
+                      collapsedOvernightAnchors.length > 0 ||
+                      (isNoServiceDayForArea && !hasOvernightSpanOnCell)) ? (
                       <div
                         className="flex w-full min-w-0 flex-1 items-center"
                         style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
@@ -986,13 +1018,13 @@ export function DashboardCalendarGrid({
                           </div>
                         ) : effectiveBlockReason === "no_availability" ? (
                           <div
-                            className={PLANNING_CELL_BLOCKED_INFO_PANEL_CLASS}
+                            className={DASHBOARD_CELL_BLOCKED_INFO_PANEL_CLASS}
                             style={{ minHeight: PLANNING_CELL_HEIGHT_PX }}
                           >
                             {t("dashboard.cellNoAvailability")}
                           </div>
                         ) : isPastDay ||
-                          isNoServiceDay ||
+                          isNoServiceDayForArea ||
                           !showCellFreePlus ? (
                           <div
                             aria-hidden
@@ -1007,7 +1039,8 @@ export function DashboardCalendarGrid({
                               handleCellAssignInteraction(event, "click")
                             }
                             className={cn(
-                              "flex min-h-0 w-full flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40",
+                              "flex min-h-0 w-full flex-1 flex-col items-center justify-center border border-dashed border-border text-muted transition hover:border-primary hover:bg-primary/5 hover:text-primary disabled:opacity-40",
+                              DASHBOARD_PANEL_ROUNDED_CLASS,
                               picker?.employeeId === emp.id &&
                                 picker?.date === date &&
                                 !picker?.shiftId &&

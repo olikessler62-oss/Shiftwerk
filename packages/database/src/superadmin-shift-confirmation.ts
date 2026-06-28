@@ -2,7 +2,7 @@ import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import { resolveShiftLifecycleFromLegacy } from "./shift-display-state";
 
 export const SUPERADMIN_SHIFT_CONFIRMATION_STATUSES: readonly ShiftConfirmationStatus[] =
-  ["proposed", "requested", "pending", "confirmed", "rejected", "canceled"];
+  ["proposed", "requested", "pending", "confirmed", "rejected", "canceled", "unresolved"];
 
 export function buildSuperadminConfirmationStatusPatch(
   status: ShiftConfirmationStatus,
@@ -28,6 +28,8 @@ export function buildSuperadminConfirmationStatusPatch(
     case "requested":
       return { ...base, requested_at: now, pending_since: null };
     case "pending":
+      return { ...base, requested_at: now, pending_since: now };
+    case "unresolved":
       return { ...base, requested_at: now, pending_since: now };
     case "confirmed":
     case "rejected":

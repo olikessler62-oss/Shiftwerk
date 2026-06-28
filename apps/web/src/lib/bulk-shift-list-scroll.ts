@@ -39,25 +39,53 @@ export function computeBulkShiftListScrollTop(input: {
   return relativeBottom - viewportBottom;
 }
 
+function resolveBulkShiftScrollContainer(
+  container: HTMLElement
+): HTMLElement {
+  if (container.scrollHeight > container.clientHeight) {
+    return container;
+  }
+
+  let node: HTMLElement | null = container.parentElement;
+  while (node && node !== document.body) {
+    const { overflowY } = getComputedStyle(node);
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      node.scrollHeight > node.clientHeight
+    ) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+
+  return container;
+}
+
 export function scrollBulkShiftRowIntoView(
   container: HTMLElement,
   rowEl: HTMLElement
 ) {
+  const scrollContainer = resolveBulkShiftScrollContainer(container);
+  if (scrollContainer === container && container.scrollHeight <= container.clientHeight) {
+    rowEl.scrollIntoView({ block: "nearest" });
+    return;
+  }
+
   const thead = container.querySelector("thead");
   const headerHeight = thead?.getBoundingClientRect().height ?? 0;
-  const containerRect = container.getBoundingClientRect();
+  const containerRect = scrollContainer.getBoundingClientRect();
   const rowRect = rowEl.getBoundingClientRect();
   const padding = 4;
   const minVisibleTop = containerRect.top + headerHeight + padding;
   const maxVisibleBottom = containerRect.bottom - padding;
 
   if (rowRect.top < minVisibleTop) {
-    container.scrollTop += rowRect.top - minVisibleTop;
+    scrollContainer.scrollTop += rowRect.top - minVisibleTop;
     return;
   }
 
   if (rowRect.bottom > maxVisibleBottom) {
-    container.scrollTop += rowRect.bottom - maxVisibleBottom;
+    scrollContainer.scrollTop += rowRect.bottom - maxVisibleBottom;
   }
 }
 

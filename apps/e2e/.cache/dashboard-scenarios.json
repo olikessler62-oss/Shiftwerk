@@ -1,0 +1,29 @@
+{
+  "weekStart": "2026-06-22",
+  "locationId": "01a40017-beb5-4f21-9c44-364e54c68ac2",
+  "shiftConfirmationEnabled": true,
+  "barUnderstaffed": {
+    "shiftDate": "2026-06-23",
+    "areaName": "BAR"
+  },
+  "restaurantUnderstaffed": {
+    "shiftDate": "2026-06-24",
+    "areaName": "Restaurant"
+  },
+  "restaurantCovered": {
+    "shiftDate": "2026-06-26",
+    "areaName": "Restaurant"
+  },
+  "restaurantOverstaffed": {
+    "shiftDate": "2026-06-27",
+    "areaName": "Restaurant"
+  },
+  "kitchenQualMismatch": {
+    "shiftDate": "2026-06-26",
+    "areaName": "Küche"
+  },
+  "barConfirmation": {
+    "shiftDate": "2026-06-28",
+    "areaName": "BAR"
+  }
+}

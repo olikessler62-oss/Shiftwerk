@@ -41,7 +41,10 @@ import {
 } from "@/lib/planning-overnight-shift-display";
 import {
   shiftConfirmationTooltipStatusLabelKey,
+  SHIFT_CARD_UNRESOLVED_OPACITY,
+  shiftConfirmationShowsUnresolvedCardStyle,
 } from "@/lib/shift-confirmation-display";
+import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
 import { SHIFT_ABSENCE_CONFLICT_RING_CLASS } from "@/lib/shift-absence-conflict";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
@@ -185,8 +188,16 @@ export function DashboardCellShiftRow({
         const stripWidthPx = resolveStripWidthPx(cardWidthPx);
         const showEmployeeStrip = planningShiftSegmentShowsEmployeeStrip(part);
         const isPastShift = isPastShiftDate(cellDate);
-        const confirmationStatusLine = shift.confirmationStatus
-          ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
+        const calendarConfirmationStatus =
+          resolveShiftCardConfirmationStatusForCalendar(shift, cellDate);
+        const showUnresolvedCardStyle = shiftConfirmationShowsUnresolvedCardStyle(
+          calendarConfirmationStatus
+        );
+        const confirmationStatusLine = calendarConfirmationStatus
+          ? t(shiftConfirmationTooltipStatusLabelKey(calendarConfirmationStatus))
+          : undefined;
+        const inlineStatusLabel = showUnresolvedCardStyle
+          ? confirmationStatusLine
           : undefined;
         const jobsLabel = resolvePlanningShiftJobsLabel(shift, shiftJobContext);
         const jobsLine = jobsLabel.trim()
@@ -199,7 +210,7 @@ export function DashboardCellShiftRow({
           {
             employeeName,
             confirmationStatusLine,
-            confirmationStatus: shift.confirmationStatus,
+            confirmationStatus: calendarConfirmationStatus,
             jobsLabel,
             isPastShift,
             formatTemplateTooltipLine: (templateName) =>
@@ -261,6 +272,9 @@ export function DashboardCellShiftRow({
                 minHeight: PLANNING_CELL_HEIGHT_PX,
                 width: cardWidthPx,
                 maxWidth: cardWidthPx,
+                ...(showUnresolvedCardStyle
+                  ? { opacity: SHIFT_CARD_UNRESOLVED_OPACITY }
+                  : undefined),
               }}
             >
               <button
@@ -339,10 +353,11 @@ export function DashboardCellShiftRow({
                     timeLabel={cardContent.timeLabel}
                     jobsLine={jobsLine}
                     compact={!showTwoLineDetail}
+                    inlineStatusLabel={inlineStatusLabel}
                   />
                 ) : null}
                 <DashboardShiftCardConfirmationOverlay
-                  status={shift.confirmationStatus}
+                  status={calendarConfirmationStatus}
                 />
               </DashboardShiftCardTextArea>
               </button>

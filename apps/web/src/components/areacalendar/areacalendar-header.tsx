@@ -75,7 +75,7 @@ export function AreaCalendarHeader({
     [weekStart, locale]
   );
 
-  const weekLabelTitle = `${weekHeader.rangeLabel} ${weekHeader.year} KW ${weekHeader.calendarWeek}`;
+  const weekLabelTitle = `${weekHeader.rangeLabel} KW ${weekHeader.calendarWeek}`;
   const atEarliestWeek = isPlanningWeekAtEarliest(weekStart);
 
   const pushAreaCalendarQuery = useCallback(
@@ -186,7 +186,7 @@ export function AreaCalendarHeader({
           className="min-w-0 select-none text-sm leading-none text-white"
           title={weekLabelTitle}
         >
-          <span className="font-semibold">{weekHeader.monthYearLabel}</span>
+          <span className="font-semibold">{weekHeader.rangeLabel}</span>
           <span className="ml-1.5 text-xs font-normal">
             KW {weekHeader.calendarWeek}
           </span>

@@ -17,6 +17,15 @@ export const TOOLTIP_Z_INDEX = 200;
 /** Standard-Verzögerung für Hover-Tooltips (Fokus öffnet weiterhin sofort). */
 export const HOVER_TOOLTIP_OPEN_DELAY_MS = 700;
 
+/** Verfügbarkeits-Tooltips in Mitarbeiterlisten (Bereich- und Mitarbeiter-Kalender). */
+export const EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS = 1200;
+
+/** Personal-Combobox in Schicht-Zuweisung (Bulk-Modal): nur bei längerem Hover. */
+export const SHIFT_ASSIGN_EMPLOYEE_COMBO_HINT_OPEN_DELAY_MS = 1000;
+
+/** Personalvorschläge-Modal: Daten während Hover-Verzögerung laden. */
+export const DASHBOARD_STAFFING_CANDIDATE_TOOLTIP_OPEN_DELAY_MS = 1000;
+
 export type TooltipPlacement = {
   /** Linker Tooltip-Rand liegt auf der horizontalen Mitte des Triggers. */
   anchorLeftToTriggerCenter?: boolean;

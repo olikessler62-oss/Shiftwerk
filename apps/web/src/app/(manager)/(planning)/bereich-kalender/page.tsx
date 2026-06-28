@@ -10,11 +10,11 @@ import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/areacalendar-assignment-presets";
 import { AreaCalendarView } from "@/components/areacalendar/areacalendar-view";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-calendar";
-import { resolveOrganizationTimeZone } from "@schichtwerk/database";
+import { organizationTodayISO, resolveOrganizationTimeZone } from "@schichtwerk/database";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedAreaCalendarShifts } from "@/lib/cached-areacalendar-shifts";
-import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data";
+import { loadCommunicationHubScopeData } from "@/lib/communication-hub-scope-data";
 import { resolvePlanningShiftJobLabels } from "@/lib/planning-shift-job-label";
 
 export const dynamic = "force-dynamic";
@@ -195,28 +195,16 @@ export default async function BereichKalenderPage({
 
   const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
 
-  const canceledShiftIds = cards
-    .filter((shift) => shift.confirmationStatus === "canceled")
-    .filter((shift) => !shift.displayState?.openCancellation?.cancelledBy)
-    .map((shift) => shift.id);
-
-  const [swapRequestRows, cancelActorEntries] =
-    selectedLocationId && organization.shift_confirmation_enabled
-      ? await Promise.all([
-          db.listOrganizationSwapRequests(orgId, {
-            statuses: ["pending"],
-            locationId: selectedLocationId,
-            from,
-            to,
-          }),
-          db.listShiftCancelActors(orgId, canceledShiftIds),
-        ])
-      : [[], new Map<string, "employee" | "manager">()];
-
-  const communicationSwapRequests = mapSwapRequestsToCommunicationRows(
-    swapRequestRows,
-    timeZone
-  );
+  const todayISO = organizationTodayISO(timeZone);
+  const communicationHubScope = await loadCommunicationHubScopeData({
+    db,
+    orgId,
+    organization,
+    locationId: selectedLocationId,
+    timeZone,
+    todayISO,
+    areaShiftTemplates,
+  });
 
   return (
     <Suspense fallback={<div className="-m-6 p-6 text-sm text-muted">Laden…</div>}>
@@ -240,8 +228,10 @@ export default async function BereichKalenderPage({
         locations={locations}
         absences={absences}
         recurringAvailability={recurringAvailability}
-        communicationSwapRequests={communicationSwapRequests}
-        communicationCancelActors={Object.fromEntries(cancelActorEntries)}
+        communicationSwapRequests={communicationHubScope.swapRequests}
+        communicationCancelActors={communicationHubScope.cancelActors}
+        communicationHubLocationShifts={communicationHubScope.locationShifts}
+        communicationHubAbsences={communicationHubScope.absences}
         managerNotifications={managerNotifications}
       />
     </Suspense>

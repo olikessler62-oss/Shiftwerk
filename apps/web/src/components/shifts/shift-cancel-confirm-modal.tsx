@@ -1,14 +1,14 @@
 "use client";
 
 import { useTranslations } from "@/i18n/locale-provider";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
 import {
   settingsConfirmDialogClass,
   settingsModalFooterClass,
   settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "@/components/settings/settings-list-ui";
-import { cn } from "@/lib/cn";
-
 type Props = {
   variant: "manager" | "employee";
   employeeName?: string;
@@ -61,11 +61,16 @@ export function ShiftCancelConfirmModal({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="shift-cancel-confirm-desc"
-        className={dialogClass}
+        className={cn(dialogClass, "overflow-hidden p-0")}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <p id="shift-cancel-confirm-desc" className="text-sm text-foreground">
-          {employeeName
+        <SettingsConfirmDialogCloseHeader
+          onClose={onCancel}
+          closeDisabled={pending}
+          closeAriaLabel={t("common.close")}
+        />
+        <div className="px-4 py-4 sm:px-5">
+        <p id="shift-cancel-confirm-desc" className="text-sm text-foreground">          {employeeName
             ? t(messageKey, { name: employeeName })
             : t(messageKey)}
         </p>
@@ -77,7 +82,7 @@ export function ShiftCancelConfirmModal({
             {t("common.yes")}
           </Button>
         </div>
-      </div>
-    </div>
+        </div>
+      </div>    </div>
   );
 }

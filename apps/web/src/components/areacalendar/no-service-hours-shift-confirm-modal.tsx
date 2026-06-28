@@ -1,11 +1,14 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useTranslations } from "@/i18n/locale-provider";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
 import {
   settingsConfirmDialogClass,
+  settingsFixedNestedOverlayClass,
   settingsModalFooterClass,
-  settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "@/components/settings/settings-list-ui";
 
 type Props = {
@@ -21,9 +24,11 @@ export function NoServiceHoursShiftConfirmModal({
 }: Props) {
   const t = useTranslations();
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className={settingsNestedModalOverlayClass()}
+      className={settingsFixedNestedOverlayClass()}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel();
@@ -33,9 +38,14 @@ export function NoServiceHoursShiftConfirmModal({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="no-service-hours-shift-confirm-desc"
-        className={settingsConfirmDialogClass()}
+        className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
         onMouseDown={(event) => event.stopPropagation()}
       >
+        <SettingsConfirmDialogCloseHeader
+          onClose={onCancel}
+          closeAriaLabel={t("common.close")}
+        />
+        <div className="px-4 py-4 sm:px-5">
         <p id="no-service-hours-shift-confirm-desc" className="text-sm text-foreground">
           {t("areaCalendar.noServiceHoursShiftConfirm", { area: areaName })}
         </p>
@@ -47,7 +57,9 @@ export function NoServiceHoursShiftConfirmModal({
             {t("common.yes")}
           </Button>
         </div>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

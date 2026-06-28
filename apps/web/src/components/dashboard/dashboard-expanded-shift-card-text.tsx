@@ -26,6 +26,7 @@ type Props = {
   timeLabel: string;
   jobsLine: string | null;
   compact: boolean;
+  inlineStatusLabel?: string;
 };
 
 export function DashboardExpandedShiftCardText({
@@ -34,6 +35,7 @@ export function DashboardExpandedShiftCardText({
   timeLabel,
   jobsLine,
   compact,
+  inlineStatusLabel,
 }: Props) {
   const nameFontPx = compact
     ? PLANNING_SHIFT_CARD_TEMPLATE_FONT_COMPACT_PX
@@ -69,6 +71,14 @@ export function DashboardExpandedShiftCardText({
             style={{ fontSize: PLANNING_SHIFT_CARD_JOB_FONT_PX }}
           >
             {jobsLine}
+          </div>
+        ) : null}
+        {inlineStatusLabel ? (
+          <div
+            className={`w-full font-semibold leading-none text-neutral-600 ${SHIFT_CARD_TRUNCATE_CLASS}`}
+            style={{ fontSize: PLANNING_SHIFT_CARD_JOB_FONT_PX }}
+          >
+            {inlineStatusLabel}
           </div>
         ) : null}
       </div>

@@ -5,55 +5,48 @@ import {
   PLANNING_SELECTED_LOCATION_COOKIE,
   readPlanningLocationCookie,
 } from "@/lib/planning-location-preference";
+import { resolveDashboardPageFrame } from "@/lib/dashboard-page-frame";
+import {
+  emptyDashboardExtPanelSnapshot,
+  loadDashboardExtPanelSnapshot,
+  type DashboardExtPanelSnapshot,
+} from "@/lib/dashboard-ext-panel-data";
 import {
   emptyDashboardSummaryPageBundle,
-  loadDashboardSummaryPageBundle,
+  type DashboardSummaryPageBundle,
 } from "@/lib/dashboard-summary-data";
-import {
-  resolveDashboardPageFrame,
-  type DashboardSearchParams,
-} from "@/lib/dashboard-page-frame";
+import type { DashboardSearchParams } from "@/lib/dashboard-page-frame";
+import type {
+  CompensationSurchargeType,
+  Location,
+  Profile,
+  Role,
+} from "@schichtwerk/types";
 
-export type DashboardPageData = Awaited<ReturnType<typeof loadDashboardPageData>>;
+export type DashboardSettingsModalsData = {
+  roles: Role[];
+  profiles: Profile[];
+  compensationSurchargeTypes: CompensationSurchargeType[];
+};
 
-export async function loadDashboardPageData(params: DashboardSearchParams) {
+export type DashboardPageData = {
+  snapshot: DashboardExtPanelSnapshot;
+  weekStart: string;
+  dates: string[];
+  locations: Location[];
+  selectedLocationId: string | null;
+  communicationBundle: DashboardSummaryPageBundle;
+  settingsModals: DashboardSettingsModalsData;
+};
+
+export async function loadDashboardPageData(
+  params: DashboardSearchParams
+): Promise<DashboardPageData> {
   const frame = await resolveDashboardPageFrame(params);
-  const {
-    user,
-    organization,
-    orgId,
-    timeZone,
-    weekStart,
-    dates,
-    from,
-    to,
-    readOnlyWeek,
-    locationParam,
-    loadSettingsModalsData,
-  } = frame;
+  const { weekStart, dates, locationParam, orgId } = frame;
 
   const db = await getDatabase();
-
-  const [locations, planningEmployees, settingsRoles, settingsProfiles, settingsCompensationSurchargeTypes] =
-    await Promise.all([
-      db.listLocations(orgId),
-      db.listPlanningEmployees(orgId),
-      loadSettingsModalsData
-        ? db.listRoles(orgId).then(async (roles) => {
-            if (!roles.length) {
-              await db.seedDefaultRoles(orgId);
-              return db.listRoles(orgId);
-            }
-            return roles;
-          })
-        : Promise.resolve([]),
-      loadSettingsModalsData
-        ? db.listOrganizationProfiles(orgId)
-        : Promise.resolve([]),
-      loadSettingsModalsData
-        ? db.listCompensationSurchargeTypes(orgId)
-        : Promise.resolve([]),
-    ]);
+  const locations = await db.listLocations(orgId);
 
   const cookieStore = await cookies();
   const selectedLocationId = resolveSelectedLocationId(
@@ -63,35 +56,50 @@ export async function loadDashboardPageData(params: DashboardSearchParams) {
         cookieStore.get(PLANNING_SELECTED_LOCATION_COOKIE)?.value
       )
   );
-  const selectedLocation =
-    locations.find((location) => location.id === selectedLocationId) ?? null;
 
-  const summaryBundle = selectedLocationId
-    ? await loadDashboardSummaryPageBundle({
-        db,
-        orgId,
-        userId: user.id,
-        organization,
-        locationId: selectedLocationId,
-        weekStart,
-        from,
-        to,
-        timeZone,
-        planningEmployees,
-      })
-    : emptyDashboardSummaryPageBundle();
+  const result = await loadDashboardExtPanelSnapshot({
+    week: params.week,
+    location: selectedLocationId ?? locationParam,
+  });
+
+  const snapshot =
+    result.ok && result.data.locationId
+      ? result.data
+      : {
+          ...emptyDashboardExtPanelSnapshot(),
+          weekStart,
+          dates,
+          locationId: selectedLocationId,
+          locationName:
+            locations.find((location) => location.id === selectedLocationId)
+              ?.name ?? "",
+        };
+
+  const communicationBundle =
+    result.ok && result.bundle ? result.bundle : emptyDashboardSummaryPageBundle();
+
+  let [roles, profiles, compensationSurchargeTypes] = await Promise.all([
+    db.listRoles(orgId),
+    db.listOrganizationProfiles(orgId),
+    db.listCompensationSurchargeTypes(orgId),
+  ]);
+
+  if (!roles.length) {
+    await db.seedDefaultRoles(orgId);
+    roles = await db.listRoles(orgId);
+  }
 
   return {
+    snapshot,
     weekStart,
     dates,
     locations,
     selectedLocationId,
-    selectedLocation,
-    summaryBundle,
-    readOnlyWeek,
-    loadSettingsModalsData,
-    settingsRoles,
-    settingsProfiles,
-    settingsCompensationSurchargeTypes,
+    communicationBundle,
+    settingsModals: {
+      roles,
+      profiles,
+      compensationSurchargeTypes,
+    },
   };
 }

@@ -14,6 +14,7 @@
   --color-subtle: #f1f5f9;
   --color-calendar-muted-header: #d4dae3;
   --color-calendar-active-header: #e8edf3;
+  --color-calendar-staffing-header: #c4c9d2;
   --color-hover: #fafafa;
   --color-success: #ecfdf5;
   --color-success-foreground: #065f46;
@@ -47,6 +48,42 @@
 }
 
 /**
+ * Keine Textauswahl (blauer Markierungs-Hintergrund) per Doppelklick oder Ziehen —
+ * gilt app-weit inkl. portaler Modals/Panels. Eingabefelder bleiben selektierbar.
+ */
+html {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/** 2px schwarze Linie am oberen Browserrand — volle Viewport-Breite. */
+html::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #000;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+/** 1px schwarze Linie am unteren Headerrand (Logo-Zeile + Wochen-Toolbar). */
+.app-shell-sidebar > .app-shell-brand-header,
+.app-page-toolbar-header.app-shell-top-panel-toolbar {
+  border-bottom: 1px solid #000;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.select-text {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/**
  * TESTWEISE: Dark-Mode-Vorschau nur für Brand- + Wochen-Toolbar.
  * Hintergrund liegt auf .app-shell-brand-backdrop — hier nur Text-/Control-Tokens.
  */
@@ -64,6 +101,7 @@
   --header-toolbar-accent-strong: rgb(2 132 199 / 0.92);
   --header-toolbar-combobox-border: rgb(0 0 0 / 0.38);
   --header-toolbar-combobox-ring: color-mix(in srgb, #7dd3fc 40%, transparent);
+  --header-toolbar-text-action-hover: #9ee8ff;
   color: var(--color-foreground);
   border-color: var(--color-border);
 }
@@ -251,26 +289,38 @@
 }
 
 /**
- * Logo-Band: deutlich dunkler, Wellen bleiben sichtbar — weicher Übergang nach oben und unten.
+ * Logo-Band: sehr dunkles Overlay — Brand-Verlauf bleibt am Rand leicht sichtbar.
  */
-.app-shell-sidebar::before {
+.app-shell-sidebar > .app-shell-brand-header {
+  position: relative;
+  overflow: hidden;
+}
+
+.app-shell-sidebar > .app-shell-brand-header::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--app-shell-brand-band-height);
-  z-index: 5;
+  inset: 0;
+  z-index: 0;
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    transparent 0%,
-    rgb(2 6 14 / 0.38) 10%,
-    rgb(0 0 0 / 0.58) 38%,
-    rgb(0 0 0 / 0.64) 58%,
-    rgb(0 0 0 / 0.42) 82%,
-    transparent 100%
+    rgb(0 0 0 / 0.62) 0%,
+    rgb(0 0 0 / 0.88) 12%,
+    rgb(0 0 0 / 0.94) 38%,
+    rgb(0 0 0 / 0.96) 58%,
+    rgb(0 0 0 / 0.9) 82%,
+    rgb(0 0 0 / 0.68) 100%
   );
+}
+
+.app-shell-sidebar > .app-shell-brand-header > * {
+  position: relative;
+  z-index: 1;
+}
+
+/** @deprecated — Overlay liegt auf .app-shell-brand-header::before. */
+.app-shell-sidebar::before {
+  content: none;
 }
 
 /** Türkis-Verlauf + Kurven unter der Logo-Zeile (nur Desktop). */
@@ -336,7 +386,31 @@
     );
 }
 
-/** Logo-Zeile + Toolbar: volle Brand-Band-Höhe — fest, damit Navigation kein vertikales Flackern erzeugt. */
+/** Logo-Zeile + Toolbar: gemeinsames Top-Panel auf dem Brand-Backdrop. */
+.app-shell-sidebar > .app-shell-brand-header,
+.app-page-toolbar-header.app-shell-top-panel-toolbar {
+  box-sizing: border-box;
+  height: var(--app-shell-brand-band-height);
+  min-height: var(--app-shell-brand-band-height);
+  max-height: var(--app-shell-brand-band-height);
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/** Dropdowns (Sprache, Standort) dürfen unter die Toolbar hinausragen. */
+.app-page-toolbar-header.app-shell-top-panel-toolbar {
+  overflow: visible;
+}
+
+@media (min-width: 768px) {
+  .app-shell-sidebar > .app-shell-brand-header {
+    border-right: 1px solid rgb(255 255 255 / 0.12);
+  }
+}
+
+/** Legacy brand-surface — weiterhin für andere Flächen. */
 .app-shell-sidebar > .app-shell-brand-surface,
 .app-page-toolbar-header.app-shell-brand-surface {
   box-sizing: border-box;
@@ -486,6 +560,62 @@
   z-index: 50;
 }
 
+.app-page-toolbar-header .header-toolbar-combobox-panel {
+  z-index: 200;
+}
+
+/** Helle Überlagerung zwischen Shades (2px) — 30 % dunkler als rgb(255 255 255 / 0.3). */
+.planning-toolbar-language-light-overlay {
+  z-index: 0;
+  background: rgb(255 255 255 / 0.21);
+}
+
+/** Linke Header-Kette — 40 % heller als Standard-Light (0,21 → 0,294). */
+.planning-toolbar-leading-light-overlay {
+  z-index: 0;
+  background: rgb(255 255 255 / 0.294);
+}
+
+/** Abdunkelung hinter Toolbar-Controls — rechts (Standard). */
+.planning-toolbar-language-shade {
+  z-index: 0;
+  background: rgb(0 0 0 / 0.5);
+  transition: box-shadow 0.15s ease;
+}
+
+/** Linke Header-Kette — 20 % heller als Standard-Shade (0,5 → 0,4). */
+.planning-toolbar-leading-shade {
+  z-index: 0;
+  background: rgb(0 0 0 / 0.3);
+  transition: box-shadow 0.15s ease;
+}
+
+/**
+ * Hover-/Fokus-Zonen: Shade hellt wie aktive Sidebar-Nav auf (rgb(255 255 255 / 0.16)).
+ */
+.planning-toolbar-shade-zone {
+  z-index: 2;
+}
+
+.app-header-dark-preview .planning-toolbar-shade-zone:hover
+  .planning-toolbar-language-shade,
+.app-header-dark-preview .planning-toolbar-shade-zone:hover
+  .planning-toolbar-leading-shade,
+.app-header-dark-preview .planning-toolbar-shade-zone:focus-within
+  .planning-toolbar-language-shade,
+.app-header-dark-preview .planning-toolbar-shade-zone:focus-within
+  .planning-toolbar-leading-shade {
+  box-shadow: inset 0 0 0 9999px rgb(255 255 255 / 0.16);
+}
+
+/** Nur Anzeige (z. B. Wochen-Datum) — kein Hover-/Fokus-Highlight. */
+.app-header-dark-preview .planning-toolbar-shade-zone-static:hover
+  .planning-toolbar-leading-shade,
+.app-header-dark-preview .planning-toolbar-shade-zone-static:focus-within
+  .planning-toolbar-leading-shade {
+  box-shadow: none;
+}
+
 /* Header-Combobox + Badge (Stahlblau-Palette) */
 .header-toolbar-combobox-trigger {
   border-color: var(--header-toolbar-combobox-border, #cbd5e1);
@@ -496,9 +626,121 @@
   box-shadow: 0 0 0 2px var(--header-toolbar-combobox-ring, rgb(92 122 158 / 0.35));
 }
 
+/** Sprache, Standort, Bereich — nur Text (weiß), Hover/Open Blau-Türkis, ohne Rahmen. */
+.app-header-dark-preview .header-toolbar-language-trigger,
+.app-header-dark-preview .header-toolbar-placement-trigger {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+}
+
+.app-header-dark-preview .header-toolbar-language-trigger:hover,
+.app-header-dark-preview .header-toolbar-language-trigger:focus-visible,
+.app-header-dark-preview .header-toolbar-language-trigger[data-open="true"],
+.app-header-dark-preview .header-toolbar-placement-trigger:hover,
+.app-header-dark-preview .header-toolbar-placement-trigger:focus-visible,
+.app-header-dark-preview .header-toolbar-placement-trigger[data-open="true"] {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--header-toolbar-text-action-hover, #9ee8ff);
+}
+
+.app-header-dark-preview
+  .relative:has(> .header-toolbar-language-trigger)
+  > svg,
+.app-header-dark-preview
+  .relative:has(> .header-toolbar-placement-trigger)
+  > svg {
+  color: #fff;
+}
+
+.app-header-dark-preview
+  .relative:has(> .header-toolbar-language-trigger:hover)
+  > svg,
+.app-header-dark-preview
+  .relative:has(> .header-toolbar-language-trigger[data-open="true"])
+  > svg,
+.app-header-dark-preview
+  .relative:has(> .header-toolbar-placement-trigger:hover)
+  > svg,
+.app-header-dark-preview
+  .relative:has(> .header-toolbar-placement-trigger[data-open="true"])
+  > svg {
+  color: var(--header-toolbar-text-action-hover, #9ee8ff);
+}
+
+/** Schicht-Stati, Glocke, Wochen-Nav — nur Text/Icon (weiß), Hover Blau-Türkis. */
+.app-header-dark-preview .header-toolbar-communication-trigger {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+}
+
+.app-header-dark-preview .header-toolbar-communication-trigger:hover,
+.app-header-dark-preview .header-toolbar-communication-trigger:focus-visible {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--header-toolbar-text-action-hover, #9ee8ff);
+}
+
+.app-header-dark-preview .header-toolbar-bell-trigger {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+}
+
+.app-header-dark-preview .header-toolbar-bell-trigger:hover,
+.app-header-dark-preview .header-toolbar-bell-trigger:focus-visible,
+.app-header-dark-preview .header-toolbar-bell-trigger[data-open="true"] {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--header-toolbar-text-action-hover, #9ee8ff);
+}
+
+.app-header-dark-preview .header-toolbar-week-nav-chevron,
+.app-header-dark-preview .header-toolbar-week-nav-today {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: #fff;
+}
+
+.app-header-dark-preview .header-toolbar-week-nav-chevron:hover,
+.app-header-dark-preview .header-toolbar-week-nav-chevron:focus-visible,
+.app-header-dark-preview .header-toolbar-week-nav-today:hover,
+.app-header-dark-preview .header-toolbar-week-nav-today:focus-visible {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--header-toolbar-text-action-hover, #9ee8ff);
+}
+
+/** Datums-/KW-Anzeige — klickbarer Kalenderwochen-Picker. */
+.app-header-dark-preview .header-toolbar-date-trigger:hover,
+.app-header-dark-preview .header-toolbar-date-trigger:focus-visible,
+.app-header-dark-preview .header-toolbar-date-trigger[aria-expanded="true"] {
+  color: var(--header-toolbar-text-action-hover, #9ee8ff);
+}
+
 .header-toolbar-combobox-panel {
+  border-radius: 0;
   border-color: var(--header-toolbar-combobox-border, #cbd5e1);
-  background-color: var(--color-surface);
+  background-color: color-mix(in srgb, var(--color-surface) 90%, transparent);
+}
+
+.app-header-dark-preview .header-toolbar-combobox-panel {
+  background-color: rgb(6 22 39 / 0.9);
+}
+
+.header-toolbar-combobox-option {
+  border-radius: 0;
 }
 
 .header-toolbar-combobox-option-selected {

@@ -347,6 +347,14 @@ export async function syncShiftRequestsForSuperadminStatus(input: {
         payload: { source: "superadmin_simulation" },
       });
       return;
+    case "unresolved":
+      await syncShiftRequestsAfterConfirmationExpired({
+        client: input.client,
+        organizationId: input.organizationId,
+        shiftId: input.shiftId,
+        now: input.now,
+      });
+      return;
     case "confirmed":
       await syncShiftRequestsAfterManagerPastConfirm({
         client: input.client,

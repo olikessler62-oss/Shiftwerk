@@ -128,6 +128,8 @@ export async function EmployeeCalendarPage({
         absences={absences}
         communicationSwapRequests={calendarData.communicationSwapRequests}
         communicationCancelActors={calendarData.communicationCancelActors}
+        communicationHubLocationShifts={calendarData.communicationHubLocationShifts}
+        communicationHubAbsences={calendarData.communicationHubAbsences}
         locations={locations}
         selectedLocationId={selectedLocationId}
         areas={calendarData.areas}

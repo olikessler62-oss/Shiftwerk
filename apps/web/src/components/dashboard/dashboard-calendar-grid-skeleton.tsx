@@ -4,6 +4,7 @@ import {
   APP_SHELL_CONTENT_OFFSET_CLASS,
 } from "@/lib/app-shell-layout";
 import { cn } from "@/lib/cn";
+import { DASHBOARD_PANEL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 
 export function DashboardCalendarGridSkeleton() {
   return (
@@ -15,7 +16,7 @@ export function DashboardCalendarGridSkeleton() {
           APP_SHELL_CONTENT_OFFSET_CLASS
         )}
       >
-        <div className="min-h-[320px] animate-pulse rounded-xl bg-muted/50 md:min-h-[480px]" />
+        <div className={cn("min-h-[320px] animate-pulse bg-muted/50 md:min-h-[480px]", DASHBOARD_PANEL_ROUNDED_CLASS)} />
       </main>
     </div>
   );

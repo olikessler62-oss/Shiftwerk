@@ -35,6 +35,7 @@ import {
   settingsModalHeaderPaddingClass,
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -771,9 +772,15 @@ export function ProfileShiftPreferencesFormModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="profile-shift-preference-overnight-desc"
-            className={settingsConfirmDialogClass()}
+            className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setOvernightConfirmOpen(false)}
+              closeDisabled={saving}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="profile-shift-preference-overnight-desc"
               className="text-sm text-foreground"
@@ -801,6 +808,7 @@ export function ProfileShiftPreferencesFormModal({
               >
                 {t("common.ok")}
               </Button>
+            </div>
             </div>
           </div>
         </div>

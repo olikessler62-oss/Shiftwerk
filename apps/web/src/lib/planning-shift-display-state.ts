@@ -1,4 +1,5 @@
 import type { ShiftCardDisplayState, ShiftConfirmationStatus } from "@schichtwerk/types";
+import { resolveCalendarShiftConfirmationStatus } from "@schichtwerk/database";
 
 import {
   resolveShiftCardDisplayState,
@@ -7,6 +8,7 @@ import {
 
 export type PlanningShiftConfirmationSource = {
   shiftId: string;
+  shiftDate?: string;
   lifecycle?: ShiftCardDisplayState["lifecycle"] | null;
   confirmationStatus?: ShiftConfirmationStatus | null;
   requestedAt?: string | null;
@@ -32,9 +34,22 @@ export function resolvePlanningShiftConfirmationFields(
     requests: source.requests,
   });
 
+  let confirmationStatus = displayState.legacyConfirmationStatus;
+  if (source.shiftDate) {
+    confirmationStatus =
+      resolveCalendarShiftConfirmationStatus({
+        status: confirmationStatus,
+        requestedAt: source.requestedAt,
+        shiftDateISO: source.shiftDate,
+      }) ?? confirmationStatus;
+  }
+
   return {
-    displayState,
-    confirmationStatus: displayState.legacyConfirmationStatus,
+    displayState: {
+      ...displayState,
+      legacyConfirmationStatus: confirmationStatus,
+    },
+    confirmationStatus,
     requestedAt: source.requestedAt ?? null,
     confirmationStatusUpdatedAt: source.confirmationStatusUpdatedAt ?? null,
   };

@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { Button, CheckIcon } from "@/components/ui";
+import { settingsModalHeaderPaddingClass } from "@/components/settings/settings-modal-shell";
+import { Button, CheckIcon, CloseIcon, IconButton } from "@/components/ui";
 import {
   settingsConfirmDialogClass,
   settingsModalFooterClass,
@@ -74,6 +75,21 @@ export function SettingsMessageModal({
         className={dialogClass}
         onMouseDown={(e) => e.stopPropagation()}
       >
+        <div
+          className={cn(
+            "-mx-4 -mt-4 mb-3 flex items-start justify-end border-b border-border sm:-mx-5 sm:-mt-5",
+            settingsModalHeaderPaddingClass()
+          )}
+        >
+          <IconButton
+            size="sm"
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="border-transparent bg-transparent hover:bg-subtle"
+          >
+            <CloseIcon className="h-[18px] w-[18px]" />
+          </IconButton>
+        </div>
         {title ? (
           <p className="mb-2 text-sm font-semibold text-foreground">{title}</p>
         ) : null}

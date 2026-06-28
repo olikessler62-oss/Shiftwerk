@@ -38,16 +38,17 @@ export function dashboardShiftCardTrackWidthPx(cellInnerWidthPx: number): number
 export const PLANNING_EMPLOYEE_ROW_HEIGHT = `${PLANNING_CELL_HEIGHT_PX + PLANNING_CELL_PADDING_PX * 2}px`;
 export const PLANNING_DAY_HEADER_ROW_HEIGHT = "3.75rem";
 export const PLANNING_DAY_HEADER_ROW_HEIGHT_PX = 60;
-export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT = "40px";
-export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT_PX = 40;
+/** Bereich-Kalender Tag×Bereich: Bedarf-Strip (Personalbedarf-Overlay). */
+export const TAG_AREA_HEADER_STRIP_HEIGHT = "44px";
+export const TAG_AREA_HEADER_STRIP_HEIGHT_PX = 44;
+/** Mitarbeiter-Kalender: Bedarf-Header — gleiche Höhe wie Bereich-Kalender. */
+export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT = TAG_AREA_HEADER_STRIP_HEIGHT;
+export const PLANNING_DAY_STAFFING_HEADER_ROW_HEIGHT_PX = TAG_AREA_HEADER_STRIP_HEIGHT_PX;
 /** Kompakte Wochenzusammenfassung unten im Kalender (ehem. 3.5rem). */
 export const PLANNING_DAY_FOOTER_ROW_HEIGHT = "36px";
 /** Kalender-Footer oben: Gesamtstunden/Gesamtkosten pro Tag (Platzhalter). */
 export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT = "22px";
 export const PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT_PX = 22;
-/** Bereich-Kalender Tag×Bereich: Bedarf-Strip (Personalbedarf-Overlay). */
-export const TAG_AREA_HEADER_STRIP_HEIGHT = "44px";
-export const TAG_AREA_HEADER_STRIP_HEIGHT_PX = 44;
 export const PLANNING_DAY_FOOTER_ROW_HEIGHT_PX = 36;
 /** Summe der sticky Footer-Zeilen — Grenze für Kalender-Inhalt darüber. */
 export const PLANNING_CALENDAR_FOOTER_CHROME_HEIGHT_PX =
@@ -57,6 +58,9 @@ export const PLANNING_STAFF_COLUMN_WIDTH_PX = 200;
 export const PLANNING_ACTIVE_DAY_CELL_BG = "#f8fafc";
 /** Header-/Footer-Overlay in aktiven Tag-Bereich-Zellen (Bereich-Kalender). */
 export const PLANNING_ACTIVE_DAY_OVERLAY_BG = "#f6f7f9";
+/** Bedarf-Strip mit Füllstandsanzeigen — Mittelgrau, Kontrast zu Schichtfläche. */
+export const PLANNING_STAFFING_HEADER_BG = "#c4c9d2";
+export const PLANNING_PAST_STAFFING_HEADER_BG = "#b8bec8";
 export const PLANNING_PAST_DAY_CELL_BG = "#f3f6f9";
 export const PLANNING_CLOSED_DAY_CELL_BG = "#e6edf2";
 /** UX-Experiment: sichtbares „+ / frei“ in leeren aufgeklappten Zellen ausblenden (Klickzonen neben Schichten bleiben aktiv). */
@@ -229,6 +233,52 @@ export function resolveDashboardExpandedDayDates(
     }
   }
   return expanded;
+}
+
+/**
+ * Mitarbeiter-Kalender: wie Bereich-Kalender — in der aktuellen Woche vergangene Tage
+ * zugeklappt; explizit aufgeklappte Tage pro Woche beim Scrollen merken.
+ */
+export function resolveEmployeeCalendarLayoutDayDates(
+  dates: readonly string[],
+  dayHasServiceHours: readonly boolean[],
+  shiftsByDate: ReadonlyMap<string, number>,
+  userExpandedNoServiceWeekdays: ReadonlySet<number>,
+  options: {
+    weekStart: string;
+    currentWeekStart: string;
+    todayISO: string;
+    savedWeekExpansion: Set<string> | undefined;
+  }
+): Set<string> {
+  const eligibleDays = resolveDashboardExpandedDayDates(
+    dates,
+    dayHasServiceHours,
+    shiftsByDate,
+    userExpandedNoServiceWeekdays
+  );
+
+  if (options.savedWeekExpansion !== undefined) {
+    const expanded = new Set<string>();
+    for (const date of eligibleDays) {
+      if (options.savedWeekExpansion.has(date)) {
+        expanded.add(date);
+      }
+    }
+    return expanded;
+  }
+
+  if (options.weekStart === options.currentWeekStart) {
+    const expanded = new Set<string>();
+    for (const date of eligibleDays) {
+      if (!isPastCalendarDate(date, options.todayISO)) {
+        expanded.add(date);
+      }
+    }
+    return expanded;
+  }
+
+  return eligibleDays;
 }
 
 export function resolvePlanningCellBackground(

@@ -1,8 +1,11 @@
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import { cn } from "@/lib/cn";
 import {
   SHIFT_CONFIRMATION_OVERLAY_OPACITY,
+  SHIFT_CARD_UNRESOLVED_OPACITY,
   shiftConfirmationBadgeSymbol,
   shiftConfirmationShowsOverlay,
+  shiftConfirmationShowsUnresolvedCardStyle,
 } from "@schichtwerk/ui-tokens";
 
 /** Vollflächiger Overlay-Schleier auf dem Karteninhalt (linker Mitarbeiter-Farbstreifen bleibt frei). */
@@ -13,7 +16,9 @@ export const SHIFT_CONFIRMATION_BADGE_PANEL_CLASS = "rounded-sm bg-black";
 
 export {
   SHIFT_CONFIRMATION_OVERLAY_OPACITY,
+  SHIFT_CARD_UNRESOLVED_OPACITY,
   shiftConfirmationShowsOverlay,
+  shiftConfirmationShowsUnresolvedCardStyle,
   shiftConfirmationBadgeSymbol,
 };
 
@@ -31,6 +36,8 @@ export function shiftConfirmationBadgeSymbolClass(
       return "text-fuchsia-500";
     case "canceled":
       return "text-orange-400";
+    case "unresolved":
+      return "text-neutral-500";
     default:
       return "text-white";
   }
@@ -64,6 +71,71 @@ export const SHIFT_CONFIRMATION_CANCELED_TAB_LABEL_CLASS = "text-orange-700";
 
 export const SHIFT_CONFIRMATION_CANCELED_TOOLTIP_TEXT_CLASS = "text-orange-800";
 
+export const SHIFT_CONFIRMATION_UNRESOLVED_TOOLTIP_TEXT_CLASS = "text-neutral-600";
+
+/** Punktfarben in Listen/Header — abgestimmt auf Tab- und Tabellen-Statusfarben. */
+export const SHIFT_CONFIRMATION_REQUESTED_DOT_CLASS = "bg-[#7A5A10]";
+export const SHIFT_CONFIRMATION_PENDING_DOT_CLASS = "bg-[#701a75]";
+export const SHIFT_CONFIRMATION_REJECTED_DOT_CLASS = "bg-red-800";
+export const SHIFT_CONFIRMATION_CANCELED_DOT_CLASS = "bg-orange-700";
+export const SHIFT_CONFIRMATION_UNRESOLVED_DOT_CLASS = "bg-neutral-600";
+
+export function shiftConfirmationConflictDotClass(
+  status: ShiftConfirmationStatus
+): string {
+  switch (status) {
+    case "requested":
+      return SHIFT_CONFIRMATION_REQUESTED_DOT_CLASS;
+    case "pending":
+      return SHIFT_CONFIRMATION_PENDING_DOT_CLASS;
+    case "rejected":
+      return SHIFT_CONFIRMATION_REJECTED_DOT_CLASS;
+    case "canceled":
+      return SHIFT_CONFIRMATION_CANCELED_DOT_CLASS;
+    case "unresolved":
+      return SHIFT_CONFIRMATION_UNRESOLVED_DOT_CLASS;
+    default:
+      return "bg-foreground/45";
+  }
+}
+
+const SHIFT_CONFIRMATION_ROW_CHIP_BASE_CLASS =
+  "inline-flex shrink-0 items-center gap-0.5 rounded-[4px] border px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums";
+
+export function shiftConfirmationRowChipClass(
+  status: ShiftConfirmationStatus
+): string {
+  switch (status) {
+    case "requested":
+      return cn(
+        SHIFT_CONFIRMATION_ROW_CHIP_BASE_CLASS,
+        "border-amber-200/90 bg-amber-50 text-[#7A5A10]"
+      );
+    case "pending":
+      return cn(
+        SHIFT_CONFIRMATION_ROW_CHIP_BASE_CLASS,
+        "border-fuchsia-200/90 bg-fuchsia-50 text-[#701a75]"
+      );
+    case "rejected":
+      return cn(
+        SHIFT_CONFIRMATION_ROW_CHIP_BASE_CLASS,
+        "border-red-200 bg-red-50 text-red-800"
+      );
+    case "canceled":
+      return cn(
+        SHIFT_CONFIRMATION_ROW_CHIP_BASE_CLASS,
+        "border-orange-200 bg-orange-50 text-orange-800"
+      );
+    case "unresolved":
+      return cn(
+        SHIFT_CONFIRMATION_ROW_CHIP_BASE_CLASS,
+        "border-neutral-200 bg-neutral-100 text-neutral-600"
+      );
+    default:
+      return SHIFT_CONFIRMATION_ROW_CHIP_BASE_CLASS;
+  }
+}
+
 export function shiftConfirmationTooltipStatusTextClass(
   status: ShiftConfirmationStatus | undefined
 ): string {
@@ -80,6 +152,8 @@ export function shiftConfirmationTooltipStatusTextClass(
       return SHIFT_CONFIRMATION_REQUESTED_TOOLTIP_TEXT_CLASS;
     case "canceled":
       return SHIFT_CONFIRMATION_CANCELED_TOOLTIP_TEXT_CLASS;
+    case "unresolved":
+      return SHIFT_CONFIRMATION_UNRESOLVED_TOOLTIP_TEXT_CLASS;
     default:
       return "";
   }
@@ -92,6 +166,9 @@ export function shiftConfirmationCardStatusTextClass(
   status: ShiftConfirmationStatus | undefined,
   isPastShift: boolean
 ): string {
+  if (status === "unresolved") {
+    return SHIFT_CONFIRMATION_UNRESOLVED_TOOLTIP_TEXT_CLASS;
+  }
   if (isPastShift) {
     return SHIFT_CONFIRMATION_PAST_SHIFT_STATUS_TEXT_CLASS;
   }

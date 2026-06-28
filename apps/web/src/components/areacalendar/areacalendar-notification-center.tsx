@@ -131,12 +131,12 @@ export function AreaCalendarNotificationCenter({
 
   return (
     <div ref={containerRef} className="relative">
-      <IconButton
+      <button
         type="button"
-        size="md"
         aria-label={t("shiftConfirmation.notifications.centerTitle")}
         aria-expanded={open}
         aria-haspopup="menu"
+        data-open={open ? "true" : undefined}
         onClick={() => setOpen((value) => !value)}
         className={cn("relative", triggerClassName)}
       >
@@ -151,7 +151,7 @@ export function AreaCalendarNotificationCenter({
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         ) : null}
-      </IconButton>
+      </button>
 
       {open ? (
         <div

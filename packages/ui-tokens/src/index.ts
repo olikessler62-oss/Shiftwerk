@@ -50,7 +50,9 @@ export {
 } from "./shift-card-time-gradient";
 export {
   SHIFT_CONFIRMATION_OVERLAY_OPACITY,
+  SHIFT_CARD_UNRESOLVED_OPACITY,
   shiftConfirmationShowsOverlay,
+  shiftConfirmationShowsUnresolvedCardStyle,
   shiftConfirmationBadgeSymbol,
   shiftConfirmationBadgeTextColor,
 } from "./shift-confirmation-display";

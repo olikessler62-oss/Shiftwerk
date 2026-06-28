@@ -8,9 +8,9 @@ import { cn } from "@/lib/cn";
 import {
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
-  settingsModalHeaderPaddingClass,
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
+  SettingsModalHeader,
 } from "./settings-list-ui";
 import { formatTimeRange } from "@/lib/planning-utils";
 import { STAFFING_HOLIDAY_WEEKDAY } from "@/lib/location-staffing-client";
@@ -91,18 +91,19 @@ export function AreaPlanningModeServiceHoursDialog({
         className={cn(settingsNestedModalDialogClass("lg"), "z-[81]")}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className={cn("border-b border-border", settingsModalHeaderPaddingClass())}>
-          <h3
-            id="planning-mode-switch-title"
-            className="text-base font-semibold text-foreground"
-          >
-            {t("locations.planningModeSwitchTitle")}
-          </h3>
-          <p className="mt-1 text-sm text-muted">
-            {areaPlanningModeLabel(previousMode, t)} →{" "}
-            {areaPlanningModeLabel(newMode, t)}
-          </p>
-        </div>
+        <SettingsModalHeader
+          titleId="planning-mode-switch-title"
+          title={t("locations.planningModeSwitchTitle")}
+          subtitle={
+            <>
+              {areaPlanningModeLabel(previousMode, t)} →{" "}
+              {areaPlanningModeLabel(newMode, t)}
+            </>
+          }
+          onClose={onCancel}
+          closeDisabled={pending}
+          closeAriaLabel={t("common.close")}
+        />
 
         <div className={cn("space-y-4", settingsModalBodyPaddingClass())}>
           <p className="text-sm text-foreground">

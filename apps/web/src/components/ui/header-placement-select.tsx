@@ -18,6 +18,8 @@ type Props = {
   "aria-label": string;
   wrapperClassName?: string;
   triggerClassName?: string;
+  /** Trigger-Oberfläche — Standard: Pill-Select; Sprache nutzt Text-Variante. */
+  selectClassName?: string;
 };
 
 export function HeaderPillSelect({
@@ -28,6 +30,7 @@ export function HeaderPillSelect({
   "aria-label": ariaLabel,
   wrapperClassName,
   triggerClassName,
+  selectClassName = headerToolbarSelectClass,
 }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -44,6 +47,7 @@ export function HeaderPillSelect({
       ref={rootRef}
       className={cn(
         "relative inline-flex min-w-0 max-w-[12rem] shrink-0",
+        open && "z-[200]",
         wrapperClassName
       )}
     >
@@ -57,7 +61,7 @@ export function HeaderPillSelect({
         data-open={open ? "true" : "false"}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          headerToolbarSelectClass,
+          selectClassName,
           "flex cursor-pointer items-center justify-between gap-2 pr-8 text-left",
           triggerClassName
         )}
@@ -82,7 +86,7 @@ export function HeaderPillSelect({
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
-          className="header-toolbar-combobox-panel absolute left-0 top-full z-[120] mt-1.5 max-h-60 min-w-full overflow-y-auto rounded-xl border py-1 shadow-lg"
+          className="header-toolbar-combobox-panel absolute left-0 top-full mt-1.5 max-h-60 min-w-full overflow-y-auto rounded-none border py-1 shadow-lg"
         >
           {options.map((option) => {
             const isSelected = option.value === value;
@@ -97,7 +101,7 @@ export function HeaderPillSelect({
                     close();
                   }}
                   className={cn(
-                    "header-toolbar-combobox-option w-full truncate px-3 py-2 text-left text-sm transition",
+                    "header-toolbar-combobox-option rounded-none w-full truncate px-3 py-2 text-left text-sm transition",
                     isSelected
                       ? "header-toolbar-combobox-option-selected font-medium"
                       : "text-foreground"

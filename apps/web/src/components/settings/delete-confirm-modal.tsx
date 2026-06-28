@@ -1,11 +1,13 @@
 "use client";
 
 import { useTranslations } from "@/i18n/locale-provider";
+import { cn } from "@/lib/cn";
 import { Button, CloseIcon, TrashIcon } from "@/components/ui";
 import {
   settingsConfirmDialogClass,
   settingsModalFooterClass,
   settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "./settings-list-ui";
 
 type Props = {
@@ -44,9 +46,15 @@ export function DeleteConfirmModal({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="delete-confirm-desc"
-        className={settingsConfirmDialogClass()}
+        className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
         onMouseDown={(e) => e.stopPropagation()}
       >
+        <SettingsConfirmDialogCloseHeader
+          onClose={onCancel}
+          closeDisabled={pending}
+          closeAriaLabel={t("common.close")}
+        />
+        <div className="px-4 py-4 sm:px-5">
         <p id="delete-confirm-desc" className="text-sm text-foreground">
           {message}
         </p>
@@ -59,6 +67,7 @@ export function DeleteConfirmModal({
             <TrashIcon />
             {t("common.yesDelete")}
           </Button>
+        </div>
         </div>
       </div>
     </div>

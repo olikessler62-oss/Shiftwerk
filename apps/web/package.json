@@ -11,9 +11,13 @@
     "replace:employee-pool": "tsx scripts/replace-test-employee-pool.ts",
     "set:employee-password": "tsx scripts/set-employee-password.ts",
     "retention:shifts": "tsx scripts/run-shift-retention.ts",
-    "retention:absences": "tsx scripts/run-absence-retention.ts"
+    "retention:absences": "tsx scripts/run-absence-retention.ts",
+    "e2e:seed:bar-understaffed": "tsx scripts/e2e-seed-bar-understaffed.ts",
+    "e2e:seed:dashboard": "tsx scripts/e2e-seed-dashboard-scenarios.ts",
+    "e2e:verify-login": "tsx scripts/e2e-verify-login.ts"
   },
   "dependencies": {
+    "@ai-sdk/groq": "^4.0.0",
     "@schichtwerk/api-client": "*",
     "@schichtwerk/compliance": "*",
     "@schichtwerk/database": "*",
@@ -22,6 +26,8 @@
     "@schichtwerk/ui-tokens": "*",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.8",
+    "ai": "^7.0.0",
+    "groq-sdk": "^1.3.0",
     "next": "^15.3.6",
     "react": "19.0.0",
     "react-dom": "19.0.0"

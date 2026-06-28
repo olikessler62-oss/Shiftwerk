@@ -99,6 +99,12 @@ import {
   type ShiftConfirmationPendingJobResult,
 } from "./shift-confirmation-pending";
 import {
+  type ShiftUnresolvedPastJobResult,
+  UNANSWERED_SHIFT_CONFIRMATION_STATUSES,
+} from "./shift-unresolved-status";
+import type { ShiftPastProposedCleanupJobResult } from "./shift-past-proposed-cleanup";
+import { toISODateLocal } from "./shift-retention";
+import {
   buildEmployeeShiftCanceledByManagerNotification,
   buildManagerShiftCanceledNotification,
   canCancelShiftByConfirmationStatus,
@@ -134,6 +140,7 @@ import {
   isEmployeeRespondableConfirmationStatus,
   validateConfirmationRespondItems,
 } from "./shift-confirmation-respond";
+import { listShiftIdsSupersededByReject } from "./shift-confirmation-reject-supersede";
 import type {
   ConfirmationRespondItem,
   ConfirmationWeekItem,
@@ -4883,6 +4890,161 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return result;
   }
 
+  async runShiftUnresolvedPastJob(
+    nowInput?: Date
+  ): Promise<ShiftUnresolvedPastJobResult> {
+    const now = nowInput ?? new Date();
+    const nowIso = now.toISOString();
+    const todayISO = toISODateLocal(now);
+    const result: ShiftUnresolvedPastJobResult = {
+      scanned: 0,
+      transitioned: 0,
+      errors: [],
+    };
+
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select("id, organization_id, confirmation_status, shift_date")
+      .in("confirmation_status", [...UNANSWERED_SHIFT_CONFIRMATION_STATUSES])
+      .lt("shift_date", todayISO);
+
+    if (error) throw new Error(error.message);
+
+    const rows = data ?? [];
+    result.scanned = rows.length;
+
+    for (const row of rows) {
+      const shiftId = row.id as string;
+      const organizationId = row.organization_id as string;
+      const fromStatus = row.confirmation_status as import("@schichtwerk/types").ShiftConfirmationStatus;
+
+      try {
+        const { data: updated, error: updateError } = await this.client
+          .from(T.shifts)
+          .update({
+            confirmation_status: "unresolved",
+            lifecycle_status: "planned",
+            confirmation_status_updated_at: nowIso,
+          })
+          .eq("id", shiftId)
+          .eq("organization_id", organizationId)
+          .eq("confirmation_status", fromStatus)
+          .select("id")
+          .maybeSingle();
+
+        if (updateError) throw new Error(updateError.message);
+        if (!updated) continue;
+
+        if (fromStatus === "requested" || fromStatus === "pending") {
+          await syncShiftRequestsAfterConfirmationExpired({
+            client: this.client,
+            organizationId,
+            shiftId,
+            now: nowIso,
+          });
+        }
+
+        const { error: eventError } = await this.client
+          .from(T.shiftConfirmationEvents)
+          .insert({
+            organization_id: organizationId,
+            shift_id: shiftId,
+            actor_id: null,
+            from_status: fromStatus,
+            to_status: "unresolved",
+            payload: {
+              reason: "past_unanswered_confirmation",
+              shift_date: row.shift_date,
+            },
+          });
+        if (eventError) throw new Error(eventError.message);
+
+        result.transitioned += 1;
+      } catch (transitionError) {
+        result.errors.push({
+          shiftId,
+          error:
+            transitionError instanceof Error
+              ? transitionError.message
+              : "Ungeklärt-Übergang fehlgeschlagen.",
+        });
+      }
+    }
+
+    return result;
+  }
+
+  private async resolveShiftDeletionActorForSystemCleanup(
+    organizationId: string,
+    createdBy: string | null
+  ): Promise<string | null> {
+    if (createdBy) return createdBy;
+
+    const profiles = await this.listOrganizationProfiles(organizationId);
+    const manager = profiles.find(
+      (profile) => profile.role === "admin" || profile.role === "manager"
+    );
+    return manager?.id ?? null;
+  }
+
+  async runShiftPastProposedCleanupJob(
+    nowInput?: Date
+  ): Promise<ShiftPastProposedCleanupJobResult> {
+    const now = nowInput ?? new Date();
+    const todayISO = toISODateLocal(now);
+    const result: ShiftPastProposedCleanupJobResult = {
+      scanned: 0,
+      deleted: 0,
+      errors: [],
+    };
+
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select("id, organization_id")
+      .eq("confirmation_status", "proposed")
+      .lt("shift_date", todayISO);
+
+    if (error) throw new Error(error.message);
+
+    const rows = data ?? [];
+    result.scanned = rows.length;
+
+    for (const row of rows) {
+      const shiftId = row.id as string;
+      const organizationId = row.organization_id as string;
+
+      try {
+        const shift = await this.getShiftRecordById(shiftId, organizationId);
+        if (!shift) continue;
+
+        const deletedBy = await this.resolveShiftDeletionActorForSystemCleanup(
+          organizationId,
+          shift.created_by
+        );
+        if (!deletedBy) {
+          result.errors.push({
+            shiftId,
+            error: "Kein Lösch-Akteur für vergangene Geplant-Schicht gefunden.",
+          });
+          continue;
+        }
+
+        await this.deleteShift(shiftId, organizationId, deletedBy);
+        result.deleted += 1;
+      } catch (cleanupError) {
+        result.errors.push({
+          shiftId,
+          error:
+            cleanupError instanceof Error
+              ? cleanupError.message
+              : "Löschen vergangener Geplant-Schicht fehlgeschlagen.",
+        });
+      }
+    }
+
+    return result;
+  }
+
   private async listRequestedShiftsForPendingJob(): Promise<
     RequestedShiftForPendingJob[]
   > {
@@ -5358,7 +5520,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const shiftIds = input.items.map((item) => item.shiftId);
     const { data: shiftRows, error: shiftError } = await this.client
       .from(T.shifts)
-      .select("id, employee_id, confirmation_status, location_id, shift_date")
+      .select(
+        "id, employee_id, confirmation_status, location_id, shift_date, location_area_id, starts_at, ends_at"
+      )
       .eq("organization_id", input.organizationId)
       .in("id", shiftIds);
 
@@ -5373,6 +5537,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           confirmation_status: row.confirmation_status as import("@schichtwerk/types").ShiftConfirmationStatus,
           location_id: (row.location_id as string | null) ?? null,
           shift_date: row.shift_date as string,
+          location_area_id: (row.location_area_id as string | null) ?? null,
+          starts_at: row.starts_at as string,
+          ends_at: row.ends_at as string,
         },
       ])
     );
@@ -5446,6 +5613,87 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           },
         });
       if (eventError) throw new Error(eventError.message);
+
+      if (item.decision === "reject") {
+        const sameDayShifts = await this.listShiftsForEmployeeDate(
+          input.employeeId,
+          current.shift_date
+        );
+        const supersededIds = listShiftIdsSupersededByReject({
+          rejectedShift: current,
+          sameDayShifts: sameDayShifts.map((shift) => ({
+            id: shift.id,
+            employee_id: shift.employee_id,
+            shift_date: shift.shift_date,
+            location_area_id: shift.location_area_id ?? null,
+            starts_at: shift.starts_at,
+            ends_at: shift.ends_at,
+            confirmation_status:
+              shift.confirmation_status as import("@schichtwerk/types").ShiftConfirmationStatus,
+          })),
+        });
+
+        for (const supersededId of supersededIds) {
+          const superseded = sameDayShifts.find((shift) => shift.id === supersededId);
+          if (!superseded?.confirmation_status) continue;
+
+          const { data: supersededUpdated, error: supersededUpdateError } =
+            await this.client
+              .from(T.shifts)
+              .update({
+                confirmation_status: "rejected",
+                lifecycle_status: lifecycleStatusForConfirmationStatus("rejected"),
+                confirmation_status_updated_at: now,
+                requested_at: null,
+                pending_since: null,
+                pending_reminder_sent_at: null,
+              })
+              .eq("id", supersededId)
+              .eq("organization_id", input.organizationId)
+              .eq("employee_id", input.employeeId)
+              .eq("confirmation_status", superseded.confirmation_status)
+              .select("id")
+              .maybeSingle();
+
+          if (supersededUpdateError) {
+            throw new Error(supersededUpdateError.message);
+          }
+          if (!supersededUpdated) continue;
+
+          await syncShiftRequestsAfterEmployeeResponse({
+            client: this.client,
+            organizationId: input.organizationId,
+            shiftId: supersededId,
+            employeeId: input.employeeId,
+            decision: "reject",
+            now,
+          });
+
+          updatedShiftIds.push(supersededId);
+          updatedShifts.push({
+            locationId: superseded.location_id ?? null,
+            shiftDate: superseded.shift_date,
+          });
+
+          const { error: supersededEventError } = await this.client
+            .from(T.shiftConfirmationEvents)
+            .insert({
+              organization_id: input.organizationId,
+              shift_id: supersededId,
+              actor_id: input.employeeId,
+              from_status: superseded.confirmation_status,
+              to_status: "rejected",
+              payload: {
+                decision: "reject",
+                source: "mobile_respond_supersede",
+                superseded_by_shift_id: item.shiftId,
+              },
+            });
+          if (supersededEventError) {
+            throw new Error(supersededEventError.message);
+          }
+        }
+      }
     }
 
     const summary = buildManagerResponseSummaryNotification({
@@ -5809,7 +6057,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        `id, shift_date, starts_at, ends_at, confirmation_status, requested_at,
+        `id, shift_date, starts_at, ends_at, confirmation_status, confirmation_status_updated_at, requested_at,
         employee_id, location_id, location_area_id,
         profiles!employee_id(full_name),
         locations(name),
@@ -5834,6 +6082,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         starts_at: row.starts_at as string,
         ends_at: row.ends_at as string,
         confirmation_status: row.confirmation_status as import("@schichtwerk/types").ShiftConfirmationStatus,
+        confirmation_status_updated_at:
+          (row.confirmation_status_updated_at as string | null) ?? null,
         requested_at: (row.requested_at as string | null) ?? null,
         employee_id: row.employee_id as string,
         employee_name: profile?.full_name ?? "—",

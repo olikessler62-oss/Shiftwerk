@@ -9,7 +9,8 @@ import { SuperadminDeleteEmployeesModal } from "@/components/settings/superadmin
 import { SuperadminEmployeesSection } from "@/components/settings/superadmin-employees-section";
 import { SuperadminOrganizationSection } from "@/components/settings/superadmin-organization-section";
 import { SuperadminShiftsSection } from "@/components/settings/superadmin-shifts-section";
-import { Alert, Button } from "@/components/ui";
+import { SuperadminTestScenariosSection } from "@/components/settings/superadmin-test-scenarios-section";
+import { Alert, Button, CloseIcon, IconButton } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
@@ -23,13 +24,14 @@ import {
   settingsModalFooterClass,
   settingsModalHeaderPaddingClass,
   settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "@/components/settings/settings-list-ui";
 
 type Props = {
   onClose: () => void;
 };
 
-type SuperadminTab = "simulation" | "shifts";
+type SuperadminTab = "simulation" | "shifts" | "testScenarios";
 
 export function SuperadminModal({ onClose }: Props) {
   const t = useTranslations();
@@ -148,9 +150,20 @@ export function SuperadminModal({ onClose }: Props) {
           <div
             className={cn("shrink-0 border-b border-border", settingsModalHeaderPaddingClass())}
           >
-            <h2 id="superadmin-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
-              {t("nav.superadmin")}
-            </h2>
+            <div className="flex items-start justify-between gap-3">
+              <h2 id="superadmin-modal-title" className={SETTINGS_MODAL_TITLE_CLASS}>
+                {t("nav.superadmin")}
+              </h2>
+              <IconButton
+                size="sm"
+                onClick={onClose}
+                disabled={actionPending}
+                aria-label={t("common.close")}
+                className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
+              >
+                <CloseIcon className="h-[18px] w-[18px]" />
+              </IconButton>
+            </div>
             <div
               className="mt-3 flex flex-wrap gap-1 border-b border-border"
               role="tablist"
@@ -160,6 +173,7 @@ export function SuperadminModal({ onClose }: Props) {
                 [
                   ["simulation", "nav.superadminTabSimulation"],
                   ["shifts", "nav.superadminTabShifts"],
+                  ["testScenarios", "nav.superadminTabTestScenarios"],
                 ] as const
               ).map(([tab, labelKey]) => {
                 const selected = activeTab === tab;
@@ -281,8 +295,10 @@ export function SuperadminModal({ onClose }: Props) {
                   <SuperadminEmployeesSection disabled={actionPending} />
                 </section>
               </>
-            ) : (
+            ) : activeTab === "shifts" ? (
               <SuperadminShiftsSection disabled={actionPending} />
+            ) : (
+              <SuperadminTestScenariosSection disabled={actionPending} />
             )}
           </div>
 
@@ -324,9 +340,15 @@ export function SuperadminModal({ onClose }: Props) {
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="superadmin-db-reset-title"
-              className={settingsConfirmDialogClass()}
+              className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
               onMouseDown={(event) => event.stopPropagation()}
             >
+              <SettingsConfirmDialogCloseHeader
+                onClose={() => setDbResetConfirmOpen(false)}
+                closeDisabled={actionPending}
+                closeAriaLabel={t("common.close")}
+              />
+              <div className="px-4 py-4 sm:px-5">
               <h3
                 id="superadmin-db-reset-title"
                 className="text-base font-semibold text-foreground"
@@ -354,6 +376,7 @@ export function SuperadminModal({ onClose }: Props) {
                   {dbResetPending ? t("nav.dbResetPending") : t("nav.dbReset")}
                 </Button>
               </div>
+              </div>
             </div>
           </div>
         ) : null}
@@ -372,9 +395,15 @@ export function SuperadminModal({ onClose }: Props) {
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="superadmin-shifts-reset-title"
-              className={settingsConfirmDialogClass()}
+              className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
               onMouseDown={(event) => event.stopPropagation()}
             >
+              <SettingsConfirmDialogCloseHeader
+                onClose={() => setShiftsResetConfirmOpen(false)}
+                closeDisabled={actionPending}
+                closeAriaLabel={t("common.close")}
+              />
+              <div className="px-4 py-4 sm:px-5">
               <h3
                 id="superadmin-shifts-reset-title"
                 className="text-base font-semibold text-foreground"
@@ -403,6 +432,7 @@ export function SuperadminModal({ onClose }: Props) {
                 >
                   {shiftsResetPending ? t("nav.shiftsResetPending") : t("nav.shiftsReset")}
                 </Button>
+              </div>
               </div>
             </div>
           </div>

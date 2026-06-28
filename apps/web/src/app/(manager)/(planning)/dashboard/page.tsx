@@ -13,13 +13,6 @@ export default async function DashboardPage({
     week?: string;
     location?: string;
     area?: string;
-    standorte?: string;
-    profiles?: string;
-    rollen?: string;
-    qualifikationen?: string;
-    sonderzuschlaege?: string;
-    abwesenheiten?: string;
-    superadmin?: string;
   }>;
 }) {
   const session = await getManagerSession();

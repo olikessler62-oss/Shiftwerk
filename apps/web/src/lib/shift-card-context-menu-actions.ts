@@ -211,6 +211,22 @@ export function canOpenShiftCardContextMenu(
 ): boolean {
 
   if (
+    options &&
+    isPastConfirmedPlanningShift(
+      {
+        shift_date: options.shiftDate,
+        confirmationStatus,
+        requestedAt,
+        displayState: options.displayState,
+      },
+      options.isPastShiftDate,
+      options.cellDate
+    )
+  ) {
+    return false;
+  }
+
+  if (
 
     options &&
 

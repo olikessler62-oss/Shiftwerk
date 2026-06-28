@@ -95,6 +95,18 @@ describe("resolvePlanningShiftConfirmationFields", () => {
     expect(result.displayState.lifecycle).toBe("planned");
     expect(result.displayState.openConfirmation).toBeUndefined();
   });
+
+  it("maps past pending shifts to unresolved", () => {
+    const result = resolvePlanningShiftConfirmationFields({
+      shiftId: "shift-unresolved",
+      shiftDate: "2026-06-10",
+      confirmationStatus: "pending",
+      requestedAt: "2026-06-09T10:00:00.000Z",
+    });
+
+    expect(result.confirmationStatus).toBe("unresolved");
+    expect(result.displayState.legacyConfirmationStatus).toBe("unresolved");
+  });
 });
 
 describe("resolveShiftCancelActorFromDisplayState", () => {

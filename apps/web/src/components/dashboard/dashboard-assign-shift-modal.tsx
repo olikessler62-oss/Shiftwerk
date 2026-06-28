@@ -9,11 +9,16 @@ import {
   AreaCalendarShiftTypeCombobox,
   DASHBOARD_COMBO_EMPTY_LABEL,
 } from "@/components/areacalendar/areacalendar-add-shift-modal";
-import { PlanningSidePanel } from "@/components/planning/planning-side-panel";
+import {
+  PlanningSidePanel,
+  PlanningSidePanelNestedAlertPortal,
+  PLANNING_SIDE_PANEL_FOOTER_CLASS,
+} from "@/components/planning/planning-side-panel";
 import {
   areaCalendarAlertDialogClass,
   areaCalendarNestedModalOverlayClass,
   settingsModalFooterClass,
+  SettingsConfirmDialogCloseHeader,
 } from "@/components/settings/settings-list-ui";
 import {
   Alert,
@@ -24,6 +29,7 @@ import {
   TimeInput,
 } from "@/components/ui";
 import { translateActionError } from "@/lib/translate-action-error";
+import { DASHBOARD_UI_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
 import { useSimulatedProposedOnAssignRequest } from "@/lib/shift-confirmation-simulation-context";
 import { cn } from "@/lib/cn";
 import {
@@ -36,7 +42,11 @@ import {
   presetQualificationForServiceHour,
 } from "@/lib/bulk-shift-qualification";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
-import { formatDayHeader } from "@/lib/planning-utils";
+import {
+  buildEmployeeWeeklyHoursTooltipLabels,
+  formatDayHeader,
+  weeklyAssignedMinutesByEmployeeId,
+} from "@/lib/planning-utils";
 import { findServiceHourIdForShift } from "@/lib/location-staffing-client";
 import { validateAreaCalendarShiftServiceHours } from "@/lib/service-hours-shift-validation";
 import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
@@ -50,6 +60,8 @@ import { staffingQualificationIdsForServiceHour } from "@schichtwerk/database";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { LocationAreaStaffing, Qualification } from "@schichtwerk/types";
 import type { AreaCalendarShiftAssignEmployee } from "@/app/actions/areacalendar-shift-assign";
+import type { ShiftAssignWeekShiftRef } from "@/lib/shift-weekly-hours-validation-client";
+import { useLocale } from "@/i18n/locale-provider";
 
 export type DashboardShiftActionResult =
   | { ok: true; warnings?: string[] }
@@ -107,10 +119,12 @@ type Props = {
   note: string;
   onNoteChange: (value: string) => void;
   dayReadOnly: boolean;
+  withoutServiceHours?: boolean;
   timesComplete: boolean;
   canAssign: boolean;
   hasExistingShift: boolean;
   weekDates: readonly string[];
+  weekShifts?: readonly ShiftAssignWeekShiftRef[];
   onAssign: (
     options?: {
       withoutServiceHours?: boolean;
@@ -151,15 +165,18 @@ export function DashboardAssignShiftModal({
   note,
   onNoteChange,
   dayReadOnly,
+  withoutServiceHours = false,
   timesComplete,
   canAssign,
   hasExistingShift,
   weekDates,
+  weekShifts = [],
   onAssign,
   onClose,
   presetEmployeeId,
   presetEmployee,
 }: Props) {
+  const { locale } = useLocale();
   const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
     useSimulatedProposedOnAssignRequest();
   const [employees, setEmployees] = useState<AreaCalendarShiftAssignEmployee[]>([]);
@@ -401,6 +418,18 @@ export function DashboardAssignShiftModal({
     selectedEmployeeId,
   ]);
 
+  const weeklyHoursLineByEmployeeId = useMemo(() => {
+    const assignedMinutes = weeklyAssignedMinutesByEmployeeId(
+      weekShifts,
+      weekDates
+    );
+    return buildEmployeeWeeklyHoursTooltipLabels(
+      employees,
+      assignedMinutes,
+      locale
+    );
+  }, [employees, weekShifts, weekDates, locale]);
+
   useEffect(() => {
     if (loadingEmployees || hasExistingShift) return;
     if (!timesComplete) {
@@ -560,7 +589,7 @@ export function DashboardAssignShiftModal({
       return;
     }
 
-    if (!simplePlanning && areaId) {
+    if (!simplePlanning && areaId && !withoutServiceHours) {
       const serviceHoursCheck = validateAreaCalendarShiftServiceHours(
         serviceHours,
         areaId,
@@ -574,7 +603,9 @@ export function DashboardAssignShiftModal({
       }
     }
 
-    void finishAssign();
+    void finishAssign(
+      withoutServiceHours ? { withoutServiceHours: true } : undefined
+    );
   }, [
     selectedEmployeeId,
     timesComplete,
@@ -582,6 +613,7 @@ export function DashboardAssignShiftModal({
     saving,
     simplePlanning,
     areaId,
+    withoutServiceHours,
     serviceHours,
     date,
     startTime,
@@ -615,7 +647,7 @@ export function DashboardAssignShiftModal({
           !busy && !messagePrompt && !outsideServiceHoursConfirm
         }
         footer={
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className={PLANNING_SIDE_PANEL_FOOTER_CLASS}>
             {showAssignRestOfWeekDaysOption ? (
               <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
                 <Checkbox
@@ -635,6 +667,7 @@ export function DashboardAssignShiftModal({
               <Button
                 type="button"
                 variant="outline"
+                className={DASHBOARD_UI_BUTTON_CLASS}
                 disabled={busy}
                 onClick={onClose}
               >
@@ -643,6 +676,7 @@ export function DashboardAssignShiftModal({
               {!dayReadOnly ? (
                 <Button
                   type="button"
+                  className={DASHBOARD_UI_BUTTON_CLASS}
                   disabled={
                     busy ||
                     !canAssign ||
@@ -753,6 +787,7 @@ export function DashboardAssignShiftModal({
               profileQualificationIds={profileQualificationIds}
               qualificationNameById={qualificationNameById}
               qualificationSortOrder={qualificationSortOrder}
+              weeklyHoursLineByEmployeeId={weeklyHoursLineByEmployeeId}
             />
             {availabilityNotice.visible ? (
               <p className={ADD_SHIFT_AVAILABILITY_NOTICE_CLASS}>
@@ -790,6 +825,7 @@ export function DashboardAssignShiftModal({
       </PlanningSidePanel>
 
       {messagePrompt ? (
+        <PlanningSidePanelNestedAlertPortal>
         <div
           className={areaCalendarNestedModalOverlayClass()}
           role="presentation"
@@ -807,9 +843,15 @@ export function DashboardAssignShiftModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="planning-assign-shift-message"
-            className={areaCalendarAlertDialogClass()}
+            className={cn(areaCalendarAlertDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={dismissMessagePrompt}
+              closeDisabled={busy || messagePrompt.blocking}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="planning-assign-shift-message"
               className={cn(
@@ -835,11 +877,14 @@ export function DashboardAssignShiftModal({
                 {t("common.ok")}
               </Button>
             </div>
+            </div>
           </div>
         </div>
+        </PlanningSidePanelNestedAlertPortal>
       ) : null}
 
       {outsideServiceHoursConfirm ? (
+        <PlanningSidePanelNestedAlertPortal>
         <div
           className={areaCalendarNestedModalOverlayClass()}
           role="presentation"
@@ -853,9 +898,15 @@ export function DashboardAssignShiftModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="planning-assign-shift-service-hours-confirm"
-            className={areaCalendarAlertDialogClass()}
+            className={cn(areaCalendarAlertDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setOutsideServiceHoursConfirm(false)}
+              closeDisabled={busy}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="planning-assign-shift-service-hours-confirm"
               className="text-sm text-foreground"
@@ -887,8 +938,10 @@ export function DashboardAssignShiftModal({
                 {t("common.yes")}
               </Button>
             </div>
+            </div>
           </div>
         </div>
+        </PlanningSidePanelNestedAlertPortal>
       ) : null}
     </>
   );

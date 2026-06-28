@@ -18,14 +18,15 @@ import {
   type AreaCalendarAddShiftDialogState,
   type AreaCalendarBulkShiftDialogState,
 } from "@/components/areacalendar/areacalendar-add-shift-modal";
-import { PlanningSidePanel } from "@/components/planning/planning-side-panel";
+import { PlanningSidePanel, PlanningSidePanelNestedAlertPortal, PLANNING_SIDE_PANEL_FOOTER_CLASS } from "@/components/planning/planning-side-panel";
 import {
-  BULK_SHIFT_LIST_SCROLL_CLASS,
   SettingsPrimaryActionButton,
   areaCalendarAlertDialogClass,
   areaCalendarNestedModalOverlayClass,
+  PLANNING_SIDE_PANEL_SUBTITLE_CLASS,
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
+  SettingsConfirmDialogCloseHeader,
   settingsIndicatorCellClass,
   settingsResponsiveTableWrapClass,
   settingsStickyIndicatorHeaderClass,
@@ -114,7 +115,11 @@ import {
   computeBulkStaffingHeaderEntries,
   type StaffingAssignmentRef,
 } from "@/lib/bulk-staffing-header";
-import { formatDayHeader } from "@/lib/planning-utils";
+import {
+  buildEmployeeWeeklyHoursTooltipLabels,
+  formatDayHeader,
+  weeklyAssignedMinutesByEmployeeId,
+} from "@/lib/planning-utils";
 import { hasRemainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
 import {
   findServiceHourIdForShift,
@@ -191,8 +196,8 @@ function BulkShiftStaffingTable({
   return (
     <div
       className={cn(
-        "shrink-0 select-none rounded border border-border px-2 py-1.5",
-        showSpeedActions && "min-w-[30rem]"
+        "w-full min-w-0 select-none rounded border border-border px-2 py-1.5",
+        showSpeedActions && "sm:min-w-[30rem]"
       )}
     >
       <table className="w-full border-collapse text-xs">
@@ -359,6 +364,7 @@ type Props = {
   dialog: AreaCalendarBulkShiftDialogState;
   locationId: string;
   locationName: string;
+  showLocationName?: boolean;
   areas: LocationArea[];
   areaShiftTemplates: AreaShiftTemplateWithBreaks[];
   staffingRules: LocationAreaStaffing[];
@@ -961,6 +967,7 @@ type BulkShiftRowEditorProps = {
   locationDayAssignments: LocationDayAssignment[];
   allRows: BulkRow[];
   weekShifts: readonly ShiftAssignWeekShiftRef[];
+  weeklyHoursLineByEmployeeId?: ReadonlyMap<string, string>;
   profileQualificationIds: Map<string, Set<string>>;
   profileShiftPreferences: Record<string, ProfileShiftPreferenceEntry[]>;
   withoutServiceHours?: boolean;
@@ -1027,6 +1034,7 @@ function BulkShiftRowEditor({
   locationDayAssignments,
   allRows,
   weekShifts,
+  weeklyHoursLineByEmployeeId,
   profileQualificationIds,
   profileShiftPreferences,
   withoutServiceHours = false,
@@ -1522,6 +1530,7 @@ function BulkShiftRowEditor({
           disabled={disabled || rowAssignmentPresets.length === 0}
           rootClassName={BULK_SHIFT_TABLE_COMBO_ROOT_CLASS}
           triggerClassName={DASHBOARD_TABLE_COMBO_TRIGGER_CLASS}
+          showColorSwatch={false}
           onChange={(nextId) => {
             const preset = assignmentPresets.find((item) => item.id === nextId);
             const isNewRow = !row.existingShiftId;
@@ -1630,6 +1639,7 @@ function BulkShiftRowEditor({
           profileQualificationIds={profileQualificationIds}
           qualificationNameById={qualificationNameById}
           qualificationSortOrder={qualificationSortOrder}
+          weeklyHoursLineByEmployeeId={weeklyHoursLineByEmployeeId}
         />
       </td>
       <td className="w-10 shrink-0 px-1 py-1.5 align-middle">
@@ -1660,6 +1670,7 @@ export function AreaCalendarBulkShiftModal({
   dialog,
   locationId,
   locationName,
+  showLocationName = true,
   areas,
   areaShiftTemplates,
   staffingRules,
@@ -1757,6 +1768,17 @@ export function AreaCalendarBulkShiftModal({
     dialog.date,
     weekDates
   );
+  const weeklyHoursLineByEmployeeId = useMemo(() => {
+    const assignedMinutes = weeklyAssignedMinutesByEmployeeId(
+      weekShifts,
+      weekDates
+    );
+    return buildEmployeeWeeklyHoursTooltipLabels(
+      employees,
+      assignedMinutes,
+      locale
+    );
+  }, [employees, weekShifts, weekDates, locale]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [activeRowId, setActiveRowId] = useState<string | null>(() =>
     resolveBulkShiftRowIdForShiftFocus([], dialog.focusShiftId)
@@ -2081,6 +2103,7 @@ export function AreaCalendarBulkShiftModal({
           locationDayAssignments={effectiveLocationDayAssignments}
           allRows={rows}
           weekShifts={weekShifts}
+          weeklyHoursLineByEmployeeId={weeklyHoursLineByEmployeeId}
           profileQualificationIds={profileQualificationIds}
           profileShiftPreferences={profileShiftPreferences}
           withoutServiceHours={withoutServiceHours}
@@ -2115,6 +2138,7 @@ export function AreaCalendarBulkShiftModal({
       effectiveLocationDayAssignments,
       rows,
       weekShifts,
+      weeklyHoursLineByEmployeeId,
       profileQualificationIds,
       profileShiftPreferences,
       withoutServiceHours,
@@ -2717,12 +2741,16 @@ export function AreaCalendarBulkShiftModal({
             : t("areaCalendar.bulkShiftTitle")
         }
         subtitleNode={
-          <p className="mt-0.5 font-semibold text-[#0f766e]">
-            <span className="text-base">
-              {locationName} / {areaName}
+          <p
+            className={cn(
+              PLANNING_SIDE_PANEL_SUBTITLE_CLASS,
+              "font-semibold text-[#0f766e]"
+            )}
+          >
+            <span className="block truncate sm:inline">
+              {showLocationName ? `${locationName} / ${areaName}` : areaName}
             </span>
-            <span className="text-lg">
-              {" "}
+            <span className="block sm:ml-1 sm:inline">
               – {dayHeader.weekday}, {dayHeader.label}
             </span>
           </p>
@@ -2747,12 +2775,9 @@ export function AreaCalendarBulkShiftModal({
           "select-none [&_input]:select-text",
           modalBusy && "cursor-wait [&_*]:!cursor-wait"
         )}
-        bodyClassName={cn(
-          "overflow-hidden",
-          settingsModalBodyPaddingClass()
-        )}
+        bodyClassName={settingsModalBodyPaddingClass()}
         footer={
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className={PLANNING_SIDE_PANEL_FOOTER_CLASS}>
             {showAssignRestOfWeekDaysOption ? (
               <label className="flex min-w-0 cursor-pointer items-start gap-2 text-sm text-foreground">
                 <Checkbox
@@ -2795,7 +2820,7 @@ export function AreaCalendarBulkShiftModal({
           ) : null}
           <div
             ref={scrollContainerRef}
-            className={cn(BULK_SHIFT_LIST_SCROLL_CLASS, settingsResponsiveTableWrapClass())}
+            className={settingsResponsiveTableWrapClass()}
           >
             <table className="w-full table-fixed text-sm">
               <colgroup>
@@ -2920,6 +2945,7 @@ export function AreaCalendarBulkShiftModal({
       </PlanningSidePanel>
 
       {prompt && promptMessage ? (
+        <PlanningSidePanelNestedAlertPortal>
         <div
           className={areaCalendarNestedModalOverlayClass()}
           role="presentation"
@@ -2937,9 +2963,15 @@ export function AreaCalendarBulkShiftModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="areacalendar-bulk-shift-validation-message"
-            className={areaCalendarAlertDialogClass()}
+            className={cn(areaCalendarAlertDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={dismissPrompt}
+              closeDisabled={modalLocked}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5">
             {prompt.kind === "alert" &&
             prompt.partialSaveFailures &&
             prompt.partialSaveFailures.length > 0 ? (
@@ -2992,8 +3024,10 @@ export function AreaCalendarBulkShiftModal({
                 </Button>
               )}
             </div>
+            </div>
           </div>
         </div>
+        </PlanningSidePanelNestedAlertPortal>
       ) : null}
     </>
   );

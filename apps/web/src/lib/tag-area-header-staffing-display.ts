@@ -1,9 +1,16 @@
-import type { TagAreaHeaderStaffingEntry } from "@/lib/location-staffing-client";
+import type {
+  StaffingQualificationCoverage,
+  TagAreaHeaderStaffingEntry,
+} from "@/lib/location-staffing-client";
 import { resolveCalendarStaffingTimeLabel } from "@/lib/location-staffing-client";
 
 export const STAFFING_FILL_GAUGE_SIZE_PX = 24;
 
-export type StaffingFillGaugeVariant = "understaffed" | "met" | "overstaffed";
+export type StaffingFillGaugeVariant =
+  | "understaffed"
+  | "planned"
+  | "met"
+  | "overstaffed";
 
 export type StaffingHeaderDisplayLevel =
   | "full-schicht"
@@ -21,6 +28,8 @@ export type StaffingHeaderSegment = {
   overstaffed: boolean;
   /** Genug Schichten, aber Funktionen passen nicht zum Bedarf. */
   assignmentMismatch: boolean;
+  /** Geplant, aber noch nicht bestätigt — würde Bedarf decken. */
+  plannedCoverage: boolean;
   assigned: number;
   required: number;
 };
@@ -32,7 +41,7 @@ export type StaffingHeaderDisplay =
       level: "full-schicht" | "counts-only";
       segments: StaffingHeaderSegment[];
     }
-  | { mode: "indicator"; allMet: boolean; hasOverstaffed: boolean };
+  | { mode: "indicator"; allMet: boolean; hasOverstaffed: boolean; hasPlannedCoverage: boolean };
 
 const STAFFING_GAUGE_LABEL_FONT =
   '500 9px Inter, ui-sans-serif, system-ui, sans-serif';
@@ -62,33 +71,96 @@ export function formatStaffingCount(
 
 /** Mehr Einsätze als Bedarf (gesamt oder je Funktion im Fenster). */
 export function isTagAreaHeaderStaffingEntryOverstaffed(
-  entry: TagAreaHeaderStaffingEntry
+  entry: TagAreaHeaderStaffingEntry,
+  coverage: "confirmed" | "projected" = "confirmed"
 ): boolean {
+  const qualifications =
+    (coverage === "projected"
+      ? entry.projectedQualifications ?? entry.qualifications
+      : entry.qualifications
+    )?.filter((qualification) => qualification.required > 0) ?? [];
+  const assigned =
+    coverage === "projected"
+      ? (entry.projectedAssigned ?? entry.assigned)
+      : entry.assigned;
   if (
-    entry.qualifications?.some(
-      (qualification) =>
-        qualification.required > 0 &&
-        qualification.assigned > qualification.required
+    qualifications.some(
+      (qualification) => qualification.assigned > qualification.required
     )
   ) {
     return true;
   }
-  return entry.required > 0 && entry.assigned > entry.required;
+  return entry.required > 0 && assigned > entry.required;
 }
 
-/** Mindestens eine Funktion im Fenster nicht gedeckt (wie Personalbedarf-Tabelle). */
-export function isTagAreaHeaderStaffingEntryUnderstaffed(
-  entry: TagAreaHeaderStaffingEntry
+function staffingCoverageUnderstaffed(
+  assigned: number,
+  required: number,
+  qualifications?: StaffingQualificationCoverage[]
 ): boolean {
-  const qualifications =
-    entry.qualifications?.filter((qualification) => qualification.required > 0) ??
-    [];
-  if (qualifications.length > 0) {
-    return qualifications.some(
+  const qualRows =
+    qualifications?.filter((qualification) => qualification.required > 0) ?? [];
+  if (qualRows.length > 0) {
+    return qualRows.some(
       (qualification) => qualification.assigned < qualification.required
     );
   }
-  return entry.required > 0 && entry.assigned < entry.required;
+  return required > 0 && assigned < required;
+}
+
+function staffingCoverageAssignmentMismatch(
+  assigned: number,
+  required: number,
+  qualifications?: StaffingQualificationCoverage[]
+): boolean {
+  return (
+    staffingCoverageUnderstaffed(assigned, required, qualifications) &&
+    required > 0 &&
+    assigned >= required
+  );
+}
+
+function confirmedCoverageForEntry(entry: TagAreaHeaderStaffingEntry): {
+  assigned: number;
+  qualifications?: StaffingQualificationCoverage[];
+} {
+  return {
+    assigned: entry.assigned,
+    qualifications: entry.qualifications,
+  };
+}
+
+function projectedCoverageForEntry(entry: TagAreaHeaderStaffingEntry): {
+  assigned: number;
+  qualifications?: StaffingQualificationCoverage[];
+} {
+  return {
+    assigned: entry.projectedAssigned ?? entry.assigned,
+    qualifications: entry.projectedQualifications ?? entry.qualifications,
+  };
+}
+
+/** Mindestens eine Funktion im Fenster nicht gedeckt (projiziert = echter Engpass). */
+export function isTagAreaHeaderStaffingEntryUnderstaffed(
+  entry: TagAreaHeaderStaffingEntry
+): boolean {
+  const projected = projectedCoverageForEntry(entry);
+  return staffingCoverageUnderstaffed(
+    projected.assigned,
+    entry.required,
+    projected.qualifications
+  );
+}
+
+function isTagAreaHeaderStaffingEntryConfirmedUnderstaffed(
+  entry: TagAreaHeaderStaffingEntry
+): boolean {
+  const confirmed = confirmedCoverageForEntry(entry);
+  return staffingCoverageUnderstaffed(
+    confirmed.assigned,
+    entry.required,
+    confirmed.qualifications
+  );
 }
 
 export function isTagAreaHeaderStaffingUnderstaffed(
@@ -97,15 +169,47 @@ export function isTagAreaHeaderStaffingUnderstaffed(
   return entries.some(isTagAreaHeaderStaffingEntryUnderstaffed);
 }
 
-/** Unterbesetzt, aber Schichtanzahl im Fenster deckt Gesamtbedarf (falsche Funktionen). */
+/** Unterbesetzt (bestätigt), aber Schichtanzahl im Fenster deckt Gesamtbedarf (falsche Funktionen). */
 export function isTagAreaHeaderStaffingEntryAssignmentMismatch(
   entry: TagAreaHeaderStaffingEntry
 ): boolean {
-  return (
-    isTagAreaHeaderStaffingEntryUnderstaffed(entry) &&
-    entry.required > 0 &&
-    entry.assigned >= entry.required
+  const confirmed = confirmedCoverageForEntry(entry);
+  return staffingCoverageAssignmentMismatch(
+    confirmed.assigned,
+    entry.required,
+    confirmed.qualifications
   );
+}
+
+/** Geplant würde Bedarf decken, bestätigt noch nicht vollständig. */
+export function isTagAreaHeaderStaffingEntryPlannedCoverage(
+  entry: TagAreaHeaderStaffingEntry
+): boolean {
+  if (entry.required <= 0) return false;
+  if (isTagAreaHeaderStaffingEntryUnderstaffed(entry)) return false;
+  if (isTagAreaHeaderStaffingEntryOverstaffed(entry)) return false;
+
+  const projected = projectedCoverageForEntry(entry);
+  if (
+    staffingCoverageAssignmentMismatch(
+      projected.assigned,
+      entry.required,
+      projected.qualifications
+    )
+  ) {
+    return false;
+  }
+
+  return (
+    isTagAreaHeaderStaffingEntryConfirmedUnderstaffed(entry) ||
+    isTagAreaHeaderStaffingEntryAssignmentMismatch(entry)
+  );
+}
+
+export function isTagAreaHeaderStaffingPlannedCoverage(
+  entries: readonly TagAreaHeaderStaffingEntry[]
+): boolean {
+  return entries.some(isTagAreaHeaderStaffingEntryPlannedCoverage);
 }
 
 export function isTagAreaHeaderStaffingAssignmentMismatch(
@@ -123,14 +227,20 @@ export function isTagAreaHeaderStaffingOverstaffed(
 export function resolveStaffingFillGaugeVariant(
   segment: Pick<
     StaffingHeaderSegment,
-    "understaffed" | "overstaffed" | "assignmentMismatch"
+    | "understaffed"
+    | "overstaffed"
+    | "assignmentMismatch"
+    | "plannedCoverage"
   >
 ): StaffingFillGaugeVariant {
-  if (segment.assignmentMismatch || segment.understaffed) {
+  if (segment.assignmentMismatch || segment.overstaffed) {
+    return "overstaffed";
+  }
+  if (segment.understaffed) {
     return "understaffed";
   }
-  if (segment.overstaffed) {
-    return "overstaffed";
+  if (segment.plannedCoverage) {
+    return "planned";
   }
   return "met";
 }
@@ -156,37 +266,36 @@ function overlayTimeLabel(entry: TagAreaHeaderStaffingEntry): string {
   return resolveCalendarStaffingTimeLabel(entry);
 }
 
-function segmentWithTime(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment {
-  const timeText = overlayTimeLabel(entry);
+function segmentFromEntry(
+  entry: TagAreaHeaderStaffingEntry,
+  timeText: string | null
+): StaffingHeaderSegment {
   const { assigned, required } = gaugeCountsForTagAreaHeaderStaffingEntry(entry);
   const countText = formatStaffingCount(assigned, required);
+  const understaffed = isTagAreaHeaderStaffingEntryUnderstaffed(entry);
+  const overstaffed = isTagAreaHeaderStaffingEntryOverstaffed(entry);
+  const assignmentMismatch = isTagAreaHeaderStaffingEntryAssignmentMismatch(entry);
+  const plannedCoverage = isTagAreaHeaderStaffingEntryPlannedCoverage(entry);
   return {
     serviceHourId: entry.serviceHourId,
     timeText,
     countText,
-    measureText: `${timeText}: ${countText}`,
-    understaffed: isTagAreaHeaderStaffingEntryUnderstaffed(entry),
-    overstaffed: isTagAreaHeaderStaffingEntryOverstaffed(entry),
-    assignmentMismatch: isTagAreaHeaderStaffingEntryAssignmentMismatch(entry),
+    measureText: timeText ? `${timeText}: ${countText}` : countText,
+    understaffed,
+    overstaffed,
+    assignmentMismatch,
+    plannedCoverage,
     assigned,
     required,
   };
 }
 
+function segmentWithTime(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment {
+  return segmentFromEntry(entry, overlayTimeLabel(entry));
+}
+
 function segmentCountsOnly(entry: TagAreaHeaderStaffingEntry): StaffingHeaderSegment {
-  const { assigned, required } = gaugeCountsForTagAreaHeaderStaffingEntry(entry);
-  const countText = formatStaffingCount(assigned, required);
-  return {
-    serviceHourId: entry.serviceHourId,
-    timeText: null,
-    countText,
-    measureText: countText,
-    understaffed: isTagAreaHeaderStaffingEntryUnderstaffed(entry),
-    overstaffed: isTagAreaHeaderStaffingEntryOverstaffed(entry),
-    assignmentMismatch: isTagAreaHeaderStaffingEntryAssignmentMismatch(entry),
-    assigned,
-    required,
-  };
+  return segmentFromEntry(entry, null);
 }
 
 function measureGaugeLabel(text: string): number {
@@ -242,6 +351,7 @@ export function resolveStaffingHeaderDisplay(
   const width = Math.max(0, availableWidth - STAFFING_HEADER_WIDTH_SAFETY_PX);
   const hasUnderstaffed = isTagAreaHeaderStaffingUnderstaffed(entries);
   const hasOverstaffed = isTagAreaHeaderStaffingOverstaffed(entries);
+  const hasPlannedCoverage = isTagAreaHeaderStaffingPlannedCoverage(entries);
 
   const fullSegments = entries.map((entry) => segmentWithTime(entry));
   if (measureGaugeRow(fullSegments, true) <= width) {
@@ -261,5 +371,10 @@ export function resolveStaffingHeaderDisplay(
     };
   }
 
-  return { mode: "indicator", allMet: !hasUnderstaffed, hasOverstaffed };
+  return {
+    mode: "indicator",
+    allMet: !hasUnderstaffed && !hasPlannedCoverage,
+    hasOverstaffed,
+    hasPlannedCoverage,
+  };
 }

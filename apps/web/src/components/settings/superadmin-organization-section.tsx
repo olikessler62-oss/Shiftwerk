@@ -20,6 +20,7 @@ import {
   settingsConfirmDialogClass,
   settingsModalFooterClass,
   settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "./settings-list-ui";
 
 type Props = {
@@ -365,9 +366,15 @@ export function SuperadminOrganizationSection({ disabled = false, onSaveStateCha
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="superadmin-planning-mode-confirm-title"
-            className={settingsConfirmDialogClass()}
+            className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(event) => event.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setConfirmUpgrade(false)}
+              closeDisabled={pending}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <h3
               id="superadmin-planning-mode-confirm-title"
               className="text-base font-semibold text-foreground"
@@ -390,6 +397,7 @@ export function SuperadminOrganizationSection({ disabled = false, onSaveStateCha
               <Button type="button" onClick={handleUpgrade} disabled={pending}>
                 {t("organization.planningModeUpgradeAction")}
               </Button>
+            </div>
             </div>
           </div>
         </div>

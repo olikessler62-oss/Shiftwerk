@@ -2,6 +2,8 @@
 
 Schichtplanung für Teams bis 20 Personen — **Web** für Inhaber/Manager, **Mobile** (iOS & Android) für Mitarbeiter.
 
+Für KI-Agenten und neue Mitwirkende: **[AGENTS.md](./AGENTS.md)** — Monorepo-Struktur, Konventionen, Tests und Domänen-Hinweise.
+
 ## Projektstruktur
 
 ```

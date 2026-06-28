@@ -1,11 +1,13 @@
 "use client";
 
 import { useTranslations } from "@/i18n/locale-provider";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
 import {
   settingsConfirmDialogClass,
   settingsModalFooterClass,
   settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "@/components/settings/settings-list-ui";
 
 type Props = {
@@ -35,9 +37,15 @@ export function AreaCalendarShiftDeleteConfirmModal({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="areacalendar-shift-delete-confirm-desc"
-        className={settingsConfirmDialogClass()}
+        className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
         onMouseDown={(event) => event.stopPropagation()}
       >
+        <SettingsConfirmDialogCloseHeader
+          onClose={onCancel}
+          closeDisabled={pending}
+          closeAriaLabel={t("common.close")}
+        />
+        <div className="px-4 py-4 sm:px-5">
         <p id="areacalendar-shift-delete-confirm-desc" className="text-sm text-foreground">
           {message ?? t("areaCalendar.deleteShiftConfirm")}
         </p>
@@ -58,6 +66,7 @@ export function AreaCalendarShiftDeleteConfirmModal({
           >
             {t("common.yes")}
           </Button>
+        </div>
         </div>
       </div>
     </div>

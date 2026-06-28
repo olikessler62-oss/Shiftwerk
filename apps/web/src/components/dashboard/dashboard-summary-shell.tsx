@@ -20,6 +20,7 @@ import {
 import { useAppShellModalLockActive, useAppShellWaitCursorActive } from "@/lib/app-shell-modal-lock";
 import { useClearMainNavPendingWhenReady } from "@/lib/app-shell-main-nav-pending";
 import { useRegisterPlanningToolbarPageBridge } from "@/lib/planning-toolbar-page-bridge";
+import { shouldShowLocationInPlanningUi } from "@/lib/planning-location-ui";
 import {
   planningShiftToAreaCalendarCard,
   type PlanningShift,
@@ -59,6 +60,8 @@ type Props = {
   absences: AbsenceRequest[];
   communicationSwapRequests: CommunicationSwapRequestRow[];
   communicationCancelActors: Record<string, "employee" | "manager">;
+  communicationHubLocationShifts: PlanningShift[];
+  communicationHubAbsences: AbsenceRequest[];
   managerNotifications: ManagerNotification[];
   readOnlyWeek?: boolean;
   settingsModals?: {
@@ -86,6 +89,8 @@ export function DashboardSummaryShell({
   absences,
   communicationSwapRequests,
   communicationCancelActors,
+  communicationHubLocationShifts,
+  communicationHubAbsences,
   managerNotifications,
   readOnlyWeek = false,
   settingsModals,
@@ -122,11 +127,18 @@ export function DashboardSummaryShell({
     [locationShifts, removedIds]
   );
 
+  const visibleCommunicationHubLocationShifts = useMemo(
+    () =>
+      communicationHubLocationShifts.filter((shift) => !removedIds.has(shift.id)),
+    [communicationHubLocationShifts, removedIds]
+  );
+
   const calendarPlanningShifts = useMemo(
     () =>
       visibleLocationShifts.filter((shift) =>
         shouldDisplayShiftOnPlanningCalendar({
           id: shift.id,
+          shiftDate: shift.shift_date,
           confirmationStatus: shift.confirmationStatus,
           cancelActors: communicationCancelActorsMap,
           cancelledBy: shift.displayState?.openCancellation?.cancelledBy,
@@ -140,12 +152,21 @@ export function DashboardSummaryShell({
     [employees]
   );
 
+  const employeeNameById = useMemo(
+    () =>
+      new Map(
+        employees.map((employee) => [employee.id, employee.full_name ?? employee.id])
+      ),
+    [employees]
+  );
+
   const communicationShiftCards = useMemo(() => {
     const cards: AreaCalendarShiftCard[] = [];
-    for (const shift of visibleLocationShifts) {
+    for (const shift of visibleCommunicationHubLocationShifts) {
       if (
         !shouldDisplayShiftOnPlanningCalendar({
           id: shift.id,
+          shiftDate: shift.shift_date,
           confirmationStatus: shift.confirmationStatus,
           cancelActors: communicationCancelActorsMap,
           cancelledBy: shift.displayState?.openCancellation?.cancelledBy,
@@ -159,11 +180,18 @@ export function DashboardSummaryShell({
       }
     }
     return cards;
-  }, [visibleLocationShifts, employeesById, communicationCancelActorsMap]);
+  }, [
+    visibleCommunicationHubLocationShifts,
+    employeesById,
+    communicationCancelActorsMap,
+  ]);
 
   const weeklyHoursCheckShifts = useMemo(
-    () => visibleLocationShifts.map(weeklyHoursCheckShiftFromPlanningShift),
-    [visibleLocationShifts]
+    () =>
+      visibleCommunicationHubLocationShifts.map(
+        weeklyHoursCheckShiftFromPlanningShift
+      ),
+    [visibleCommunicationHubLocationShifts]
   );
 
   const weeklyHoursByEmployeeId = useMemo(
@@ -173,7 +201,7 @@ export function DashboardSummaryShell({
 
   const communicationHubOptions = useMemo(
     () => ({
-      absences,
+      absences: communicationHubAbsences,
       swapRequests: communicationSwapRequests,
       cancelActors: communicationCancelActorsMap,
       todayISO: weeklyHoursTodayISO,
@@ -181,7 +209,7 @@ export function DashboardSummaryShell({
       weeklyHoursCheckShifts,
     }),
     [
-      absences,
+      communicationHubAbsences,
       communicationSwapRequests,
       communicationCancelActorsMap,
       weeklyHoursTodayISO,
@@ -243,6 +271,8 @@ export function DashboardSummaryShell({
     managerNotifications,
   });
 
+  const showLocationInUi = shouldShowLocationInPlanningUi(locations.length);
+
   return (
     <>
       <DashboardSummaryView
@@ -250,6 +280,7 @@ export function DashboardSummaryShell({
         dates={dates}
         locations={locations}
         selectedLocationId={selectedLocationId}
+        selectedLocationName={selectedLocationName}
         areas={areas}
         calendarShifts={calendarPlanningShifts}
         serviceHours={serviceHours}
@@ -258,6 +289,7 @@ export function DashboardSummaryShell({
         areaShiftTemplates={areaShiftTemplates}
         qualifications={qualifications}
         profileQualificationIds={profileQualificationIds}
+        employeeNameById={employeeNameById}
         staffingEnabled={features.staffing}
         readOnlyWeek={readOnlyWeek}
         settingsModals={settingsModals}
@@ -267,10 +299,10 @@ export function DashboardSummaryShell({
           key={`communication-${communicationOptions?.category ?? communicationOptions?.responseTab ?? "auto"}-${communicationOptions?.preselectedShiftIds?.join(",") ?? ""}`}
           weekStart={weekStart}
           locationId={selectedLocationId}
-          locationName={selectedLocationName}
+          locationName={showLocationInUi ? selectedLocationName : undefined}
           areas={areas}
           shifts={communicationShiftCards}
-          absences={absences}
+          absences={communicationHubAbsences}
           swapRequests={communicationSwapRequests}
           cancelActors={communicationCancelActorsMap}
           todayISO={weeklyHoursTodayISO}

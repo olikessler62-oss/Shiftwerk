@@ -1,6 +1,7 @@
 import { cn } from "@/lib/cn";
 
-/** Scrollbar-Farbe in Modals/Sub-Modals — siehe globals.css (.modal-scrollbar). */
+/** Einheitlicher Modal-/Slide-in-Kopf (Bereichskarten, Übersicht, Einstellungen). */
+export const SETTINGS_MODAL_HEADER_BG_CLASS = "bg-[#c7d4e5]";
 export const MODAL_SCROLLBAR_CLASS = "modal-scrollbar";
 
 /** Max. Breite für Master-Detail-Modals (Standorte, Profile). */
@@ -71,10 +72,16 @@ export function settingsNestedModalOverlayClass(className?: string) {
   );
 }
 
+/** z-index for portaled combobox/listbox panels above nested modals (110–113). */
+export const MODAL_DROPDOWN_Z_INDEX = 120;
+
+/** Fixed modals in the app shell — above header toolbars (see MODAL_DROPDOWN_Z_INDEX). */
+export const APP_SHELL_FIXED_MODAL_Z_INDEX = 125;
+
 /** Nested Overlay in eingebetteten Slide-in-Detail-Panels (fixed über Shell). */
 export function settingsFixedNestedOverlayClass(className?: string) {
   return cn(
-    "fixed inset-0 z-[115] flex items-center justify-center bg-black/30 p-2 sm:p-4 md:left-[var(--app-shell-sidebar-width)]",
+    "fixed inset-0 z-[125] flex items-center justify-center bg-black/30 p-2 sm:p-4 md:left-[var(--app-shell-sidebar-width)]",
     "max-sm:items-stretch max-sm:justify-stretch max-sm:p-0",
     className
   );
@@ -106,7 +113,12 @@ export function settingsConfirmDialogClass(className?: string) {
 }
 
 export function settingsModalHeaderPaddingClass() {
-  return "px-4 py-3 sm:px-6 sm:py-4";
+  return cn("px-4 py-3 sm:px-6 sm:py-4", SETTINGS_MODAL_HEADER_BG_CLASS);
+}
+
+/** Modal-/Slide-in-Kopf inkl. Unterrand und Hintergrund. */
+export function settingsModalHeaderClass(className?: string) {
+  return cn("shrink-0 border-b border-border", settingsModalHeaderPaddingClass(), className);
 }
 
 export function settingsModalBodyPaddingClass() {
@@ -151,9 +163,6 @@ export function settingsResponsiveTableWrapClass(className?: string) {
   return cn("-mx-1 min-w-0 overflow-x-auto px-1 sm:mx-0 sm:px-0", className);
 }
 
-/** z-index for portaled combobox/listbox panels above fixed modals (110–113). */
-export const MODAL_DROPDOWN_Z_INDEX = 120;
-
 /** Backdrop für Bereich-Kalender-Modals (fixed, nicht verschachtelt). */
 export function areaCalendarModalBackdropClass(className?: string) {
   return cn(
@@ -178,10 +187,13 @@ export function areaCalendarModalDialogClass(
   );
 }
 
-/** Alertdialog-Overlay über Bereich-Kalender-Modals (fixed, nicht im Dialog-Container). */
+/**
+ * Alertdialog-Overlay über PlanningSidePanel (Backdrop 108, Panel 110) und
+ * Bereich-Kalender-Modals — per Portal auf `body` rendern.
+ */
 export function areaCalendarNestedModalOverlayClass(className?: string) {
   return cn(
-    "fixed inset-0 z-[112] flex items-center justify-center bg-black/30 p-2 sm:p-4",
+    "fixed inset-0 z-[115] flex items-center justify-center bg-black/30 p-2 sm:p-4",
     "max-sm:items-stretch max-sm:justify-stretch max-sm:p-0",
     className
   );
@@ -190,7 +202,7 @@ export function areaCalendarNestedModalOverlayClass(className?: string) {
 export function areaCalendarAlertDialogClass(className?: string) {
   return cn(
     settingsConfirmDialogClass(),
-    "z-[113] flex max-h-[min(85dvh,36rem)] w-full flex-col",
+    "z-[116] flex max-h-[min(85dvh,36rem)] w-full flex-col",
     className
   );
 }

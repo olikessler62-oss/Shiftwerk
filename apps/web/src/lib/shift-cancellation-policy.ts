@@ -2,6 +2,7 @@ import type { Translator } from "@schichtwerk/i18n/translate";
 import {
   canCancelShiftByConfirmationStatus,
   parseShiftCancelBlockedStatus,
+  shouldAutoRemovePastProposedShift,
   SHIFT_CANCEL_PAST_ERROR,
   SHIFT_PAST_CONFIRM_ALREADY_CONFIRMED_ERROR,
   SHIFT_PAST_CONFIRM_NOT_PAST_ERROR,
@@ -19,10 +20,22 @@ export function resolvePlanningShiftCancelActor(input: {
 
 export function shouldDisplayShiftOnPlanningCalendar(input: {
   id: string;
+  shiftDate: string;
   confirmationStatus?: ShiftConfirmationStatus | null;
   cancelActors?: ReadonlyMap<string, ShiftRequestActorRole>;
   cancelledBy?: ShiftRequestActorRole;
+  now?: Date;
 }): boolean {
+  if (
+    shouldAutoRemovePastProposedShift(
+      input.confirmationStatus,
+      input.shiftDate,
+      input.now
+    )
+  ) {
+    return false;
+  }
+
   if (input.confirmationStatus !== "canceled") return true;
   return resolvePlanningShiftCancelActor(input) !== "manager";
 }

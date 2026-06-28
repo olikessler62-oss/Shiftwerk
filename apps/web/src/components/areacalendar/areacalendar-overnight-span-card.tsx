@@ -19,6 +19,11 @@ import {
   SHIFT_CARD_INTERACTIVE_CLASS,
 } from "@/lib/calendar-interaction-ui";
 import { shiftConfirmationTooltipStatusLabelKey } from "@/lib/shift-confirmation-display";
+import {
+  SHIFT_CARD_UNRESOLVED_OPACITY,
+  shiftConfirmationShowsUnresolvedCardStyle,
+} from "@/lib/shift-confirmation-display";
+import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
 import type { PlanningOvernightSpanDisplayMode } from "@/lib/planning-overnight-span-layout";
 import { AREA_CALENDAR_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX } from "@/lib/areacalendar-overnight-span-layout";
 import { PLANNING_COLLAPSED_SHIFT_HEIGHT_DELTA_PX } from "@/lib/planning-calendar-layout";
@@ -58,9 +63,11 @@ type Props = {
 function ExpandedSpanCardText({
   display,
   compact,
+  inlineStatusLabel,
 }: {
   display: ShiftCardDisplayContent;
   compact: boolean;
+  inlineStatusLabel?: string;
 }) {
   const secondaryLabel =
     display.templateName?.trim() || display.shiftLabel.trim();
@@ -104,8 +111,13 @@ function ExpandedSpanCardText({
         )}
       </div>
       {display.jobsLabel ? (
-        <div className="min-w-[1ch] max-w-full truncate text-[10px] leading-none">
+        <div className="-mt-0.5 min-w-[1ch] max-w-full truncate text-[10px] leading-tight">
           {display.jobsLabel}
+        </div>
+      ) : null}
+      {inlineStatusLabel ? (
+        <div className="min-w-[1ch] max-w-full truncate text-[10px] font-semibold leading-tight text-neutral-600">
+          {inlineStatusLabel}
         </div>
       ) : null}
     </div>
@@ -130,14 +142,24 @@ export function AreaCalendarOvernightSpanCard({
   const [textOverflows, setTextOverflows] = useState(false);
 
   const isPastShift = isPastShiftDate(cellDate);
-  const confirmationStatusLabel = shift.confirmationStatus
-    ? t(shiftConfirmationTooltipStatusLabelKey(shift.confirmationStatus))
+  const calendarConfirmationStatus = resolveShiftCardConfirmationStatusForCalendar(
+    shift,
+    cellDate
+  );
+  const showUnresolvedCardStyle = shiftConfirmationShowsUnresolvedCardStyle(
+    calendarConfirmationStatus
+  );
+  const confirmationStatusLabel = calendarConfirmationStatus
+    ? t(shiftConfirmationTooltipStatusLabelKey(calendarConfirmationStatus))
+    : undefined;
+  const inlineStatusLabel = showUnresolvedCardStyle
+    ? confirmationStatusLabel
     : undefined;
   const tooltipData = confirmationStatusLabel
     ? {
         ...display.tooltip,
         confirmationStatusLine: confirmationStatusLabel,
-        confirmationStatus: shift.confirmationStatus,
+        confirmationStatus: calendarConfirmationStatus,
         isPastShift,
       }
     : {
@@ -271,6 +293,9 @@ export function AreaCalendarOvernightSpanCard({
             boxShadow: cardBoxShadow,
             height: cardHeightPx,
             minHeight: cardHeightPx,
+            ...(showUnresolvedCardStyle
+              ? { opacity: SHIFT_CARD_UNRESOLVED_OPACITY }
+              : undefined),
           }}
         >
           <button
@@ -324,12 +349,16 @@ export function AreaCalendarOvernightSpanCard({
                 />
               ) : null}
               {showAnyText ? (
-                <ExpandedSpanCardText display={display} compact={!showTwoLineDetail} />
+                <ExpandedSpanCardText
+                  display={display}
+                  compact={!showTwoLineDetail}
+                  inlineStatusLabel={inlineStatusLabel}
+                />
               ) : null}
               {showOverflowIndicator ? (
                 <DashboardShiftCardOverflowIndicator />
               ) : null}
-              <DashboardShiftCardConfirmationOverlay status={shift.confirmationStatus} />
+              <DashboardShiftCardConfirmationOverlay status={calendarConfirmationStatus} />
             </div>
           </button>
         </div>

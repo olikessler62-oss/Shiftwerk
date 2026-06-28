@@ -17,7 +17,8 @@ create type public.shift_confirmation_status as enum (
   'confirmed',
   'rejected',
   'pending',
-  'canceled'
+  'canceled',
+  'unresolved'
 );
 
 create type public.shift_lifecycle_status as enum (

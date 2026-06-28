@@ -28,6 +28,7 @@ import {
   settingsModalHeaderPaddingClass,
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -484,9 +485,15 @@ export function ProfileAvailabilityFormModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="profile-availability-overnight-desc"
-            className={settingsConfirmDialogClass()}
+            className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setOvernightConfirmOpen(false)}
+              closeDisabled={saving}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="profile-availability-overnight-desc"
               className="text-sm leading-relaxed text-foreground"
@@ -514,6 +521,7 @@ export function ProfileAvailabilityFormModal({
                 <CheckIcon />
                 {t("common.yes")}
               </Button>
+            </div>
             </div>
           </div>
         </div>

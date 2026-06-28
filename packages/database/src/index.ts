@@ -454,6 +454,25 @@ export {
   type ShiftOpenForEmployeeResponse,
 } from "./shift-confirmation-respond";
 export {
+  listShiftIdsSupersededByReject,
+  shouldSupersedeOpenConfirmationShiftOnReject,
+  OPEN_CONFIRMATION_SHIFT_STATUSES,
+  type OpenConfirmationShiftStatus,
+  type ShiftRejectSupersedeCandidate,
+} from "./shift-confirmation-reject-supersede";
+export {
+  countConfirmationConflictCleanupItems,
+  countFullConfirmationConflictCleanupItems,
+  planConfirmationConflictCleanup,
+  planDuplicateConfirmationShiftCleanup,
+  planFullConfirmationConflictCleanup,
+  type ConfirmationConflictCleanupItem,
+  type ConfirmationShiftCleanupRecord,
+  type DuplicateConfirmationShiftCleanupItem,
+  type FullConfirmationConflictCleanupPlan,
+} from "./shift-confirmation-conflict-cleanup";
+export { shiftsOverlapIso } from "./shift-overlap";
+export {
   buildEmployeeShiftCanceledByManagerNotification,
   buildManagerShiftCanceledNotification,
   canCancelShiftByConfirmationStatus,
@@ -475,6 +494,16 @@ export {
   SHIFT_PAST_CONFIRM_ALREADY_CONFIRMED_ERROR,
   SHIFT_PAST_CONFIRM_NOT_PAST_ERROR,
 } from "./shift-past-cleanup";
+export {
+  shouldAutoRemovePastProposedShift,
+  type ShiftPastProposedCleanupJobResult,
+} from "./shift-past-proposed-cleanup";
+export {
+  resolveCalendarShiftConfirmationStatus,
+  shouldMarkShiftConfirmationUnresolved,
+  UNANSWERED_SHIFT_CONFIRMATION_STATUSES,
+  type ShiftUnresolvedPastJobResult,
+} from "./shift-unresolved-status";
 export {
   buildSuperadminConfirmationStatusPatch,
   SUPERADMIN_SHIFT_CONFIRMATION_STATUSES,

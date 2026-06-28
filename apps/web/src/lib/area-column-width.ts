@@ -4,9 +4,12 @@ import {
 import { AREA_CHECKBOX_TEXT_GAP_PX } from "@/components/areacalendar/calendar-corner-checkbox";
 
 export const AREA_COLUMN_MIN_WIDTH_PX = 50;
-export const AREA_COLUMN_MAX_WIDTH_PX = 200;
+export const AREA_COLUMN_MAX_WIDTH_PX = 280;
 /** pl-[2px] + pr-2 */
 const AREA_COLUMN_PADDING_X_PX = 10;
+/** px-4 links + rechts — Seitenüberschrift in der Kalender-Ecke */
+const AREA_COLUMN_HEADER_PADDING_X_PX = 32;
+const AREA_COLUMN_WIDTH_TOLERANCE_PX = 10;
 
 /**
  * Deterministische Textbreite (semibold text-sm / 0.875rem Inter) — identisch auf
@@ -30,24 +33,35 @@ export function measureAreaNameText(text: string): number {
 
 export function resolveAreaColumnWidthPx(
   areaNames: readonly string[],
+  columnHeaderLabel?: string,
   measure: (text: string) => number = measureAreaNameText
 ): number {
-  if (areaNames.length === 0) return AREA_COLUMN_MIN_WIDTH_PX;
-
-  const longestNameWidth = Math.max(
-    0,
-    ...areaNames.map((name) => measure(name.trim()))
-  );
-
-  const contentWidth =
+  const areaNameChrome =
     AREA_COLUMN_PADDING_X_PX +
     AREA_CHECKBOX_SIZE_PX +
-    AREA_CHECKBOX_TEXT_GAP_PX +
-    longestNameWidth;
+    AREA_CHECKBOX_TEXT_GAP_PX;
+
+  const longestNameWidth =
+    areaNames.length === 0
+      ? 0
+      : Math.max(0, ...areaNames.map((name) => measure(name.trim())));
+
+  const areaRowWidthPx = longestNameWidth + areaNameChrome;
+
+  const headerWidthPx = columnHeaderLabel
+    ? measure(columnHeaderLabel.trim()) + AREA_COLUMN_HEADER_PADDING_X_PX
+    : 0;
+
+  const contentWidth = Math.max(areaRowWidthPx, headerWidthPx);
+
+  if (contentWidth === 0) return AREA_COLUMN_MIN_WIDTH_PX;
 
   return Math.min(
     AREA_COLUMN_MAX_WIDTH_PX,
-    Math.max(AREA_COLUMN_MIN_WIDTH_PX, Math.ceil(contentWidth))
+    Math.max(
+      AREA_COLUMN_MIN_WIDTH_PX,
+      Math.ceil(contentWidth + AREA_COLUMN_WIDTH_TOLERANCE_PX)
+    )
   );
 }
 

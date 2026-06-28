@@ -13,6 +13,8 @@ import { createPortal } from "react-dom";
 import { CloseIcon, IconButton } from "@/components/ui";
 import {
   MODAL_SCROLLBAR_CLASS,
+  PLANNING_SIDE_PANEL_SUBTITLE_CLASS,
+  SETTINGS_MODAL_HEADER_BG_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
 } from "@/components/settings/settings-list-ui";
 import { cn } from "@/lib/cn";
@@ -36,10 +38,17 @@ type PlanningSidePanelProps = {
   size?: "default" | "wide";
   headerAside?: ReactNode;
   panelClassName?: string;
+  headerClassName?: string;
   bodyClassName?: string;
   children: ReactNode;
   footer?: ReactNode;
 };
+
+/** Footer-Innenabstand für Planungs-Slide-Ins (Checkbox links, Buttons rechts). */
+export const PLANNING_SIDE_PANEL_FOOTER_CLASS =
+  "flex flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-5 sm:py-4";
+
+const PANEL_BODY_PADDING_CLASS = "px-3 py-3 sm:px-5 sm:py-4";
 
 const PANEL_MOTION_MS = 280;
 
@@ -68,10 +77,23 @@ const PANEL_LAYOUT = {
     shadow: "shadow-[-8px_0_32px_-8px_rgba(15,23,42,0.28)]",
     width: {
       default: "w-full max-w-md",
-      wide: "w-full max-w-6xl",
+      wide: "w-full max-w-[100vw] sm:max-w-6xl",
     },
   },
 } as const;
+
+const PANEL_CUSTOM_WIDTH_PATTERN = /(?:^|\s)(!)?(max-w-|w-\[|w-\d)/;
+
+function resolvePanelWidthClass(
+  size: "default" | "wide",
+  anchor: PlanningPanelAnchor,
+  panelClassName?: string
+): string {
+  if (panelClassName && PANEL_CUSTOM_WIDTH_PATTERN.test(panelClassName)) {
+    return "w-full";
+  }
+  return PANEL_LAYOUT[anchor].width[size];
+}
 
 type PanelMotionPhase = "entering" | "open" | "closing";
 
@@ -112,6 +134,7 @@ export function PlanningSidePanel({
   size = "default",
   headerAside,
   panelClassName,
+  headerClassName,
   bodyClassName,
   children,
   footer,
@@ -220,11 +243,11 @@ export function PlanningSidePanel({
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(
-          "fixed top-0 bottom-0 z-[110] flex flex-col bg-surface",
+          "fixed top-0 bottom-0 z-[110] flex min-w-0 flex-col bg-surface",
           layout.position,
           layout.border,
           layout.shadow,
-          layout.width[size],
+          resolvePanelWidthClass(size, anchor, panelClassName),
           "transform",
           phase === "closing"
             ? PANEL_CLOSE_OUT_CLASS[anchor]
@@ -238,42 +261,57 @@ export function PlanningSidePanel({
         )}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div className="min-w-0 flex-1">
-            <h2 id={titleId} className={SETTINGS_MODAL_TITLE_CLASS}>
-              {title}
-            </h2>
-            {subtitleNode ??
-              (subtitle ? (
-                <p className="mt-0.5 text-sm text-muted">{subtitle}</p>
-              ) : null)}
+        <header
+          className={cn(
+            "shrink-0 border-b border-border px-3 py-3 sm:px-5 sm:py-4",
+            SETTINGS_MODAL_HEADER_BG_CLASS,
+            headerClassName
+          )}
+        >
+          <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
+            <div className="min-w-0 flex-1">
+              <h2
+                id={titleId}
+                className={cn(SETTINGS_MODAL_TITLE_CLASS, "break-words")}
+              >
+                {title}
+              </h2>
+              {subtitleNode ??
+                (subtitle ? (
+                  <p className={PLANNING_SIDE_PANEL_SUBTITLE_CLASS}>{subtitle}</p>
+                ) : null)}
+            </div>
+            <IconButton
+              size="sm"
+              onClick={requestClose}
+              disabled={closeDisabled}
+              aria-label={closeAriaLabel}
+              className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
+            >
+              <CloseIcon className="h-[18px] w-[18px]" />
+            </IconButton>
           </div>
           {headerAside ? (
-            <div className="shrink-0">{headerAside}</div>
+            <div className="mt-2 min-w-0 w-full overflow-x-auto sm:mt-3">
+              {headerAside}
+            </div>
           ) : null}
-          <IconButton
-            size="sm"
-            onClick={requestClose}
-            disabled={closeDisabled}
-            aria-label={closeAriaLabel}
-            className="shrink-0 border-transparent bg-transparent hover:bg-subtle"
-          >
-            <CloseIcon className="h-[18px] w-[18px]" />
-          </IconButton>
-        </div>
+        </header>
 
         <div
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto px-5 py-4",
+            "min-h-0 min-w-0 flex-1 overflow-y-auto",
+            PANEL_BODY_PADDING_CLASS,
             bodyClassName
           )}
         >
           {children}
+          {footer ? (
+            <div className="-mx-3 mt-3 border-t border-border sm:-mx-5 sm:mt-4">
+              {footer}
+            </div>
+          ) : null}
         </div>
-
-        {footer ? (
-          <div className="shrink-0 border-t border-border">{footer}</div>
-        ) : null}
       </aside>
     </PlanningSidePanelCloseContext.Provider>,
     document.body
@@ -285,4 +323,14 @@ export function PlanningRightSidePanel(
   props: Omit<PlanningSidePanelProps, "anchor">
 ) {
   return <PlanningSidePanel {...props} anchor="right" />;
+}
+
+/** Hinweise/Bestätigungen über dem Slide-in — immer auf `body` portieren. */
+export function PlanningSidePanelNestedAlertPortal({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  if (typeof document === "undefined") return null;
+  return createPortal(children, document.body);
 }

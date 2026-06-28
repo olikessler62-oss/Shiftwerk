@@ -58,6 +58,23 @@ export function filterAreaCalendarShiftsByActiveAreas<
   );
 }
 
+/** Schichten für Mitarbeiterliste: aktive Bereiche und aktive Tage. */
+export function filterAreaCalendarShiftsForEmployeeLegend<
+  T extends { locationAreaId?: string | null; shift_date: string },
+>(
+  shifts: readonly T[],
+  activeAreaIds: ReadonlySet<string>,
+  activeDayDates: ReadonlySet<string>
+): T[] {
+  if (activeAreaIds.size === 0 || activeDayDates.size === 0) return [];
+  return shifts.filter(
+    (shift) =>
+      shift.locationAreaId != null &&
+      activeAreaIds.has(shift.locationAreaId) &&
+      activeDayDates.has(shift.shift_date)
+  );
+}
+
 export function isAreaCalendarEmployeeAbsentOnDate(
   employeeId: string,
   dateISO: string,

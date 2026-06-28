@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateAssignmentsToDemandWindows,
+  buildStaffingConflictDetails,
   buildStaffingQualificationBreakdown,
   countQualificationCoverage,
   computeBulkStaffingHeaderEntries,
-  formatStaffingEntryTooltipContent,
+  formatStaffingConflictTooltipLines,
+  formatStaffingEntryTooltipSection,
+  type StaffingTooltipCoverageFormatter,
   mapAssignmentQualificationIds,
   staffingAssignmentsForAreaDay,
   staffingAssignmentsForPlanningAreaDay,
@@ -402,11 +405,60 @@ describe("computeBulkStaffingHeaderEntries", () => {
     expect(entries[0]!.timeLabel).toBe("Donnerstag 08:00 bis 10:00 Uhr");
     expect(entries[0]!.calendarTimeLabel).toBeUndefined();
     expect(entries[0]!.assigned).toBe(1);
+    expect(entries[0]!.projectedAssigned).toBe(1);
     expect(entries[0]!.required).toBe(2);
     expect(entries[1]!.qualifications).toEqual([
       { qualificationId: qualKoch, name: "Koch", assigned: 0, required: 1 },
       { qualificationId: qualKellner, name: "Kellner", assigned: 1, required: 2 },
     ]);
+  });
+
+  it("separates confirmed and projected staffing counts by confirmation status", () => {
+    const dateISO = "2026-06-04";
+
+    const entries = computeBulkStaffingHeaderEntries({
+      staffingRules,
+      areaId,
+      dateISO,
+      serviceHours,
+      assignments: [
+        {
+          startTime: "08:00",
+          endTime: "10:00",
+          employeeId: "emp-koch",
+          qualificationId: qualKoch,
+          confirmationStatus: "proposed",
+        },
+        {
+          startTime: "08:00",
+          endTime: "10:00",
+          employeeId: "emp-koch-2",
+          qualificationId: qualKoch,
+          confirmationStatus: "confirmed",
+        },
+      ],
+      assignmentPresets: [],
+      qualifications,
+      profileQualificationIds: new Map([
+        ["emp-koch", new Set([qualKoch])],
+        ["emp-koch-2", new Set([qualKoch])],
+      ]),
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start} bis ${end} Uhr`,
+      weekdayLabel: () => "Donnerstag",
+    });
+
+    expect(entries[0]!.assigned).toBe(1);
+    expect(entries[0]!.projectedAssigned).toBe(2);
+    expect(entries[0]!.qualifications?.[0]).toMatchObject({
+      qualificationId: qualKoch,
+      assigned: 1,
+      required: 2,
+    });
+    expect(entries[0]!.projectedQualifications?.[0]).toMatchObject({
+      qualificationId: qualKoch,
+      assigned: 2,
+      required: 2,
+    });
   });
 
   it("counts all inferred kellner shifts when overstaffed", () => {
@@ -452,6 +504,69 @@ describe("computeBulkStaffingHeaderEntries", () => {
       { qualificationId: qualKoch, name: "Koch", assigned: 0, required: 1 },
       { qualificationId: qualKellner, name: "Kellner", assigned: 3, required: 2 },
     ]);
+    expect(evening?.conflictDetails).toEqual([
+      expect.objectContaining({
+        kind: "overstaffed",
+        employeeName: "emp-3",
+        assignedQualificationName: "Kellner",
+      }),
+    ]);
+  });
+
+  it("builds conflict footnote with employee, time and position", () => {
+    const dateISO = "2026-06-04";
+
+    const entries = computeBulkStaffingHeaderEntries({
+      staffingRules,
+      areaId,
+      dateISO,
+      serviceHours,
+      assignments: [
+        {
+          startTime: "18:00",
+          endTime: "22:00",
+          employeeId: "emp-1",
+        },
+        {
+          startTime: "18:00",
+          endTime: "22:00",
+          employeeId: "emp-2",
+        },
+        {
+          startTime: "18:00",
+          endTime: "22:00",
+          employeeId: "emp-3",
+        },
+      ],
+      assignmentPresets: [],
+      qualifications,
+      profileQualificationIds: new Map([
+        ["emp-1", new Set([qualKellner])],
+        ["emp-2", new Set([qualKellner])],
+        ["emp-3", new Set([qualKellner])],
+      ]),
+      employeeNameById: new Map([
+        ["emp-1", "Anna"],
+        ["emp-2", "Ben"],
+        ["emp-3", "Carl"],
+      ]),
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start} bis ${end} Uhr`,
+      weekdayLabel: () => "Donnerstag",
+      formatCalendarTimeLabel: (start, end) => `${start}-${end} Uhr`,
+    });
+
+    const evening = entries.find((entry) => entry.serviceHourId === hourEvening);
+    const footnote = formatStaffingConflictTooltipLines(
+      evening ? [evening] : [],
+      (key, params) => `${key}:${JSON.stringify(params)}`
+    );
+
+    const conflictText = footnote.join("\n");
+    expect(conflictText).toContain("Carl");
+    expect(conflictText).toContain("18:00-22:00 Uhr");
+    expect(conflictText).toContain("Kellner");
+    expect(conflictText).not.toContain("Anna");
+    expect(conflictText).not.toContain("Koch");
   });
 
   it("sets calendarTimeLabel without weekday when formatter is provided", () => {
@@ -539,12 +654,24 @@ describe("computeBulkStaffingHeaderEntries", () => {
   });
 });
 
-describe("formatStaffingEntryTooltipContent", () => {
-  const formatQualLine = (name: string, assigned: number, required: number) =>
-    `${name}: ${assigned}/${required}`;
+describe("formatStaffingEntryTooltipSection", () => {
+  const formatCoverage: StaffingTooltipCoverageFormatter = {
+    confirmed: (assigned, required, name, shiftTime) =>
+      `${assigned}/${required} für ${name}${shiftTime} bestätigt`,
+    unconfirmed: (assigned, required, name, shiftTime) =>
+      `${assigned}/${required} für ${name}${shiftTime} angefragt`,
+    vacant: (count, required, name, shiftTime) =>
+      `${count}/${required} für ${name}${shiftTime} offen`,
+    totalConfirmed: (assigned, required, shiftTime) =>
+      `${assigned}/${required}${shiftTime} bestätigt`,
+    totalUnconfirmed: (assigned, required, shiftTime) =>
+      `${assigned}/${required}${shiftTime} angefragt`,
+    totalVacant: (count, required, shiftTime) =>
+      `${count}/${required}${shiftTime} offen`,
+  };
 
-  it("includes shift template above time when preset matches", () => {
-    const body = formatStaffingEntryTooltipContent(
+  it("combines shift template and time on one comma-separated line", () => {
+    const section = formatStaffingEntryTooltipSection(
       {
         serviceHourId: "hour-1",
         label: "Do 08:00–10:00",
@@ -560,32 +687,87 @@ describe("formatStaffingEntryTooltipContent", () => {
             required: 2,
           },
         ],
+        projectedQualifications: [
+          {
+            qualificationId: qualKoch,
+            name: "Koch",
+            assigned: 1,
+            required: 2,
+          },
+        ],
       },
-      formatQualLine
+      formatCoverage
     );
 
-    expect(body).toBe(
-      "Frühschicht\n08:00 - 10:00 Uhr\nKoch: 1/2"
-    );
+    expect(section).toEqual({
+      periodLine: "Frühschicht, 08:00 - 10:00 Uhr",
+      coverageLines: [
+        "1/2 für Koch bestätigt",
+        "1/2 für Koch offen",
+      ],
+    });
   });
 
-  it("shows only time when no preset matches", () => {
-    const body = formatStaffingEntryTooltipContent(
+  it("shows vacant aggregate line when no qualification breakdown exists", () => {
+    const section = formatStaffingEntryTooltipSection(
       {
         serviceHourId: "hour-1",
         label: "Do 08:00–10:00",
         assigned: 0,
         required: 2,
+        projectedAssigned: 0,
         calendarTimeLabel: "08:00 - 10:00 Uhr",
       },
-      formatQualLine
+      formatCoverage
     );
 
-    expect(body).toBe("08:00 - 10:00 Uhr\n0/2");
+    expect(section).toEqual({
+      periodLine: "08:00 - 10:00 Uhr",
+      coverageLines: ["2/2 offen"],
+    });
+  });
+
+  it("shows confirmed and unconfirmed lines for planned coverage", () => {
+    const section = formatStaffingEntryTooltipSection(
+      {
+        serviceHourId: hourEvening,
+        label: "Do 12:00–16:00",
+        assigned: 1,
+        projectedAssigned: 2,
+        required: 2,
+        calendarTimeLabel: "12:00 - 16:00 Uhr",
+        shiftTemplateLabel: "Mittagschicht",
+        qualifications: [
+          {
+            qualificationId: qualKellner,
+            name: "Kellner",
+            assigned: 1,
+            required: 2,
+          },
+        ],
+        projectedQualifications: [
+          {
+            qualificationId: qualKellner,
+            name: "Kellner",
+            assigned: 2,
+            required: 2,
+          },
+        ],
+      },
+      formatCoverage
+    );
+
+    expect(section).toEqual({
+      periodLine: "Mittagschicht, 12:00 - 16:00 Uhr",
+      coverageLines: [
+        "1/2 für Kellner bestätigt",
+        "1/2 für Kellner angefragt",
+      ],
+    });
   });
 
   it("shows actual assigned count when overstaffed on one qualification", () => {
-    const body = formatStaffingEntryTooltipContent(
+    const section = formatStaffingEntryTooltipSection(
       {
         serviceHourId: hourEvening,
         label: "Do 12:00–16:00",
@@ -601,12 +783,145 @@ describe("formatStaffingEntryTooltipContent", () => {
             required: 2,
           },
         ],
+        projectedQualifications: [
+          {
+            qualificationId: qualKellner,
+            name: "Kellner",
+            assigned: 3,
+            required: 2,
+          },
+        ],
       },
-      formatQualLine
+      formatCoverage
     );
 
-    expect(body).toBe(
-      "Mittagschicht\n12:00 - 16:00 Uhr\nKellner: 3/2"
+    expect(section).toEqual({
+      periodLine: "Mittagschicht, 12:00 - 16:00 Uhr",
+      coverageLines: ["3/2 für Kellner bestätigt"],
+    });
+  });
+
+  it("lists each qualification on understaffed entries", () => {
+    const section = formatStaffingEntryTooltipSection(
+      {
+        serviceHourId: hourEvening,
+        label: "Do 12:00–16:00",
+        assigned: 1,
+        projectedAssigned: 1,
+        required: 3,
+        calendarTimeLabel: "12:00 - 16:00 Uhr",
+        qualifications: [
+          {
+            qualificationId: qualKoch,
+            name: "Koch",
+            assigned: 1,
+            required: 2,
+          },
+          {
+            qualificationId: qualKellner,
+            name: "Kellner",
+            assigned: 0,
+            required: 1,
+          },
+        ],
+        projectedQualifications: [
+          {
+            qualificationId: qualKoch,
+            name: "Koch",
+            assigned: 1,
+            required: 2,
+          },
+          {
+            qualificationId: qualKellner,
+            name: "Kellner",
+            assigned: 0,
+            required: 1,
+          },
+        ],
+      },
+      formatCoverage
+    );
+
+    expect(section.coverageLines).toEqual([
+      "1/2 für Koch bestätigt",
+      "1/2 für Koch offen",
+      "1/1 für Kellner offen",
+    ]);
+  });
+});
+
+describe("buildStaffingConflictDetails", () => {
+  const qualificationNameById = new Map([
+    [qualKoch, "Koch"],
+    [qualKellner, "Kellner"],
+  ]);
+
+  it("marks surplus assignments per qualification", () => {
+    const hourAssignments: StaffingAssignmentRef[] = [
+      { startTime: "18:00", endTime: "22:00", employeeId: "emp-1" },
+      { startTime: "18:00", endTime: "22:00", employeeId: "emp-2" },
+      { startTime: "18:00", endTime: "22:00", employeeId: "emp-3" },
+    ];
+
+    const details = buildStaffingConflictDetails({
+      hourAssignments,
+      qualRules: staffingRules.filter(
+        (rule) => rule.service_hour_id === hourEvening
+      ),
+      profileQualificationIds: new Map([
+        ["emp-1", new Set([qualKellner])],
+        ["emp-2", new Set([qualKellner])],
+        ["emp-3", new Set([qualKellner])],
+      ]),
+      qualificationNameById,
+      employeeNameById: new Map([["emp-3", "Carl"]]),
+      formatCalendarTimeLabel: (start, end) => `${start}-${end}`,
+      totalRequired: 3,
+    });
+
+    expect(details).toEqual([
+      {
+        kind: "overstaffed",
+        employeeName: "Carl",
+        timeLabel: "18:00-22:00",
+        assignedQualificationName: "Kellner",
+      },
+    ]);
+  });
+
+  it("flags wrong qualification placement when employee could fill an open role", () => {
+    const hourAssignments: StaffingAssignmentRef[] = [
+      { startTime: "18:00", endTime: "22:00", employeeId: "emp-1" },
+      { startTime: "18:00", endTime: "22:00", employeeId: "emp-2" },
+    ];
+
+    const details = buildStaffingConflictDetails({
+      hourAssignments,
+      qualRules: staffingRules.filter(
+        (rule) => rule.service_hour_id === hourEvening
+      ),
+      profileQualificationIds: new Map([
+        ["emp-1", new Set([qualKoch, qualKellner])],
+        ["emp-2", new Set([qualKellner])],
+      ]),
+      qualificationNameById,
+      employeeNameById: new Map([
+        ["emp-1", "Anna"],
+        ["emp-2", "Ben"],
+      ]),
+      formatCalendarTimeLabel: (start, end) => `${start}-${end}`,
+      totalRequired: 2,
+    });
+
+    expect(details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "qualification_mismatch",
+          employeeName: "Anna",
+          assignedQualificationName: "Kellner",
+          missingQualificationName: "Koch",
+        }),
+      ])
     );
   });
 });

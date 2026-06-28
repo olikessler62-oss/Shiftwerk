@@ -20,10 +20,9 @@ export type MainNavPendingTarget =
   | { kind: "settings-modal"; flag: SettingsModalQueryFlag }
   | { kind: "overview-modal"; flag: OverviewModalQueryFlag }
   | { kind: "superadmin" };
-
-/** Planungsseiten — Wartekursor bis Client-Inhalt gemeldet ist (nicht nur pathname). */
 export const PLANNING_CALENDAR_PAGE_PATHS = new Set([
   "/dashboard",
+  "/dashboard3",
   "/mitarbeiter-kalender",
   "/bereich-kalender",
 ]);
@@ -132,6 +131,7 @@ export function AppShellMainNavPendingBridge() {
       searchParams.get(pendingTarget.flag) === "1" &&
       (pathname === "/bereich-kalender" ||
         pathname === "/dashboard" ||
+        pathname === "/dashboard3" ||
         pathname === "/mitarbeiter-kalender")
     ) {
       const frameId = window.requestAnimationFrame(() => {

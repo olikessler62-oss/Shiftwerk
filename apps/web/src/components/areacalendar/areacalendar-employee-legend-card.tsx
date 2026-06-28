@@ -1,7 +1,7 @@
 "use client";
 
 import type { MouseEvent, ReactNode } from "react";
-import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement } from "@/components/ui/tooltip";
+import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement, EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import type { AreaCalendarWeekLegendEmployee } from "@/lib/areacalendar-week-employee-legend";
 import {
@@ -60,6 +60,7 @@ export function AreaCalendarEmployeeLegendCard({
       content={availabilityTooltip}
       contentClassName={employeeAvailabilityTooltipContentClassName}
       placement={employeeAvailabilityTooltipPlacement}
+      openDelayMs={EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS}
     >
       <div
         className="shrink-0 self-start"

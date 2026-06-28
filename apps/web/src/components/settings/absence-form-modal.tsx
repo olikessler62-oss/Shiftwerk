@@ -25,6 +25,7 @@ import {
   settingsModalHeaderPaddingClass,
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
+  SettingsConfirmDialogCloseHeader,
 } from "./settings-list-ui";
 import {
   Alert,
@@ -500,9 +501,15 @@ export function AbsenceFormModal({
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="absence-form-shift-conflict-title"
-              className={settingsConfirmDialogClass("z-[73]")}
+              className={cn(settingsConfirmDialogClass("z-[73]"), "overflow-hidden p-0")}
               onMouseDown={(e) => e.stopPropagation()}
             >
+              <SettingsConfirmDialogCloseHeader
+                onClose={() => setShiftConflictCount(null)}
+                closeDisabled={pending}
+                closeAriaLabel={t("common.close")}
+              />
+              <div className="px-4 py-4 sm:px-5">
               <h4
                 id="absence-form-shift-conflict-title"
                 className="text-base font-semibold text-foreground"
@@ -531,6 +538,7 @@ export function AbsenceFormModal({
                 >
                   {t("settings.absences.shiftConflictProceed")}
                 </Button>
+              </div>
               </div>
             </div>
           </div>

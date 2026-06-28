@@ -1,5 +1,10 @@
+import { areAreaCalendarShiftTimesComplete } from "@/lib/available-employees-for-shift";
 import { buildShiftTimestamps, getISOWeek, parseISODate } from "@/lib/dates";
-import { weekdayIndexFromDate } from "@schichtwerk/database";
+import {
+  resolveProfileWeeklyHoursTarget,
+  timeToMinutes,
+  weekdayIndexFromDate,
+} from "@schichtwerk/database";
 import {
   isEnglishIntlLocale,
   isGermanIntlLocale,
@@ -57,6 +62,58 @@ export function shiftHoursFromWindow(startTime: string, endTime: string): number
   return Math.round((ms / 3_600_000) * 10) / 10;
 }
 
+function shiftAssignDurationMinutes(startTime: string, endTime: string): number {
+  const start = timeToMinutes(startTime.slice(0, 5));
+  let end = timeToMinutes(endTime.slice(0, 5));
+  if (end <= start) end += 24 * 60;
+  return end - start;
+}
+
+export function weeklyAssignedMinutesByEmployeeId(
+  shifts: readonly PlanningShiftRef[],
+  weekDates: readonly string[]
+): Map<string, number> {
+  const weekDateSet = new Set(weekDates);
+  const totals = new Map<string, number>();
+
+  for (const shift of shifts) {
+    if (!weekDateSet.has(shift.shift_date)) continue;
+    if (!areAreaCalendarShiftTimesComplete(shift.startTime, shift.endTime)) {
+      continue;
+    }
+    const minutes = shiftAssignDurationMinutes(shift.startTime, shift.endTime);
+    totals.set(
+      shift.employee_id,
+      (totals.get(shift.employee_id) ?? 0) + minutes
+    );
+  }
+
+  return totals;
+}
+
+export function buildEmployeeWeeklyHoursTooltipLabels(
+  employees: readonly { id: string; weekly_hours?: number | null }[],
+  assignedMinutesByEmployeeId: ReadonlyMap<string, number>,
+  locale: string
+): Map<string, string> {
+  const tooltipLocale = locale.startsWith("de") ? "de" : "en";
+  const labels = new Map<string, string>();
+
+  for (const employee of employees) {
+    const assignedMinutes = assignedMinutesByEmployeeId.get(employee.id) ?? 0;
+    const assignedHours = Math.round((assignedMinutes / 60) * 10) / 10;
+    const targetHours = resolveProfileWeeklyHoursTarget(
+      employee.weekly_hours ?? null
+    );
+    labels.set(
+      employee.id,
+      formatPlanningHoursRatio(assignedHours, targetHours, tooltipLocale)
+    );
+  }
+
+  return labels;
+}
+
 export function employeeWeekHours(
   employeeId: string,
   shifts: readonly PlanningShiftRef[]
@@ -105,7 +162,7 @@ export function formatWeekRange(weekStartISO: string): string {
   return `${fmt.format(start)} – ${fmt.format(end)}`;
 }
 
-/** Datumszeile im Bereich-Kalender-Header (Monat/Jahr + KW; rangeLabel für Tooltip). */
+/** Datumszeile im Planungs-Header (detailliertes Wochenintervall + KW; monthYearLabel kompakt). */
 export function getAreaCalendarWeekHeaderParts(
   weekStartISO: string,
   intlLocale = "de-DE"
@@ -116,6 +173,11 @@ export function getAreaCalendarWeekHeaderParts(
   const dayMonthFmt = new Intl.DateTimeFormat(intlLocale, {
     day: "numeric",
     month: "long",
+  });
+  const dayMonthYearFmt = new Intl.DateTimeFormat(intlLocale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   });
   const monthFmt = new Intl.DateTimeFormat(intlLocale, { month: "long" });
   const monthYearFmt = new Intl.DateTimeFormat(intlLocale, {
@@ -137,8 +199,12 @@ export function getAreaCalendarWeekHeaderParts(
     monthYearLabel = `${monthYearFmt.format(start)}/${monthYearFmt.format(end)}`;
   }
 
+  const rangeLabel = sameYear
+    ? `${dayMonthFmt.format(start)} – ${dayMonthYearFmt.format(end)}`
+    : `${dayMonthYearFmt.format(start)} – ${dayMonthYearFmt.format(end)}`;
+
   return {
-    rangeLabel: `${dayMonthFmt.format(start)} – ${dayMonthFmt.format(end)}`,
+    rangeLabel,
     monthYearLabel,
     year: startYear,
     calendarWeek: getISOWeek(start),

@@ -29,7 +29,13 @@ import {
   preventPointerTextSelection,
   SHIFT_CARD_INTERACTIVE_CLASS,
 } from "@/lib/calendar-interaction-ui";
-import { shiftConfirmationShowsOverlay } from "@/lib/shift-confirmation-display";
+import {
+  shiftConfirmationShowsOverlay,
+  SHIFT_CARD_UNRESOLVED_OPACITY,
+  shiftConfirmationShowsUnresolvedCardStyle,
+  shiftConfirmationTooltipStatusLabelKey,
+} from "@/lib/shift-confirmation-display";
+import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
   canOpenShiftCardContextMenu,
@@ -92,9 +98,11 @@ type Props = {
 function ShiftCardTextRows({
   display,
   density,
+  inlineStatusLabel,
 }: {
   display: ShiftCardDisplayContent;
   density: ShiftCardDensity;
+  inlineStatusLabel?: string;
 }) {
   const secondaryLabel =
     display.templateName?.trim() || display.shiftLabel.trim();
@@ -115,10 +123,10 @@ function ShiftCardTextRows({
   if (density === "compact") {
     return (
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-[11px]">
-        <span className="min-w-[1ch] max-w-[45%] truncate font-bold leading-none">
+        <span className="min-w-[1ch] max-w-[45%] truncate font-bold leading-tight">
           {display.firstName}
         </span>
-        <span className="min-w-[1ch] max-w-full truncate tabular-nums leading-none">
+        <span className="min-w-[1ch] max-w-full truncate tabular-nums leading-tight">
           {secondaryLabel ? (
             <>
               <span className="font-bold">{secondaryLabel}</span>
@@ -135,11 +143,11 @@ function ShiftCardTextRows({
   return (
     <div className="flex min-w-0 flex-1 flex-col justify-center gap-px overflow-hidden">
       <div
-        className="min-w-[1ch] max-w-full truncate text-[11px] font-bold leading-none"
+        className="min-w-[1ch] max-w-full truncate text-[11px] font-bold leading-tight"
       >
         {employeeLine}
       </div>
-      <div className="min-w-[1ch] max-w-full truncate text-[10px] leading-none tabular-nums">
+      <div className="min-w-[1ch] max-w-full truncate text-[10px] leading-tight tabular-nums">
         {secondaryLabel ? (
           <>
             <span className="font-bold">{secondaryLabel}</span>
@@ -150,8 +158,13 @@ function ShiftCardTextRows({
         )}
       </div>
       {display.jobsLabel ? (
-        <div className="min-w-[1ch] max-w-full truncate text-[10px] leading-none">
+        <div className="-mt-0.5 min-w-[1ch] max-w-full truncate text-[10px] leading-tight">
           {display.jobsLabel}
+        </div>
+      ) : null}
+      {inlineStatusLabel ? (
+        <div className="min-w-[1ch] max-w-full truncate text-[10px] font-semibold leading-tight text-neutral-600">
+          {inlineStatusLabel}
         </div>
       ) : null}
     </div>
@@ -179,15 +192,38 @@ export function AreaCalendarShiftCardView({
       ? AREA_CALENDAR_SHIFT_CARD_MARKER_MIN_HEIGHT_PX
       : AREA_CALENDAR_SHIFT_CARD_TWO_LINE_HEIGHT_PX;
 
-  const confirmationStatus = shift.confirmationStatus;
+  const calendarConfirmationStatus = resolveShiftCardConfirmationStatusForCalendar(
+    shift,
+    cellDateISO
+  );
+
+  const showUnresolvedCardStyle = shiftConfirmationShowsUnresolvedCardStyle(
+    calendarConfirmationStatus
+  );
+
+  const confirmationStatus = calendarConfirmationStatus;
   const showConfirmationOverlay =
     density !== "marker" &&
     confirmationStatus &&
     shiftConfirmationShowsOverlay(confirmationStatus);
 
+  const inlineStatusLabel =
+    showUnresolvedCardStyle && confirmationStatus
+      ? t(shiftConfirmationTooltipStatusLabelKey(confirmationStatus))
+      : undefined;
+
   const isPastShift = isPastShiftDate(cellDateISO ?? shift.shift_date);
 
-  const tooltipData = confirmationStatusLabel
+  const tooltipData = confirmationStatus
+    ? {
+        ...display.tooltip,
+        confirmationStatusLine: t(
+          shiftConfirmationTooltipStatusLabelKey(confirmationStatus)
+        ),
+        confirmationStatus,
+        isPastShift,
+      }
+    : confirmationStatusLabel
     ? {
         ...display.tooltip,
         confirmationStatusLine: confirmationStatusLabel,
@@ -198,7 +234,7 @@ export function AreaCalendarShiftCardView({
         ...display.tooltip,
         isPastShift,
       };
-  const tooltipPlainText = confirmationStatusLabel
+  const tooltipPlainText = confirmationStatus || confirmationStatusLabel
     ? formatShiftCardTooltipPlainText(tooltipData, {
         formatStatusLine: (status) =>
           `${t("common.shiftCardTooltipStatusLabel")} ${status}`,
@@ -252,6 +288,9 @@ export function AreaCalendarShiftCardView({
             ...(widthPx !== undefined ? { width: widthPx } : undefined),
             height: cardHeightPx,
             minHeight: cardHeightPx,
+            ...(showUnresolvedCardStyle
+              ? { opacity: SHIFT_CARD_UNRESOLVED_OPACITY }
+              : undefined),
           }}
         >
           <div
@@ -333,7 +372,11 @@ export function AreaCalendarShiftCardView({
               ),
             }}
           >
-            <ShiftCardTextRows display={display} density={density} />
+            <ShiftCardTextRows
+              display={display}
+              density={density}
+              inlineStatusLabel={inlineStatusLabel}
+            />
           </div>
         ) : (
           <div
@@ -355,7 +398,11 @@ export function AreaCalendarShiftCardView({
                 aria-hidden
               />
             ) : null}
-            <ShiftCardTextRows display={display} density={density} />
+            <ShiftCardTextRows
+              display={display}
+              density={density}
+              inlineStatusLabel={inlineStatusLabel}
+            />
             {showConfirmationOverlay ? (
               <DashboardShiftCardConfirmationOverlay status={confirmationStatus} />
             ) : null}

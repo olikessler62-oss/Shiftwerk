@@ -3,6 +3,7 @@ import {
   collectWeekLegendEmployeesFromAreaCalendarShifts,
   areaCalendarEmployeeWeekHours,
   filterAreaCalendarShiftsByActiveAreas,
+  filterAreaCalendarShiftsForEmployeeLegend,
   DASHBOARD_SIDEBAR_EMPLOYEE_LIST_MAX_HEIGHT_PX,
   DASHBOARD_SIDEBAR_EMPLOYEE_MAX_VISIBLE,
   DASHBOARD_SIDEBAR_EMPLOYEE_ROW_HEIGHT_PX,
@@ -27,6 +28,35 @@ describe("filterAreaCalendarShiftsByActiveAreas", () => {
     const shifts = [{ id: "1", locationAreaId: "kitchen" }];
     expect(
       filterAreaCalendarShiftsByActiveAreas(shifts, new Set()).length
+    ).toBe(0);
+  });
+});
+
+describe("filterAreaCalendarShiftsForEmployeeLegend", () => {
+  it("filters by active areas and active days", () => {
+    const shifts = [
+      { id: "1", locationAreaId: "bar", shift_date: "2026-06-16" },
+      { id: "2", locationAreaId: "bar", shift_date: "2026-06-17" },
+      { id: "3", locationAreaId: "kitchen", shift_date: "2026-06-16" },
+    ];
+
+    expect(
+      filterAreaCalendarShiftsForEmployeeLegend(
+        shifts,
+        new Set(["bar"]),
+        new Set(["2026-06-16"])
+      ).map((shift) => shift.id)
+    ).toEqual(["1"]);
+  });
+
+  it("returns empty when no day is active", () => {
+    const shifts = [{ id: "1", locationAreaId: "bar", shift_date: "2026-06-16" }];
+    expect(
+      filterAreaCalendarShiftsForEmployeeLegend(
+        shifts,
+        new Set(["bar"]),
+        new Set()
+      ).length
     ).toBe(0);
   });
 });

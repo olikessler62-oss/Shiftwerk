@@ -42,6 +42,7 @@ import {
   SETTINGS_EMBEDDED_EMPTY_STATE_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
   settingsConfirmDialogClass,
+  SettingsConfirmDialogCloseHeader,
   SettingsActionBar,
   SettingsEmptyState,
   SettingsIconActionButton,
@@ -720,9 +721,14 @@ export function ProfileAvailabilityPanelModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="profile-weekly-hours-legal-alert"
-            className={settingsConfirmDialogClass()}
+            className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setWeeklyHoursBlockingAlert(null)}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <p
               id="profile-weekly-hours-legal-alert"
               className="text-sm leading-relaxed text-red-600"
@@ -738,6 +744,7 @@ export function ProfileAvailabilityPanelModal({
                 {t("common.ok")}
               </Button>
             </div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -747,9 +754,14 @@ export function ProfileAvailabilityPanelModal({
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="profile-weekly-hours-conflict-alert"
-            className={cn(settingsConfirmDialogClass(), "max-w-lg")}
+            className={cn(settingsConfirmDialogClass(), "max-w-lg overflow-hidden p-0")}
             onMouseDown={(e) => e.stopPropagation()}
           >
+            <SettingsConfirmDialogCloseHeader
+              onClose={() => setWeeklyHoursConflictWarning(null)}
+              closeAriaLabel={t("common.close")}
+            />
+            <div className="px-4 py-4 sm:px-5">
             <h4
               id="profile-weekly-hours-conflict-alert"
               className="text-sm font-semibold text-foreground"
@@ -782,6 +794,7 @@ export function ProfileAvailabilityPanelModal({
               >
                 {t("common.ok")}
               </Button>
+            </div>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import {
   resolveStaffingHeaderDisplay,
   isTagAreaHeaderStaffingEntryAssignmentMismatch,
   isTagAreaHeaderStaffingEntryOverstaffed,
+  isTagAreaHeaderStaffingEntryPlannedCoverage,
   isTagAreaHeaderStaffingEntryUnderstaffed,
   resolveStaffingFillGaugeVariant,
   isTagAreaHeaderStaffingHeaderAlertBadge,
@@ -75,6 +76,7 @@ describe("resolveStaffingHeaderDisplay", () => {
           understaffed: true,
           overstaffed: false,
           assignmentMismatch: false,
+          plannedCoverage: false,
         }),
       ],
     });
@@ -113,6 +115,7 @@ describe("resolveStaffingHeaderDisplay", () => {
       mode: "indicator",
       allMet: false,
       hasOverstaffed: false,
+      hasPlannedCoverage: false,
     });
   });
 
@@ -131,6 +134,7 @@ describe("resolveStaffingHeaderDisplay", () => {
       mode: "indicator",
       allMet: true,
       hasOverstaffed: false,
+      hasPlannedCoverage: false,
     });
   });
 });
@@ -303,7 +307,7 @@ describe("isTagAreaHeaderStaffingHeaderAlertBadge", () => {
 });
 
 describe("resolveStaffingFillGaugeVariant", () => {
-  it("uses full red ring for understaffing and assignment mismatch", () => {
+  it("uses full red ring for true understaffing", () => {
     expect(
       resolveStaffingFillGaugeVariant({
         understaffed: true,
@@ -313,7 +317,9 @@ describe("resolveStaffingFillGaugeVariant", () => {
         required: 12,
       } as StaffingHeaderSegment)
     ).toBe("understaffed");
+  });
 
+  it("uses full yellow ring for assignment mismatch when headcount matches", () => {
     expect(
       resolveStaffingFillGaugeVariant({
         understaffed: true,
@@ -322,7 +328,7 @@ describe("resolveStaffingFillGaugeVariant", () => {
         assigned: 2,
         required: 2,
       } as StaffingHeaderSegment)
-    ).toBe("understaffed");
+    ).toBe("overstaffed");
   });
 
   it("uses full yellow ring for pure overstaffing", () => {
@@ -337,16 +343,64 @@ describe("resolveStaffingFillGaugeVariant", () => {
     ).toBe("overstaffed");
   });
 
+  it("uses light yellow-green when planned shifts would cover demand", () => {
+    expect(
+      resolveStaffingFillGaugeVariant({
+        understaffed: false,
+        overstaffed: false,
+        assignmentMismatch: false,
+        plannedCoverage: true,
+        assigned: 0,
+        required: 2,
+      } as StaffingHeaderSegment)
+    ).toBe("planned");
+  });
+
   it("uses full green ring when demand is met", () => {
     expect(
       resolveStaffingFillGaugeVariant({
         understaffed: false,
         overstaffed: false,
         assignmentMismatch: false,
+        plannedCoverage: false,
         assigned: 2,
         required: 2,
       } as StaffingHeaderSegment)
     ).toBe("met");
+  });
+});
+
+describe("isTagAreaHeaderStaffingEntryPlannedCoverage", () => {
+  it("is true when only confirmed count is below demand but projection meets it", () => {
+    const plannedEntry: TagAreaHeaderStaffingEntry = {
+      serviceHourId: "a",
+      label: "08:00–12:00",
+      assigned: 0,
+      projectedAssigned: 2,
+      required: 2,
+      qualifications: [
+        { qualificationId: "k1", name: "Koch", assigned: 0, required: 2 },
+      ],
+      projectedQualifications: [
+        { qualificationId: "k1", name: "Koch", assigned: 2, required: 2 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingEntryUnderstaffed(plannedEntry)).toBe(false);
+    expect(isTagAreaHeaderStaffingEntryPlannedCoverage(plannedEntry)).toBe(true);
+  });
+
+  it("stays red when even projected shifts do not cover demand", () => {
+    const openEntry: TagAreaHeaderStaffingEntry = {
+      serviceHourId: "a",
+      label: "08:00–12:00",
+      assigned: 0,
+      projectedAssigned: 1,
+      required: 2,
+    };
+
+    expect(isTagAreaHeaderStaffingEntryUnderstaffed(openEntry)).toBe(true);
+    expect(isTagAreaHeaderStaffingEntryPlannedCoverage(openEntry)).toBe(false);
   });
 });
 
@@ -360,6 +414,7 @@ describe("staffing header segment helpers", () => {
       understaffed: true,
       overstaffed: false,
       assignmentMismatch: false,
+      plannedCoverage: false,
       assigned: 0,
       required: 4,
     };

@@ -7,6 +7,7 @@ import type { Location } from "@schichtwerk/types";
 import { HeaderPillSelect } from "@/components/ui/header-placement-select";
 import { useTranslations } from "@/i18n/locale-provider";
 import { Select } from "@/components/ui";
+import { headerToolbarPlacementSelectTriggerClass } from "@/lib/header-toolbar-styles";
 import { cn } from "@/lib/cn";
 
 type Props = {
@@ -66,7 +67,7 @@ export function LocationSelect({
         disabled={pending || locations.length === 0}
         onChange={onChange}
         aria-label={t("areaCalendar.selectLocation")}
-        triggerClassName={className}
+        selectClassName={headerToolbarPlacementSelectTriggerClass}
         wrapperClassName="max-w-[10rem] sm:max-w-[12rem]"
       />
     );

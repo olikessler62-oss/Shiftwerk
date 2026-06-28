@@ -72,7 +72,7 @@ const SETTINGS_SECTION_ID = "einstellungen";
 
 const navItemClass = (active: boolean) =>
   cn(
-    "block w-full min-w-0 rounded-lg border-l-2 py-2 pl-[calc(0.75rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
+    "block w-full min-w-0 rounded-none border-l-2 py-2 pl-[calc(0.75rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
     active
       ? "border-l-primary bg-white/[0.16] text-foreground"
       : "border-l-transparent text-foreground hover:bg-white/[0.12]"
@@ -80,7 +80,7 @@ const navItemClass = (active: boolean) =>
 
 const subLinkClass = (active: boolean) =>
   cn(
-    "block w-full min-w-0 rounded-lg border-l-2 py-1.5 pl-[calc(2rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
+    "block w-full min-w-0 rounded-none border-l-2 py-1.5 pl-[calc(2rem-2px)] pr-3 text-left text-sm font-medium leading-snug transition-colors",
     active
       ? "border-l-primary bg-white/[0.16] text-foreground"
       : "border-l-transparent text-muted hover:bg-white/[0.12] hover:text-foreground"
@@ -133,6 +133,12 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
     qualifikationenOpen ||
     sonderzuschlaegeOpen ||
     abwesenheitenOpen;
+  const dashboardActive =
+    pathname === "/dashboard" &&
+    !calendarActive &&
+    !overviewActive &&
+    !settingsModalOpen &&
+    !superadminOpen;
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     [CALENDAR_SECTION_ID]: calendarActive,
     [OVERVIEW_SECTION_ID]: overviewActive,
@@ -140,21 +146,24 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   });
 
   useEffect(() => {
-    if (calendarActive) {
-      setExpanded((prev) => ({ ...prev, [CALENDAR_SECTION_ID]: true }));
-    }
+    setExpanded((prev) => ({
+      ...prev,
+      [CALENDAR_SECTION_ID]: calendarActive,
+    }));
   }, [calendarActive]);
 
   useEffect(() => {
-    if (overviewActive) {
-      setExpanded((prev) => ({ ...prev, [OVERVIEW_SECTION_ID]: true }));
-    }
+    setExpanded((prev) => ({
+      ...prev,
+      [OVERVIEW_SECTION_ID]: overviewActive,
+    }));
   }, [overviewActive]);
 
   useEffect(() => {
-    if (settingsModalOpen) {
-      setExpanded((prev) => ({ ...prev, [SETTINGS_SECTION_ID]: true }));
-    }
+    setExpanded((prev) => ({
+      ...prev,
+      [SETTINGS_SECTION_ID]: settingsModalOpen,
+    }));
   }, [settingsModalOpen]);
 
   const calendarExpanded = expanded[CALENDAR_SECTION_ID] ?? false;
@@ -237,11 +246,11 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   }
 
   return (
-    <nav className="app-shell-sidebar-nav-slot flex w-full shrink-0 flex-col gap-1 py-2">
+    <nav className="app-shell-sidebar-nav-slot flex w-full shrink-0 flex-col gap-0.5 py-2">
       <Link
         href={dashboardHref}
         onClick={() => handlePageNav("/dashboard")}
-        className={navItemClass(pathname === "/dashboard")}
+        className={navItemClass(dashboardActive)}
       >
         {t("nav.dashboard")}
       </Link>
@@ -252,7 +261,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           onClick={() => toggleSection(CALENDAR_SECTION_ID)}
           aria-expanded={calendarExpanded}
           className={cn(
-            navItemClass(calendarExpanded || calendarActive),
+            navItemClass(calendarActive),
             "flex min-w-0 items-center justify-between gap-1"
           )}
         >
@@ -284,14 +293,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           </div>
         </div>
       </div>
-
       <div>
         <button
           type="button"
           onClick={() => toggleSection(OVERVIEW_SECTION_ID)}
           aria-expanded={overviewExpanded}
           className={cn(
-            navItemClass(overviewExpanded || overviewActive),
+            navItemClass(overviewActive),
             "flex min-w-0 items-center justify-between gap-1"
           )}
         >
@@ -319,14 +327,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           </div>
         </div>
       </div>
-
       <div>
         <button
           type="button"
           onClick={() => toggleSection(SETTINGS_SECTION_ID)}
           aria-expanded={settingsExpanded}
           className={cn(
-            navItemClass(settingsExpanded || settingsModalOpen),
+            navItemClass(settingsModalOpen),
             "flex min-w-0 items-center justify-between gap-1"
           )}
         >
@@ -368,14 +375,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
           {t("nav.superadmin")}
         </button>
       ) : null}
-
       <form action={signOut}>
         <Button
           type="submit"
           variant="ghost"
           className={cn(
             navItemClass(false),
-            "h-auto w-full justify-start font-normal"
+            "!rounded-none h-auto w-full justify-start font-normal"
           )}
         >
           {t("common.signOut")}

@@ -6,7 +6,8 @@ import {
 } from "@/lib/resolve-areacalendar-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/areacalendar-assignment-presets";
 import type { PlanningShift } from "@/lib/planning-shift-card";
-import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data";
+import { loadCommunicationHubScopeData } from "@/lib/communication-hub-scope-data";
+import { organizationTodayISO } from "@schichtwerk/database";
 import { resolveDashboardEmployeesForShifts } from "@/lib/dashboard-page-employees";
 import { resolvePlanningShiftJobLabels } from "@/lib/planning-shift-job-label";
 import type { SchichtwerkDatabase } from "@/lib/db";
@@ -14,6 +15,7 @@ import type { OrgFeatures } from "@/lib/org-features";
 import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 import type { Organization, Profile } from "@schichtwerk/types";
 import type {
+  AbsenceRequest,
   AreaShiftTemplateWithBreaks,
   Location,
   LocationArea,
@@ -44,6 +46,8 @@ export type DashboardCalendarLayerData = {
   staffingOverrides: LocationAreaStaffingOverride[];
   communicationSwapRequests: CommunicationSwapRequestRow[];
   communicationCancelActors: Record<string, "employee" | "manager">;
+  communicationHubLocationShifts: PlanningShift[];
+  communicationHubAbsences: AbsenceRequest[];
 };
 
 export async function loadDashboardCalendarLayerData(input: {
@@ -192,34 +196,22 @@ export async function loadDashboardCalendarLayerData(input: {
     shift.jobName = shiftJobLabels.get(shift.id) ?? null;
   }
 
+  const todayISO = organizationTodayISO(timeZone);
+  const communicationHubScope = await loadCommunicationHubScopeData({
+    db,
+    orgId,
+    organization,
+    locationId: selectedLocationId,
+    timeZone,
+    todayISO,
+    areaShiftTemplates,
+  });
+
   const employees = await resolveDashboardEmployeesForShifts(
     planningEmployees,
-    shifts,
+    mergePlanningShiftsById(shifts, communicationHubScope.locationShifts),
     (id) => db.getProfileById(id),
     orgId
-  );
-
-  const canceledShiftIds = locationShifts
-    .filter((shift) => shift.confirmationStatus === "canceled")
-    .filter((shift) => !shift.displayState?.openCancellation?.cancelledBy)
-    .map((shift) => shift.id);
-
-  const [swapRequestRows, cancelActorEntries] =
-    selectedLocationId && organization.shift_confirmation_enabled
-      ? await Promise.all([
-          db.listOrganizationSwapRequests(orgId, {
-            statuses: ["pending"],
-            locationId: selectedLocationId,
-            from,
-            to,
-          }),
-          db.listShiftCancelActors(orgId, canceledShiftIds),
-        ])
-      : [[], new Map<string, "employee" | "manager">()];
-
-  const communicationSwapRequests = mapSwapRequestsToCommunicationRows(
-    swapRequestRows,
-    timeZone
   );
 
   return {
@@ -232,7 +224,25 @@ export async function loadDashboardCalendarLayerData(input: {
     serviceHours,
     staffingRules,
     staffingOverrides,
-    communicationSwapRequests,
-    communicationCancelActors: Object.fromEntries(cancelActorEntries),
+    communicationSwapRequests: communicationHubScope.swapRequests,
+    communicationCancelActors: communicationHubScope.cancelActors,
+    communicationHubLocationShifts: communicationHubScope.locationShifts,
+    communicationHubAbsences: communicationHubScope.absences,
   };
+}
+
+function mergePlanningShiftsById(
+  primary: readonly PlanningShift[],
+  secondary: readonly PlanningShift[]
+): PlanningShift[] {
+  const byId = new Map<string, PlanningShift>();
+  for (const shift of primary) {
+    byId.set(shift.id, shift);
+  }
+  for (const shift of secondary) {
+    if (!byId.has(shift.id)) {
+      byId.set(shift.id, shift);
+    }
+  }
+  return [...byId.values()];
 }

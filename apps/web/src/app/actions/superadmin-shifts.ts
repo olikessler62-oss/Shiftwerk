@@ -5,6 +5,12 @@ import { getAdminDatabase, getDatabase } from "@/lib/db";
 import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
 import { shiftTimeFromTimestamp } from "@/lib/dates";
 import type { SuperadminShiftListRow } from "@schichtwerk/database";
+import {
+  countFullConfirmationConflictCleanupItems,
+  planConfirmationConflictCleanup,
+  planDuplicateConfirmationShiftCleanup,
+  type ConfirmationShiftCleanupRecord,
+} from "@schichtwerk/database";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export type SuperadminShiftActionResult =
@@ -14,6 +20,8 @@ export type SuperadminShiftActionResult =
       savedAt?: string;
       restoredCount?: number;
       updatedCount?: number;
+      cleanedCount?: number;
+      conflictCount?: number;
     }
   | { ok: false; errorKey: string; error?: string };
 
@@ -171,6 +179,95 @@ export async function saveSuperadminShiftSnapshot(): Promise<SuperadminShiftActi
     };
   } catch (error) {
     return actionError("superadmin.errors.saveShiftSnapshotFailed", error);
+  }
+}
+
+function mapShiftRecordsForConflictCleanup(
+  rows: Awaited<
+    ReturnType<Awaited<ReturnType<typeof getDatabase>>["listOrganizationShiftsForSuperadmin"]>
+  >
+): ConfirmationShiftCleanupRecord[] {
+  return rows.map((row) => ({
+    id: row.id,
+    employee_id: row.employee_id,
+    shift_date: row.shift_date,
+    location_area_id: row.location_area_id,
+    starts_at: row.starts_at,
+    ends_at: row.ends_at,
+    confirmation_status: row.confirmation_status,
+    confirmation_status_updated_at: row.confirmation_status_updated_at,
+  }));
+}
+
+export async function previewSuperadminConfirmationConflictCleanup(): Promise<
+  SuperadminShiftActionResult
+> {
+  try {
+    const { organizationId } = await requireSuperadminDeveloper();
+    const db = await getDatabase();
+    const rows = await db.listOrganizationShiftsForSuperadmin(organizationId);
+    const conflictCount = countFullConfirmationConflictCleanupItems(
+      mapShiftRecordsForConflictCleanup(rows)
+    );
+    return { ok: true, conflictCount };
+  } catch (error) {
+    return actionError("superadmin.errors.cleanupConfirmationConflictsFailed", error);
+  }
+}
+
+export async function cleanupSuperadminConfirmationConflicts(): Promise<
+  SuperadminShiftActionResult
+> {
+  try {
+    const { organizationId, userId } = await requireSuperadminDeveloper();
+    const db = await getDatabase();
+    let rows = await db.listOrganizationShiftsForSuperadmin(organizationId);
+    let cleanupRecords = mapShiftRecordsForConflictCleanup(rows);
+    const supersedePlan = planConfirmationConflictCleanup(cleanupRecords);
+
+    if (!supersedePlan.length && !planDuplicateConfirmationShiftCleanup(cleanupRecords).length) {
+      return { ok: true, cleanedCount: 0, conflictCount: 0 };
+    }
+
+    const shiftDates = new Set<string>();
+    let cleanedCount = 0;
+
+    for (const item of supersedePlan) {
+      const result = await db.updateShiftConfirmationStatusAsSuperadmin({
+        organizationId,
+        shiftId: item.supersededShiftId,
+        actorId: userId,
+        confirmationStatus: "rejected",
+      });
+      shiftDates.add(result.shiftDate);
+      cleanedCount += 1;
+    }
+
+    rows = await db.listOrganizationShiftsForSuperadmin(organizationId);
+    cleanupRecords = mapShiftRecordsForConflictCleanup(rows);
+    const duplicatePlan = planDuplicateConfirmationShiftCleanup(cleanupRecords);
+
+    for (const item of duplicatePlan) {
+      await db.deleteShift(item.duplicateShiftId, organizationId, userId);
+      const kept = rows.find((row) => row.id === item.keepShiftId);
+      if (kept) shiftDates.add(kept.shift_date);
+      cleanedCount += 1;
+    }
+
+    if (shiftDates.size > 0) {
+      revalidateAreaCalendarShiftCacheTags({
+        organizationId,
+        weekStarts: [...shiftDates],
+      });
+    }
+
+    return {
+      ok: true,
+      cleanedCount,
+      conflictCount: supersedePlan.length + duplicatePlan.length,
+    };
+  } catch (error) {
+    return actionError("superadmin.errors.cleanupConfirmationConflictsFailed", error);
   }
 }
 

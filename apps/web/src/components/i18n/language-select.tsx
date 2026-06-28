@@ -5,6 +5,7 @@ import { LOCALES, localeLabels, type Locale } from "@schichtwerk/i18n";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { HeaderPillSelect } from "@/components/ui/header-placement-select";
 import { Select } from "@/components/ui";
+import { headerToolbarLanguageSelectTriggerClass } from "@/lib/header-toolbar-styles";
 import { cn } from "@/lib/cn";
 
 type Props = {
@@ -33,6 +34,7 @@ export function LanguageSelect({ className, variant = "default" }: Props) {
         onChange={(value) => setLocale(value as Locale)}
         aria-label={t("common.language")}
         wrapperClassName={cn("max-w-[7.5rem]", className)}
+        selectClassName={headerToolbarLanguageSelectTriggerClass}
       />
     );
   }
