@@ -138,11 +138,20 @@ export function DashboardStaffingCandidateEmployeeTooltipContent({
 
   const sections = useMemo(() => {
     if (!payload) return null;
-    return formatDashboardStaffingCandidateEmployeeTooltipSections({
-      payload,
-      qualifications,
+    return formatDashboardStaffingCandidateEmployeeTooltipSections(payload, {
       locale: intlLocale,
-      absenceTypeLabel: (type) => t(absenceTypeLabelKey(type)),
+      qualifications,
+      locations: payload.locations,
+      areas: payload.areas,
+      labels: {
+        anyDay: t("profiles.shiftPreferenceAnyDay"),
+        noTime: t("profiles.shiftPreferenceNoTime"),
+        emptyPlacement: t("profiles.shiftPreferenceNone"),
+        noAbsence: t("dashboard.staffingCandidatesTooltipNoAbsence"),
+        emptyAvailability: t("profiles.emptyAvailability"),
+        emptyQualifications: t("profiles.emptyQualifications"),
+        absenceType: (type) => t(absenceTypeLabelKey(type)),
+      },
     });
   }, [payload, qualifications, intlLocale, t]);
 

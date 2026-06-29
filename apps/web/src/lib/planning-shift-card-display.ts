@@ -16,6 +16,7 @@ import type { LocationAreaStaffing, Qualification, ShiftConfirmationStatus } fro
 export type PlanningShiftJobContext = {
   dateISO: string;
   defaultAreaId: string | null;
+  areaNameById: ReadonlyMap<string, string>;
   serviceHours: readonly AreaServiceHourRef[];
   staffingRules: readonly LocationAreaStaffing[];
   assignmentPresets: readonly AreaCalendarAssignmentPreset[];
@@ -41,6 +42,21 @@ export function createPlanningShiftJobContextMaps(
       ])
     ),
   };
+}
+
+export function createPlanningAreaNameById(
+  areas: readonly { id: string; name: string }[]
+): ReadonlyMap<string, string> {
+  return new Map(areas.map((area) => [area.id, area.name]));
+}
+
+export function resolvePlanningShiftAreaName(
+  shift: Pick<PlanningShift, "location_area_id">,
+  context: Pick<PlanningShiftJobContext, "areaNameById" | "defaultAreaId">
+): string {
+  const areaId = shift.location_area_id ?? context.defaultAreaId;
+  if (!areaId) return "";
+  return context.areaNameById.get(areaId)?.trim() ?? "";
 }
 
 export function resolvePlanningShiftJobsLabel(
@@ -70,6 +86,7 @@ export function resolvePlanningShiftJobsLabel(
 function buildPlanningTooltipData(
   options?: {
     employeeName?: string;
+    areaName?: string;
     confirmationStatusLine?: string;
     confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;
@@ -80,6 +97,7 @@ function buildPlanningTooltipData(
 ): ShiftCardTooltipData {
   return {
     employeeName: options?.employeeName,
+    areaName: options?.areaName?.trim() || undefined,
     shiftTemplateName: templateName ?? null,
     timeLabel,
     jobsLabel: options?.jobsLabel?.trim() || undefined,
@@ -129,6 +147,7 @@ export function buildPlanningShiftSegmentCardContent(
   part: PlanningShiftDisplayPart,
   options?: {
     employeeName?: string;
+    areaName?: string;
     confirmationStatusLine?: string;
     confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;
@@ -171,6 +190,7 @@ export function buildPlanningExpandedShiftCardContent(
   presets: readonly AreaCalendarAssignmentPreset[],
   options?: {
     employeeName?: string;
+    areaName?: string;
     confirmationStatusLine?: string;
     confirmationStatus?: ShiftConfirmationStatus;
     jobsLabel?: string;

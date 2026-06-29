@@ -1,4 +1,9 @@
+import type { ShiftTypeBreakInput } from "./interface";
 import { timeToMinutes } from "./profile-availability-validation";
+import {
+  breakMinutesOnShiftTimelineSegment,
+  shiftWindowMinutes,
+} from "./shift-type-break-rules";
 
 const MINUTES_PER_DAY = 24 * 60;
 
@@ -88,13 +93,66 @@ export function splitShiftWindowIntoCalendarDaySegments(input: {
   ];
 }
 
+function shiftTimelineSegmentBounds(
+  shiftDate: string,
+  startTime: string,
+  endTime: string,
+  segment: ShiftCalendarDaySegment
+): { segmentStartM: number; segmentEndM: number } {
+  const { startM, endM } = shiftWindowMinutes(startTime, endTime);
+  if (!isOvernightShiftWindow(startTime, endTime)) {
+    return { segmentStartM: startM, segmentEndM: endM };
+  }
+  if (segment.dateISO === shiftDate) {
+    return { segmentStartM: startM, segmentEndM: MINUTES_PER_DAY };
+  }
+  return { segmentStartM: MINUTES_PER_DAY, segmentEndM: endM };
+}
+
+/**
+ * Wie splitShiftWindowIntoCalendarDaySegments, aber Pausen werden pro Kalendertag abgezogen.
+ */
+export function splitShiftWindowIntoCalendarDayNetWorkSegments(input: {
+  shiftDate: string;
+  startTime: string;
+  endTime: string;
+  breaks?: readonly ShiftTypeBreakInput[];
+}): ShiftCalendarDaySegment[] {
+  const grossSegments = splitShiftWindowIntoCalendarDaySegments(input);
+  if (!input.breaks?.length) return grossSegments;
+
+  return grossSegments.map((segment) => {
+    const { segmentStartM, segmentEndM } = shiftTimelineSegmentBounds(
+      input.shiftDate,
+      input.startTime,
+      input.endTime,
+      segment
+    );
+    const breakMinutes = breakMinutesOnShiftTimelineSegment(
+      input.breaks!,
+      input.startTime,
+      input.endTime,
+      segmentStartM,
+      segmentEndM
+    );
+    return {
+      ...segment,
+      minutes: Math.max(0, segment.minutes - breakMinutes),
+    };
+  });
+}
+
 export function shiftMinutesOnCalendarDay(input: {
   shiftDate: string;
   startTime: string;
   endTime: string;
   calendarDate: string;
+  breaks?: readonly ShiftTypeBreakInput[];
 }): number {
-  return splitShiftWindowIntoCalendarDaySegments(input)
+  const segments = input.breaks?.length
+    ? splitShiftWindowIntoCalendarDayNetWorkSegments(input)
+    : splitShiftWindowIntoCalendarDaySegments(input);
+  return segments
     .filter((segment) => segment.dateISO === input.calendarDate)
     .reduce((sum, segment) => sum + segment.minutes, 0);
 }
@@ -104,6 +162,7 @@ export function shiftHoursOnCalendarDay(input: {
   startTime: string;
   endTime: string;
   calendarDate: string;
+  breaks?: readonly ShiftTypeBreakInput[];
 }): number {
   return Math.round((shiftMinutesOnCalendarDay(input) / 60) * 10) / 10;
 }

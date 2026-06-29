@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   validateAreaShiftTemplateCount,
   validateShiftTypeBreaks,
+  AREA_SHIFT_TEMPLATE_BREAK_VALIDATION_OPTIONS,
   validateShiftTypeUniqueness,
   validateShiftDurationForCountry,
   DEFAULT_COUNTRY_CODE,
@@ -82,7 +83,8 @@ async function validateTemplateLaborCompliance(
     start_time,
     end_time,
     breaks,
-    countryCode
+    countryCode,
+    AREA_SHIFT_TEMPLATE_BREAK_VALIDATION_OPTIONS
   );
   if (!breaksCheck.ok) return breaksCheck;
 

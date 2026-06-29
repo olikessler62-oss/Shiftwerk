@@ -12,16 +12,15 @@ export type CurrentWeekDrilldownSnapshot = {
   areaDetailScopeByAreaId: Record<string, DashboardAreaDetailScope>;
 };
 
-/** Monday (index 0) for non-current weeks; preserved day index in the current week. */
+/** Selected day index while in day/area drilldown; null in week overview. */
 export function resolveDashboardDrilldownDayIndex(
   viewLevel: DashboardDrilldownViewLevel,
-  viewDayIndex: number,
-  isCurrentWeek: boolean
+  viewDayIndex: number
 ): number | null {
   if (viewLevel === "week") {
     return null;
   }
-  return isCurrentWeek ? viewDayIndex : 0;
+  return viewDayIndex;
 }
 
 export type DashboardDrilldownWeekTransitionPlan = {
@@ -37,6 +36,7 @@ export function planDashboardDrilldownWeekTransition({
   view,
   areaDetailScopeByAreaId,
   savedSnapshot,
+  currentWeekTodayDayIndex = null,
 }: {
   previousWeekStart: string;
   nextWeekStart: string;
@@ -44,6 +44,8 @@ export function planDashboardDrilldownWeekTransition({
   view: DashboardDrilldownView;
   areaDetailScopeByAreaId: Record<string, DashboardAreaDetailScope>;
   savedSnapshot: CurrentWeekDrilldownSnapshot | null;
+  /** Mo=0 … So=6 in der aktuellen Planungswoche — für Tag-Scope nach Rückkehr. */
+  currentWeekTodayDayIndex?: number | null;
 }): DashboardDrilldownWeekTransitionPlan | null {
   if (previousWeekStart === nextWeekStart || view.level === "week") {
     return null;
@@ -62,11 +64,18 @@ export function planDashboardDrilldownWeekTransition({
     };
   }
 
-  if (!wasCurrentWeek && isNowCurrentWeek && savedSnapshot) {
+  if (!wasCurrentWeek && isNowCurrentWeek) {
+    const nextDayIndex =
+      currentWeekTodayDayIndex ??
+      savedSnapshot?.dayIndex ??
+      0;
+
     return {
       savedSnapshot,
-      nextDayIndex: savedSnapshot.dayIndex,
-      restoreAreaScopes: savedSnapshot.areaDetailScopeByAreaId,
+      nextDayIndex,
+      ...(savedSnapshot
+        ? { restoreAreaScopes: savedSnapshot.areaDetailScopeByAreaId }
+        : {}),
     };
   }
 

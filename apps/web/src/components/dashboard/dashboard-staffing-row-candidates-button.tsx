@@ -6,6 +6,7 @@ import {
   StaffingOpenPointsIcon,
   StaffingVacancyIcon,
 } from "@/components/dashboard/dashboard-staffing-row-action-icons";
+import { DASHBOARD_STAFFING_VACANCY_SILHOUETTE_CLASS } from "@/lib/dashboard-panel-styles";
 
 export type DashboardStaffingRowActionVariant =
   | "candidates"
@@ -47,7 +48,7 @@ export function DashboardStaffingRowCandidatesButton({
       className={cn(
         "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1",
         variant === "candidates"
-          ? "text-muted hover:text-foreground"
+          ? cn(DASHBOARD_STAFFING_VACANCY_SILHOUETTE_CLASS, "hover:opacity-80")
           : "text-foreground/80 hover:text-foreground",
         className
       )}

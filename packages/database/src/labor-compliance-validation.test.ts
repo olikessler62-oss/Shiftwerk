@@ -226,6 +226,37 @@ describe("validateShiftTypeBreaksForCountry (DE)", () => {
     expect(withBreak.ok).toBe(true);
   });
 
+  it("accepts break longer than required minimum", () => {
+    const { break_start, break_end } = centeredBreakForShift("08:00", "16:00", 45);
+    const withLongerBreak = validateShiftTypeBreaksForCountry("DE", "08:00", "16:00", [
+      { break_start, break_end },
+    ]);
+    expect(withLongerBreak.ok).toBe(true);
+  });
+
+  it("rejects off-center break when centering is enforced", () => {
+    const offCenterBreak = { break_start: "08:30", break_end: "09:00" };
+    const enforced = validateShiftTypeBreaksForCountry("DE", "08:00", "16:00", [
+      offCenterBreak,
+    ]);
+    expect(enforced.ok).toBe(false);
+    if (!enforced.ok) {
+      expect(enforced.error).toContain("mittig");
+    }
+  });
+
+  it("accepts off-center break for area shift templates", () => {
+    const offCenterBreak = { break_start: "08:30", break_end: "09:00" };
+    const relaxed = validateShiftTypeBreaksForCountry(
+      "DE",
+      "08:00",
+      "16:00",
+      [offCenterBreak],
+      { enforceBreaksCenteredOnShift: false }
+    );
+    expect(relaxed.ok).toBe(true);
+  });
+
   it("delegates through validateShiftTypeBreaks wrapper", () => {
     const { break_start, break_end } = centeredBreakForShift("08:00", "16:00", 30);
     expect(

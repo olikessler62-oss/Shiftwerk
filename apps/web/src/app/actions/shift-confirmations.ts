@@ -5,7 +5,7 @@ import {
 } from "@/lib/cached-areacalendar-shifts";
 import { getDatabase } from "@/lib/db";
 import { runShiftConfirmationPendingJobSafe } from "@/lib/run-shift-confirmation-pending-job";
-import { shiftTimeFromTimestamp } from "@/lib/dates";
+import { shiftTimeFromTimestamp, parseISODate, startOfWeek, toISODate } from "@/lib/dates";
 import { requireManager } from "@/lib/manager";
 import { resolveSimulatedProposedAssignOptions } from "@/lib/shift-confirmation-assign-mode";
 import {
@@ -16,6 +16,7 @@ import {
   isShiftProposedForSend,
   profileEligibleForShiftConfirmationAssignment,
   resolveOrganizationTimeZone,
+  type ProposedShiftForSend,
 } from "@schichtwerk/database";
 import type { ConfirmationRequestScope, ShiftConfirmationStatus } from "@schichtwerk/types";
 
@@ -78,19 +79,55 @@ async function sendConfirmationForEmployee(input: {
   }
 
   const db = await getDatabase();
-  const weekEnd = isoWeekEndFromWeekStart(input.weekStart);
-  const proposed = await db.listProposedShiftsForConfirmationSend(organizationId, {
-    weekStart: input.weekStart,
-    weekEnd,
-    locationId: input.locationId,
-    employeeId: input.employeeId,
-  });
+  let proposed: ProposedShiftForSend[];
+  let batchWeekStart = input.weekStart;
+  let batchWeekEnd = isoWeekEndFromWeekStart(input.weekStart);
 
-  const scoped = filterShiftsForConfirmationSendScope(proposed, input.scope, {
-    employeeId: input.employeeId,
-    shiftDate: input.shiftDate,
-    shiftId: input.shiftId,
-  });
+  if (input.scope === "single_shift" && input.shiftId) {
+    const shiftRecord = await db.getShiftRecordById(input.shiftId, organizationId);
+    if (
+      !shiftRecord ||
+      shiftRecord.confirmation_status !== "proposed" ||
+      shiftRecord.employee_id !== input.employeeId ||
+      (input.locationId && shiftRecord.location_id !== input.locationId)
+    ) {
+      return { ok: false, error: "Keine offenen Schichten zum Senden." };
+    }
+
+    batchWeekStart = toISODate(startOfWeek(parseISODate(shiftRecord.shift_date)));
+    batchWeekEnd = isoWeekEndFromWeekStart(batchWeekStart);
+    proposed = [
+      {
+        id: shiftRecord.id,
+        organization_id: organizationId,
+        employee_id: shiftRecord.employee_id,
+        location_id: shiftRecord.location_id,
+        location_area_id: shiftRecord.location_area_id,
+        area_shift_template_id: shiftRecord.area_shift_template_id,
+        shift_date: shiftRecord.shift_date,
+        starts_at: shiftRecord.starts_at,
+        ends_at: shiftRecord.ends_at,
+        notes: shiftRecord.notes,
+        confirmation_status: "proposed",
+      },
+    ];
+  } else {
+    proposed = await db.listProposedShiftsForConfirmationSend(organizationId, {
+      weekStart: input.weekStart,
+      weekEnd: batchWeekEnd,
+      locationId: input.locationId,
+      employeeId: input.employeeId,
+    });
+  }
+
+  const scoped =
+    input.scope === "single_shift" && input.shiftId
+      ? proposed
+      : filterShiftsForConfirmationSendScope(proposed, input.scope, {
+          employeeId: input.employeeId,
+          shiftDate: input.shiftDate,
+          shiftId: input.shiftId,
+        });
 
   const profile = await db.getProfileById(input.employeeId);
   if (!profile || profile.organization_id !== organizationId) {
@@ -127,8 +164,8 @@ async function sendConfirmationForEmployee(input: {
     employeeId: input.employeeId,
     sentBy: userId,
     scope: input.scope,
-    weekStart: input.weekStart,
-    weekEnd,
+    weekStart: batchWeekStart,
+    weekEnd: batchWeekEnd,
     shifts: sendable,
     profile,
     skipNotificationOutbox: assignMode.relaxAppRegistrationGate,
@@ -137,7 +174,7 @@ async function sendConfirmationForEmployee(input: {
   revalidateConfirmationPaths({
     organizationId,
     locationId: input.locationId,
-    weekStart: input.weekStart,
+    weekStart: batchWeekStart,
   });
 
   await runShiftConfirmationPendingJobSafe(db);
@@ -372,6 +409,9 @@ export async function sendConfirmationRequestBulkWeek(input: {
 export async function listConfirmationSendShifts(input: {
   weekStart: string;
   locationId?: string;
+  /** List range override (e.g. Schicht-Stati hub horizon). Defaults to calendar week of weekStart. */
+  fromDate?: string;
+  toDate?: string;
   simulatedProposedOnAssign?: boolean;
   relaxAppRegistrationGate?: boolean;
 }): Promise<ListConfirmationSendShiftsResult> {
@@ -390,9 +430,11 @@ export async function listConfirmationSendShifts(input: {
     const db = await getDatabase();
     const timeZone = resolveOrganizationTimeZone(organization);
     const weekEnd = isoWeekEndFromWeekStart(input.weekStart);
+    const rangeStart = input.fromDate ?? input.weekStart;
+    const rangeEnd = input.toDate ?? weekEnd;
     const rows = await db.listShiftsForConfirmationSendModal(organizationId, {
-      weekStart: input.weekStart,
-      weekEnd,
+      weekStart: rangeStart,
+      weekEnd: rangeEnd,
       locationId: input.locationId,
     });
 

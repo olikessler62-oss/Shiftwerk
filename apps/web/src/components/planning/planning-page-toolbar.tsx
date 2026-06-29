@@ -7,7 +7,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useTransition,
   type ReactNode,
 } from "react";
 import type { Location } from "@schichtwerk/types";
@@ -125,14 +124,13 @@ export function PlanningPageToolbar({ locations }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [pending, startTransition] = useTransition();
   const { locale } = useLocale();
   const t = useTranslations();
   const features = useOrgFeatures();
   const organization = useOrganization();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const shellLocked = useIsAppShellLocked();
-  const controlsDisabled = pending || shellLocked;
+  const controlsDisabled = shellLocked;
   const compactToolbar = usePlanningToolbarCompactLayout();
   const [weekPickerOpen, setWeekPickerOpen] = useState(false);
   useAppShellModalLockActive(weekPickerOpen);
@@ -173,6 +171,11 @@ export function PlanningPageToolbar({ locations }: Props) {
     () => getAreaCalendarWeekHeaderParts(weekStart, intlLocale),
     [weekStart, intlLocale]
   );
+  const currentWeekStart = useMemo(
+    () => toISODate(startOfWeek(parseISODate(todayISO))),
+    [todayISO]
+  );
+  const isCurrentWeek = weekStart === currentWeekStart;
   const weekLabelTitle = `${weekHeader.rangeLabel} KW ${weekHeader.calendarWeek}`;
   const atEarliestWeek = isPlanningWeekAtEarliest(weekStart);
 
@@ -183,9 +186,8 @@ export function PlanningPageToolbar({ locations }: Props) {
         params.set(key, value);
       }
       const query = params.toString();
-      startTransition(() => {
-        router.push(query ? `${pathname}?${query}` : pathname);
-      });
+      router.push(query ? `${pathname}?${query}` : pathname);
+      router.refresh();
     },
     [pathname, router, searchParams]
   );
@@ -201,8 +203,10 @@ export function PlanningPageToolbar({ locations }: Props) {
   );
 
   const goToToday = useCallback(() => {
-    pushPlanningQuery({ week: toISODate(startOfWeek(new Date())) });
-  }, [pushPlanningQuery]);
+    pushPlanningQuery({
+      week: toISODate(startOfWeek(parseISODate(todayISO))),
+    });
+  }, [pushPlanningQuery, todayISO]);
 
   const openWeekPicker = useCallback(() => {
     if (controlsDisabled) return;
@@ -226,7 +230,7 @@ export function PlanningPageToolbar({ locations }: Props) {
     if (!headerEl) return;
 
     function onKeyDown(event: KeyboardEvent) {
-      if (pending || shellLocked || isSettingsModalOpen(searchParams)) return;
+      if (shellLocked || isSettingsModalOpen(searchParams)) return;
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       if (!(event.target instanceof Node) || !headerEl?.contains(event.target)) return;
       if (isEditableTarget(event.target)) return;
@@ -237,7 +241,7 @@ export function PlanningPageToolbar({ locations }: Props) {
 
     headerEl.addEventListener("keydown", onKeyDown);
     return () => headerEl.removeEventListener("keydown", onKeyDown);
-  }, [isAreaCalendar, navigateWeek, pending, searchParams, shellLocked]);
+  }, [isAreaCalendar, navigateWeek, searchParams, shellLocked]);
 
   const hasLocationPlacement =
     isDashboard ||
@@ -324,24 +328,34 @@ export function PlanningPageToolbar({ locations }: Props) {
       aria-expanded={weekPickerOpen}
       title={weekLabelTitle}
       className={cn(
-        "header-toolbar-date-trigger min-w-0 shrink-0 cursor-pointer rounded-sm px-1 py-0.5 text-left text-sm leading-none text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))] disabled:cursor-not-allowed disabled:opacity-50",
+        "header-toolbar-date-trigger relative min-w-0 shrink-0 cursor-pointer rounded-sm px-1 py-0.5 text-left text-sm leading-none text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))] disabled:cursor-not-allowed disabled:opacity-50",
         compactToolbar && "max-md:flex max-md:flex-col max-md:items-center max-md:justify-center max-md:px-0.5"
       )}
     >
-      <span className="lg:hidden">
-        <HeaderLabelHyphenBreak
-          label={weekHeader.compactRangeLabel}
-          compact={compactToolbar}
-          className="font-semibold tabular-nums"
-          maxWidthClass="max-w-[3.1rem]"
-        />
+      <span className="block leading-none">
+        <span className="lg:hidden">
+          <HeaderLabelHyphenBreak
+            label={weekHeader.compactRangeLabel}
+            compact={compactToolbar}
+            className="font-semibold tabular-nums"
+            maxWidthClass="max-w-[3.1rem]"
+          />
+        </span>
+        <span className="hidden font-semibold lg:inline">{weekHeader.rangeLabel}</span>
+        <span className="ml-1.5 hidden text-xs font-normal tabular-nums lg:inline">
+          {t("dashboard.headerCalendarWeek", {
+            week: String(weekHeader.calendarWeek),
+          })}
+        </span>
       </span>
-      <span className="hidden font-semibold lg:inline">{weekHeader.rangeLabel}</span>
-      <span className="ml-1.5 hidden text-xs font-normal tabular-nums lg:inline">
-        {t("dashboard.headerCalendarWeek", {
-          week: String(weekHeader.calendarWeek),
-        })}
-      </span>
+      {isCurrentWeek ? (
+        <span
+          className="pointer-events-none absolute left-1/2 top-full mt-0.5 -translate-x-1/2 whitespace-nowrap text-[10px] font-normal leading-none text-white/75"
+          aria-hidden
+        >
+          {t("common.currentWeekHint")}
+        </span>
+      ) : null}
     </button>
   );
 
@@ -411,6 +425,8 @@ export function PlanningPageToolbar({ locations }: Props) {
       </div>
     ) : null;
 
+  const showsTodayButton = !compactToolbar;
+
   return (
     <>
       <header
@@ -427,18 +443,18 @@ export function PlanningPageToolbar({ locations }: Props) {
           <HeaderToolbarDivider />
           <HeaderToolbarSegment className="pl-3 md:pl-6">{prevWeekButton}</HeaderToolbarSegment>
           <HeaderToolbarDivider />
-          <HeaderToolbarSegment>{dateLabel}</HeaderToolbarSegment>
+          <HeaderToolbarSegment className="overflow-visible">{dateLabel}</HeaderToolbarSegment>
           <HeaderToolbarDivider />
           <HeaderToolbarSegment>{nextWeekButton}</HeaderToolbarSegment>
-          {!compactToolbar ? (
+          {showsTodayButton ? (
             <>
               <HeaderToolbarDivider />
               <HeaderToolbarSegment>{todayButton}</HeaderToolbarSegment>
+              <HeaderToolbarDivider />
             </>
           ) : null}
           {placementControl ? (
             <>
-              <HeaderToolbarDivider />
               <HeaderToolbarSegment className="min-w-max">{placementControl}</HeaderToolbarSegment>
               <HeaderToolbarDivider />
             </>
@@ -454,7 +470,7 @@ export function PlanningPageToolbar({ locations }: Props) {
               </HeaderToolbarSegment>
               <HeaderToolbarDivider />
             </>
-          ) : !placementControl ? (
+          ) : !placementControl && !showsTodayButton ? (
             <HeaderToolbarDivider />
           ) : null}
           {bellControl ? (
@@ -481,7 +497,7 @@ export function PlanningPageToolbar({ locations }: Props) {
         selectedWeekStart={weekStart}
         todayISO={todayISO}
         onSelectWeek={selectWeekFromPicker}
-        disabled={pending}
+        disabled={shellLocked}
       />
     </>
   );

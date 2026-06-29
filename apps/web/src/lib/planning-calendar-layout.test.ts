@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveDashboardExpandedDayDates,
   resolveEmployeeCalendarLayoutDayDates,
+  resolveAreaCalendarLayoutDayDates,
 } from "./planning-calendar-layout";
 
 const CURRENT_WEEK_START = "2026-06-23";
@@ -96,6 +97,49 @@ describe("resolveEmployeeCalendarLayoutDayDates", () => {
     expect([...expanded]).toEqual(nextWeekDates);
   });
 
+  it("collapses days without service hours until the weekday was explicitly expanded", () => {
+    const dayHasServiceHours = [
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+    ];
+    const expanded = resolveEmployeeCalendarLayoutDayDates(
+      WEEK_DATES,
+      dayHasServiceHours,
+      shiftsByDate({}),
+      new Set(),
+      {
+        weekStart: CURRENT_WEEK_START,
+        currentWeekStart: CURRENT_WEEK_START,
+        todayISO: TODAY,
+        savedWeekExpansion: undefined,
+      }
+    );
+
+    expect([...expanded]).not.toContain("2026-06-28");
+    expect([...expanded]).not.toContain("2026-06-29");
+
+    const withSundayExpanded = resolveEmployeeCalendarLayoutDayDates(
+      WEEK_DATES,
+      dayHasServiceHours,
+      shiftsByDate({}),
+      new Set([6]),
+      {
+        weekStart: CURRENT_WEEK_START,
+        currentWeekStart: CURRENT_WEEK_START,
+        todayISO: TODAY,
+        savedWeekExpansion: undefined,
+      }
+    );
+
+    expect(withSundayExpanded.has("2026-06-28")).toBe(true);
+    expect(withSundayExpanded.has("2026-06-29")).toBe(false);
+  });
+
   it("still expands days with shifts even without service hours", () => {
     const dayHasServiceHours = WEEK_DATES.map(() => false);
     const expanded = resolveEmployeeCalendarLayoutDayDates(
@@ -118,5 +162,47 @@ describe("resolveEmployeeCalendarLayoutDayDates", () => {
       shiftsByDate({ "2026-06-23": 1 }),
       new Set()
     ).has("2026-06-23")).toBe(true);
+  });
+});
+
+describe("resolveAreaCalendarLayoutDayDates", () => {
+  it("ignores service hours and shifts from inactive areas", () => {
+    const weekDates = [
+      "2026-06-30",
+      "2026-07-01",
+      "2026-07-02",
+      "2026-07-03",
+      "2026-07-04",
+      "2026-07-05",
+      "2026-07-06",
+    ];
+
+    const expanded = resolveAreaCalendarLayoutDayDates(
+      weekDates,
+      [
+        {
+          id: "hour-b",
+          location_area_id: "area-b",
+          weekday: 0,
+          start_time: "09:00",
+          end_time: "17:00",
+        },
+      ],
+      new Map([
+        ["2026-06-30", [{ locationAreaId: "area-b" }]],
+        ["2026-07-01", [{ locationAreaId: "area-a" }]],
+      ]),
+      ["area-a"],
+      new Set(),
+      {
+        weekStart: "2026-06-30",
+        currentWeekStart: CURRENT_WEEK_START,
+        todayISO: TODAY,
+        savedWeekExpansion: undefined,
+      }
+    );
+
+    expect(expanded.has("2026-06-30")).toBe(false);
+    expect(expanded.has("2026-07-01")).toBe(true);
   });
 });

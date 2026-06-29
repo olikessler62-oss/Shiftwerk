@@ -68,6 +68,7 @@ import type {
   Qualification,
 } from "@schichtwerk/types";
 import {
+  createPlanningAreaNameById,
   createPlanningShiftJobContextMaps,
   type PlanningShiftJobContext,
 } from "@/lib/planning-shift-card-display";
@@ -198,6 +199,7 @@ type Props = {
   staffingHeaderContextMenuOpen?: boolean;
   selectedAreaId: string | null;
   selectedAreaName?: string;
+  areas?: readonly { id: string; name: string }[];
   serviceHours: readonly AreaServiceHourRef[];
   staffingRules: readonly LocationAreaStaffing[];
   qualifications: readonly Qualification[];
@@ -275,6 +277,7 @@ export function DashboardCalendarGrid({
   staffingHeaderContextMenuOpen = false,
   selectedAreaId,
   selectedAreaName = "",
+  areas = [],
   serviceHours,
   staffingRules,
   qualifications,
@@ -319,6 +322,11 @@ export function DashboardCalendarGrid({
     [qualifications]
   );
 
+  const areaNameById = useMemo(
+    () => createPlanningAreaNameById(areas),
+    [areas]
+  );
+
   const availabilityByProfileId = useMemo(
     () => groupRecurringAvailabilityByProfileId(recurringAvailability),
     [recurringAvailability]
@@ -333,6 +341,7 @@ export function DashboardCalendarGrid({
       byDate.set(date, {
         dateISO: date,
         defaultAreaId: selectedAreaId,
+        areaNameById,
         serviceHours,
         staffingRules,
         assignmentPresets,
@@ -345,6 +354,7 @@ export function DashboardCalendarGrid({
   }, [
     dates,
     selectedAreaId,
+    areaNameById,
     serviceHours,
     staffingRules,
     assignmentPresets,

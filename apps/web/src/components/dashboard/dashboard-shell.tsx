@@ -242,6 +242,7 @@ export function DashboardShell({
       params.set("week", nextWeekStart);
       const query = params.toString();
       router.push(query ? `${pathname}?${query}` : pathname);
+      router.refresh();
     },
     [pathname, router, searchParams, weekStart]
   );

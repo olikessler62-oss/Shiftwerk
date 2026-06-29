@@ -1,4 +1,5 @@
 import { cn } from "@/lib/cn";
+import { DASHBOARD_STAFFING_VACANCY_SILHOUETTE_COLOR } from "@/lib/dashboard-panel-styles";
 
 const ROW_ACTION_ICON_SIZE_CLASS = "h-[22px] w-[22px]";
 
@@ -19,10 +20,10 @@ export function StaffingVacancyIcon({ className }: IconProps) {
       aria-hidden
       className={cn(ROW_ACTION_ICON_SIZE_CLASS, className)}
     >
-      <circle cx="9.25" cy="7.25" r="2.65" fill={PERSON_FILL} />
+      <circle cx="9.25" cy="7.25" r="2.65" fill={DASHBOARD_STAFFING_VACANCY_SILHOUETTE_COLOR} />
       <path
         d="M4.75 16.25v-1.35c0-2.1 2.65-3.4 4.5-3.4s4.5 1.3 4.5 3.4v1.35H4.75Z"
-        fill={PERSON_FILL}
+        fill={DASHBOARD_STAFFING_VACANCY_SILHOUETTE_COLOR}
       />
       <path
         d="M15.15 1.95v5.5M12.4 4.7h5.5"

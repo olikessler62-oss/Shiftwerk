@@ -624,6 +624,9 @@ export interface SchichtwerkDatabase {
   listAreaShiftTemplatesWithBreaksForLocation(
     locationId: string
   ): Promise<import("@schichtwerk/types").AreaShiftTemplateWithBreaks[]>;
+  getAreaShiftTemplateBreaksByIds(
+    templateIds: readonly string[]
+  ): Promise<Map<string, ShiftTypeBreakInput[]>>;
   getNextAreaShiftTemplateSortOrder(
     locationAreaId: string,
     locationId: string
@@ -969,6 +972,8 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     options?: { deleteShifts?: boolean }
   ): Promise<void>;
+  prepareFriseurSalonScenario(organizationId: string): Promise<void>;
+  preparePflegedienstScenario(organizationId: string): Promise<void>;
 
   saveOrganizationShiftSnapshot(organizationId: string): Promise<number>;
 

@@ -6,6 +6,7 @@ import {
   STAFFING_FILL_GAUGE_SIZE_PX,
   type StaffingFillGaugeVariant,
 } from "@/lib/tag-area-header-staffing-display";
+import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
 
 export { STAFFING_FILL_GAUGE_SIZE_PX };
 const STROKE_WIDTH = 2.5;
@@ -79,8 +80,8 @@ export function StaffingFillGauge({
             "pointer-events-none absolute inset-0 z-10 flex items-center justify-center tabular-nums leading-none",
             countTextClass,
             variant === "understaffed" && "text-red-600",
-            variant === "planned" && "text-yellow-900",
-            variant === "overstaffed" && "text-black/80",
+            (variant === "planned" || variant === "overstaffed") &&
+              STAFFING_OCHER_TEXT_CLASS,
             variant === "met" && "text-foreground"
           )}
         >

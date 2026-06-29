@@ -214,6 +214,8 @@ export function AreaCalendarView({
         shift_date: shift.shift_date,
         startTime: shift.startTime,
         endTime: shift.endTime,
+        area_shift_template_id: shift.areaShiftTemplateId,
+        location_area_id: shift.locationAreaId,
       })),
     [calendarShifts]
   );

@@ -1,8 +1,11 @@
 import {
   isoWeekStartFromShiftDate,
   resolveProfileWeeklyHoursTarget,
+  toWeeklyHoursExistingShift,
+  toWeeklyShiftHourWindow,
   validateEmployeeWeeklyHoursAfterAssign,
   type WeeklyShiftHourWindow,
+  type ShiftTypeBreakInput,
 } from "@schichtwerk/database";
 import {
   areAreaCalendarShiftTimesComplete,
@@ -18,6 +21,7 @@ export type ShiftAssignWeekShiftRef = {
   shift_date: string;
   startTime: string;
   endTime: string;
+  area_shift_template_id?: string | null;
 };
 
 type ClientWeekShift = ShiftAssignWeekShiftRef;
@@ -33,6 +37,8 @@ export function validateShiftAssignWeeklyHoursClient(input: {
   timeZone: string;
   excludeShiftIds?: ReadonlySet<string>;
   additionalWeekWindows?: readonly WeeklyShiftHourWindow[];
+  areaShiftTemplateId?: string | null;
+  breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
 }): { ok: true } | { ok: false; error: string } {
   const weekStart = isoWeekStartFromShiftDate(input.shiftDate);
   const targetHours = resolveProfileWeeklyHoursTarget(input.weeklyHours);
@@ -65,12 +71,16 @@ export function validateShiftAssignWeeklyHoursClient(input: {
         shift.endTime,
         input.timeZone
       );
-      return {
+      return toWeeklyHoursExistingShift({
         id: shift.id,
         shift_date: shift.shift_date,
         starts_at: timestamps.starts_at,
         ends_at: timestamps.ends_at,
-      };
+        area_shift_template_id: shift.area_shift_template_id,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        breaksByTemplateId: input.breaksByTemplateId,
+      });
     });
 
   return validateEmployeeWeeklyHoursAfterAssign({
@@ -79,11 +89,13 @@ export function validateShiftAssignWeeklyHoursClient(input: {
     existingShifts,
     excludeShiftIds: excludeIds,
     proposedWindows: [
-      {
+      toWeeklyShiftHourWindow({
         shiftDate: input.shiftDate,
         startTime: input.startTime,
         endTime: input.endTime,
-      },
+        area_shift_template_id: input.areaShiftTemplateId,
+        breaksByTemplateId: input.breaksByTemplateId,
+      }),
       ...(input.additionalWeekWindows ?? []),
     ],
     employeeName: input.employeeName,

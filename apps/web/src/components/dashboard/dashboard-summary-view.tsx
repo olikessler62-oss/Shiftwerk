@@ -106,6 +106,8 @@ export function DashboardSummaryView({
         shift_date: shift.shift_date,
         startTime: shift.startTime,
         endTime: shift.endTime,
+        area_shift_template_id: shift.area_shift_template_id,
+        location_area_id: shift.location_area_id,
       })),
     [calendarShifts]
   );

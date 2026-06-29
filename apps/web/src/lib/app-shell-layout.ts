@@ -79,8 +79,8 @@ export const AREA_CALENDAR_VIEW_CONTENT_CLASS = PLANNING_CALENDAR_VIEW_CONTENT_C
 /** Mitarbeiter-Kalender Inhalt (ohne Toolbar-Hintergrund). */
 export const EMPLOYEE_CALENDAR_VIEW_CONTENT_CLASS = PLANNING_CALENDAR_VIEW_CONTENT_CLASS;
 
-/** Dashboard — gleiche Content-Fläche wie Bereich-/Mitarbeiter-Kalender; Mobile: Seiten-Scroll statt verschachtelt. */
-export const DASHBOARD_VIEW_CONTENT_CLASS = `${PLANNING_CALENDAR_VIEW_CONTENT_CLASS} max-md:overflow-visible`;
+/** Dashboard — gleiche Content-Fläche wie Bereich-/Mitarbeiter-Kalender; kein horizontaler Seiten-Scroll. */
+export const DASHBOARD_VIEW_CONTENT_CLASS = `${PLANNING_CALENDAR_VIEW_CONTENT_CLASS} min-w-0 max-w-full overflow-x-clip max-md:overflow-y-visible`;
 
 /** Planungsseiten-Wrapper: Toolbar + Inhalt. */
 export const PLANNING_PAGES_SHELL_CLASS =

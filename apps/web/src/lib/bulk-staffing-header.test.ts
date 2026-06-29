@@ -6,6 +6,9 @@ import {
   buildStaffingQualificationBreakdown,
   countQualificationCoverage,
   computeBulkStaffingHeaderEntries,
+  collectStaffingFooterScopedAssignmentIndicesForDay,
+  countPlanningShiftsMatchingDemandWindows,
+  entryProjectedAssignedForStaffingTotal,
   formatStaffingAssignmentTooltipBlocks,
   formatStaffingConflictTooltipLines,
   formatStaffingEntryTooltipSection,
@@ -270,6 +273,174 @@ describe("allocateAssignmentsToDemandWindows", () => {
 
     expect(allocation.get(hourFrueh)).toEqual([0, 1]);
     expect(allocation.get(hourMittel)).toEqual([2]);
+  });
+});
+
+describe("entryProjectedAssignedForStaffingTotal", () => {
+  it("caps projected assignments at required per window", () => {
+    expect(
+      entryProjectedAssignedForStaffingTotal({
+        assigned: 0,
+        projectedAssigned: 2,
+        required: 1,
+      })
+    ).toBe(1);
+  });
+});
+
+describe("collectStaffingFooterScopedAssignmentIndicesForDay", () => {
+  const areaId = "area-tour-1";
+  const dateISO = "2026-07-07";
+  const weekday = 1;
+  const qualId = "qual-pflege";
+  const hourFrueh = "hour-frueh";
+  const hourSpaet = "hour-spaet";
+
+  const serviceHours = [
+    {
+      id: hourFrueh,
+      location_area_id: areaId,
+      weekday,
+      start_time: "08:00",
+      end_time: "17:00",
+    },
+    {
+      id: hourSpaet,
+      location_area_id: areaId,
+      weekday,
+      start_time: "12:00",
+      end_time: "20:00",
+    },
+  ];
+
+  const staffingRules = [
+    {
+      id: "rule-frueh",
+      location_area_id: areaId,
+      service_hour_id: hourFrueh,
+      qualification_id: qualId,
+      required_count: 1,
+    },
+    {
+      id: "rule-spaet",
+      location_area_id: areaId,
+      service_hour_id: hourSpaet,
+      qualification_id: qualId,
+      required_count: 1,
+    },
+  ];
+
+  it("caps footer scope to required slots per demand window", () => {
+    const assignments = [
+      {
+        startTime: "08:00",
+        endTime: "17:00",
+        employeeId: "emp-1",
+        confirmationStatus: "proposed" as const,
+      },
+      {
+        startTime: "12:00",
+        endTime: "20:00",
+        employeeId: "emp-2",
+        confirmationStatus: "proposed" as const,
+      },
+      {
+        startTime: "08:00",
+        endTime: "17:00",
+        employeeId: "emp-3",
+        confirmationStatus: "proposed" as const,
+      },
+    ];
+
+    const indices = collectStaffingFooterScopedAssignmentIndicesForDay(
+      dateISO,
+      areaId,
+      assignments,
+      staffingRules,
+      serviceHours,
+      [],
+      true
+    );
+
+    expect(indices).toHaveLength(2);
+  });
+});
+
+describe("countPlanningShiftsMatchingDemandWindows", () => {
+  const areaId = "area-tour-1";
+  const dateISO = "2026-07-07";
+  const weekday = 1;
+  const qualId = "qual-pflege";
+  const hourFrueh = "hour-frueh";
+  const hourSpaet = "hour-spaet";
+
+  const serviceHours = [
+    {
+      id: hourFrueh,
+      location_area_id: areaId,
+      weekday,
+      start_time: "08:00",
+      end_time: "17:00",
+    },
+    {
+      id: hourSpaet,
+      location_area_id: areaId,
+      weekday,
+      start_time: "12:00",
+      end_time: "20:00",
+    },
+  ];
+
+  const staffingRules = [
+    {
+      id: "rule-frueh",
+      location_area_id: areaId,
+      service_hour_id: hourFrueh,
+      qualification_id: qualId,
+      required_count: 1,
+    },
+    {
+      id: "rule-spaet",
+      location_area_id: areaId,
+      service_hour_id: hourSpaet,
+      qualification_id: qualId,
+      required_count: 1,
+    },
+  ];
+
+  it("counts only shifts that exactly match demand windows", () => {
+    const count = countPlanningShiftsMatchingDemandWindows(
+      [dateISO],
+      areaId,
+      [
+        {
+          shift_date: dateISO,
+          location_area_id: areaId,
+          employee_id: "emp-1",
+          startTime: "08:00",
+          endTime: "17:00",
+        },
+        {
+          shift_date: dateISO,
+          location_area_id: areaId,
+          employee_id: "emp-2",
+          startTime: "12:00",
+          endTime: "20:00",
+        },
+        {
+          shift_date: dateISO,
+          location_area_id: areaId,
+          employee_id: "emp-3",
+          startTime: "09:00",
+          endTime: "13:00",
+        },
+      ],
+      () => staffingRules,
+      serviceHours,
+      []
+    );
+
+    expect(count).toBe(2);
   });
 });
 
@@ -665,12 +836,16 @@ describe("formatStaffingEntryTooltipSection", () => {
       `${assigned}/${required} für ${name}${shiftTime} bestätigt`,
     unconfirmed: (assigned, required, name, shiftTime) =>
       `${assigned}/${required} für ${name}${shiftTime} angefragt`,
+    planned: (assigned, required, name, shiftTime) =>
+      `${assigned}/${required} für ${name}${shiftTime} geplant`,
     vacant: (count, required, name, shiftTime) =>
       `${count}/${required} für ${name}${shiftTime} offen`,
     totalConfirmed: (assigned, required, shiftTime) =>
       `${assigned}/${required}${shiftTime} bestätigt`,
     totalUnconfirmed: (assigned, required, shiftTime) =>
       `${assigned}/${required}${shiftTime} angefragt`,
+    totalPlanned: (assigned, required, shiftTime) =>
+      `${assigned}/${required}${shiftTime} geplant`,
     totalVacant: (count, required, shiftTime) =>
       `${count}/${required}${shiftTime} offen`,
   };
@@ -766,7 +941,7 @@ describe("formatStaffingEntryTooltipSection", () => {
       periodLine: "Mittagschicht, 12:00 - 16:00 Uhr",
       coverageLines: [
         "1/2 für Kellner bestätigt",
-        "1/2 für Kellner angefragt",
+        "1/2 für Kellner geplant",
       ],
     });
   });

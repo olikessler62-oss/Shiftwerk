@@ -48,6 +48,8 @@ type AreaCalendarShiftCardListRow =
 type Props = {
   shifts: AreaCalendarShiftCard[];
   areaId: string;
+  areaName?: string;
+  areaNameById?: ReadonlyMap<string, string>;
   dateISO: string;
   serviceTimeline: ShiftCardServiceTimeline;
   serviceHours: readonly AreaServiceHourRef[];
@@ -157,6 +159,8 @@ function resolveShiftCardLayout(
 export function AreaCalendarShiftCardsList({
   shifts,
   areaId,
+  areaName,
+  areaNameById,
   dateISO,
   serviceTimeline,
   serviceHours,
@@ -201,6 +205,9 @@ export function AreaCalendarShiftCardsList({
   const tooltipOptions = useMemo(
     () => ({
       assignmentPresets,
+      areaName,
+      areaNameById,
+      fallbackAreaId: areaId || undefined,
       formatShiftTooltipLine: (name: string) =>
         t("common.shiftCardTooltipShift", { name }),
       formatDeploymentTimeTooltipLine: () =>
@@ -208,7 +215,7 @@ export function AreaCalendarShiftCardsList({
       formatJobTooltipLine: (names: string) =>
         t("common.shiftCardTooltipJob", { names }),
     }),
-    [assignmentPresets, t]
+    [assignmentPresets, areaName, areaNameById, areaId, t]
   );
 
   const shiftRows = useMemo((): AreaCalendarShiftCardListRow[] => {

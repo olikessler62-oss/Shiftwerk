@@ -9,6 +9,8 @@ import {
   runBiergartenHadrianEckCurrentWeekFullyCoveredScenario,
   runBiergartenHadrianEckScenario,
 } from "@/lib/superadmin-test-scenarios/biergarten-hadrian-eck";
+import { runFriseurSalonZentraleScenario } from "@/lib/superadmin-test-scenarios/friseur-salon-zentrale";
+import { runPflegedienstZentraleScenario } from "@/lib/superadmin-test-scenarios/pflegedienst-zentrale";
 
 export type SuperadminTestScenarioActionResult =
   | {
@@ -78,6 +80,62 @@ export async function seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario(
         todayISO,
       }
     );
+
+    revalidateAreaCalendarShiftCacheTags({
+      organizationId,
+      weekStarts: [result.weekStart],
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
+
+    return { ok: true, ...result };
+  } catch (error) {
+    return actionError("superadmin.errors.seedTestScenarioFailed", error);
+  }
+}
+
+export async function seedSuperadminFriseurSalonZentraleScenario(): Promise<SuperadminTestScenarioActionResult> {
+  try {
+    const { organizationId, userId, organization } =
+      await requireSuperadminDeveloper();
+    const db = await getDatabase();
+    const timeZone = resolveOrganizationTimeZone(organization);
+    const todayISO = organizationTodayISO(timeZone);
+
+    const result = await runFriseurSalonZentraleScenario(db, {
+      organizationId,
+      actorId: userId,
+      timeZone,
+      todayISO,
+    });
+
+    revalidateAreaCalendarShiftCacheTags({
+      organizationId,
+      weekStarts: [result.weekStart],
+    });
+    revalidatePath("/dashboard");
+    revalidatePath("/bereich-kalender");
+
+    return { ok: true, ...result };
+  } catch (error) {
+    return actionError("superadmin.errors.seedTestScenarioFailed", error);
+  }
+}
+
+export async function seedSuperadminPflegedienstZentraleScenario(): Promise<SuperadminTestScenarioActionResult> {
+  try {
+    const { organizationId, userId, organization } =
+      await requireSuperadminDeveloper();
+    const db = await getDatabase();
+    const timeZone = resolveOrganizationTimeZone(organization);
+    const todayISO = organizationTodayISO(timeZone);
+
+    const result = await runPflegedienstZentraleScenario(db, {
+      organizationId,
+      actorId: userId,
+      timeZone,
+      todayISO,
+    });
 
     revalidateAreaCalendarShiftCacheTags({
       organizationId,

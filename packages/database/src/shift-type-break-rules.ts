@@ -3,11 +3,17 @@ import type { ShiftTypeBreakInput } from "./interface";
 import {
   getBreakDurationRuleForCountry,
   validateShiftTypeBreaksForCountry,
+  type ValidateShiftTypeBreaksOptions,
   DEFAULT_COUNTRY_CODE,
 } from "./labor-compliance-validation";
 
 export const MAX_SHIFT_TYPES_PER_ORGANIZATION = 6;
 export const MAX_AREA_SHIFT_TEMPLATES_PER_AREA = 6;
+
+/** Schichtvorlagen-Modal: Mittigkeitsprüfung der Pausen deaktiviert. */
+export const AREA_SHIFT_TEMPLATE_BREAK_VALIDATION_OPTIONS = {
+  enforceBreaksCenteredOnShift: false,
+} as const;
 
 const MINUTES_PER_DAY = 24 * 60;
 
@@ -43,6 +49,98 @@ export function shiftDurationMinutes(start_time: string, end_time: string): numb
 
 export function shiftDurationHours(start_time: string, end_time: string): number {
   return shiftDurationMinutes(start_time, end_time) / 60;
+}
+
+function breakIntervalOnShiftTimeline(
+  break_start: string,
+  break_end: string,
+  startM: number,
+  endM: number
+): { start: number; end: number } | null {
+  let bs = timeToMinutes(break_start);
+  let be = timeToMinutes(break_end);
+  if (be <= bs) be += MINUTES_PER_DAY;
+
+  for (const offset of [0, MINUTES_PER_DAY, -MINUTES_PER_DAY]) {
+    const bStart = bs + offset;
+    const bEnd = be + offset;
+    if (bStart >= startM - 1 && bEnd <= endM + 1 && bEnd > bStart) {
+      return { start: bStart, end: bEnd };
+    }
+  }
+  return null;
+}
+
+/** Pausenminuten innerhalb eines Schichtfensters (nur überlappende Intervalle). */
+export function totalBreakMinutesOnShiftTimeline(
+  breaks: readonly ShiftTypeBreakInput[],
+  start_time: string,
+  end_time: string
+): number {
+  if (breaks.length === 0) return 0;
+  const { startM, endM } = shiftWindowMinutes(start_time, end_time);
+  let total = 0;
+  for (const entry of breaks) {
+    const interval = breakIntervalOnShiftTimeline(
+      entry.break_start,
+      entry.break_end,
+      startM,
+      endM
+    );
+    if (!interval) continue;
+    total += interval.end - interval.start;
+  }
+  return Math.round(total);
+}
+
+/** Pausenminuten, die ein Kalendertags-Segment auf der Schicht-Timeline überlappen. */
+export function breakMinutesOnShiftTimelineSegment(
+  breaks: readonly ShiftTypeBreakInput[],
+  shift_start_time: string,
+  shift_end_time: string,
+  segment_start_m: number,
+  segment_end_m: number
+): number {
+  if (breaks.length === 0 || segment_end_m <= segment_start_m) return 0;
+  const { startM, endM } = shiftWindowMinutes(shift_start_time, shift_end_time);
+  let total = 0;
+  for (const entry of breaks) {
+    const interval = breakIntervalOnShiftTimeline(
+      entry.break_start,
+      entry.break_end,
+      startM,
+      endM
+    );
+    if (!interval) continue;
+    const overlapStart = Math.max(interval.start, segment_start_m);
+    const overlapEnd = Math.min(interval.end, segment_end_m);
+    if (overlapEnd > overlapStart) total += overlapEnd - overlapStart;
+  }
+  return Math.round(total);
+}
+
+/** Brutto-Schichtdauer minus Pausen = Netto-Arbeitszeit. Ohne Pausen = Brutto. */
+export function shiftNetWorkMinutes(
+  start_time: string,
+  end_time: string,
+  breaks: readonly ShiftTypeBreakInput[] = []
+): number {
+  const gross = shiftDurationMinutes(start_time, end_time);
+  if (breaks.length === 0) return gross;
+  const breakMinutes = totalBreakMinutesOnShiftTimeline(breaks, start_time, end_time);
+  return Math.max(0, gross - breakMinutes);
+}
+
+export function shiftNetWorkHours(
+  start_time: string,
+  end_time: string,
+  breaks: readonly ShiftTypeBreakInput[] = []
+): number {
+  return Math.round((shiftNetWorkMinutes(start_time, end_time, breaks) / 60) * 10) / 10;
+}
+
+export function roundWorkHours(hours: number): number {
+  return Math.round(hours * 10) / 10;
 }
 
 export type BreakDurationRule = {
@@ -101,13 +199,15 @@ export function validateShiftTypeBreaks(
   start_time: string,
   end_time: string,
   breaks: ShiftTypeBreakInput[],
-  countryCode: string | null = DEFAULT_COUNTRY_CODE
+  countryCode: string | null = DEFAULT_COUNTRY_CODE,
+  options?: ValidateShiftTypeBreaksOptions
 ): { ok: true } | { ok: false; error: string } {
   return validateShiftTypeBreaksForCountry(
     countryCode,
     start_time,
     end_time,
-    breaks
+    breaks,
+    options
   );
 }
 

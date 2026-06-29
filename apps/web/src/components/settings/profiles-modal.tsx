@@ -495,13 +495,13 @@ export function ProfilesModal({
   }, [confirmDeleteProfile, detailPanel, profileFormMode]);
 
   useEffect(() => {
-    if (!deferInitialRender) return;
+    if (!deferInitialRender && !profileDetailSwitching) return;
     const previous = document.body.style.cursor;
     document.body.style.cursor = "wait";
     return () => {
       document.body.style.cursor = previous;
     };
-  }, [deferInitialRender]);
+  }, [deferInitialRender, profileDetailSwitching]);
 
   function refreshProfiles() {
     router.refresh();
@@ -638,7 +638,7 @@ export function ProfilesModal({
       dismissOnBackdrop={!anySubModalOpen && !detailPanel}
       dismissOnEscape={!anySubModalOpen && !detailPanel}
       closeAriaLabel={t("common.close")}
-      contentReady={modalReady}
+      contentReady={!deferInitialRender}
       panelClassName={cn(
         modalBusy && "cursor-wait [&_*]:cursor-wait",
         anySubModalOpen && "pointer-events-none"

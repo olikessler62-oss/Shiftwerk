@@ -3143,6 +3143,31 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return normalizeAreaShiftTemplatesWithBreaks(data ?? []);
   }
 
+  async getAreaShiftTemplateBreaksByIds(templateIds: readonly string[]) {
+    const uniqueIds = [...new Set(templateIds.filter(Boolean))];
+    const map = new Map<string, ShiftTypeBreakInput[]>();
+    if (uniqueIds.length === 0) return map;
+
+    const { data, error } = await this.client
+      .from(T.areaShiftTemplateBreaks)
+      .select("area_shift_template_id, break_start, break_end")
+      .in("area_shift_template_id", uniqueIds)
+      .order("break_start");
+    if (error) throw new Error(error.message);
+
+    for (const row of data ?? []) {
+      const templateId = row.area_shift_template_id as string;
+      const list = map.get(templateId) ?? [];
+      list.push({
+        break_start: row.break_start as string,
+        break_end: row.break_end as string,
+      });
+      map.set(templateId, list);
+    }
+
+    return map;
+  }
+
   async getNextAreaShiftTemplateSortOrder(
     locationAreaId: string,
     locationId: string
@@ -4187,6 +4212,20 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { error } = await this.client.rpc("reset_organization_shift_data", {
       p_organization_id: organizationId,
       p_delete_shifts: options?.deleteShifts ?? true,
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async prepareFriseurSalonScenario(organizationId: string): Promise<void> {
+    const { error } = await this.client.rpc("prepare_friseur_salon_scenario", {
+      p_organization_id: organizationId,
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async preparePflegedienstScenario(organizationId: string): Promise<void> {
+    const { error } = await this.client.rpc("prepare_pflegedienst_scenario", {
+      p_organization_id: organizationId,
     });
     if (error) throw new Error(error.message);
   }

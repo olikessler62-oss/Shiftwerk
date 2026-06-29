@@ -45,6 +45,7 @@ import {
 } from "@/lib/shift-hub-conflict";
 import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
 import { translateActionError } from "@/lib/translate-action-error";
+import { communicationHubShiftHorizonEnd } from "@/lib/communication-hub-scope-data";
 import type { AbsenceRequest, ShiftConfirmationStatus } from "@schichtwerk/types";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import {
@@ -230,6 +231,14 @@ export function CommunicationResponsesTab({
     Set<string> | null
   >(null);
 
+  const proposedSendListRange = useMemo(() => {
+    if (!todayISO) return null;
+    return {
+      fromDate: todayISO,
+      toDate: communicationHubShiftHorizonEnd(todayISO),
+    };
+  }, [todayISO]);
+
   const categoryActions = communicationTabActions(activeCategory);
   const showSelection = communicationTabShowsSelection(activeCategory);
   const showConflictColumn = activeCategory === "conflicts";
@@ -247,19 +256,19 @@ export function CommunicationResponsesTab({
       | undefined ?? [];
   }, [activeCategory, grouped]);
 
-  const isProposedShiftSendable = useCallback(
+  const isShiftSelectable = useCallback(
     (shiftId: string) => {
       if (activeCategory !== "proposed") return true;
-      if (!proposedSendableShiftIds) return true;
+      if (proposedSendableShiftIds === null) return false;
       return proposedSendableShiftIds.has(shiftId);
     },
     [activeCategory, proposedSendableShiftIds]
   );
 
-  const selectableVisibleShifts = useMemo(() => {
-    if (activeCategory !== "proposed") return visibleShifts;
-    return visibleShifts.filter((shift) => isProposedShiftSendable(shift.id));
-  }, [activeCategory, visibleShifts, isProposedShiftSendable]);
+  const selectableVisibleShifts = useMemo(
+    () => visibleShifts.filter((shift) => isShiftSelectable(shift.id)),
+    [visibleShifts, isShiftSelectable]
+  );
 
   const visibleSwaps =
     activeCategory === "swaps" ? grouped.swaps : [];
@@ -337,8 +346,14 @@ export function CommunicationResponsesTab({
     activeCategory === "swaps" ? visibleSwaps.length : listItems.length;
   const listScrollEnabled = listRowCount > COMMUNICATION_LIST_SCROLL_THRESHOLD;
 
-  const selectedShifts = visibleShifts.filter((shift) => selected.has(shift.id));
-  const selectedCount = selectedShifts.length;
+  const selectedActionableShifts = useMemo(
+    () =>
+      visibleShifts.filter(
+        (shift) => selected.has(shift.id) && isShiftSelectable(shift.id)
+      ),
+    [visibleShifts, selected, isShiftSelectable]
+  );
+  const selectedCount = selectedActionableShifts.length;
   const listIsEmpty =
     activeCategory === "swaps" ? visibleSwaps.length === 0 : visibleShifts.length === 0;
 
@@ -355,11 +370,22 @@ export function CommunicationResponsesTab({
   }, [initialCategory, shifts, hubOptions, initialPreselectedShiftIds]);
 
   useEffect(() => {
-    setSelected(defaultSelectedResponseShiftIds(activeCategory, shifts, hubOptions));
+    const defaults = defaultSelectedResponseShiftIds(
+      activeCategory,
+      shifts,
+      hubOptions
+    );
+    setSelected(
+      activeCategory === "proposed" && proposedSendableShiftIds
+        ? new Set(
+            [...defaults].filter((id) => proposedSendableShiftIds.has(id))
+          )
+        : defaults
+    );
     setErrorMessage(null);
     setSuccessMessage(null);
     setBatchConfirm(null);
-  }, [activeCategory, shifts, hubOptions]);
+  }, [activeCategory, shifts, hubOptions, proposedSendableShiftIds]);
 
   useEffect(() => {
     onBusyChange?.(pending);
@@ -374,6 +400,7 @@ export function CommunicationResponsesTab({
     let cancelled = false;
     void listConfirmationSendShifts({
       weekStart,
+      ...(proposedSendListRange ?? {}),
       locationId: locationId ?? undefined,
       simulatedProposedOnAssign,
       relaxAppRegistrationGate,
@@ -396,20 +423,11 @@ export function CommunicationResponsesTab({
   }, [
     activeCategory,
     weekStart,
+    proposedSendListRange,
     locationId,
     simulatedProposedOnAssign,
     relaxAppRegistrationGate,
   ]);
-
-  useEffect(() => {
-    if (activeCategory !== "proposed" || !proposedSendableShiftIds) return;
-    setSelected((prev) => {
-      const next = new Set(
-        [...prev].filter((id) => proposedSendableShiftIds.has(id))
-      );
-      return next.size === prev.size ? prev : next;
-    });
-  }, [activeCategory, proposedSendableShiftIds]);
 
   const allVisibleSelected =
     selectableVisibleShifts.length > 0 &&
@@ -439,7 +457,7 @@ export function CommunicationResponsesTab({
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const shiftIds = selectedShifts.map((shift) => shift.id);
+    const shiftIds = selectedActionableShifts.map((shift) => shift.id);
     if (!shiftIds.length) {
       setErrorMessage(t("shiftConfirmation.send.noSelection"));
       return;
@@ -493,12 +511,12 @@ export function CommunicationResponsesTab({
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    if (selectedShifts.length !== 1) {
+    if (selectedActionableShifts.length !== 1) {
       setErrorMessage(t("shiftConfirmation.communication.reassignRequiresOne"));
       return;
     }
 
-    onReassign(selectedShifts[0]!);
+    onReassign(selectedActionableShifts[0]!);
   }
 
   function handleActionClick(action: CommunicationTabAction) {
@@ -515,7 +533,7 @@ export function CommunicationResponsesTab({
       return;
     }
 
-    const shiftIds = selectedShifts.map((shift) => shift.id);
+    const shiftIds = selectedActionableShifts.map((shift) => shift.id);
     if (!shiftIds.length) {
       setErrorMessage(t("shiftConfirmation.send.noSelection"));
       return;
@@ -764,8 +782,7 @@ export function CommunicationResponsesTab({
                       ? shiftHubConflictTooltip(conflicts, t)
                       : null;
                   const rowSelectionInactive =
-                    activeCategory === "proposed" &&
-                    !isProposedShiftSendable(shift.id);
+                    activeCategory === "proposed" && !isShiftSelectable(shift.id);
 
                   const row = (
                     <li className={cn(rowGridClass, "px-3")}>
@@ -774,7 +791,9 @@ export function CommunicationResponsesTab({
                           <input
                             type="checkbox"
                             className="h-4 w-4 shrink-0 rounded border-border"
-                            checked={selected.has(shift.id)}
+                            checked={
+                              selected.has(shift.id) && !rowSelectionInactive
+                            }
                             disabled={pending || rowSelectionInactive}
                             onChange={() => toggleShift(shift.id)}
                             aria-label={t(checkboxLabelKey(activeCategory))}

@@ -14,10 +14,17 @@ export type ShiftCardDisplayInput = {
   endTime: string;
   shiftName: string;
   areaShiftTemplateId?: string | null;
+  locationAreaId?: string | null;
 };
 
 export type ShiftCardTooltipFormatOptions = {
   assignmentPresets?: readonly AreaCalendarAssignmentPreset[];
+  /** Fester Einsatzort (eine Bereichszeile). */
+  areaName?: string;
+  /** Lookup für Schichten mit locationAreaId (z. B. einfache Planung). */
+  areaNameById?: ReadonlyMap<string, string>;
+  /** Fallback, wenn die Schicht keinen locationAreaId hat. */
+  fallbackAreaId?: string;
   formatShiftTooltipLine?: (name: string) => string;
   formatDeploymentTimeTooltipLine?: () => string;
   formatJobTooltipLine?: (jobs: string) => string;
@@ -46,6 +53,8 @@ export function formatShiftCardTooltipJobLine(names: string): string {
 
 export type ShiftCardTooltipData = {
   employeeName?: string;
+  /** Einsatzort (Mitarbeiter-Kalender). */
+  areaName?: string;
   shiftTemplateName?: string | null;
   /** Schichtname ohne passende Vorlage (Bereich-Kalender). */
   shiftNameWithoutTemplate?: string | null;
@@ -68,6 +77,9 @@ export function formatShiftCardTooltipPlainText(
   const lines: string[] = [];
   if (data.employeeName?.trim()) {
     lines.push(data.employeeName.trim());
+  }
+  if (data.areaName?.trim()) {
+    lines.push(data.areaName.trim());
   }
   if (data.shiftTemplateName?.trim()) {
     lines.push(
@@ -203,6 +215,19 @@ function pickShorterSecondaryLabel(
   return shiftLabel;
 }
 
+export function resolveShiftCardTooltipAreaName(
+  shift: Pick<ShiftCardDisplayInput, "locationAreaId">,
+  options?: ShiftCardTooltipFormatOptions
+): string | undefined {
+  const explicitAreaName = options?.areaName?.trim();
+  if (explicitAreaName) return explicitAreaName;
+
+  const areaId = shift.locationAreaId ?? options?.fallbackAreaId;
+  if (!areaId || !options?.areaNameById) return undefined;
+
+  return options.areaNameById.get(areaId)?.trim() || undefined;
+}
+
 export function buildShiftCardDisplayContent(
   shift: ShiftCardDisplayInput,
   jobsLabel?: string | null,
@@ -230,6 +255,7 @@ export function buildShiftCardDisplayContent(
 
   const tooltip: ShiftCardTooltipData = {
     employeeName: shift.employeeName,
+    areaName: resolveShiftCardTooltipAreaName(shift, tooltipOptions),
     shiftTemplateName: templateName,
     shiftNameWithoutTemplate: templateName ? null : shiftLabel || null,
     timeLabel,

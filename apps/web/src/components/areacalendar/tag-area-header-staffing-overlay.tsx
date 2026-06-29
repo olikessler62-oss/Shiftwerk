@@ -22,6 +22,7 @@ import { StaffingFillGauge } from "@/components/areacalendar/staffing-fill-gauge
 import { useTranslations } from "@/i18n/locale-provider";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
 
 type Props = {
   entries: TagAreaHeaderStaffingEntry[];
@@ -154,6 +155,18 @@ export function TagAreaHeaderStaffingOverlay({
           name,
           shiftTime,
         }),
+      planned: (
+        assigned: number,
+        required: number,
+        name: string,
+        shiftTime: string
+      ) =>
+        t("areaCalendar.staffingTooltipQualPlanned", {
+          assigned,
+          required,
+          name,
+          shiftTime,
+        }),
       vacant: (count: number, required: number, name: string, shiftTime: string) =>
         t("areaCalendar.staffingTooltipQualVacant", {
           count,
@@ -173,6 +186,12 @@ export function TagAreaHeaderStaffingOverlay({
         shiftTime: string
       ) =>
         t("areaCalendar.staffingTooltipTotalUnconfirmed", {
+          assigned,
+          required,
+          shiftTime,
+        }),
+      totalPlanned: (assigned: number, required: number, shiftTime: string) =>
+        t("areaCalendar.staffingTooltipTotalPlanned", {
           assigned,
           required,
           shiftTime,
@@ -343,11 +362,11 @@ export function TagAreaHeaderStaffingOverlay({
 
   const indicatorAlertClass =
     hasAssignmentMismatch || hasOverstaffed
-      ? "text-[#CA8A04]"
+      ? STAFFING_OCHER_TEXT_CLASS
       : hasUnderstaffed
         ? "text-red-600"
         : hasPlannedCoverage
-          ? "text-yellow-500"
+          ? STAFFING_OCHER_TEXT_CLASS
           : "text-neutral-600";
 
   const assignInteractiveClusterRef = useCallback(

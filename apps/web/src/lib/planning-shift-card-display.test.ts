@@ -56,4 +56,24 @@ describe("buildPlanningShiftSegmentCardContent", () => {
     expect(content.timeLabel).toBe("04:00");
     expect(content.tooltipBody).toContain("Schicht: Nacht");
   });
+
+  it("includes work site between employee name and shift in tooltip", () => {
+    const content = buildPlanningShiftSegmentCardContent(
+      overnightShift,
+      presets,
+      "full",
+      {
+        employeeName: "Alexa Bello",
+        areaName: "Tour 1",
+      }
+    );
+
+    expect(content.tooltip.areaName).toBe("Tour 1");
+    expect(content.tooltipBody.indexOf("Alexa Bello")).toBeLessThan(
+      content.tooltipBody.indexOf("Tour 1")
+    );
+    expect(content.tooltipBody.indexOf("Tour 1")).toBeLessThan(
+      content.tooltipBody.indexOf("Schicht: Nacht")
+    );
+  });
 });

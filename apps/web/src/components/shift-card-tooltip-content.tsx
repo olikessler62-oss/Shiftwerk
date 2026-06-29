@@ -29,6 +29,11 @@ export function ShiftCardTooltipContent({ data }: Props) {
           <span className="font-bold">{employeeName}</span>
         </div>
       ) : null}
+      {data.areaName?.trim() ? (
+        <div>
+          <span className="font-bold">{data.areaName.trim()}</span>
+        </div>
+      ) : null}
       {shiftTemplateName ? (
         <div>
           {t("common.shiftCardTooltipShiftLabel")}{" "}

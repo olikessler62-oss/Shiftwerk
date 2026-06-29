@@ -445,8 +445,10 @@ as $$
     );
 $$;
 
+revoke execute on function public.count_shifts_conflicting_with_absence_ranges(uuid, jsonb)
+  from anon, public;
 grant execute on function public.count_shifts_conflicting_with_absence_ranges(uuid, jsonb)
-  to authenticated;
+  to authenticated, service_role;
 
 -- Archiv (Phase 2, Spec 006) — kein Client-Lesezugriff
 create table public.shifts_archive (
@@ -678,11 +680,16 @@ as $$
   );
 $$;
 
-revoke all on function public.cancel_pending_swaps_before_shift_archive(date) from public;
-revoke all on function public.archive_shifts_batch(date, int) from public;
-revoke all on function public.purge_shifts_archive_batch(date, int) from public;
-revoke all on function public.purge_expired_absence_requests_batch(date, int) from public;
-revoke all on function public.log_shift_retention_run(text, date, bigint, bigint, int) from public;
+revoke execute on function public.cancel_pending_swaps_before_shift_archive(date)
+  from anon, authenticated, public;
+revoke execute on function public.archive_shifts_batch(date, int)
+  from anon, authenticated, public;
+revoke execute on function public.purge_shifts_archive_batch(date, int)
+  from anon, authenticated, public;
+revoke execute on function public.purge_expired_absence_requests_batch(date, int)
+  from anon, authenticated, public;
+revoke execute on function public.log_shift_retention_run(text, date, bigint, bigint, int)
+  from anon, authenticated, public;
 
 grant execute on function public.cancel_pending_swaps_before_shift_archive(date) to service_role;
 grant execute on function public.archive_shifts_batch(date, int) to service_role;
@@ -800,6 +807,8 @@ left join lateral (
   limit 1
 ) cr on true;
 
+alter view public.shifts_with_legacy_confirmation set (security_invoker = true);
+
 create table public.shift_deletion_events (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations (id) on delete cascade,
@@ -906,8 +915,8 @@ as $$
   select to_char(current_date, 'YYYY-MM-DD');
 $$;
 
-grant execute on function public.current_date_iso() to authenticated;
-grant execute on function public.current_date_iso() to service_role;
+revoke execute on function public.current_date_iso() from anon, public;
+grant execute on function public.current_date_iso() to authenticated, service_role;
 
 create or replace function public.reset_organization_operational_data(p_organization_id uuid)
 returns void
@@ -1011,6 +1020,8 @@ begin
 end;
 $$;
 
+revoke execute on function public.reset_organization_operational_data(uuid)
+  from anon, authenticated, public;
 grant execute on function public.reset_organization_operational_data(uuid) to service_role;
 
 create or replace function public.reset_organization_shift_data(p_organization_id uuid)
@@ -1319,6 +1330,8 @@ begin
 end;
 $$;
 
+revoke execute on function public.reset_organization_shift_data(uuid)
+  from anon, authenticated, public;
 grant execute on function public.reset_organization_shift_data(uuid) to service_role;
 
 create or replace function public.save_organization_shift_snapshot(p_organization_id uuid)
@@ -1447,6 +1460,10 @@ begin
 end;
 $$;
 
+revoke execute on function public.save_organization_shift_snapshot(uuid)
+  from anon, authenticated, public;
+revoke execute on function public.restore_organization_shift_snapshot(uuid)
+  from anon, authenticated, public;
 grant execute on function public.save_organization_shift_snapshot(uuid) to service_role;
 grant execute on function public.restore_organization_shift_snapshot(uuid) to service_role;
 
@@ -1484,10 +1501,10 @@ begin
 end;
 $$;
 
+revoke execute on function public.replace_location_area_staffing_for_service_hour(uuid, jsonb)
+  from anon, public;
 grant execute on function public.replace_location_area_staffing_for_service_hour(uuid, jsonb)
-  to authenticated;
-grant execute on function public.replace_location_area_staffing_for_service_hour(uuid, jsonb)
-  to service_role;
+  to authenticated, service_role;
 
 -- RLS helpers (private schema — not exposed via PostgREST RPC)
 create schema if not exists private;
@@ -1520,8 +1537,8 @@ as $$
   );
 $$;
 
-revoke all on function private.current_profile() from public;
-revoke all on function private.is_manager_or_owner() from public;
+revoke execute on function private.current_profile() from anon, public;
+revoke execute on function private.is_manager_or_owner() from anon, public;
 grant execute on function private.current_profile() to authenticated, service_role;
 grant execute on function private.is_manager_or_owner() to authenticated, service_role;
 

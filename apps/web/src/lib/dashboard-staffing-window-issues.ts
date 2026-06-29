@@ -15,6 +15,7 @@ import {
   type ShiftCardContextMenuAction,
   type ShiftCardContextMenuOptions,
 } from "@/lib/shift-card-context-menu-actions";
+import { canDeleteShift } from "@/lib/shift-deletion-policy";
 import { isPastCalendarDate } from "@/lib/dates";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 
@@ -55,7 +56,24 @@ export function findFirstStaffingCandidatesRow(
     if (
       !isPastCalendarDate(row.dateISO, todayISO) &&
       row.rowKind === "staffing_window" &&
-      (row.status === "understaffed" || row.status === "planned")
+      row.status === "understaffed"
+    ) {
+      return row;
+    }
+  }
+
+  return null;
+}
+
+export function findFirstPlannedStaffingWindowRow(
+  rows: readonly DashboardStaffingWindowRow[],
+  todayISO: string
+): DashboardStaffingWindowRow | null {
+  for (const row of rows) {
+    if (
+      !isPastCalendarDate(row.dateISO, todayISO) &&
+      row.rowKind === "staffing_window" &&
+      row.status === "planned"
     ) {
       return row;
     }
@@ -66,7 +84,7 @@ export function findFirstStaffingCandidatesRow(
 
 export function findFirstRowWithConfirmationStatus(
   rows: readonly DashboardStaffingWindowRow[],
-  status: ShiftConfirmationStatus
+  status: (typeof DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES)[number]
 ): DashboardStaffingWindowRow | null {
   for (const row of rows) {
     if ((row.confirmationCounts?.[status] ?? 0) > 0) {
@@ -94,6 +112,7 @@ export function staffingRowShowsIssuesButton(
 ): boolean {
   if (row.rowKind !== "staffing_window") return false;
   if ((row.staffingConflicts?.length ?? 0) > 0) return true;
+  if (shiftConfirmationEnabled && row.status === "planned") return true;
   if (
     shiftConfirmationEnabled &&
     listStaffingWindowConfirmationStatuses(row.confirmationCounts).length > 0
@@ -122,6 +141,62 @@ function shiftCardMenuOptions(
   };
 }
 
+export function listShiftsForStaffingWindow(
+  row: DashboardStaffingWindowRow,
+  context: DashboardStaffingWindowIssuesContext
+): PlanningShift[] {
+  return context.calendarShifts
+    .filter((shift) => {
+      if (shift.location_area_id !== context.areaId) return false;
+      if (shift.shift_date !== row.dateISO) return false;
+
+      if (row.rowKind === "no_service_hours") {
+        return true;
+      }
+
+      const serviceHourId = findServiceHourIdForShift(
+        context.serviceHours,
+        context.areaId,
+        shift.shift_date,
+        shift.startTime,
+        shift.endTime
+      );
+      return serviceHourId === row.serviceHourId;
+    })
+    .sort(
+      (left, right) =>
+        left.startTime.localeCompare(right.startTime) ||
+        (context.employeeNameById.get(left.employee_id) ?? "").localeCompare(
+          context.employeeNameById.get(right.employee_id) ?? "",
+          "de"
+        )
+    );
+}
+
+export function shiftOverviewActionsForShift(
+  shift: PlanningShift,
+  context: DashboardStaffingWindowIssuesContext
+): readonly ShiftCardContextMenuAction[] {
+  const confirmationActions = confirmationActionsForShift(shift, context);
+  if (confirmationActions.length > 0) return confirmationActions;
+
+  if (context.readOnlyWeek) return [];
+
+  const menuOptions = shiftCardMenuOptions(shift, context);
+  if (
+    canDeleteShift({
+      shiftDate: shift.shift_date,
+      confirmationStatus: shift.confirmationStatus,
+      requestedAt: shift.requestedAt,
+      isPastShiftDate: menuOptions.isPastShiftDate,
+    })
+  ) {
+    return ["delete"];
+  }
+
+  return [];
+}
+
 export function listConfirmationShiftsForStaffingWindow(
   row: DashboardStaffingWindowRow,
   context: DashboardStaffingWindowIssuesContext
@@ -140,15 +215,21 @@ export function listConfirmationShiftsForStaffingWindow(
     if (serviceHourId !== row.serviceHourId) return false;
 
     const status = shift.confirmationStatus;
+    if (!status) return false;
+    if (status === "proposed") return row.status === "planned";
     return (
-      !!status &&
-      (
-        DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES as readonly string[]
-      ).includes(status)
-    );
+      DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES as readonly string[]
+    ).includes(status);
   });
 
-  return dedupeConfirmationShiftsByEmployee(actionableShifts).sort(
+  const proposedShifts = actionableShifts.filter(
+    (shift) => shift.confirmationStatus === "proposed"
+  );
+  const otherShifts = actionableShifts.filter(
+    (shift) => shift.confirmationStatus !== "proposed"
+  );
+
+  return [...proposedShifts, ...dedupeConfirmationShiftsByEmployee(otherShifts)].sort(
     (left, right) =>
       (context.employeeNameById.get(left.employee_id) ?? "").localeCompare(
         context.employeeNameById.get(right.employee_id) ?? "",

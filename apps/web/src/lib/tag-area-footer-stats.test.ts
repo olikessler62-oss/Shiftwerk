@@ -63,6 +63,8 @@ describe("tag-area-footer-stats", () => {
       }
     );
 
+    expect(stats.grossHours).toBe(8);
+    expect(stats.breakHours).toBe(0);
     expect(stats.totalHours).toBe(8);
     expect(stats.totalCost).toBe(160);
     expect(stats.baseCost).toBe(160);
@@ -102,10 +104,49 @@ describe("tag-area-footer-stats", () => {
       }
     );
 
+    expect(stats.grossHours).toBe(8);
+    expect(stats.breakHours).toBe(0);
     expect(stats.totalHours).toBe(8);
     expect(stats.baseCost).toBe(160);
     expect(stats.surchargeCost).toBe(40);
     expect(stats.totalCost).toBe(200);
+  });
+
+  it("subtracts template breaks from compensation hours and costs", () => {
+    const employeeId = "emp-1";
+    const date = "2026-06-09";
+    const templateId = "tpl-1";
+    const stats = computeTagAreaDayFooterStatsForDate(
+      date,
+      [
+        {
+          employeeId,
+          shift_date: date,
+          startTime: "08:00",
+          endTime: "16:00",
+          area_shift_template_id: templateId,
+        },
+      ],
+      {
+        [shiftCompensationKey(employeeId, date)]: {
+          baseHourlyRate: 20,
+          currency: "EUR",
+          surcharges: [],
+        },
+      },
+      "EUR",
+      {
+        breaksByTemplateId: new Map([
+          [templateId, [{ break_start: "12:00", break_end: "12:30" }]],
+        ]),
+      }
+    );
+
+    expect(stats.grossHours).toBe(8);
+    expect(stats.breakHours).toBe(0.5);
+    expect(stats.totalHours).toBe(7.5);
+    expect(stats.totalCost).toBe(150);
+    expect(stats.baseCost).toBe(150);
   });
 
   it("splits overnight hours across start and follow-up day", () => {
@@ -147,6 +188,8 @@ describe("tag-area-footer-stats", () => {
   it("formats footer line with separator", () => {
     const line = formatTagAreaFooterLine(
       {
+        grossHours: 8,
+        breakHours: 0,
         totalHours: 8,
         totalCost: 160,
         baseCost: 160,
@@ -163,6 +206,8 @@ describe("tag-area-footer-stats", () => {
   it("formats footer tooltip lines separately", () => {
     const labels = formatTagAreaFooterLabels(
       {
+        grossHours: 8,
+        breakHours: 0,
         totalHours: 8,
         totalCost: 160,
         baseCost: 160,
@@ -186,6 +231,8 @@ describe("tag-area-footer-stats", () => {
   it("includes surcharges line in cost tooltip when present", () => {
     const labels = formatTagAreaFooterLabels(
       {
+        grossHours: 8,
+        breakHours: 0,
         totalHours: 8,
         totalCost: 200,
         baseCost: 160,
@@ -209,6 +256,8 @@ describe("tag-area-footer-stats", () => {
   it("omits cost tooltip when no compensation is recorded", () => {
     const labels = formatTagAreaFooterLabels(
       {
+        grossHours: 8,
+        breakHours: 0,
         totalHours: 8,
         totalCost: 0,
         baseCost: 0,

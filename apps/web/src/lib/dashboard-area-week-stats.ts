@@ -14,9 +14,12 @@ import { staffingRulesWithOverridesForAreaDate } from "@/lib/staffing-rules-with
 import {
   computeTagAreaDayFooterStatsForDate,
   type AreaCalendarShiftCompensationByKey,
+  type TagAreaFooterStatsOptions,
   type TagAreaShiftRef,
 } from "@/lib/tag-area-footer-stats";
+import { buildBreaksByTemplateIdFromAreaTemplates } from "@/lib/shift-work-hours";
 import {
+  gaugeCountsForTagAreaHeaderStaffingEntry,
   isTagAreaHeaderStaffingEntryAssignmentMismatch,
   isTagAreaHeaderStaffingEntryOverstaffed,
   isTagAreaHeaderStaffingEntryPlannedCoverage,
@@ -115,6 +118,8 @@ export type DashboardAreaWeekStats = {
   staffingWindowRows: DashboardStaffingWindowRow[];
   staffingIssues: DashboardStaffingIssue[];
   confirmationConflictStatuses: ShiftConfirmationStatus[];
+  grossHours: number;
+  breakHours: number;
   totalHours: number;
   baseCost: number;
   surchargeCost: number;
@@ -122,6 +127,12 @@ export type DashboardAreaWeekStats = {
   hasCompensation: boolean;
   currency: string;
   hasAssignmentMismatch: boolean;
+  /** Geplant würde Bedarf decken, bestätigt noch nicht vollständig (mind. ein Fenster). */
+  hasPlannedCoverage: boolean;
+  /** Mind. ein Fenster mit echter Unterbesetzung (ohne geplante Deckung). */
+  hasUnderstaffed: boolean;
+  /** Summe der projizierten Besetzung (inkl. geplanter, noch nicht bestätigter Schichten). */
+  projectedAssignedTotal: number;
   /** Mindestens eine Schichtvorlage im Bereich — steuert die Spalte „Schicht“ in der Liste. */
   hasAreaShiftTemplates: boolean;
 };
@@ -488,6 +499,14 @@ function resolveStaffingWindowRowStatus(input: {
   return "met";
 }
 
+/** Besetzt-Anzeige in Tabellenzeilen — wie Füllstandsanzeiger im Einsatzortkalender. */
+export function staffingWindowRowDisplayAssigned(
+  entry: TagAreaHeaderStaffingEntry,
+  _status?: DashboardStaffingWindowRowStatus
+): number {
+  return gaugeCountsForTagAreaHeaderStaffingEntry(entry).assigned;
+}
+
 function sortStaffingWindowRows(
   rows: DashboardStaffingWindowRow[]
 ): DashboardStaffingWindowRow[] {
@@ -517,6 +536,8 @@ function planningShiftsToTagAreaRefs(
       shift_date: shift.shift_date,
       startTime: shift.startTime,
       endTime: shift.endTime,
+      area_shift_template_id: shift.area_shift_template_id,
+      location_area_id: shift.location_area_id,
     }));
 }
 
@@ -543,15 +564,25 @@ export function computeDashboardAreaWeekStats(
     employeeNameById,
   } = input;
 
-  const areaShifts = planningShiftsToStaffingRefs(shifts, area.id);
-  const shiftCount = areaShifts.length;
-  const tagAreaShifts = planningShiftsToTagAreaRefs(shifts, area.id);
+  const datesSet = new Set(dates);
+  const areaPlanningShifts = shifts.filter(
+    (shift) =>
+      shift.location_area_id === area.id && datesSet.has(shift.shift_date)
+  );
   const assignmentPresets = areaCalendarAssignmentPresetsForArea(
     areaShiftTemplates.filter((template) => template.location_area_id === area.id)
   );
+  const areaShifts = planningShiftsToStaffingRefs(areaPlanningShifts, area.id);
+  const tagAreaShifts = planningShiftsToTagAreaRefs(areaPlanningShifts, area.id);
+  const footerStatsOptions: TagAreaFooterStatsOptions = {
+    breaksByTemplateId: buildBreaksByTemplateIdFromAreaTemplates(areaShiftTemplates),
+    areaShiftTemplates,
+  };
   const hasAreaShiftTemplates = assignmentPresets.length > 0;
+  const shiftCount = areaPlanningShifts.length;
 
   let assignedTotal = 0;
+  let projectedAssignedTotal = 0;
   let requiredTotal = 0;
   let openSlots = 0;
   let understaffedWindowCount = 0;
@@ -564,7 +595,7 @@ export function computeDashboardAreaWeekStats(
   const staffingWindowRows: DashboardStaffingWindowRow[] = [];
   const staffingIssues: DashboardStaffingIssue[] = [];
   const confirmationCountsByKey = buildStaffingWindowConfirmationCountsByKey({
-    shifts,
+    shifts: areaPlanningShifts,
     areaId: area.id,
     dates,
     serviceHours: serviceHours ?? [],
@@ -618,6 +649,7 @@ export function computeDashboardAreaWeekStats(
 
       for (const entry of entries) {
         assignedTotal += entry.assigned;
+        projectedAssignedTotal += entry.projectedAssigned ?? entry.assigned;
         requiredTotal += entry.required;
 
         const entryUnderstaffed = isTagAreaHeaderStaffingEntryUnderstaffed(entry);
@@ -673,6 +705,12 @@ export function computeDashboardAreaWeekStats(
           const confirmationCounts = confirmationCountsByKey.get(
             staffingWindowConfirmationCountsKey(dateISO, entry.serviceHourId)
           );
+          const rowStatus = resolveStaffingWindowRowStatus({
+            understaffed: entryUnderstaffed,
+            overstaffed: entryOverstaffed,
+            mismatch: entryMismatch,
+            plannedCoverage: entryPlannedCoverage,
+          });
 
           staffingWindowRows.push({
             rowKind: "staffing_window",
@@ -682,14 +720,9 @@ export function computeDashboardAreaWeekStats(
             timeFrom,
             timeTo,
             shiftName: entryShiftLabel(entry),
-            assigned: entry.assigned,
+            assigned: staffingWindowRowDisplayAssigned(entry, rowStatus),
             required: entry.required,
-            status: resolveStaffingWindowRowStatus({
-              understaffed: entryUnderstaffed,
-              overstaffed: entryOverstaffed,
-              mismatch: entryMismatch,
-              plannedCoverage: entryPlannedCoverage,
-            }),
+            status: rowStatus,
             hasConflict: rowAssignmentIssues.conflicts.length > 0,
             staffingConflicts:
               rowAssignmentIssues.conflicts.length > 0
@@ -713,6 +746,8 @@ export function computeDashboardAreaWeekStats(
     }
   }
 
+  let grossHours = 0;
+  let breakHours = 0;
   let totalHours = 0;
   let baseCost = 0;
   let surchargeCost = 0;
@@ -723,9 +758,13 @@ export function computeDashboardAreaWeekStats(
     const dayStats = computeTagAreaDayFooterStatsForDate(
       dateISO,
       tagAreaShifts,
-      compensationByKey
+      compensationByKey,
+      "EUR",
+      footerStatsOptions
     );
     totalHours += dayStats.totalHours;
+    grossHours += dayStats.grossHours;
+    breakHours += dayStats.breakHours;
     baseCost += dayStats.baseCost;
     surchargeCost += dayStats.surchargeCost;
     if (dayStats.hasCompensation) {
@@ -735,6 +774,8 @@ export function computeDashboardAreaWeekStats(
   }
 
   totalHours = Math.round(totalHours * 10) / 10;
+  grossHours = Math.round(grossHours * 10) / 10;
+  breakHours = Math.round(breakHours * 10) / 10;
   baseCost = Math.round(baseCost * 100) / 100;
   surchargeCost = Math.round(surchargeCost * 100) / 100;
   const totalCost = Math.round((baseCost + surchargeCost) * 100) / 100;
@@ -752,7 +793,7 @@ export function computeDashboardAreaWeekStats(
     : "no_demand";
 
   const confirmationConflictStatuses = collectAreaConfirmationConflictStatuses(
-    shifts,
+    areaPlanningShifts,
     area.id,
     dates,
     serviceHours ?? []
@@ -774,12 +815,17 @@ export function computeDashboardAreaWeekStats(
     staffingIssues: sortDashboardStaffingIssues(staffingIssues),
     confirmationConflictStatuses,
     totalHours,
+    grossHours,
+    breakHours,
     baseCost,
     surchargeCost,
     totalCost,
     hasCompensation,
     currency,
     hasAssignmentMismatch,
+    hasPlannedCoverage,
+    hasUnderstaffed,
+    projectedAssignedTotal,
     hasAreaShiftTemplates,
   };
 }

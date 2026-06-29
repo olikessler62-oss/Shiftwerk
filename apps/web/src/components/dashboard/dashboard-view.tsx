@@ -92,6 +92,7 @@ import {
   buildEmployeeWeeklyHoursDisplayByEmployeeId,
   buildLocationNameByIdMap,
 } from "@/lib/employee-weekly-hours-display";
+import { buildBreaksByTemplateIdFromAreaTemplates } from "@/lib/shift-work-hours";
 import {
   useEffectiveShiftConfirmationEnabled,
   useShiftConfirmationSimulation,
@@ -665,6 +666,11 @@ export function DashboardView({
     [areas]
   );
 
+  const breaksByTemplateId = useMemo(
+    () => buildBreaksByTemplateIdFromAreaTemplates(areaShiftTemplates),
+    [areaShiftTemplates]
+  );
+
   const weeklyHoursTooltipDisplayByEmployeeId = useMemo(
     () =>
       buildEmployeeWeeklyHoursDisplayByEmployeeId({
@@ -674,6 +680,7 @@ export function DashboardView({
         locationNameById,
         areaIdToLocationId,
         fallbackLocationId: selectedLocationId,
+        breaksByTemplateId,
       }),
     [
       employees,
@@ -683,6 +690,7 @@ export function DashboardView({
       locationNameById,
       areaIdToLocationId,
       selectedLocationId,
+      breaksByTemplateId,
     ]
   );
 
@@ -696,6 +704,7 @@ export function DashboardView({
         locationNameById,
         areaIdToLocationId,
         fallbackLocationId: selectedLocationId,
+        breaksByTemplateId,
       }),
     [
       employees,
@@ -706,6 +715,7 @@ export function DashboardView({
       locationNameById,
       areaIdToLocationId,
       selectedLocationId,
+      breaksByTemplateId,
     ]
   );
 
@@ -721,6 +731,7 @@ export function DashboardView({
         locationNameById,
         areaIdToLocationId,
         fallbackLocationId: selectedLocationId,
+        breaksByTemplateId,
       });
       map.set(employee.id, display.totalHours > display.targetHours);
     }
@@ -733,6 +744,7 @@ export function DashboardView({
     locationNameById,
     areaIdToLocationId,
     selectedLocationId,
+    breaksByTemplateId,
   ]);
 
   const staffingCalendarShifts = useMemo(
@@ -1151,8 +1163,18 @@ export function DashboardView({
         shift_date: shift.shift_date,
         startTime: shift.startTime,
         endTime: shift.endTime,
+        area_shift_template_id: shift.area_shift_template_id,
+        location_area_id: shift.location_area_id,
       })),
     [calendarDisplayShifts]
+  );
+
+  const tagAreaFooterStatsOptions = useMemo(
+    () => ({
+      breaksByTemplateId,
+      areaShiftTemplates,
+    }),
+    [breaksByTemplateId, areaShiftTemplates]
   );
 
   const shiftCompensation = useLazyShiftCompensation(planningTagAreaShiftRefs);
@@ -1167,7 +1189,9 @@ export function DashboardView({
       const stats = computeTagAreaDayFooterStatsForDate(
         date,
         planningTagAreaShiftRefs,
-        shiftCompensation
+        shiftCompensation,
+        undefined,
+        tagAreaFooterStatsOptions
       );
       if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
       map.set(
@@ -1176,7 +1200,7 @@ export function DashboardView({
       );
     }
     return map;
-  }, [dates, planningTagAreaShiftRefs, shiftCompensation, t, locale]);
+  }, [dates, planningTagAreaShiftRefs, shiftCompensation, tagAreaFooterStatsOptions, t, locale]);
 
   const shiftsByCellDisplay = useMemo(
     () => buildPlanningShiftsByCellDisplay(dates, calendarDisplayShifts),
@@ -2878,6 +2902,7 @@ export function DashboardView({
             staffingHeaderContextMenuOpen={staffingHeaderContextMenu != null}
             selectedAreaId={assignAreaId}
             selectedAreaName={selectedAreaName}
+            areas={areas}
             serviceHours={serviceHours}
             staffingRules={staffingRules}
             qualifications={qualifications}

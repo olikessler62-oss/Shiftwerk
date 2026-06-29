@@ -24,6 +24,9 @@ describe("employee weekly hours validation", () => {
           shift_date: "2026-06-09",
           starts_at: "2026-06-09T05:00:00.000Z",
           ends_at: "2026-06-09T13:00:00.000Z",
+          startTime: "08:00",
+          endTime: "17:00",
+          breaks: [{ break_start: "13:00", break_end: "14:00" }],
         },
       ],
       additionalWindows: [

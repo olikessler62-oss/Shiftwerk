@@ -30,6 +30,7 @@ import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/da
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import {
   buildPlanningShiftSegmentCardContent,
+  resolvePlanningShiftAreaName,
   resolvePlanningShiftJobsLabel,
   type PlanningShiftJobContext,
 } from "@/lib/planning-shift-card-display";
@@ -203,12 +204,14 @@ export function DashboardCellShiftRow({
         const jobsLine = jobsLabel.trim()
           ? t("common.shiftCardTooltipJob", { names: jobsLabel })
           : null;
+        const areaName = resolvePlanningShiftAreaName(shift, shiftJobContext);
         const cardContent = buildPlanningShiftSegmentCardContent(
           shift,
           assignmentPresets,
           part,
           {
             employeeName,
+            areaName,
             confirmationStatusLine,
             confirmationStatus: calendarConfirmationStatus,
             jobsLabel,

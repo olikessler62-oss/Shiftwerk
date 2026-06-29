@@ -61,4 +61,37 @@ describe("buildShiftCardDisplayContent tooltips", () => {
     expect(display.tooltipBody).toContain("Einsatzzeit:");
     expect(display.tooltipBody).not.toContain("Tätigkeit:");
   });
+
+  it("includes work site between employee name and shift in tooltip", () => {
+    const display = buildShiftCardDisplayContent(
+      {
+        employeeName: "Alexa Bello",
+        startTime: "08:00",
+        endTime: "17:00",
+        shiftName: "Früh",
+        areaShiftTemplateId: "t1",
+      },
+      "Pfleger/in",
+      {
+        assignmentPresets: [
+          {
+            id: "t1",
+            name: "Früh",
+            color: "#000",
+            start_time: "08:00",
+            end_time: "17:00",
+          },
+        ],
+        areaName: "Tour 1",
+      }
+    );
+
+    expect(display.tooltip.areaName).toBe("Tour 1");
+    expect(display.tooltipBody.indexOf("Alexa Bello")).toBeLessThan(
+      display.tooltipBody.indexOf("Tour 1")
+    );
+    expect(display.tooltipBody.indexOf("Tour 1")).toBeLessThan(
+      display.tooltipBody.indexOf("Schicht: Früh")
+    );
+  });
 });

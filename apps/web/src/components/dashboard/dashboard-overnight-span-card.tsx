@@ -25,6 +25,7 @@ import {
 } from "@/lib/planning-calendar-layout";
 import {
   buildPlanningExpandedShiftCardContent,
+  resolvePlanningShiftAreaName,
   resolvePlanningShiftJobsLabel,
   type PlanningShiftJobContext,
 } from "@/lib/planning-shift-card-display";
@@ -119,11 +120,13 @@ export function DashboardOvernightSpanCard({
   const jobsLine = jobsLabel.trim()
     ? t("common.shiftCardTooltipJob", { names: jobsLabel })
     : null;
+  const areaName = resolvePlanningShiftAreaName(shift, shiftJobContext);
   const cardContent = buildPlanningExpandedShiftCardContent(
     shift,
     assignmentPresets,
     {
       employeeName,
+      areaName,
       confirmationStatusLine,
       confirmationStatus: calendarConfirmationStatus,
       jobsLabel,

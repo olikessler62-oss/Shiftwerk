@@ -1,30 +1,54 @@
-import { shiftDurationHours } from "@schichtwerk/database";
-import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import { shiftWorkHoursFromRef } from "@/lib/shift-work-hours";
+import type { ShiftTypeBreakInput } from "@schichtwerk/database";
+import type { AreaShiftTemplateWithBreaks } from "@schichtwerk/types";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
 import type { ShiftAssignWeekShiftRef } from "@/lib/shift-weekly-hours-validation-client";
+import { buildBreaksByTemplateIdFromAreaTemplates } from "@/lib/shift-work-hours";
 
 export function weeklyHoursCheckShiftFromAreaCalendarCard(
-  shift: AreaCalendarShiftCard
+  shift: AreaCalendarShiftCard,
+  options?: {
+    breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
+    templates?: readonly AreaShiftTemplateWithBreaks[];
+  }
 ): ShiftForWeeklyHoursConflict {
   return {
     id: shift.id,
     employeeId: shift.employeeId,
     shift_date: shift.shift_date,
-    durationHours: shiftDurationHours(shift.startTime, shift.endTime),
+    durationHours: shiftWorkHoursFromRef(
+      {
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        area_shift_template_id: shift.areaShiftTemplateId,
+      },
+      options
+    ),
     confirmation_status: shift.confirmationStatus ?? null,
   };
 }
 
 export function weeklyHoursCheckShiftFromPlanningShift(
-  shift: PlanningShift
+  shift: PlanningShift,
+  options?: {
+    breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
+    templates?: readonly AreaShiftTemplateWithBreaks[];
+  }
 ): ShiftForWeeklyHoursConflict {
   return {
     id: shift.id,
     employeeId: shift.employee_id,
     shift_date: shift.shift_date,
-    durationHours: shiftDurationHours(shift.startTime, shift.endTime),
+    durationHours: shiftWorkHoursFromRef(
+      {
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        area_shift_template_id: shift.area_shift_template_id,
+      },
+      options
+    ),
     confirmation_status: shift.confirmationStatus ?? null,
   };
 }
@@ -48,6 +72,7 @@ export function shiftAssignWeekShiftsFromAreaCalendarCards(
     shift_date: string;
     startTime: string;
     endTime: string;
+    areaShiftTemplateId?: string | null;
   }[]
 ): ShiftAssignWeekShiftRef[] {
   return shifts.map((shift) => ({
@@ -56,6 +81,7 @@ export function shiftAssignWeekShiftsFromAreaCalendarCards(
     shift_date: shift.shift_date,
     startTime: shift.startTime,
     endTime: shift.endTime,
+    area_shift_template_id: shift.areaShiftTemplateId ?? null,
   }));
 }
 
@@ -66,6 +92,7 @@ export function shiftAssignWeekShiftsFromPlanningShifts(
     shift_date: string;
     startTime: string;
     endTime: string;
+    area_shift_template_id?: string | null;
   }[]
 ): ShiftAssignWeekShiftRef[] {
   return shifts.map((shift) => ({
@@ -74,7 +101,14 @@ export function shiftAssignWeekShiftsFromPlanningShifts(
     shift_date: shift.shift_date,
     startTime: shift.startTime,
     endTime: shift.endTime,
+    area_shift_template_id: shift.area_shift_template_id ?? null,
   }));
+}
+
+export function weeklyHoursBreaksByTemplateIdFromTemplates(
+  templates: readonly AreaShiftTemplateWithBreaks[]
+): Map<string, ShiftTypeBreakInput[]> {
+  return buildBreaksByTemplateIdFromAreaTemplates(templates);
 }
 
 /** Schichten einer Planungswoche — für Wochenstunden wie serverseitige Validierung. */

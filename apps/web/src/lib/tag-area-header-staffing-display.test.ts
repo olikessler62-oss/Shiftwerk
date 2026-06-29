@@ -388,6 +388,34 @@ describe("isTagAreaHeaderStaffingEntryPlannedCoverage", () => {
 
     expect(isTagAreaHeaderStaffingEntryUnderstaffed(plannedEntry)).toBe(false);
     expect(isTagAreaHeaderStaffingEntryPlannedCoverage(plannedEntry)).toBe(true);
+    expect(gaugeCountsForTagAreaHeaderStaffingEntry(plannedEntry)).toEqual({
+      assigned: 2,
+      required: 2,
+    });
+  });
+
+  it("shows uncapped projected count when more shifts are planned than required", () => {
+    const overplannedEntry: TagAreaHeaderStaffingEntry = {
+      serviceHourId: "frueh",
+      label: "08:00–17:00",
+      assigned: 0,
+      projectedAssigned: 2,
+      required: 1,
+      qualifications: [
+        { qualificationId: "k1", name: "Pflege", assigned: 0, required: 1 },
+      ],
+      projectedQualifications: [
+        { qualificationId: "k1", name: "Pflege", assigned: 2, required: 1 },
+      ],
+    };
+
+    expect(isTagAreaHeaderStaffingEntryPlannedCoverage(overplannedEntry)).toBe(
+      true
+    );
+    expect(gaugeCountsForTagAreaHeaderStaffingEntry(overplannedEntry)).toEqual({
+      assigned: 2,
+      required: 1,
+    });
   });
 
   it("stays red when even projected shifts do not cover demand", () => {

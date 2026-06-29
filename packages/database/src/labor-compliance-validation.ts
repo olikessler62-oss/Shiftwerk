@@ -11,35 +11,43 @@ import type { ShiftTypeBreakInput } from "./interface";
 import { DEFAULT_ORGANIZATION_TIME_ZONE } from "./organization-timezone";
 import { timeToMinutes } from "./profile-availability-validation";
 import { shiftTimeFromTimestamp } from "./shift-timestamps";
+import {
+  shiftDurationHours,
+  shiftDurationMinutes,
+  shiftNetWorkHours,
+  shiftWindowMinutes,
+  totalBreakMinutesOnShiftTimeline,
+} from "./shift-type-break-rules";
 
 export const DEFAULT_COUNTRY_CODE = "DE";
 
 const MINUTES_PER_DAY = 24 * 60;
-
-function shiftWindowMinutes(
-  start_time: string,
-  end_time: string
-): { startM: number; endM: number } {
-  const startM = timeToMinutes(start_time);
-  let endM = timeToMinutes(end_time);
-  if (endM <= startM) endM += MINUTES_PER_DAY;
-  return { startM, endM };
-}
-
-function shiftDurationMinutes(start_time: string, end_time: string): number {
-  const { startM, endM } = shiftWindowMinutes(start_time, end_time);
-  return endM - startM;
-}
-
-function shiftDurationHours(start_time: string, end_time: string): number {
-  return shiftDurationMinutes(start_time, end_time) / 60;
-}
 
 export type BreakDurationRule = {
   kind: "max" | "required" | "none";
   minutes: number;
   minSegmentMinutes?: number;
 };
+
+function breakIntervalOnShiftTimeline(
+  break_start: string,
+  break_end: string,
+  startM: number,
+  endM: number
+): { start: number; end: number } | null {
+  let bs = timeToMinutes(break_start);
+  let be = timeToMinutes(break_end);
+  if (be <= bs) be += MINUTES_PER_DAY;
+
+  for (const offset of [0, MINUTES_PER_DAY, -MINUTES_PER_DAY]) {
+    const bStart = bs + offset;
+    const bEnd = be + offset;
+    if (bStart >= startM - 1 && bEnd <= endM + 1 && bEnd > bStart) {
+      return { start: bStart, end: bEnd };
+    }
+  }
+  return null;
+}
 
 export function resolveCompliance(countryCode: string | null | undefined): CountryCompliance {
   return loadCompliancePresetForOrganization(countryCode ?? DEFAULT_COUNTRY_CODE);
@@ -93,41 +101,6 @@ export function getBreakDurationRuleForCountry(
   return { kind: "none", minutes: 0, minSegmentMinutes: resolved.minSegmentMinutes };
 }
 
-function breakIntervalOnShiftTimeline(
-  break_start: string,
-  break_end: string,
-  startM: number,
-  endM: number
-): { start: number; end: number } | null {
-  const MINUTES_PER_DAY = 24 * 60;
-  let bs = timeToMinutes(break_start);
-  let be = timeToMinutes(break_end);
-  if (be <= bs) be += MINUTES_PER_DAY;
-
-  for (const offset of [0, MINUTES_PER_DAY, -MINUTES_PER_DAY]) {
-    const bStart = bs + offset;
-    const bEnd = be + offset;
-    if (bStart >= startM - 1 && bEnd <= endM + 1 && bEnd > bStart) {
-      return { start: bStart, end: bEnd };
-    }
-  }
-  return null;
-}
-
-function totalBreakMinutesOnTimeline(
-  breaks: ShiftTypeBreakInput[],
-  startM: number,
-  endM: number
-): number {
-  let total = 0;
-  for (const b of breaks) {
-    const interval = breakIntervalOnShiftTimeline(b.break_start, b.break_end, startM, endM);
-    if (!interval) continue;
-    total += interval.end - interval.start;
-  }
-  return Math.round(total);
-}
-
 function breaksCenteredOnShift(
   breaks: ShiftTypeBreakInput[],
   startM: number,
@@ -171,11 +144,17 @@ function validateBreakSegments(
   return { ok: true };
 }
 
+export type ValidateShiftTypeBreaksOptions = {
+  /** Pausen müssen mittig in der Schicht liegen (Standard: an). */
+  enforceBreaksCenteredOnShift?: boolean;
+};
+
 export function validateShiftTypeBreaksForCountry(
   countryCode: string | null | undefined,
   start_time: string,
   end_time: string,
-  breaks: ShiftTypeBreakInput[]
+  breaks: ShiftTypeBreakInput[],
+  options?: ValidateShiftTypeBreaksOptions
 ): { ok: true } | { ok: false; error: string } {
   const durationMin = shiftDurationMinutes(start_time, end_time);
   if (durationMin <= 0) {
@@ -184,7 +163,7 @@ export function validateShiftTypeBreaksForCountry(
 
   const { startM, endM } = shiftWindowMinutes(start_time, end_time);
   const rule = getBreakDurationRuleForCountry(countryCode, start_time, end_time);
-  const totalBreak = totalBreakMinutesOnTimeline(breaks, startM, endM);
+  const totalBreak = totalBreakMinutesOnShiftTimeline(breaks, start_time, end_time);
 
   for (const b of breaks) {
     if (!breakIntervalOnShiftTimeline(b.break_start, b.break_end, startM, endM)) {
@@ -199,6 +178,8 @@ export function validateShiftTypeBreaksForCountry(
   const segmentCheck = validateBreakSegments(breaks, startM, endM, rule.minSegmentMinutes);
   if (!segmentCheck.ok) return segmentCheck;
 
+  const enforceBreaksCenteredOnShift = options?.enforceBreaksCenteredOnShift !== false;
+
   if (rule.kind === "none") {
     return { ok: true };
   }
@@ -210,7 +191,11 @@ export function validateShiftTypeBreaksForCountry(
         error: `Die Gesamtpause darf höchstens ${rule.minutes} Minuten betragen.`,
       };
     }
-    if (breaks.length > 0 && !breaksCenteredOnShift(breaks, startM, endM)) {
+    if (
+      enforceBreaksCenteredOnShift &&
+      breaks.length > 0 &&
+      !breaksCenteredOnShift(breaks, startM, endM)
+    ) {
       return {
         ok: false,
         error: "Pausen sollen mittig in der Schichtzeit liegen.",
@@ -219,14 +204,17 @@ export function validateShiftTypeBreaksForCountry(
     return { ok: true };
   }
 
-  if (breaks.length === 0 || totalBreak !== rule.minutes) {
+  if (breaks.length === 0 || totalBreak < rule.minutes) {
     return {
       ok: false,
       error: `Bei dieser Schichtdauer ist eine Gesamtpause von ${rule.minutes} Minuten erforderlich.`,
     };
   }
 
-  if (!breaksCenteredOnShift(breaks, startM, endM)) {
+  if (
+    enforceBreaksCenteredOnShift &&
+    !breaksCenteredOnShift(breaks, startM, endM)
+  ) {
     return {
       ok: false,
       error: "Die Pause muss mittig in der Schichtzeit liegen.",
@@ -244,9 +232,10 @@ export function validateShiftDurationForCountry(input: {
   point: ComplianceEnforcementPoint;
   /** ISO-Datum (YYYY-MM-DD) — für Feiertagsprüfung bei Schichtzuweisung */
   shiftDate?: string;
+  breaks?: readonly ShiftTypeBreakInput[];
 }): { ok: true; warnings: string[] } | { ok: false; error: string } {
   const compliance = resolveCompliance(input.countryCode);
-  const hours = shiftDurationHours(input.start_time, input.end_time);
+  const hours = shiftNetWorkHours(input.start_time, input.end_time, input.breaks);
   const warnings: string[] = [];
   const jsDay = toJsWeekday(input.weekday);
 

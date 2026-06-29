@@ -12,6 +12,7 @@ import {
   getSuggestedBreakMinutes,
   validateAreaShiftTemplateCount,
   validateShiftTypeBreaks,
+  AREA_SHIFT_TEMPLATE_BREAK_VALIDATION_OPTIONS,
   validateShiftTypeUniqueness,
   resolveShiftTemplateNameColor,
   resolveShiftTemplateStoredColor,
@@ -219,7 +220,8 @@ export function AreaShiftTemplateFormModal({
       payload.start_time,
       payload.end_time,
       payload.breaks,
-      countryCode
+      countryCode,
+      AREA_SHIFT_TEMPLATE_BREAK_VALIDATION_OPTIONS
     );
     if (!breaksCheck.ok) {
       setError(breaksCheck.error);

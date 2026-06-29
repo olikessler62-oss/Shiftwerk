@@ -315,6 +315,133 @@ export function buildDemandWindowsForAreaDay(
   });
 }
 
+/** Projizierte Besetzung je Fenster für Kopf-Summen — nicht über Bedarf hinaus zählen. */
+export function entryProjectedAssignedForStaffingTotal(
+  entry: Pick<
+    TagAreaHeaderStaffingEntry,
+    "assigned" | "projectedAssigned" | "required"
+  >
+): number {
+  const projected = entry.projectedAssigned ?? entry.assigned;
+  if (entry.required <= 0) return projected;
+  return Math.min(projected, entry.required);
+}
+
+function projectedStaffingAssignmentIndexMap(
+  assignments: readonly StaffingAssignmentRef[]
+): {
+  projectedAssignments: StaffingAssignmentRef[];
+  projectedToOriginalIndex: readonly number[];
+} {
+  const projectedAssignments: StaffingAssignmentRef[] = [];
+  const projectedToOriginalIndex: number[] = [];
+
+  assignments.forEach((assignment, index) => {
+    if (!countsTowardStaffingProjection(assignment.confirmationStatus)) return;
+    projectedAssignments.push(assignment);
+    projectedToOriginalIndex.push(index);
+  });
+
+  return { projectedAssignments, projectedToOriginalIndex };
+}
+
+/**
+ * Schicht-Indizes pro Tag für Footer-Kennzahlen (Schichten/Stunden/Kosten).
+ * Pro Bedarf-Fenster höchstens `required` zugeordnete Schichten — wie Tabellenzeilen Früh/Spät.
+ */
+export function collectStaffingFooterScopedAssignmentIndicesForDay(
+  dateISO: string,
+  areaId: string,
+  assignments: readonly StaffingAssignmentRef[],
+  staffingRules: readonly LocationAreaStaffing[],
+  serviceHours: readonly AreaServiceHourRef[],
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[],
+  areaOpenOnDate: boolean
+): readonly number[] {
+  if (assignments.length === 0) return [];
+  if (!areaOpenOnDate) {
+    return assignments.map((_, index) => index);
+  }
+
+  const baseEntries = tagAreaHeaderStaffingEntries(
+    [...staffingRules],
+    areaId,
+    dateISO,
+    serviceHours,
+    [...assignments]
+  );
+  const demandWindows = buildDemandWindowsForAreaDay(
+    baseEntries,
+    serviceHours,
+    assignmentPresets,
+    staffingRules,
+    areaId
+  );
+  const { projectedAssignments, projectedToOriginalIndex } =
+    projectedStaffingAssignmentIndexMap(assignments);
+  const projectedAllocation = allocateAssignmentsToDemandWindows(
+    projectedAssignments,
+    demandWindows
+  );
+
+  const selected = new Set<number>();
+  for (const entry of baseEntries) {
+    const allocatedProjectedIndices =
+      projectedAllocation.get(entry.serviceHourId) ?? [];
+    const cap = Math.max(0, entry.required);
+    for (let index = 0; index < Math.min(cap, allocatedProjectedIndices.length); index++) {
+      const originalIndex =
+        projectedToOriginalIndex[allocatedProjectedIndices[index]!];
+      if (originalIndex != null) selected.add(originalIndex);
+    }
+  }
+
+  return [...selected].sort((left, right) => left - right);
+}
+
+/** Schichten, deren Zeiten exakt einem Bedarf-Fenster entsprechen (wie Tabellenzeilen Früh/Spät). */
+export function countPlanningShiftsMatchingDemandWindows(
+  dates: readonly string[],
+  areaId: string,
+  shifts: readonly PlanningStaffingShiftRef[],
+  staffingRulesForDate: (dateISO: string) => readonly LocationAreaStaffing[],
+  serviceHours: readonly AreaServiceHourRef[],
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[]
+): number {
+  let count = 0;
+
+  for (const dateISO of dates) {
+    const rulesForDay = staffingRulesForDate(dateISO);
+    const baseEntries = tagAreaHeaderStaffingEntries(
+      [...rulesForDay],
+      areaId,
+      dateISO,
+      serviceHours,
+      []
+    );
+    const demandWindows = buildDemandWindowsForAreaDay(
+      baseEntries,
+      serviceHours,
+      assignmentPresets,
+      rulesForDay,
+      areaId
+    );
+
+    for (const shift of shifts) {
+      if (shift.shift_date !== dateISO) continue;
+      const matchesDemand = demandWindows.some(
+        (demand) =>
+          areaCalendarTimeKey(shift.startTime) ===
+            areaCalendarTimeKey(demand.startTime) &&
+          areaCalendarTimeKey(shift.endTime) === areaCalendarTimeKey(demand.endTime)
+      );
+      if (matchesDemand) count += 1;
+    }
+  }
+
+  return count;
+}
+
 /** Ordnet jede Zuweisung genau einer Bedarf-Funktion zu (wie Personalbedarf-Zählung). */
 export function mapAssignmentQualificationIds(
   hourAssignments: readonly StaffingAssignmentRef[],
@@ -859,7 +986,18 @@ export type StaffingTooltipCoverageFormatter = {
     required: number,
     shiftTime: string
   ) => string;
+  totalPlanned?: (
+    assigned: number,
+    required: number,
+    shiftTime: string
+  ) => string;
   totalVacant: (count: number, required: number, shiftTime: string) => string;
+  planned?: (
+    assigned: number,
+    required: number,
+    name: string,
+    shiftTime: string
+  ) => string;
 };
 
 type StaffingTooltipQualRow = {
@@ -936,9 +1074,8 @@ function appendQualCoverageLines(
       lines.push(format.confirmed(row.confirmed, row.required, row.name, ""));
     }
     if (unconfirmed > 0) {
-      lines.push(
-        format.unconfirmed(unconfirmed, row.required, row.name, "")
-      );
+      const plannedLine = format.planned ?? format.unconfirmed;
+      lines.push(plannedLine(unconfirmed, row.required, row.name, ""));
     }
     return;
   }
@@ -981,7 +1118,8 @@ function appendAggregateCoverageLines(
       lines.push(format.totalConfirmed(confirmed, required, ""));
     }
     if (unconfirmed > 0) {
-      lines.push(format.totalUnconfirmed(unconfirmed, required, ""));
+      const plannedLine = format.totalPlanned ?? format.totalUnconfirmed;
+      lines.push(plannedLine(unconfirmed, required, ""));
     }
     return;
   }

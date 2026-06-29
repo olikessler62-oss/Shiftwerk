@@ -2,7 +2,7 @@ import Link from "next/link";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/bereich-kalender", label: "Bereich-Kalender" },
+  { href: "/bereich-kalender", label: "Einsatzort-Kalender" },
   { href: "/einstellungen", label: "Einstellungen" },
 ];
 

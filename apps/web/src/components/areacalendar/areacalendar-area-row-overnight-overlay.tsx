@@ -45,6 +45,8 @@ type SpanLayout = AreaCalendarOvernightSpanGeometry & {
 
 type Props = {
   areaId: string;
+  areaName?: string;
+  areaNameById?: ReadonlyMap<string, string>;
   spans: readonly AreaCalendarOvernightSpan[];
   dayColumnCount: number;
   gridRow: number;
@@ -156,6 +158,8 @@ const COLLAPSED_MARKER_HEIGHT_PX = Math.max(
 
 export function AreaCalendarAreaRowOvernightOverlay({
   areaId,
+  areaName,
+  areaNameById,
   spans,
   dayColumnCount,
   gridRow,
@@ -186,6 +190,9 @@ export function AreaCalendarAreaRowOvernightOverlay({
   const displayByShiftId = useMemo(() => {
     const tooltipOptions = {
       assignmentPresets,
+      areaName,
+      areaNameById,
+      fallbackAreaId: areaId || undefined,
       formatShiftTooltipLine: (name: string) =>
         t("common.shiftCardTooltipShift", { name }),
       formatDeploymentTimeTooltipLine: () =>
@@ -225,6 +232,8 @@ export function AreaCalendarAreaRowOvernightOverlay({
     profileQualificationIds,
     qualificationNameById,
     qualificationSortOrder,
+    areaName,
+    areaNameById,
     t,
   ]);
 

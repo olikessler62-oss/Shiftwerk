@@ -1,4 +1,8 @@
 import {
+  shiftNetWorkHours,
+} from "./shift-type-break-rules";
+import type { ShiftTypeBreakInput } from "./interface";
+import {
   getRule,
   type ComplianceEnforcementPoint,
 } from "@schichtwerk/compliance";
@@ -8,11 +12,10 @@ import {
 } from "./labor-compliance-validation";
 import { timeToMinutes } from "./profile-availability-validation";
 
-const MINUTES_PER_DAY = 24 * 60;
-
 export type DayShiftTimeWindow = {
   startTime: string;
   endTime: string;
+  breaks?: readonly ShiftTypeBreakInput[];
 };
 
 export type EmployeeDayShiftComplianceViolation = {
@@ -29,15 +32,8 @@ export type EmployeeDayShiftComplianceViolation = {
   error: string;
 };
 
-function shiftDurationMinutes(startTime: string, endTime: string): number {
-  const startM = timeToMinutes(startTime);
-  let endM = timeToMinutes(endTime);
-  if (endM <= startM) endM += MINUTES_PER_DAY;
-  return endM - startM;
-}
-
-function shiftDurationHours(startTime: string, endTime: string): number {
-  return shiftDurationMinutes(startTime, endTime) / 60;
+function shiftWorkHours(startTime: string, endTime: string, breaks?: readonly ShiftTypeBreakInput[]): number {
+  return shiftNetWorkHours(startTime, endTime, breaks);
 }
 
 function formatHours(hours: number): string {
@@ -70,7 +66,8 @@ export function sumDayShiftWorkHours(
   windows: readonly DayShiftTimeWindow[]
 ): number {
   return windows.reduce(
-    (sum, window) => sum + shiftDurationHours(window.startTime, window.endTime),
+    (sum, window) =>
+      sum + shiftWorkHours(window.startTime, window.endTime, window.breaks),
     0
   );
 }
@@ -106,9 +103,10 @@ export function validateEmployeeDayShiftAssignments(input: {
       weekday: input.weekday,
       shiftDate: input.shiftDate,
       point,
+      breaks: window.breaks,
     });
     if (!durationCheck.ok) {
-      const hours = shiftDurationHours(window.startTime, window.endTime);
+      const hours = shiftWorkHours(window.startTime, window.endTime, window.breaks);
       const maxRule = getRule(compliance, "max_shift_duration", "standard_workday_max_hours");
       const extended = getRule(
         compliance,

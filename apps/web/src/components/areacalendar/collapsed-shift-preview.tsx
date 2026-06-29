@@ -38,6 +38,9 @@ const COLLAPSED_SHIFT_LINE_FALLBACK_COLOR = "#94a3b8";
 type Props = {
   shifts: AreaCalendarShiftCard[];
   serviceTimeline: ShiftCardServiceTimeline;
+  areaName?: string;
+  areaNameById?: ReadonlyMap<string, string>;
+  fallbackAreaId?: string;
   /** Vergangener Kalendertag — einheitlich grau, kein Scroll. */
   isPastDay: boolean;
   cellDate: string;
@@ -105,6 +108,9 @@ function resolvePreviewColor(
 export function CollapsedShiftPreview({
   shifts,
   serviceTimeline,
+  areaName,
+  areaNameById,
+  fallbackAreaId,
   isPastDay,
   cellDate,
   dayReferenceShifts,
@@ -128,6 +134,9 @@ export function CollapsedShiftPreview({
   const tooltipOptions = useMemo(
     () => ({
       assignmentPresets,
+      areaName,
+      areaNameById,
+      fallbackAreaId,
       formatShiftTooltipLine: (name: string) =>
         t("common.shiftCardTooltipShift", { name }),
       formatDeploymentTimeTooltipLine: () =>
@@ -135,7 +144,7 @@ export function CollapsedShiftPreview({
       formatJobTooltipLine: (names: string) =>
         t("common.shiftCardTooltipJob", { names }),
     }),
-    [assignmentPresets, t]
+    [assignmentPresets, areaName, areaNameById, fallbackAreaId, t]
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const [measuredCellWidthPx, setMeasuredCellWidthPx] = useState(0);

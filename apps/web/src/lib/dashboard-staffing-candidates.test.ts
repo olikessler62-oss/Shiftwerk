@@ -1,9 +1,83 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeDashboardStaffingCandidateSlots,
   filterEmployeesWithinWeeklyMinutesForShift,
   sortDashboardStaffingCandidates,
   weeklyAssignedMinutesByEmployeeId,
 } from "./dashboard-staffing-candidates";
+
+describe("computeDashboardStaffingCandidateSlots", () => {
+  const tourDate = "2026-07-07";
+  const areaId = "area-tour-1";
+  const hourFrueh = "hour-frueh";
+  const qualPflege = "qual-pflege";
+
+  it("returns no open slots when projected coverage already meets or exceeds demand", () => {
+    const slots = computeDashboardStaffingCandidateSlots({
+      areaId,
+      dateISO: tourDate,
+      serviceHourId: hourFrueh,
+      simplePlanning: false,
+      shifts: [
+        {
+          id: "s1",
+          employee_id: "e1",
+          shift_date: tourDate,
+          startTime: "08:00",
+          endTime: "17:00",
+          shiftName: "Früh",
+          color: "#000",
+          location_area_id: areaId,
+          area_shift_template_id: null,
+          confirmationStatus: "proposed",
+        },
+        {
+          id: "s2",
+          employee_id: "e2",
+          shift_date: tourDate,
+          startTime: "08:00",
+          endTime: "17:00",
+          shiftName: "Früh",
+          color: "#000",
+          location_area_id: areaId,
+          area_shift_template_id: null,
+          confirmationStatus: "proposed",
+        },
+      ],
+      staffingRules: [
+        {
+          id: "rule-frueh",
+          location_area_id: areaId,
+          service_hour_id: hourFrueh,
+          qualification_id: qualPflege,
+          required_count: 1,
+        },
+      ],
+      staffingOverrides: [],
+      serviceHours: [
+        {
+          id: hourFrueh,
+          location_area_id: areaId,
+          weekday: 1,
+          start_time: "08:00",
+          end_time: "17:00",
+        },
+      ],
+      assignmentPresets: [],
+      qualifications: [{ id: qualPflege, name: "Pfleger/in", sort_order: 0 }],
+      profileQualificationIds: new Map([
+        ["e1", new Set([qualPflege])],
+        ["e2", new Set([qualPflege])],
+      ]),
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start}-${end}`,
+      weekdayLabel: () => "Di",
+      formatCalendarTimeLabel: (start, end) => `${start}-${end}`,
+      headcountSectionLabel: "Personal",
+    });
+
+    expect(slots).toEqual([]);
+  });
+});
 
 describe("weeklyAssignedMinutesByEmployeeId", () => {
   it("sums shift durations per employee within week dates", () => {

@@ -3,7 +3,8 @@ import {
   isDateWithinAbsenceRange,
 } from "@schichtwerk/database";
 import type { AbsenceRequest } from "@schichtwerk/types";
-import { shiftHoursFromWindow } from "@/lib/planning-utils";
+import { shiftWorkHoursFromRef } from "@/lib/shift-work-hours";
+import type { ShiftTypeBreakInput } from "@schichtwerk/database";
 import {
   SHIFT_CARD_SHADOW_BLEED_PX,
   SHIFT_CARD_TWO_LINE_HEIGHT_PX,
@@ -47,6 +48,7 @@ type AreaCalendarShiftRef = {
   startTime: string;
   endTime: string;
   locationAreaId?: string | null;
+  areaShiftTemplateId?: string | null;
 };
 
 export function filterAreaCalendarShiftsByActiveAreas<
@@ -101,7 +103,10 @@ type ProfileRef = {
 export function areaCalendarEmployeeWeekHours(
   employeeId: string,
   shifts: readonly AreaCalendarShiftRef[],
-  absences: readonly AbsenceRequest[] = []
+  absences: readonly AbsenceRequest[] = [],
+  options?: {
+    breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
+  }
 ): number {
   let total = 0;
   for (const shift of shifts) {
@@ -111,7 +116,14 @@ export function areaCalendarEmployeeWeekHours(
     ) {
       continue;
     }
-    total += shiftHoursFromWindow(shift.startTime, shift.endTime);
+    total += shiftWorkHoursFromRef(
+      {
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        area_shift_template_id: shift.areaShiftTemplateId,
+      },
+      options
+    );
   }
   return Math.round(total * 10) / 10;
 }

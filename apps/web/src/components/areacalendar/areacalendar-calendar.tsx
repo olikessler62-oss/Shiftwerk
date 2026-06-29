@@ -34,6 +34,9 @@ import {
   PLANNING_DAY_FOOTER_STATS_ROW_HEIGHT,
   PLANNING_PAST_DAY_CELL_BG,
   TAG_AREA_HEADER_STRIP_HEIGHT,
+  dayHasServiceHoursFlagsForAreas,
+  resolveAreaCalendarLayoutDayDates,
+  shiftCountByDateForAreas,
 } from "@/lib/planning-calendar-layout";
 import { DashboardWeeklySummaryFooter } from "@/components/dashboard/dashboard-weekly-summary-footer";
 import { AreaCalendarShiftCardsList } from "@/components/areacalendar/areacalendar-shift-cards-list";
@@ -61,6 +64,7 @@ import {
   shiftCardContextMenuActions,
   type ShiftCardContextMenuAction,
 } from "@/lib/shift-card-context-menu-actions";
+import { createPlanningAreaNameById } from "@/lib/planning-shift-card-display";
 import {
   resolveShiftCardInteractionContext,
   resolveShiftCardPrimaryClick,
@@ -129,7 +133,6 @@ import type {
 } from "@schichtwerk/types";
 import {
   areaHasEffectiveServiceHoursOnDate,
-  hasEffectiveServiceHoursOnDate,
   hasStaffingRequirementInCalendar,
   isAnyAreaOpenInCalendar,
   isAreaOpenInCalendar,
@@ -158,8 +161,10 @@ import {
   computeTagAreaDayFooterStatsForDate,
   formatTagAreaFooterLabels,
   type AreaCalendarShiftCompensationByKey,
+  type TagAreaFooterStatsOptions,
   type TagAreaShiftRef,
 } from "@/lib/tag-area-footer-stats";
+import { buildBreaksByTemplateIdFromAreaTemplates } from "@/lib/shift-work-hours";
 import { TagAreaHeaderStrip } from "@/components/areacalendar/tag-area-header-strip";
 import { buildTagAreaServiceHoursHeaderTooltip } from "@/components/areacalendar/tag-area-header-service-hours-tooltip";
 import { TagAreaFooterStrip } from "@/components/areacalendar/tag-area-footer-strip";
@@ -411,65 +416,6 @@ function createInitialActiveAreaIds(
   return resolveSingleActiveAreaIds(areas, preferredAreaId);
 }
 
-function createActiveDayDates(
-  dates: readonly string[],
-  areaIds: readonly string[],
-  serviceHours: AreaServiceHourRef[],
-  shifts: AreaCalendarShiftCard[]
-): Set<string> {
-  const shiftsByDate = new Map<string, number>();
-  for (const shift of shifts) {
-    if (!shift.locationAreaId) continue;
-    shiftsByDate.set(
-      shift.shift_date,
-      (shiftsByDate.get(shift.shift_date) ?? 0) + 1
-    );
-  }
-  return new Set(
-    dates.filter((date) => {
-      const hasShifts = (shiftsByDate.get(date) ?? 0) > 0;
-      return isAnyAreaOpenInCalendar(serviceHours, areaIds, date, hasShifts);
-    })
-  );
-}
-
-function resolveCalendarLayoutDayDates(
-  dates: readonly string[],
-  areaIds: readonly string[],
-  serviceHours: AreaServiceHourRef[],
-  shifts: AreaCalendarShiftCard[],
-  options: {
-    weekStart: string;
-    currentWeekStart: string;
-    todayISO: string;
-    savedWeekExpansion: Set<string> | undefined;
-  }
-): Set<string> {
-  const openDays = createActiveDayDates(dates, areaIds, serviceHours, shifts);
-
-  if (options.savedWeekExpansion !== undefined) {
-    const expanded = new Set<string>();
-    for (const date of openDays) {
-      if (options.savedWeekExpansion.has(date)) {
-        expanded.add(date);
-      }
-    }
-    return expanded;
-  }
-
-  if (options.weekStart === options.currentWeekStart) {
-    const expanded = new Set<string>();
-    for (const date of openDays) {
-      if (!isPastCalendarDate(date, options.todayISO)) {
-        expanded.add(date);
-      }
-    }
-    return expanded;
-  }
-
-  return openDays;
-}
-
 /** Kalender-Ein-/Ausklapp-Zustand nur bei Wochen- oder Standortwechsel zurücksetzen. */
 function calendarLayoutScopeKey(
   dates: readonly string[],
@@ -564,6 +510,11 @@ export function AreaCalendar({
     [qualifications]
   );
 
+  const areaNameById = useMemo(
+    () => createPlanningAreaNameById(areas),
+    [areas]
+  );
+
   const formatStaffingTimeLabel = useCallback(
     (weekdayLabel: string, startTime: string, endTime: string) =>
       t("areaCalendar.bulkShiftStaffingPeriodLabel", {
@@ -628,40 +579,44 @@ export function AreaCalendar({
     return map;
   }, [calendarShifts, simplePlanning]);
 
+  const [activeAreaIds, setActiveAreaIds] = useState<Set<string>>(
+    () => createInitialActiveAreaIds(areas, initialActiveAreaId)
+  );
+
+  const shiftCountByDate = useMemo(
+    () => shiftCountByDateForAreas(shiftsByDate, activeAreaIds),
+    [shiftsByDate, activeAreaIds]
+  );
+
   const dayHasOpenArea = useMemo(
     () =>
       dates.map((date) => {
         if (simplePlanning) return !isPastCalendarDate(date);
-        const hasShifts = (shiftsByDate.get(date)?.length ?? 0) > 0;
+        const activeAreaIdList = [...activeAreaIds];
+        const hasShifts = (shiftsByDate.get(date) ?? []).some(
+          (shift) =>
+            shift.locationAreaId && activeAreaIds.has(shift.locationAreaId)
+        );
         return isAnyAreaOpenInCalendar(
           serviceHours,
-          areaIds,
+          activeAreaIdList,
           date,
           hasShifts
         );
       }),
-    [dates, serviceHours, areaIds, shiftsByDate, simplePlanning]
+    [dates, serviceHours, activeAreaIds, shiftsByDate, simplePlanning]
   );
 
   const dayHasServiceHours = useMemo(
-    () =>
-      dates.map((date) =>
-        hasEffectiveServiceHoursOnDate(serviceHours, date, areaIds)
-      ),
-    [dates, serviceHours, areaIds]
-  );
-
-  const [activeAreaIds, setActiveAreaIds] = useState<Set<string>>(
-    () => createInitialActiveAreaIds(areas, initialActiveAreaId)
+    () => dayHasServiceHoursFlagsForAreas(dates, serviceHours, [...activeAreaIds]),
+    [dates, serviceHours, activeAreaIds]
   );
 
   useEffect(() => {
     onActiveAreaIdsChange?.(activeAreaIds);
   }, [activeAreaIds, onActiveAreaIdsChange]);
 
-  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(() =>
-    createActiveDayDates(dates, areaIds, serviceHours, shifts)
-  );
+  const [activeDayDates, setActiveDayDates] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     onActiveDayDatesChange?.(activeDayDates);
@@ -671,12 +626,13 @@ export function AreaCalendar({
     () => createInitialActiveAreaIds(areas, initialActiveAreaId)
   );
   const [layoutActiveDayDates, setLayoutActiveDayDates] = useState<Set<string>>(
-    () => createActiveDayDates(dates, areaIds, serviceHours, shifts)
+    () => new Set()
   );
   const layoutAreaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutDayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const calendarLayoutScopeRef = useRef<string | null>(null);
   const weekDayExpansionRef = useRef<Map<string, Set<string>>>(new Map());
+  const userExpandedNoServiceWeekdaysRef = useRef<Set<number>>(new Set());
   const [isCalendarVisible, setIsCalendarVisible] = useState(false);
   const [layoutTransitionEnabled, setLayoutTransitionEnabled] = useState(false);
   const prevLayoutActiveAreaIdsRef = useRef<Set<string> | null>(null);
@@ -860,11 +816,12 @@ export function AreaCalendar({
     calendarLayoutScopeRef.current = scopeKey;
 
     const nextAreas = createInitialActiveAreaIds(areas, initialActiveAreaId);
-    const nextDays = resolveCalendarLayoutDayDates(
+    const nextDays = resolveAreaCalendarLayoutDayDates(
       dates,
-      areaIds,
       serviceHours,
-      shifts,
+      shiftsByDate,
+      [...nextAreas],
+      userExpandedNoServiceWeekdaysRef.current,
       {
         weekStart,
         currentWeekStart,
@@ -888,11 +845,40 @@ export function AreaCalendar({
     todayISO,
     locationId,
     areas,
-    areaIds,
     serviceHours,
-    shifts,
+    shiftsByDate,
     initialActiveAreaId,
     syncLayoutAreasImmediate,
+    syncLayoutDaysImmediate,
+  ]);
+
+  useEffect(() => {
+    if (activeAreaIds.size === 0) return;
+
+    const nextDays = resolveAreaCalendarLayoutDayDates(
+      dates,
+      serviceHours,
+      shiftsByDate,
+      [...activeAreaIds],
+      userExpandedNoServiceWeekdaysRef.current,
+      {
+        weekStart,
+        currentWeekStart,
+        todayISO,
+        savedWeekExpansion: weekDayExpansionRef.current.get(weekStart),
+      }
+    );
+    weekDayExpansionRef.current.set(weekStart, new Set(nextDays));
+    setActiveDayDates(nextDays);
+    syncLayoutDaysImmediate(nextDays);
+  }, [
+    activeAreaIds,
+    dates,
+    serviceHours,
+    shiftsByDate,
+    weekStart,
+    currentWeekStart,
+    todayISO,
     syncLayoutDaysImmediate,
   ]);
 
@@ -1271,6 +1257,19 @@ export function AreaCalendar({
 
   const toggleDayActive = useCallback(
     (date: string, active: boolean) => {
+      const dayIndex = dates.indexOf(date);
+      const hasService =
+        dayIndex >= 0 ? dayHasServiceHours[dayIndex] ?? false : false;
+      const hasShifts = (shiftCountByDate.get(date) ?? 0) > 0;
+      if (!hasService && !hasShifts) {
+        const weekday = serviceWeekdayForDate(date);
+        if (active) {
+          userExpandedNoServiceWeekdaysRef.current.add(weekday);
+        } else {
+          userExpandedNoServiceWeekdaysRef.current.delete(weekday);
+        }
+      }
+
       setLayoutTransitionEnabled(true);
       setActiveDayDates((prev) => {
         const next = new Set(prev);
@@ -1281,7 +1280,13 @@ export function AreaCalendar({
         return next;
       });
     },
-    [weekStart, scheduleLayoutDays]
+    [
+      dates,
+      dayHasServiceHours,
+      shiftCountByDate,
+      weekStart,
+      scheduleLayoutDays,
+    ]
   );
 
   const showAreaDayContextMenu = useCallback(
@@ -1774,11 +1779,21 @@ export function AreaCalendar({
         shift_date: shift.shift_date,
         startTime: shift.startTime,
         endTime: shift.endTime,
+        area_shift_template_id: shift.areaShiftTemplateId,
+        location_area_id: shift.locationAreaId,
       });
       map.set(shift.locationAreaId, list);
     }
     return map;
   }, [calendarShifts]);
+
+  const tagAreaFooterStatsOptions = useMemo<TagAreaFooterStatsOptions>(
+    () => ({
+      breaksByTemplateId: buildBreaksByTemplateIdFromAreaTemplates(areaShiftTemplates),
+      areaShiftTemplates,
+    }),
+    [areaShiftTemplates]
+  );
 
   const tagAreaShiftRefsAll = useMemo(
     () => [...tagAreaShiftRefsByAreaId.values()].flat(),
@@ -1797,7 +1812,9 @@ export function AreaCalendar({
         const stats = computeTagAreaDayFooterStatsForDate(
           date,
           areaShifts,
-          shiftCompensation
+          shiftCompensation,
+          undefined,
+          tagAreaFooterStatsOptions
         );
         if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
         map.set(
@@ -1807,7 +1824,7 @@ export function AreaCalendar({
       }
     }
     return map;
-  }, [areas, dates, tagAreaShiftRefsByAreaId, shiftCompensation, t, localeKey]);
+  }, [areas, dates, tagAreaShiftRefsByAreaId, shiftCompensation, tagAreaFooterStatsOptions, t, localeKey]);
 
   const dailyFooterLabelsByDate = useMemo(() => {
     const map = new Map<
@@ -1822,7 +1839,9 @@ export function AreaCalendar({
       const stats = computeTagAreaDayFooterStatsForDate(
         date,
         dayShifts,
-        shiftCompensation
+        shiftCompensation,
+        undefined,
+        tagAreaFooterStatsOptions
       );
       if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
       map.set(date, formatTagAreaFooterLabels(stats, t, localeKey));
@@ -1832,6 +1851,7 @@ export function AreaCalendar({
     areas,
     dates,
     shiftCompensation,
+    tagAreaFooterStatsOptions,
     simplePlanning,
     tagAreaShiftRefsAll,
     tagAreaShiftRefsByAreaId,
@@ -2315,6 +2335,7 @@ export function AreaCalendar({
                           incomingOvernightTailRowsByIndex
                         }
                         areaId=""
+                        areaNameById={areaNameById}
                         dateISO={date}
                         serviceTimeline={locationServiceTimelinesByDate.get(date)!}
                         serviceHours={serviceHours}
@@ -2352,6 +2373,7 @@ export function AreaCalendar({
                         incomingOvernightTailRowsByIndex={
                           incomingOvernightTailRowsByIndex
                         }
+                        areaNameById={areaNameById}
                         assignmentPresets={areaCalendarAssignmentPresetsForArea(
                           areaShiftTemplates
                         )}
@@ -2376,6 +2398,7 @@ export function AreaCalendar({
               {simplePlanningOvernightSpans.length > 0 ? (
                 <AreaCalendarAreaRowOvernightOverlay
                   areaId={SIMPLE_PLANNING_AREA_ID}
+                  areaNameById={areaNameById}
                   spans={simplePlanningOvernightSpans}
                   dayColumnCount={dates.length}
                   gridRow={2}
@@ -2755,6 +2778,8 @@ export function AreaCalendar({
                                       incomingOvernightTailRowsByIndex
                                     }
                                     areaId={area.id}
+                                    areaName={area.name}
+                                    areaNameById={areaNameById}
                                     dateISO={date}
                                     serviceTimeline={
                                       locationServiceTimelinesByDate.get(date)!
@@ -2808,6 +2833,9 @@ export function AreaCalendar({
                                     incomingOvernightTailRowsByIndex={
                                       incomingOvernightTailRowsByIndex
                                     }
+                                    areaName={area.name}
+                                    areaNameById={areaNameById}
+                                    fallbackAreaId={area.id}
                                     assignmentPresets={areaCalendarAssignmentPresetsForArea(
                                       areaShiftTemplatesForArea(area.id, areaShiftTemplates)
                                     )}
@@ -2868,6 +2896,8 @@ export function AreaCalendar({
                     {isAreaActive && areaOvernightSpans.length > 0 ? (
                       <AreaCalendarAreaRowOvernightOverlay
                         areaId={area.id}
+                        areaName={area.name}
+                        areaNameById={areaNameById}
                         spans={areaOvernightSpans}
                         dayColumnCount={dates.length}
                         gridRow={gridRow}

@@ -265,14 +265,28 @@ export {
   getSuggestedBreakMinutes,
   breakRuleHint,
   shiftDurationHours,
+  shiftNetWorkHours,
+  totalBreakMinutesOnShiftTimeline,
+  roundWorkHours,
   validateShiftTypeBreaks,
+  AREA_SHIFT_TEMPLATE_BREAK_VALIDATION_OPTIONS,
   validateAreaShiftTemplateCount,
 } from "./shift-type-break-rules";
+export {
+  buildBreaksByTemplateIdMap,
+  mapTemplateBreaksToInputs,
+  mergeBreaksByTemplateIdMaps,
+  resolveBreaksForTemplateId,
+  toDayShiftTimeWindow,
+  toWeeklyHoursExistingShift,
+  toWeeklyShiftHourWindow,
+} from "./shift-template-break-utils";
 export {
   DEFAULT_COUNTRY_CODE,
   resolveCompliance,
   validateShiftDurationForCountry,
   validateShiftTypeBreaksForCountry,
+  type ValidateShiftTypeBreaksOptions,
   validateAvailabilityForCountry,
   validateRestPeriodForCountry,
   validateStaffingWeekdayForCountry,
@@ -441,6 +455,7 @@ export {
   shiftHoursOnCalendarDay,
   shiftMinutesOnCalendarDay,
   splitShiftWindowIntoCalendarDaySegments,
+  splitShiftWindowIntoCalendarDayNetWorkSegments,
   type ShiftCalendarDaySegment,
 } from "./shift-day-segments";
 export {

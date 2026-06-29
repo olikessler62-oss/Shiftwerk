@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useTransition,
@@ -200,9 +201,7 @@ function ColumnShell({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
       <h3 className={settingsPanelHeaderClass()}>
-        <Tooltip content={title} className="block min-w-0 w-full truncate">
-          <span className="block truncate">{title}</span>
-        </Tooltip>
+        <span className="block min-w-0 w-full truncate">{title}</span>
       </h3>
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 bg-background px-2 py-2">
@@ -328,7 +327,15 @@ export function LocationsModal({
       ? resolveInitialAreaId(initialAreas, initialSelectedAreaId)
       : null
   );
-  const [displayedAreaId, setDisplayedAreaId] = useState<string | null>(null);
+  const [displayedLocationId, setDisplayedLocationId] = useState<string | null>(
+    initialLocationId
+  );
+  const [displayedAreas, setDisplayedAreas] = useState<LocationArea[]>(() =>
+    hasPrefetchedAreas ? initialAreas : []
+  );
+  const [displayedAreaId, setDisplayedAreaId] = useState<string | null>(() =>
+    detailPrefetched ? (initialSelectedAreaId ?? null) : null
+  );
   const [serviceHoursCache, setServiceHoursCache] = useState<
     Record<string, LocationAreaServiceHour[]>
   >(() => initialDetailCaches?.serviceHoursCache ?? {});
@@ -431,8 +438,11 @@ export function LocationsModal({
     qualificationTemplatesCache
   );
   const deferInitialRender = !hasInitiallyShown && !modalReady;
+  const locationDetailSwitching =
+    !!selectedLocationId && selectedLocationId !== displayedLocationId;
   const areaDetailSwitching =
     !!selectedAreaId && selectedAreaId !== displayedAreaId;
+  const detailContentSwitching = locationDetailSwitching || areaDetailSwitching;
   const clearLocationScrollTarget = useCallback(
     () => setScrollToLocationId(null),
     []
@@ -444,9 +454,24 @@ export function LocationsModal({
     clearLocationScrollTarget
   );
   useScrollToSettingsListItem(sortedAreas, scrollToAreaId, clearAreaScrollTarget);
-  const areasPanelTitle = selectedLocation
-    ? t("locations.panelAreasOf", { location: selectedLocation.name })
+  const areasPanelLocation =
+    locationDetailSwitching && displayedLocationId
+      ? sortedLocations.find((location) => location.id === displayedLocationId)
+      : selectedLocation;
+  const areasPanelTitle = areasPanelLocation
+    ? t("locations.panelAreasOf", { location: areasPanelLocation.name })
     : t("locations.panelAreas");
+  const areasForList = locationDetailSwitching ? displayedAreas : areas;
+  const sortedAreasForList = useMemo(
+    () => [...areasForList].sort((a, b) => a.sort_order - b.sort_order),
+    [areasForList]
+  );
+  const areaListSelectedId = locationDetailSwitching
+    ? displayedAreaId
+    : selectedAreaId;
+  const displayedLocation = displayedLocationId
+    ? sortedLocations.find((location) => location.id === displayedLocationId)
+    : undefined;
 
   const loadAreas = useCallback((locationId: string) => {
     startTransition(async () => {
@@ -483,6 +508,32 @@ export function LocationsModal({
   }, [selectedAreaId, panelAreaReady]);
 
   useEffect(() => {
+    if (!selectedLocationId) {
+      setDisplayedLocationId(null);
+      setDisplayedAreas([]);
+      return;
+    }
+    if (areasLoading) return;
+    if (!selectedAreaId) {
+      if (areas.length === 0) {
+        setDisplayedLocationId(selectedLocationId);
+        setDisplayedAreas([]);
+      }
+      return;
+    }
+    if (!panelAreaReady || selectedAreaId !== displayedAreaId) return;
+    setDisplayedLocationId(selectedLocationId);
+    setDisplayedAreas(areas);
+  }, [
+    areas,
+    areasLoading,
+    displayedAreaId,
+    panelAreaReady,
+    selectedAreaId,
+    selectedLocationId,
+  ]);
+
+  useEffect(() => {
     setList(locations);
     setSelectedLocationId((current) => {
       if (current && locations.some((l) => l.id === current)) return current;
@@ -496,20 +547,20 @@ export function LocationsModal({
   useEffect(() => {
     if (!selectedLocationId) {
       setAreas([]);
+      setDisplayedAreas([]);
       setSelectedAreaId(null);
       setDisplayedAreaId(null);
+      setDisplayedLocationId(null);
       setAreasLoading(false);
       return;
     }
     if (skipInitialAreasFetch.current) {
       skipInitialAreasFetch.current = false;
+      setDisplayedLocationId(selectedLocationId);
       return;
     }
     setConfirmDeleteArea(false);
     setDetailPanel(null);
-    setAreas([]);
-    setSelectedAreaId(null);
-    setDisplayedAreaId(null);
     setAreasLoading(true);
     loadAreas(selectedLocationId);
   }, [selectedLocationId, loadAreas]);
@@ -713,9 +764,6 @@ export function LocationsModal({
   function selectLocation(id: string) {
     if (id === selectedLocationId) return;
     setSelectedLocationId(id);
-    setAreas([]);
-    setSelectedAreaId(null);
-    setDisplayedAreaId(null);
     setAreasLoading(true);
     setConfirmDeleteLocation(false);
     setConfirmDeleteArea(false);
@@ -789,6 +837,7 @@ export function LocationsModal({
         return;
       }
       setAreas(result.areas ?? []);
+      setDisplayedAreas(result.areas ?? []);
       setDisplayedAreaId(null);
       setSelectedAreaId(result.areas?.[0]?.id ?? null);
       setConfirmDeleteArea(false);
@@ -797,13 +846,13 @@ export function LocationsModal({
   }
 
   useEffect(() => {
-    if (!deferInitialRender) return;
+    if (!deferInitialRender && !detailContentSwitching) return;
     const previous = document.body.style.cursor;
     document.body.style.cursor = "wait";
     return () => {
       document.body.style.cursor = previous;
     };
-  }, [deferInitialRender]);
+  }, [deferInitialRender, detailContentSwitching]);
 
   const detailContextSubtitle =
     detailPanel && selectedLocation && selectedArea
@@ -842,9 +891,12 @@ export function LocationsModal({
       dismissOnBackdrop={!anySubModalOpen && !detailPanel}
       dismissOnEscape={!anySubModalOpen && !detailPanel}
       closeAriaLabel={t("common.close")}
-      contentReady={modalReady}
+      contentReady={!deferInitialRender}
       panelClassName={cn(
-        (pending || areasLoading || areaDetailSwitching || deferInitialRender) &&
+        (pending ||
+          areasLoading ||
+          detailContentSwitching ||
+          deferInitialRender) &&
           "cursor-wait [&_*]:cursor-wait",
         anySubModalOpen && "pointer-events-none"
       )}
@@ -856,7 +908,7 @@ export function LocationsModal({
           <SettingsDetailBackButton
             label={t("locations.title")}
             onClick={() => setDetailPanel(null)}
-            disabled={pending || areasLoading || areaDetailSwitching}
+            disabled={pending || areasLoading || detailContentSwitching}
           />
         ) : undefined
       }
@@ -1115,6 +1167,11 @@ export function LocationsModal({
                 )}
               </ColumnShell>
 
+            <div
+              className={cn(
+                locationDetailSwitching && "pointer-events-none"
+              )}
+            >
               <ColumnShell
                 title={areasPanelTitle}
                 actions={
@@ -1123,7 +1180,7 @@ export function LocationsModal({
                       <ColumnPrimaryButton
                         label={t("locations.areaNew")}
                         icon={<PlusIcon />}
-                        disabled={pending || !selectedLocationId}
+                        disabled={pending || !selectedLocationId || detailContentSwitching}
                         onClick={() => {
                           if (!selectedLocationId) return;
                           setAreaFormMode({ type: "create" });
@@ -1137,7 +1194,7 @@ export function LocationsModal({
                           label={t("locations.areaEdit")}
                           icon={<PencilIcon />}
                           disabled={
-                            pending || areaDetailSwitching || !selectedArea
+                            pending || detailContentSwitching || !selectedArea
                           }
                           onClick={() => {
                             if (!selectedArea) return;
@@ -1150,7 +1207,7 @@ export function LocationsModal({
                           disabled={
                             pending ||
                             areasLoading ||
-                            areaDetailSwitching ||
+                            detailContentSwitching ||
                             !selectedLocationId
                           }
                           canMoveUp={canMoveAreaUp}
@@ -1171,9 +1228,9 @@ export function LocationsModal({
               >
                 {!selectedLocationId ? (
                   <SettingsEmptyState message={t("locations.areasNoLocation")} />
-                ) : areasLoading ? (
+                ) : areasLoading && sortedAreasForList.length === 0 ? (
                   <SettingsEmptyState message={t("common.loading")} />
-                ) : areas.length === 0 ? (
+                ) : sortedAreasForList.length === 0 ? (
                   <SettingsEmptyState
                     message={t("locations.areasEmpty")}
                     hint={t("common.emptyHintCreate")}
@@ -1181,8 +1238,8 @@ export function LocationsModal({
                 ) : (
                   <table className="w-full border-collapse">
                     <tbody>
-                      {sortedAreas.map((area) => {
-                        const isSelected = area.id === selectedAreaId;
+                      {sortedAreasForList.map((area) => {
+                        const isSelected = area.id === areaListSelectedId;
                         return (
                           <tr
                             key={area.id}
@@ -1211,7 +1268,7 @@ export function LocationsModal({
                             <td className={settingsListRowDeleteCellClass(isSelected)}>
                               <SettingsListRowDeleteButton
                                 label={t("locations.areaDelete")}
-                                disabled={pending || areaDetailSwitching}
+                                disabled={pending || detailContentSwitching}
                                 showTooltip={false}
                                 onClick={() => {
                                   selectArea(area.id);
@@ -1228,8 +1285,14 @@ export function LocationsModal({
                 )}
               </ColumnShell>
             </div>
+            </div>
 
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60">
+            <div
+              className={cn(
+                "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-control)] border border-border bg-surface shadow-sm ring-1 ring-border/60",
+                detailContentSwitching && "pointer-events-none"
+              )}
+            >
               <h3 className={settingsPanelHeaderClass()}>
                 {displayedArea ? (
                   <Tooltip
@@ -1249,7 +1312,7 @@ export function LocationsModal({
               </h3>
               {displayedArea && displayedPanelReady ? (
                 <LocationDetailActions
-                  selectedLocation={selectedLocation ?? null}
+                  selectedLocation={displayedLocation ?? selectedLocation ?? null}
                   selectedArea={displayedArea}
                   serviceHours={serviceHoursCache[displayedArea.id]}
                   staffing={staffingCache[displayedArea.id]}
@@ -1257,16 +1320,14 @@ export function LocationsModal({
                   qualificationTemplates={
                     qualificationTemplatesCache[displayedArea.id]
                   }
-                  disabled={
-                    pending || areasLoading || areaDetailSwitching
-                  }
+                  disabled={pending || areasLoading || detailContentSwitching}
                   onOpen={setDetailPanel}
                 />
               ) : (
                 <LocationDetailActions
-                  selectedLocation={selectedLocation ?? null}
+                  selectedLocation={displayedLocation ?? selectedLocation ?? null}
                   selectedArea={null}
-                  disabled={pending || areasLoading}
+                  disabled={pending || areasLoading || detailContentSwitching}
                   onOpen={setDetailPanel}
                 />
               )}

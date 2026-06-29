@@ -255,11 +255,22 @@ export function isTagAreaHeaderStaffingHeaderAlertBadge(
   );
 }
 
-/** Schichtanzahl im Fenster vs. Gesamtbedarf (nicht nur gemappte Funktions-Zählung). */
+/** Schichtanzahl im Fenster vs. Gesamtbedarf — tatsächliche (projizierte) Anzahl, nicht auf Bedarf kappen. */
 export function gaugeCountsForTagAreaHeaderStaffingEntry(
   entry: TagAreaHeaderStaffingEntry
 ): { assigned: number; required: number } {
-  return { assigned: entry.assigned, required: entry.required };
+  const required = entry.required;
+  const projected = entry.projectedAssigned ?? entry.assigned;
+  if (isTagAreaHeaderStaffingEntryPlannedCoverage(entry)) {
+    return { assigned: projected, required };
+  }
+  if (
+    isTagAreaHeaderStaffingEntryOverstaffed(entry, "projected") &&
+    projected > entry.assigned
+  ) {
+    return { assigned: projected, required };
+  }
+  return { assigned: entry.assigned, required };
 }
 
 function overlayTimeLabel(entry: TagAreaHeaderStaffingEntry): string {

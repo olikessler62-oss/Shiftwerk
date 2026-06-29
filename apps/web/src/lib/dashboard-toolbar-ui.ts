@@ -63,7 +63,7 @@ export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEIGHT_CLASS =
   "h-[1.65rem] min-h-[1.65rem]";
 
 export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_SHELL_CLASS = cn(
-  "inline-flex max-w-full min-w-0 items-stretch overflow-hidden rounded-[4px] border border-black/10 bg-white/80 p-px",
+  "inline-flex w-fit shrink-0 items-stretch overflow-hidden rounded-[4px] border border-black/10 bg-white/80 p-px",
   DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEIGHT_CLASS,
   "shadow-[0_1px_2px_0_rgba(15,23,42,0.04)]"
 );
@@ -78,6 +78,12 @@ export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS = cn(
 
 export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS = cn(
   "flex h-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-[3px] px-2 text-xs font-medium text-muted transition-colors hover:text-foreground sm:px-2.5"
+);
+
+/** Drilldown — Einsatzübersicht-Button (gleiche Höhe wie Tag/Woche-Schalter). */
+export const DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS = cn(
+  DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS,
+  "cursor-pointer"
 );
 
 export const DASHBOARD_TEXT_LINK_BUTTON_CLASS = cn(

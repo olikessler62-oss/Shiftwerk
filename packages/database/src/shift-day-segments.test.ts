@@ -3,6 +3,7 @@ import {
   isOvernightShiftWindow,
   overnightShiftEndDateISO,
   shiftHoursOnCalendarDay,
+  splitShiftWindowIntoCalendarDayNetWorkSegments,
   splitShiftWindowIntoCalendarDaySegments,
 } from "./shift-day-segments";
 
@@ -43,6 +44,45 @@ describe("splitShiftWindowIntoCalendarDaySegments", () => {
         startTime: "00:00",
         endTime: "04:00",
         minutes: 240,
+      },
+    ]);
+  });
+
+  it("subtracts breaks per calendar day segment", () => {
+    expect(
+      splitShiftWindowIntoCalendarDayNetWorkSegments({
+        shiftDate: "2026-06-17",
+        startTime: "08:00",
+        endTime: "16:00",
+        breaks: [{ break_start: "12:00", break_end: "12:30" }],
+      })
+    ).toEqual([
+      {
+        dateISO: "2026-06-17",
+        startTime: "08:00",
+        endTime: "16:00",
+        minutes: 450,
+      },
+    ]);
+
+    const overnight = splitShiftWindowIntoCalendarDayNetWorkSegments({
+      shiftDate: "2026-06-17",
+      startTime: "22:00",
+      endTime: "04:00",
+      breaks: [{ break_start: "02:00", break_end: "02:30" }],
+    });
+    expect(overnight).toEqual([
+      {
+        dateISO: "2026-06-17",
+        startTime: "22:00",
+        endTime: "24:00",
+        minutes: 120,
+      },
+      {
+        dateISO: "2026-06-18",
+        startTime: "00:00",
+        endTime: "04:00",
+        minutes: 210,
       },
     ]);
   });

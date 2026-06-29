@@ -35,6 +35,20 @@ export function formatDashboardAreaCardWeekRange(
 
 export type DashboardAreaCardDetailScope = "day" | "week";
 
+/** ISO-Datum für den Tag-Scope der Bereichskarte (Drilldown-Tag). */
+export function resolveDashboardAreaCardScopeDateISO(
+  areaScope: DashboardAreaCardDetailScope,
+  input: {
+    drilldownDayISO: string;
+    weekStartISO: string;
+  }
+): string {
+  if (areaScope === "week") {
+    return input.weekStartISO;
+  }
+  return input.drilldownDayISO;
+}
+
 export function resolveDashboardAreaCardScopeDateLabel(
   areaScope: DashboardAreaCardDetailScope,
   dayDateISO: string,
@@ -45,4 +59,18 @@ export function resolveDashboardAreaCardScopeDateLabel(
     return formatDashboardAreaCardDayDate(dayDateISO, intlLocale);
   }
   return formatDashboardAreaCardWeekRange(weekStartISO, intlLocale);
+}
+
+/** Kalendertage für Kennzahlen (Schichten, Stunden, Entgelt) je Tag/Woche-Schalter. */
+export function resolveDashboardAreaStatsDates(
+  areaScope: DashboardAreaCardDetailScope,
+  input: {
+    drilldownDayISO: string;
+    weekDates: readonly string[];
+  }
+): string[] {
+  if (areaScope === "week") {
+    return [...input.weekDates];
+  }
+  return [input.drilldownDayISO];
 }

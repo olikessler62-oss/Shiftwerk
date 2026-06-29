@@ -1,5 +1,6 @@
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { AbsenceRequest } from "@schichtwerk/types";
+import { cn } from "@/lib/cn";
 import { splitEmployeeDisplayName } from "@/lib/shift-card-display-content";
 
 import {
@@ -9,6 +10,7 @@ import {
   SHIFT_CONFIRMATION_REJECTED_TAB_LABEL_CLASS,
   SHIFT_CONFIRMATION_REQUESTED_TAB_LABEL_CLASS,
 } from "@/lib/shift-confirmation-display";
+import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
 import {
   collectShiftAbsenceConflicts,
 } from "@/lib/shift-absence-conflict";
@@ -112,7 +114,7 @@ export function communicationHubCategoryPanelClass(
     case "proposed":
       return "border-neutral-200 bg-neutral-50 text-neutral-950";
     case "requested":
-      return "border-amber-200 bg-amber-50 text-[#7A5A10]";
+      return cn("border-amber-200 bg-amber-50", STAFFING_OCHER_TEXT_CLASS);
     case "canceled":
       return "border-orange-200 bg-orange-50 text-orange-800";
   }

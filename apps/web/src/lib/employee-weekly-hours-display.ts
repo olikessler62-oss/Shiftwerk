@@ -4,7 +4,8 @@ import {
   planningHoursUnitLabel,
   type PlanningShiftRef,
 } from "@/lib/planning-utils";
-import { resolveProfileWeeklyHoursTarget, timeToMinutes } from "@schichtwerk/database";
+import { shiftWorkMinutesFromRef } from "@/lib/shift-work-hours";
+import { resolveProfileWeeklyHoursTarget, type ShiftTypeBreakInput } from "@schichtwerk/database";
 
 export type WeeklyHoursLocationShiftRef = PlanningShiftRef & {
   location_id?: string | null;
@@ -25,13 +26,6 @@ export type EmployeeWeeklyHoursDisplay = {
   targetHours: number;
 };
 
-function shiftAssignDurationMinutes(startTime: string, endTime: string): number {
-  const start = timeToMinutes(startTime.slice(0, 5));
-  let end = timeToMinutes(endTime.slice(0, 5));
-  if (end <= start) end += 24 * 60;
-  return end - start;
-}
-
 function roundPlanningHours(hours: number): number {
   return Math.round(hours * 10) / 10;
 }
@@ -51,7 +45,10 @@ export function resolveWeeklyHoursShiftLocationId(
 export function weeklyAssignedMinutesByEmployeeIdAndLocation(
   shifts: readonly WeeklyHoursLocationShiftRef[],
   weekDates: readonly string[],
-  resolveLocationId: (shift: WeeklyHoursLocationShiftRef) => string | null
+  resolveLocationId: (shift: WeeklyHoursLocationShiftRef) => string | null,
+  options?: {
+    breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
+  }
 ): Map<string, Map<string, number>> {
   const weekDateSet = new Set(weekDates);
   const totals = new Map<string, Map<string, number>>();
@@ -65,7 +62,7 @@ export function weeklyAssignedMinutesByEmployeeIdAndLocation(
     const locationId = resolveLocationId(shift);
     if (!locationId) continue;
 
-    const minutes = shiftAssignDurationMinutes(shift.startTime, shift.endTime);
+    const minutes = shiftWorkMinutesFromRef(shift, options);
     const byLocation = totals.get(shift.employee_id) ?? new Map<string, number>();
     byLocation.set(locationId, (byLocation.get(locationId) ?? 0) + minutes);
     totals.set(shift.employee_id, byLocation);
@@ -82,6 +79,7 @@ export function buildEmployeeWeeklyHoursDisplay(input: {
   locationNameById: ReadonlyMap<string, string>;
   areaIdToLocationId?: ReadonlyMap<string, string>;
   fallbackLocationId?: string | null;
+  breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
 }): EmployeeWeeklyHoursDisplay {
   const minutesByLocation = weeklyAssignedMinutesByEmployeeIdAndLocation(
     input.shifts,
@@ -91,7 +89,8 @@ export function buildEmployeeWeeklyHoursDisplay(input: {
         shift,
         input.areaIdToLocationId,
         input.fallbackLocationId
-      )
+      ),
+    { breaksByTemplateId: input.breaksByTemplateId }
   ).get(input.employeeId);
 
   const lines: EmployeeWeeklyHoursLocationLine[] = [];
@@ -173,6 +172,7 @@ export function buildEmployeeWeeklyHoursCardLabelsByEmployeeId(input: {
   locationNameById: ReadonlyMap<string, string>;
   areaIdToLocationId?: ReadonlyMap<string, string>;
   fallbackLocationId?: string | null;
+  breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
 }): Map<string, string> {
   const labels = new Map<string, string>();
 
@@ -188,6 +188,7 @@ export function buildEmployeeWeeklyHoursCardLabelsByEmployeeId(input: {
       locationNameById: input.locationNameById,
       areaIdToLocationId: input.areaIdToLocationId,
       fallbackLocationId: input.fallbackLocationId,
+      breaksByTemplateId: input.breaksByTemplateId,
     });
     labels.set(
       employee.id,
@@ -211,6 +212,7 @@ export function buildEmployeeWeeklyHoursDisplayByEmployeeId(input: {
   locationNameById: ReadonlyMap<string, string>;
   areaIdToLocationId?: ReadonlyMap<string, string>;
   fallbackLocationId?: string | null;
+  breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
 }): Map<string, EmployeeWeeklyHoursDisplay> {
   const displays = new Map<string, EmployeeWeeklyHoursDisplay>();
 
@@ -228,6 +230,7 @@ export function buildEmployeeWeeklyHoursDisplayByEmployeeId(input: {
         locationNameById: input.locationNameById,
         areaIdToLocationId: input.areaIdToLocationId,
         fallbackLocationId: input.fallbackLocationId,
+        breaksByTemplateId: input.breaksByTemplateId,
       })
     );
   }
@@ -244,6 +247,7 @@ export function buildEmployeeWeeklyHoursDisplayLinesByEmployeeId(input: {
   totalLabel: string;
   areaIdToLocationId?: ReadonlyMap<string, string>;
   fallbackLocationId?: string | null;
+  breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
 }): Map<string, string[]> {
   const labels = new Map<string, string[]>();
   const displays = buildEmployeeWeeklyHoursDisplayByEmployeeId(input);

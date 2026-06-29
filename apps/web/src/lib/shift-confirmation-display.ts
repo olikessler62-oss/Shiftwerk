@@ -1,5 +1,6 @@
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import { cn } from "@/lib/cn";
+import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
 import {
   SHIFT_CONFIRMATION_OVERLAY_OPACITY,
   SHIFT_CARD_UNRESOLVED_OPACITY,
@@ -54,7 +55,8 @@ export const SHIFT_CONFIRMATION_REJECTED_TOOLTIP_TEXT_CLASS = "text-red-800";
 export const SHIFT_CONFIRMATION_PROPOSED_TOOLTIP_TEXT_CLASS = "text-neutral-950";
 
 /** Dunkles Ocker — Tab „Bestätigung angefragt“ und Status in der Tabelle. */
-export const SHIFT_CONFIRMATION_REQUESTED_TOOLTIP_TEXT_CLASS = "text-[#7A5A10]";
+export const SHIFT_CONFIRMATION_REQUESTED_TOOLTIP_TEXT_CLASS =
+  STAFFING_OCHER_TEXT_CLASS;
 
 /** Dunklere Tab-Überschriften im Schicht-Stati-Modal. */
 export const SHIFT_CONFIRMATION_PENDING_TAB_LABEL_CLASS = "text-[#701a75]";
@@ -63,7 +65,8 @@ export const SHIFT_CONFIRMATION_REJECTED_TAB_LABEL_CLASS = "text-red-800";
 
 export const SHIFT_CONFIRMATION_PROPOSED_TAB_LABEL_CLASS = "text-neutral-950";
 
-export const SHIFT_CONFIRMATION_REQUESTED_TAB_LABEL_CLASS = "text-[#7A5A10]";
+export const SHIFT_CONFIRMATION_REQUESTED_TAB_LABEL_CLASS =
+  STAFFING_OCHER_TEXT_CLASS;
 
 export const SHIFT_CONFIRMATION_CONFIRMED_TAB_LABEL_CLASS = "text-green-600";
 
@@ -109,7 +112,8 @@ export function shiftConfirmationRowChipClass(
     case "requested":
       return cn(
         SHIFT_CONFIRMATION_ROW_CHIP_BASE_CLASS,
-        "border-amber-200/90 bg-amber-50 text-[#7A5A10]"
+        "border-amber-200/90 bg-amber-50",
+        STAFFING_OCHER_TEXT_CLASS
       );
     case "pending":
       return cn(

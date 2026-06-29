@@ -103,12 +103,20 @@ export function resolveRemainingQualificationNeed(
   );
   if (!qualification) return 0;
 
+  const projectedQualification = entry.projectedQualifications?.find(
+    (item) => item.qualificationId === qualificationId
+  );
+  const coverageAssigned = Math.max(
+    qualification.assigned,
+    projectedQualification?.assigned ?? qualification.assigned
+  );
+
   const completeUnsavedRows = completeUnsavedRowCountForQualificationDemand(
     existingRows,
     entry.serviceHourId,
     qualificationId
   );
-  const effectiveAssigned = Math.max(qualification.assigned, completeUnsavedRows);
+  const effectiveAssigned = Math.max(coverageAssigned, completeUnsavedRows);
   return Math.max(0, qualification.required - effectiveAssigned);
 }
 
@@ -121,7 +129,11 @@ export function resolveRemainingStaffingNeed(
     existingRows,
     entry.serviceHourId
   );
-  const effectiveAssigned = Math.max(entry.assigned, completeUnsavedRows);
+  const coverageAssigned = Math.max(
+    entry.assigned,
+    entry.projectedAssigned ?? entry.assigned
+  );
+  const effectiveAssigned = Math.max(coverageAssigned, completeUnsavedRows);
   return Math.max(0, entry.required - effectiveAssigned);
 }
 

@@ -31,6 +31,11 @@ import {
   isoWeekEndFromWeekStart,
   resolveProfileWeeklyHoursTarget,
   validateEmployeeWeeklyHoursAfterAssign,
+  toDayShiftTimeWindow,
+  toWeeklyHoursExistingShift,
+  toWeeklyShiftHourWindow,
+  resolveBreaksForTemplateId,
+  type ShiftTypeBreakInput,
   type PlanningMode,
   type WeeklyShiftHourWindow,
 } from "@schichtwerk/database";
@@ -139,6 +144,15 @@ function findOverlappingShifts(
   );
 }
 
+async function loadBreaksByTemplateId(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  templateIds: readonly (string | null | undefined)[]
+): Promise<Map<string, ShiftTypeBreakInput[]>> {
+  return db.getAreaShiftTemplateBreaksByIds(
+    templateIds.filter((id): id is string => !!id)
+  );
+}
+
 async function canSilentlyAssignShiftOnRestWeekDay(
   db: Awaited<ReturnType<typeof getDatabase>>,
   organizationId: string,
@@ -222,7 +236,8 @@ async function canSilentlyAssignShiftOnRestWeekDay(
     targetDate,
     input.startTime,
     input.endTime,
-    timeZone
+    timeZone,
+    { areaShiftTemplateId: input.areaShiftTemplateId }
   );
   if (!weeklyCheck.ok) return false;
 
@@ -283,12 +298,29 @@ async function validateShiftLaborCompliance(
   startTime: string,
   endTime: string,
   timeZone: string,
-  options?: { sameDayBatchPeerCount?: number; excludeShiftIds?: ReadonlySet<string> }
+  options?: {
+    sameDayBatchPeerCount?: number;
+    excludeShiftIds?: ReadonlySet<string>;
+    areaShiftTemplateId?: string | null;
+  }
 ): Promise<{ ok: true; warnings?: string[] } | { ok: false; error: string }> {
   const db = await getDatabase();
   const countryCode =
     (await db.getOrganizationCountryCode(organizationId)) ?? DEFAULT_COUNTRY_CODE;
   const weekday = weekdayIndexFromDate(shiftDate);
+
+  const excludeIds = options?.excludeShiftIds ?? new Set<string>();
+  const sameDay = (await db.listShiftsForEmployeeDate(employeeId, shiftDate)).filter(
+    (shift) => !excludeIds.has(shift.id)
+  );
+  const breaksByTemplateId = await loadBreaksByTemplateId(db, [
+    options?.areaShiftTemplateId,
+    ...sameDay.map((shift) => shift.area_shift_template_id),
+  ]);
+  const proposedBreaks = resolveBreaksForTemplateId(
+    options?.areaShiftTemplateId,
+    breaksByTemplateId
+  );
 
   const durationCheck = validateShiftDurationForCountry({
     countryCode,
@@ -297,6 +329,7 @@ async function validateShiftLaborCompliance(
     weekday,
     shiftDate,
     point: "shift_assign",
+    breaks: proposedBreaks,
   });
   if (!durationCheck.ok) return durationCheck;
 
@@ -306,21 +339,26 @@ async function validateShiftLaborCompliance(
     endTime,
     timeZone
   );
-  const excludeIds = options?.excludeShiftIds ?? new Set<string>();
-  const sameDay = (await db.listShiftsForEmployeeDate(employeeId, shiftDate)).filter(
-    (shift) => !excludeIds.has(shift.id)
-  );
   const overlappingIds = new Set(
     findOverlappingShifts(sameDay, starts_at, ends_at).map((shift) => shift.id)
   );
   const otherSameDayShifts = sameDay.filter(
     (shift) => !overlappingIds.has(shift.id)
   );
-  const otherWindows = otherSameDayShifts.map((shift) => ({
-    startTime: shiftTimeFromTimestamp(shift.starts_at, timeZone),
-    endTime: shiftTimeFromTimestamp(shift.ends_at, timeZone),
-  }));
-  const proposedWindow = { startTime, endTime };
+  const otherWindows = otherSameDayShifts.map((shift) =>
+    toDayShiftTimeWindow({
+      startTime: shiftTimeFromTimestamp(shift.starts_at, timeZone),
+      endTime: shiftTimeFromTimestamp(shift.ends_at, timeZone),
+      area_shift_template_id: shift.area_shift_template_id,
+      breaksByTemplateId,
+    })
+  );
+  const proposedWindow = toDayShiftTimeWindow({
+    startTime,
+    endTime,
+    area_shift_template_id: options?.areaShiftTemplateId,
+    breaksByTemplateId,
+  });
   const combinedWarnings = [...durationCheck.warnings];
 
   if (otherWindows.length > 0) {
@@ -382,6 +420,7 @@ async function validateShiftWeeklyHoursCompliance(
     additionalWeekWindows?: readonly WeeklyShiftHourWindow[];
     employeeName?: string;
     weeklyHoursTarget?: number | null;
+    areaShiftTemplateId?: string | null;
   }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const db = await getDatabase();
@@ -416,15 +455,39 @@ async function validateShiftWeeklyHoursCompliance(
     excludeIds.add(overlapping.id);
   }
 
+  const breaksByTemplateId = await loadBreaksByTemplateId(db, [
+    options?.areaShiftTemplateId,
+    ...existingShifts.map((shift) => shift.area_shift_template_id),
+  ]);
+
   const proposedWindows: WeeklyShiftHourWindow[] = [
-    { shiftDate, startTime, endTime },
+    toWeeklyShiftHourWindow({
+      shiftDate,
+      startTime,
+      endTime,
+      area_shift_template_id: options?.areaShiftTemplateId,
+      breaksByTemplateId,
+    }),
     ...(options?.additionalWeekWindows ?? []),
   ];
+
+  const weeklyExistingShifts = existingShifts.map((shift) =>
+    toWeeklyHoursExistingShift({
+      id: shift.id,
+      shift_date: shift.shift_date,
+      starts_at: shift.starts_at,
+      ends_at: shift.ends_at,
+      area_shift_template_id: shift.area_shift_template_id,
+      startTime: shiftTimeFromTimestamp(shift.starts_at, timeZone),
+      endTime: shiftTimeFromTimestamp(shift.ends_at, timeZone),
+      breaksByTemplateId,
+    })
+  );
 
   const result = validateEmployeeWeeklyHoursAfterAssign({
     targetHours,
     weekStart,
-    existingShifts,
+    existingShifts: weeklyExistingShifts,
     excludeShiftIds: excludeIds,
     proposedWindows,
     employeeName,
@@ -682,9 +745,12 @@ export async function assignShiftWithTimes(
       input.startTime,
       input.endTime,
       timeZone,
-      input.existingShiftId
-        ? { excludeShiftIds: new Set([input.existingShiftId]) }
-        : undefined
+      {
+        ...(input.existingShiftId
+          ? { excludeShiftIds: new Set([input.existingShiftId]) }
+          : {}),
+        areaShiftTemplateId: input.areaShiftTemplateId,
+      }
     );
     if (!laborCheck.ok) return laborCheck;
 
@@ -694,9 +760,12 @@ export async function assignShiftWithTimes(
       input.startTime,
       input.endTime,
       timeZone,
-      input.existingShiftId
-        ? { excludeShiftIds: new Set([input.existingShiftId]) }
-        : undefined
+      {
+        ...(input.existingShiftId
+          ? { excludeShiftIds: new Set([input.existingShiftId]) }
+          : {}),
+        areaShiftTemplateId: input.areaShiftTemplateId,
+      }
     );
     if (!weeklyCheck.ok) return weeklyCheck;
 
@@ -851,6 +920,11 @@ export async function assignShiftBatch(input: {
       );
     }
 
+    const batchBreaksByTemplateId = await loadBreaksByTemplateId(
+      db,
+      input.rows.map((row) => row.areaShiftTemplateId)
+    );
+
     for (let rowIndex = 0; rowIndex < input.rows.length; rowIndex++) {
       const row = input.rows[rowIndex];
       if (
@@ -908,6 +982,7 @@ export async function assignShiftBatch(input: {
           sameDayBatchPeerCount:
             (batchPeerCountByEmployee.get(row.employeeId) ?? 1) - 1,
           excludeShiftIds: rowExcludeShiftIds,
+          areaShiftTemplateId: row.areaShiftTemplateId,
         }
       );
       if (!laborCheck.ok) {
@@ -937,6 +1012,7 @@ export async function assignShiftBatch(input: {
           additionalWeekWindows: pendingBatchWindowsByEmployee.get(row.employeeId) ?? [],
           weeklyHoursTarget: weeklyHoursTargetByEmployee.get(row.employeeId) ?? null,
           employeeName: employeeNameById.get(row.employeeId),
+          areaShiftTemplateId: row.areaShiftTemplateId,
         }
       );
       if (!weeklyCheck.ok) {
@@ -963,11 +1039,15 @@ export async function assignShiftBatch(input: {
       });
 
       const pendingWindows = pendingBatchWindowsByEmployee.get(row.employeeId) ?? [];
-      pendingWindows.push({
-        shiftDate: input.shiftDate,
-        startTime: row.startTime,
-        endTime: row.endTime,
-      });
+      pendingWindows.push(
+        toWeeklyShiftHourWindow({
+          shiftDate: input.shiftDate,
+          startTime: row.startTime,
+          endTime: row.endTime,
+          area_shift_template_id: row.areaShiftTemplateId,
+          breaksByTemplateId: batchBreaksByTemplateId,
+        })
+      );
       pendingBatchWindowsByEmployee.set(row.employeeId, pendingWindows);
     }
 

@@ -1,9 +1,15 @@
 import { areAreaCalendarShiftTimesComplete } from "@/lib/available-employees-for-shift";
 import { buildShiftTimestamps, getISOWeek, parseISODate } from "@/lib/dates";
 import {
+  shiftWorkHoursFromRef,
+  shiftWorkMinutesFromRef,
+  type ShiftWorkHoursRef,
+} from "@/lib/shift-work-hours";
+import {
   resolveProfileWeeklyHoursTarget,
   timeToMinutes,
   weekdayIndexFromDate,
+  type ShiftTypeBreakInput,
 } from "@schichtwerk/database";
 import {
   isEnglishIntlLocale,
@@ -11,11 +17,9 @@ import {
   weekdayAbbrevFromIndex,
 } from "@schichtwerk/i18n";
 
-export type PlanningShiftRef = {
+export type PlanningShiftRef = ShiftWorkHoursRef & {
   employee_id: string;
   shift_date: string;
-  startTime: string;
-  endTime: string;
 };
 
 export function formatTime(time: string): string {
@@ -52,26 +56,20 @@ export function shiftHours(timeWindow: {
   return shiftHoursFromWindow(timeWindow.start_time, timeWindow.end_time);
 }
 
-export function shiftHoursFromWindow(startTime: string, endTime: string): number {
-  const { starts_at, ends_at } = buildShiftTimestamps(
-    "2000-01-01",
-    startTime,
-    endTime
-  );
-  const ms = new Date(ends_at).getTime() - new Date(starts_at).getTime();
-  return Math.round((ms / 3_600_000) * 10) / 10;
-}
-
-function shiftAssignDurationMinutes(startTime: string, endTime: string): number {
-  const start = timeToMinutes(startTime.slice(0, 5));
-  let end = timeToMinutes(endTime.slice(0, 5));
-  if (end <= start) end += 24 * 60;
-  return end - start;
+export function shiftHoursFromWindow(
+  startTime: string,
+  endTime: string,
+  breaks?: readonly ShiftTypeBreakInput[]
+): number {
+  return shiftWorkHoursFromRef({ startTime, endTime, breaks });
 }
 
 export function weeklyAssignedMinutesByEmployeeId(
   shifts: readonly PlanningShiftRef[],
-  weekDates: readonly string[]
+  weekDates: readonly string[],
+  options?: {
+    breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
+  }
 ): Map<string, number> {
   const weekDateSet = new Set(weekDates);
   const totals = new Map<string, number>();
@@ -81,7 +79,7 @@ export function weeklyAssignedMinutesByEmployeeId(
     if (!areAreaCalendarShiftTimesComplete(shift.startTime, shift.endTime)) {
       continue;
     }
-    const minutes = shiftAssignDurationMinutes(shift.startTime, shift.endTime);
+    const minutes = shiftWorkMinutesFromRef(shift, options);
     totals.set(
       shift.employee_id,
       (totals.get(shift.employee_id) ?? 0) + minutes
@@ -116,12 +114,15 @@ export function buildEmployeeWeeklyHoursTooltipLabels(
 
 export function employeeWeekHours(
   employeeId: string,
-  shifts: readonly PlanningShiftRef[]
+  shifts: readonly PlanningShiftRef[],
+  options?: {
+    breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
+  }
 ): number {
   let total = 0;
   for (const shift of shifts) {
     if (shift.employee_id !== employeeId) continue;
-    total += shiftHoursFromWindow(shift.startTime, shift.endTime);
+    total += shiftWorkHoursFromRef(shift, options);
   }
   return Math.round(total * 10) / 10;
 }
@@ -295,7 +296,7 @@ export function weeklySummary(
   employees: { weekly_hours: number | null }[]
 ) {
   const plannedHours = shifts.reduce(
-    (sum, shift) => sum + shiftHoursFromWindow(shift.startTime, shift.endTime),
+    (sum, shift) => sum + shiftWorkHoursFromRef(shift),
     0
   );
 

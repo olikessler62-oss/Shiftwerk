@@ -144,12 +144,17 @@ type Props = {
   row: DashboardStaffingWindowRow;
   planning: DashboardStaffingCandidatesPlanningContext;
   onClose: () => void;
+  onAssigned?: () => void | Promise<void>;
+  /** Bestehende Schicht ersetzen (Neu zuweisen). */
+  existingShiftId?: string | null;
 };
 
 export function DashboardStaffingRowCandidatesModal({
   row,
   planning,
   onClose,
+  onAssigned,
+  existingShiftId = null,
 }: Props) {
   const t = useTranslations();
   const { locale } = useLocale();
@@ -451,41 +456,54 @@ export function DashboardStaffingRowCandidatesModal({
     async (employeeId: string) => {
       if (planning.readOnlyWeek || pendingEmployeeId) return;
 
-      setAssignError(null);
-      setPendingEmployeeId(employeeId);
-
-      const result = await assignShiftWithTimes({
-        employeeId,
-        shiftDate: row.dateISO,
-        startTime: row.timeFrom,
-        endTime: row.timeTo,
-        areaShiftTemplateId: resolveAreaShiftTemplateId(),
-        locationId: planning.locationId,
-        locationAreaId: planning.simplePlanning ? null : planning.areaId,
-        weekDates: weeklyHoursWeekDates,
-        simulatedProposedOnAssign,
-        relaxAppRegistrationGate,
-      });
-
-      setPendingEmployeeId(null);
-
-      if (!result.ok) {
-        setAssignError(translateActionError(result.error, t));
+      if (!areAreaCalendarShiftTimesComplete(row.timeFrom, row.timeTo)) {
+        setAssignError(t("shiftAssign.invalidShiftTimes"));
         return;
       }
 
-      onClose();
-      router.refresh();
+      setAssignError(null);
+      setPendingEmployeeId(employeeId);
+
+      try {
+        const result = await assignShiftWithTimes({
+          employeeId,
+          shiftDate: row.dateISO,
+          startTime: row.timeFrom,
+          endTime: row.timeTo,
+          areaShiftTemplateId: resolveAreaShiftTemplateId(),
+          locationId: planning.locationId,
+          locationAreaId: planning.simplePlanning ? null : planning.areaId,
+          existingShiftId: existingShiftId ?? undefined,
+          weekDates: weeklyHoursWeekDates,
+          simulatedProposedOnAssign,
+          relaxAppRegistrationGate,
+        });
+
+        if (!result.ok) {
+          setAssignError(translateActionError(result.error, t));
+          return;
+        }
+
+        await router.refresh();
+        await onAssigned?.();
+        onClose();
+      } catch {
+        setAssignError(t("shiftAssign.unknownError"));
+      } finally {
+        setPendingEmployeeId(null);
+      }
     },
     [
       planning,
       pendingEmployeeId,
       row,
       resolveAreaShiftTemplateId,
+      existingShiftId,
       weeklyHoursWeekDates,
       simulatedProposedOnAssign,
       relaxAppRegistrationGate,
       onClose,
+      onAssigned,
       router,
       t,
     ]
@@ -836,18 +854,18 @@ function CandidateList({
   return (
     <section
       className={cn(
-        "flex min-h-0 flex-1 flex-col overflow-hidden border border-border/50 bg-background/20",
+        "flex min-h-0 flex-1 flex-col overflow-y-auto border border-border/50 bg-background/20",
         DASHBOARD_PANEL_ROUNDED_CLASS,
         MODAL_SCROLLBAR_CLASS
       )}
     >
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
+      <div className="space-y-3">
         {groups.map((group) => (
           <div key={group.slotKey} className="overflow-hidden border border-border/40">
             <p className="bg-[#c7d4e5] px-2.5 py-1.5 text-sm font-semibold leading-tight text-[#273b55]">
               {group.qualificationName}
             </p>
-            <ul className="flex flex-col gap-0.5" role="list">
+            <ul className="flex flex-col gap-0.5 px-2 pb-2 pt-0.5" role="list">
               {group.candidates.map((candidate, candidateIndex) => {
                 const cacheEntry = tooltipCache[candidate.id];
                 const isTopPick = candidateIndex === 0;
@@ -948,7 +966,10 @@ function CandidateList({
                           disabled={
                             assignDisabled || pendingEmployeeId === candidate.id
                           }
-                          onClick={() => onAssign(candidate.id)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void onAssign(candidate.id);
+                          }}
                         >
                           {pendingEmployeeId === candidate.id
                             ? t("common.saving")

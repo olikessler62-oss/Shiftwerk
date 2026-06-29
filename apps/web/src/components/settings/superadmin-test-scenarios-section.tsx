@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario,
   seedSuperadminBiergartenHadrianScenario,
+  seedSuperadminFriseurSalonZentraleScenario,
+  seedSuperadminPflegedienstZentraleScenario,
 } from "@/app/actions/superadmin-test-scenarios";
 import { Alert, Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
@@ -135,6 +137,34 @@ export function SuperadminTestScenariosSection({ disabled = false }: Props) {
               "biergarten-hadrian-current-week",
               seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario,
               "nav.superadminTestScenarioBiergartenHadrianCurrentWeekSuccess"
+            )
+          }
+          runLabel={runLabel}
+          pendingLabel={pendingLabel}
+        />
+        <ScenarioCard
+          title={t("nav.superadminTestScenarioFriseurSalonZentraleTitle")}
+          disabled={disabled}
+          pending={pendingScenario === "friseur-salon-zentrale"}
+          onRun={() =>
+            runScenario(
+              "friseur-salon-zentrale",
+              seedSuperadminFriseurSalonZentraleScenario,
+              "nav.superadminTestScenarioFriseurSalonZentraleSuccess"
+            )
+          }
+          runLabel={runLabel}
+          pendingLabel={pendingLabel}
+        />
+        <ScenarioCard
+          title={t("nav.superadminTestScenarioPflegedienstZentraleTitle")}
+          disabled={disabled}
+          pending={pendingScenario === "pflegedienst-zentrale"}
+          onRun={() =>
+            runScenario(
+              "pflegedienst-zentrale",
+              seedSuperadminPflegedienstZentraleScenario,
+              "nav.superadminTestScenarioPflegedienstZentraleSuccess"
             )
           }
           runLabel={runLabel}

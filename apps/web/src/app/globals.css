@@ -402,9 +402,10 @@ textarea,
   box-sizing: border-box;
   flex-shrink: 0;
   min-width: 0;
+  max-width: 100%;
   margin-top: -1rem;
   margin-inline: -1rem;
-  overflow: visible;
+  overflow-x: clip;
 }
 
 @media (min-width: 768px) {
@@ -884,6 +885,10 @@ body {
 }
 
 /** Scrollbars in Modals, Sub-Modals und Dashboard-Zellen (Thumb, Track, Pfeile). */
+.modal-scrollbar {
+  scrollbar-gutter: stable;
+}
+
 .modal-scrollbar,
 .modal-scrollbar * {
   scrollbar-width: thin;

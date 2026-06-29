@@ -5,6 +5,7 @@ import {
   confirmationActionsForShift,
   countStaffingWindowIssues,
   filterStaffingWindowIssueListItemsByConfirmationStatus,
+  findFirstPlannedStaffingWindowRow,
   findFirstRowWithConfirmationStatus,
   findFirstStaffingCandidatesRow,
   listConfirmationShiftsForStaffingWindow,
@@ -124,6 +125,18 @@ describe("staffingRowShowsIssuesButton", () => {
       )
     ).toBe(true);
   });
+
+  it("shows for planned rows when confirmation is enabled", () => {
+    expect(
+      staffingRowShowsIssuesButton(
+        {
+          ...baseRow,
+          status: "planned",
+        },
+        true
+      )
+    ).toBe(true);
+  });
 });
 
 describe("listConfirmationShiftsForStaffingWindow", () => {
@@ -147,6 +160,21 @@ describe("listConfirmationShiftsForStaffingWindow", () => {
     });
 
     expect(shifts.map((item) => item.id)).toEqual(["s-1"]);
+  });
+
+  it("includes proposed shifts on planned rows", () => {
+    const shifts = listConfirmationShiftsForStaffingWindow(
+      { ...baseRow, status: "planned" },
+      {
+        ...context,
+        calendarShifts: [
+          shift({ id: "s-proposed", employee_id: "emp-1", confirmationStatus: "proposed" }),
+          shift({ id: "s-confirmed", employee_id: "emp-2", confirmationStatus: "confirmed" }),
+        ],
+      }
+    );
+
+    expect(shifts.map((item) => item.id)).toEqual(["s-proposed"]);
   });
 });
 
@@ -226,12 +254,39 @@ describe("findFirstStaffingCandidatesRow", () => {
     ).toBeNull();
   });
 
-  it("includes planned rows", () => {
-    const found = findFirstStaffingCandidatesRow(
-      [{ ...baseRow, status: "planned" }],
+  it("skips planned rows", () => {
+    expect(
+      findFirstStaffingCandidatesRow(
+        [{ ...baseRow, status: "planned" }],
+        todayISO
+      )
+    ).toBeNull();
+  });
+});
+
+describe("findFirstPlannedStaffingWindowRow", () => {
+  it("returns the first future planned staffing window", () => {
+    const found = findFirstPlannedStaffingWindowRow(
+      [
+        { ...baseRow, dateISO: "2026-06-20", status: "planned" },
+        { ...baseRow, dateISO: "2026-06-26", status: "planned" },
+      ],
       todayISO
     );
-    expect(found?.status).toBe("planned");
+
+    expect(found?.dateISO).toBe("2026-06-26");
+  });
+
+  it("skips understaffed and met rows", () => {
+    expect(
+      findFirstPlannedStaffingWindowRow(
+        [
+          { ...baseRow, status: "understaffed" },
+          { ...baseRow, status: "met" },
+        ],
+        todayISO
+      )
+    ).toBeNull();
   });
 });
 

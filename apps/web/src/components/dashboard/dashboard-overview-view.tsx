@@ -4,6 +4,10 @@ import Link from "next/link";
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { DashboardAreaAmpelCard } from "@/components/dashboard/dashboard-area-ampel-card";
+import {
+  DashboardAreaAssignmentOverviewModal,
+  type DashboardAreaAssignmentOverviewContext,
+} from "@/components/dashboard/dashboard-area-assignment-overview-modal";
 import type { DashboardStaffingCandidatesPlanningContext } from "@/components/dashboard/dashboard-staffing-row-candidates-modal";
 import type { DashboardStaffingWindowIssuesContext } from "@/lib/dashboard-staffing-window-issues";
 import { cn } from "@/lib/cn";
@@ -20,17 +24,28 @@ import {
 } from "@schichtwerk/i18n";
 import { formatDayHeader } from "@/lib/planning-utils";
 import { DASHBOARD_AREA_CARD_HEADER_FRAME_CLASS } from "@/lib/dashboard-panel-styles";
+import { dayCardMinHeightRem } from "@/lib/dashboard-day-card-layout";
 import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
 import { buildPlanningPageUrl } from "@/lib/planning-week";
 import { APP_SHELL_CONTENT_OFFSET_CLASS } from "@/lib/app-shell-layout";
+import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-modal-shell";
 import {
   DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS,
   DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS,
   DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_SHELL_CLASS,
+  DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS,
   DASHBOARD_STATUS_BAR_COMPACT_HEIGHT_CLASS,
   DASHBOARD_STATUS_BAR_COMPACT_NAV_BUTTON_CLASS,
 } from "@/lib/dashboard-toolbar-ui";
+import type {
+  AreaShiftTemplateWithBreaks,
+  LocationArea,
+  LocationAreaStaffing,
+  LocationAreaStaffingOverride,
+  Profile,
+  Qualification,
+} from "@schichtwerk/types";
 import { useClearMainNavPendingWhenReady } from "@/lib/app-shell-main-nav-pending";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import type { DashboardExtPanelSnapshot } from "@/lib/dashboard-ext-panel-data";
@@ -46,6 +61,7 @@ import {
   formatTagAreaFooterMoney,
 } from "@/lib/tag-area-footer-stats";
 import { useLazyShiftCompensation } from "@/lib/use-lazy-shift-compensation";
+import { buildBreaksByTemplateIdFromAreaTemplates } from "@/lib/shift-work-hours";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import {
   DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES,
@@ -55,7 +71,7 @@ import {
 } from "@/lib/dashboard-day-confirmation-counts";
 import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
 import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
-import { resolveDashboardAreaCardScopeDateLabel } from "@/lib/dashboard-area-card-scope-label";
+import { resolveDashboardAreaCardScopeDateLabel, resolveDashboardAreaCardScopeDateISO, resolveDashboardAreaStatsDates } from "@/lib/dashboard-area-card-scope-label";
 import {
   planDashboardDrilldownWeekTransition,
   resolveDashboardDrilldownDayIndex,
@@ -119,7 +135,7 @@ const D3_STROKE_ICON_PROPS = {
 
 const D3_STAFFING_STROKE_COLOR: Record<DashboardAreaAmpelLevel, string> = {
   met: "text-green-600",
-  partial: "text-yellow-600",
+  partial: STAFFING_OCHER_TEXT_CLASS,
   critical: "text-red-600",
   no_demand: "text-slate-400",
   overstaffed_only: "text-blue-600",
@@ -269,7 +285,7 @@ function StatCard({
     },
     yellow: {
       border: "border-l-yellow-400/55",
-      value: "text-yellow-700/80",
+      value: "text-[#784e00]/80",
     },
     gray: {
       border: "border-l-gray-300/80",
@@ -364,7 +380,7 @@ const D3_STATUS_CARD_FRAME_CLASS =
 
 /** Tag-Karten + Statuszeile — gemeinsames Raster für Kalender-Button-Ausrichtung. */
 const D3_DAY_CARDS_GRID_CLASS =
-  "grid auto-rows-fr grid-cols-1 items-stretch gap-2 min-[380px]:grid-cols-2 min-[380px]:gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7";
+  "grid min-w-0 max-w-full auto-rows-fr grid-cols-1 items-stretch gap-2 min-[380px]:grid-cols-2 min-[380px]:gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7";
 
 /** Bereich-Karten im Tages-Drilldown — responsives Raster, volle Breite ohne Überlauf. */
 const D3_DAY_DRILLDOWN_AREAS_GRID_CLASS =
@@ -485,25 +501,23 @@ export function DashboardLocationStatusBar({
   return (
     <header
       className={cn(
-        "flex min-w-0 flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-2",
-        "overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        "flex min-w-0 max-w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch sm:gap-2"
       )}
     >
-      <section
-        className={cn(
-          statusPanelFrameClass,
-          titlePanelSurfaceClass,
-          "w-fit shrink-0"
-        )}
-        aria-label={pageTitle}
-      >
-        <span className="whitespace-nowrap text-sm font-semibold tracking-tight text-foreground sm:text-base">
-          {pageTitle}
-        </span>
-      </section>
+      <div className="flex min-w-0 shrink-0 flex-row flex-nowrap items-stretch gap-2">
+        <section
+          className={cn(
+            statusPanelFrameClass,
+            titlePanelSurfaceClass,
+            "w-fit shrink-0"
+          )}
+          aria-label={pageTitle}
+        >
+          <span className="whitespace-nowrap text-sm font-semibold tracking-tight text-foreground sm:text-base">
+            {pageTitle}
+          </span>
+        </section>
 
-      <div className="flex min-w-0 shrink-0 flex-row flex-nowrap items-stretch gap-2 sm:ml-auto">
-        {calendarNavLinks}
         {backAction ? (
           <button
             type="button"
@@ -528,6 +542,10 @@ export function DashboardLocationStatusBar({
             <span className="whitespace-nowrap">{backAction.label}</span>
           </button>
         ) : null}
+      </div>
+
+      <div className="flex min-w-0 shrink-0 flex-row flex-nowrap items-stretch gap-2 sm:ml-auto">
+        {calendarNavLinks}
       </div>
     </header>
   );
@@ -554,14 +572,17 @@ function D3AreaScopeToggle({
   scope,
   dayLabel,
   weekLabel,
+  weekShortLabel,
   onScopeChange,
 }: {
   scope: AreaDetailScope;
   dayLabel: string;
   weekLabel: string;
+  weekShortLabel?: string;
   onScopeChange: (scope: AreaDetailScope) => void;
 }) {
   const t = useTranslations();
+  const weekButtonLabel = weekShortLabel ?? weekLabel;
 
   return (
     <div
@@ -574,11 +595,11 @@ function D3AreaScopeToggle({
         aria-pressed={scope === "day"}
         title={dayLabel}
         onClick={() => onScopeChange("day")}
-        className={cn(
+        className={
           scope === "day"
             ? DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS
             : DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS
-        )}
+        }
       >
         {dayLabel}
       </button>
@@ -587,13 +608,13 @@ function D3AreaScopeToggle({
         aria-pressed={scope === "week"}
         title={weekLabel}
         onClick={() => onScopeChange("week")}
-        className={cn(
+        className={
           scope === "week"
             ? DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS
             : DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS
-        )}
+        }
       >
-        {weekLabel}
+        {weekButtonLabel}
       </button>
     </div>
   );
@@ -606,22 +627,23 @@ const D3_DAY_CARD_FRAME_SHADOW_CLASS =
 /** Tag-Karten — einheitlicher schwarzer 1px-Rahmen. */
 const D3_DAY_CARD_BORDER_CLASS = "border border-black";
 
-const D3_DAY_CARD_MIN_HEIGHT_CLASS = "min-h-[12.5rem] sm:min-h-[15rem]";
-
 /** Datums- + Wochentagszeile — gleicher Kopf wie Drilldown-Bereichskarten. */
 const D3_DAY_CARD_HEADER_SLOT_CLASS = cn(
   DASHBOARD_AREA_CARD_HEADER_FRAME_CLASS,
   "flex min-h-[4.25rem] shrink-0 flex-col justify-center px-3.5 py-2.5"
 );
 
+/** Content unter dem Kopf — Hover-Hintergrund (via group-hover auf der Tag-Karte). */
+const D3_DAY_CARD_BODY_HOVER_SURFACE_CLASS = "group-hover:bg-[#eff3f7]";
+
 /** Vergangene Tage — helleres Grau im Content unter dem Kopf. */
-const D3_DAY_CARD_BODY_PAST_SURFACE_CLASS =
-  "bg-[#e8ebf0] hover:bg-[#e8ebf0]";
+const D3_DAY_CARD_BODY_PAST_SURFACE_CLASS = cn(
+  "bg-[#e8ebf0]",
+  D3_DAY_CARD_BODY_HOVER_SURFACE_CLASS
+);
 
-/** Mindesthöhe für bis zu drei Bereichszeilen (Ampel + Name). */
-const D3_DAY_CARD_BODY_SLOT_CLASS = "min-h-[5.75rem] flex-1";
-
-const D3_DAY_CARD_ACCENT_STRIPE_CLASS = "absolute inset-y-0 left-0 w-1";
+const D3_DAY_CARD_ACCENT_STRIPE_CLASS =
+  "pointer-events-none absolute inset-y-0 left-0 z-10 w-1";
 
 function dayCardShowsAccentStripe(
   day: DashboardExtDaySnapshot,
@@ -670,7 +692,8 @@ function dayCardConfirmationChipClass(status: ShiftConfirmationStatus): string {
     case "requested":
       return cn(
         DAY_CARD_CONFIRMATION_CHIP_BASE_CLASS,
-        "border-amber-200/90 bg-amber-50 text-[#7A5A10]"
+        "border-amber-200/90 bg-amber-50",
+        STAFFING_OCHER_TEXT_CLASS
       );
     case "pending":
       return cn(
@@ -698,7 +721,7 @@ function dayCardConfirmationChipClass(status: ShiftConfirmationStatus): string {
 }
 
 function dayCardConfirmationShortLabelKey(
-  status: ShiftConfirmationStatus
+  status: (typeof DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES)[number]
 ):
   | "dashboard.dayCardConfirmationShort.requested"
   | "dashboard.dayCardConfirmationShort.pending"
@@ -767,11 +790,13 @@ function DayCardConfirmationChips({
 
 function DayCard({
   day,
+  areaCount,
   staffingEnabled,
   shiftConfirmationEnabled,
   onClick,
 }: {
   day: DashboardExtDaySnapshot;
+  areaCount: number;
   staffingEnabled: boolean;
   shiftConfirmationEnabled: boolean;
   onClick: () => void;
@@ -790,14 +815,15 @@ function DayCard({
     hasActionableConfirmationCounts(day.confirmationCounts);
   const showOpenSlots = day.openSlots > 0;
   const showFooterDivider = showConfirmationChips || showOpenSlots;
+  const cardMinHeightRem = dayCardMinHeightRem(areaCount);
 
   return (
     <button
       type="button"
       onClick={onClick}
+      style={{ minHeight: `${cardMinHeightRem}rem` }}
       className={cn(
-        `relative flex h-full min-h-0 w-full cursor-pointer flex-col overflow-hidden ${D3_ROUNDED} text-left transition-colors`,
-        D3_DAY_CARD_MIN_HEIGHT_CLASS,
+        `group relative flex h-full min-h-0 w-full cursor-pointer flex-col overflow-hidden ${D3_ROUNDED} text-left transition-colors`,
         D3_DAY_CARD_FRAME_SHADOW_CLASS,
         D3_DAY_CARD_BORDER_CLASS,
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
@@ -824,7 +850,7 @@ function DayCard({
             {monthLong}
           </p>
         </div>
-        <div className="mt-1">
+        <div className="mt-1 flex items-baseline gap-1.5">
           <p
             className={cn(
               "text-sm font-semibold leading-none tracking-wide",
@@ -833,50 +859,53 @@ function DayCard({
           >
             {weekdayShort}
           </p>
+          {day.isToday ? (
+            <p className="text-sm font-semibold leading-none text-foreground/85">
+              {t("dashboard.areaScopeToday")}
+            </p>
+          ) : null}
         </div>
       </div>
 
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col px-3.5 pb-3.5 pt-4",
-          D3_DAY_CARD_BODY_SLOT_CLASS,
+          "flex min-h-0 flex-1 flex-col px-3.5 pb-4 pt-4 transition-colors",
           "min-w-0",
-          isPastDay ? D3_DAY_CARD_BODY_PAST_SURFACE_CLASS : "bg-white hover:brightness-[0.99]"
+          isPastDay
+            ? D3_DAY_CARD_BODY_PAST_SURFACE_CLASS
+            : cn("bg-white", D3_DAY_CARD_BODY_HOVER_SURFACE_CLASS)
         )}
       >
-        {!day.hasServiceHours ? (
-          <p className="text-[11px] font-medium leading-snug text-foreground/70">
-            Keine Servicezeiten
-          </p>
-        ) : day.shiftCount === 0 ? (
-          <p className="text-[11px] leading-snug text-muted/80">
-            Keine Schichten
-          </p>
-        ) : (
-          <div className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2">
-            {day.areas.slice(0, 3).map((area) => (
-              <Fragment key={area.areaId}>
-                <div className="flex h-5 items-center justify-center">
-                  {area.hasServiceHours ? (
-                    <DayCardAreaAmpelIcon level={area.ampelLevel} muted={false} />
-                  ) : (
-                    <span className={D3_STAFFING_STROKE_ICON_CLASS} aria-hidden />
-                  )}
-                </div>
-                <span className="min-h-5 min-w-0 truncate text-[11px] leading-5 text-foreground/75">
-                  {area.areaName}
-                </span>
-              </Fragment>
-            ))}
-            {day.areas.length > 3 ? (
-              <p className="col-span-2 pt-0.5 text-[10px] tracking-wide text-muted/70">
-                +{day.areas.length - 3} Bereiche
-              </p>
-            ) : null}
-          </div>
-        )}
+        <div className="min-h-0 flex-1">
+          {!day.hasServiceHours ? (
+            <p className="text-[11px] font-medium leading-snug text-foreground/70">
+              Keine Servicezeiten
+            </p>
+          ) : day.shiftCount === 0 ? (
+            <p className="text-[11px] leading-snug text-muted/80">
+              Keine Schichten
+            </p>
+          ) : (
+            <div className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2">
+              {day.areas.map((area) => (
+                <Fragment key={area.areaId}>
+                  <div className="flex h-5 items-center justify-center">
+                    {area.hasServiceHours ? (
+                      <DayCardAreaAmpelIcon level={area.ampelLevel} muted={false} />
+                    ) : (
+                      <span className={D3_STAFFING_STROKE_ICON_CLASS} aria-hidden />
+                    )}
+                  </div>
+                  <span className="min-h-5 min-w-0 truncate text-[11px] leading-5 text-foreground/75">
+                    {area.areaName}
+                  </span>
+                </Fragment>
+              ))}
+            </div>
+          )}
+        </div>
         {showFooterDivider ? (
-          <div className="mt-auto shrink-0 space-y-2 border-t border-black/[0.08] pt-2.5">
+          <div className="mt-3 shrink-0 space-y-2 border-t border-black/[0.08] pt-3">
             {showConfirmationChips ? (
               <DayCardConfirmationChips counts={day.confirmationCounts} t={t} />
             ) : null}
@@ -913,7 +942,7 @@ function IssueRow({ issue }: { issue: DashboardExtIssueSnapshot }) {
     understaffed_window: "bg-red-100 text-red-700",
     understaffed_qualification: "bg-orange-100 text-orange-700",
     overstaffed: "bg-blue-100 text-blue-700",
-    qualification_mismatch: "bg-yellow-100 text-yellow-700",
+    qualification_mismatch: cn("bg-yellow-100", STAFFING_OCHER_TEXT_CLASS),
     no_matching_qualification: "bg-orange-100 text-orange-700",
   };
 
@@ -1031,9 +1060,17 @@ export function DashboardOverviewView({
   const [areaDetailScopeByAreaId, setAreaDetailScopeByAreaId] = useState<
     Record<string, AreaDetailScope>
   >({});
+  const [assignmentOverviewAreaId, setAssignmentOverviewAreaId] = useState<
+    string | null
+  >(null);
   const currentWeekDrilldownSnapshotRef =
     useRef<CurrentWeekDrilldownSnapshot | null>(null);
   const previousWeekStartRef = useRef(weekStart);
+
+  const currentWeekTodayDayIndex = useMemo(
+    () => snapshot.dates.findIndex((dateISO) => dateISO === todayISO),
+    [snapshot.dates, todayISO]
+  );
 
   useEffect(() => {
     const previousWeekStart = previousWeekStartRef.current;
@@ -1044,6 +1081,8 @@ export function DashboardOverviewView({
       view,
       areaDetailScopeByAreaId,
       savedSnapshot: currentWeekDrilldownSnapshotRef.current,
+      currentWeekTodayDayIndex:
+        currentWeekTodayDayIndex >= 0 ? currentWeekTodayDayIndex : null,
     });
 
     previousWeekStartRef.current = weekStart;
@@ -1065,7 +1104,7 @@ export function DashboardOverviewView({
           : previous
       );
     }
-  }, [weekStart, currentWeekStart, view, areaDetailScopeByAreaId]);
+  }, [weekStart, currentWeekStart, view, areaDetailScopeByAreaId, currentWeekTodayDayIndex]);
 
   const getAreaDetailScope = useCallback(
     (areaId: string): AreaDetailScope => areaDetailScopeByAreaId[areaId] ?? "day",
@@ -1086,10 +1125,20 @@ export function DashboardOverviewView({
         shift_date: shift.shift_date,
         startTime: shift.startTime,
         endTime: shift.endTime,
+        area_shift_template_id: shift.area_shift_template_id,
+        location_area_id: shift.location_area_id,
       })),
     [calendarShifts]
   );
   const shiftCompensation = useLazyShiftCompensation(compensationShiftRefs);
+
+  const tagAreaFooterStatsOptions = useMemo(
+    () => ({
+      breaksByTemplateId: buildBreaksByTemplateIdFromAreaTemplates(areaShiftTemplates),
+      areaShiftTemplates,
+    }),
+    [areaShiftTemplates]
+  );
 
   const profileQualificationIdsMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -1158,9 +1207,11 @@ export function DashboardOverviewView({
       computeLocationCompensationRollup(
         snapshot.dates,
         compensationShiftRefs,
-        shiftCompensation
+        shiftCompensation,
+        undefined,
+        tagAreaFooterStatsOptions
       ),
-    [snapshot.dates, compensationShiftRefs, shiftCompensation]
+    [snapshot.dates, compensationShiftRefs, shiftCompensation, tagAreaFooterStatsOptions]
   );
 
   const rollup = useMemo(
@@ -1187,11 +1238,9 @@ export function DashboardOverviewView({
 
   const drilldownDayIndex = resolveDashboardDrilldownDayIndex(
     view.level,
-    view.level !== "week" ? view.dayIndex : 0,
-    isCurrentWeek
+    view.level !== "week" ? view.dayIndex : 0
   );
 
-  // Resolve current day/area for drill-down (Monday in non-current weeks)
   const currentDay =
     drilldownDayIndex !== null ? days[drilldownDayIndex] ?? null : null;
 
@@ -1210,14 +1259,34 @@ export function DashboardOverviewView({
       ? currentDay.areas.find((area) => area.areaId === currentAreaId) ?? null
       : null;
 
+  const resolveAreaCardScopeDateISO = useCallback(
+    (areaScope: AreaDetailScope) => {
+      if (!currentDay) return weekStart;
+      return resolveDashboardAreaCardScopeDateISO(areaScope, {
+        drilldownDayISO: currentDay.dateISO,
+        weekStartISO: weekStart,
+      });
+    },
+    [currentDay, weekStart]
+  );
+
+  const resolveStatsDatesForArea = useCallback(
+    (areaId: string) => {
+      const scope = areaDetailScopeByAreaId[areaId] ?? "day";
+      return resolveDashboardAreaStatsDates(scope, {
+        drilldownDayISO: resolveAreaCardScopeDateISO("day"),
+        weekDates: snapshot.dates,
+      });
+    },
+    [areaDetailScopeByAreaId, resolveAreaCardScopeDateISO, snapshot.dates]
+  );
+
   const dayAreaStats = useMemo(() => {
     if (!currentDay) return [];
 
     return sortDashboardAreaWeekStats(
       planningAreas.map((area) => {
-        const scope = areaDetailScopeByAreaId[area.id] ?? "day";
-        const statsDates =
-          scope === "week" ? snapshot.dates : [currentDay.dateISO];
+        const statsDates = resolveStatsDatesForArea(area.id);
 
         return computeDashboardAreaWeekStats({
           area,
@@ -1242,8 +1311,7 @@ export function DashboardOverviewView({
     );
   }, [
     currentDay,
-    areaDetailScopeByAreaId,
-    snapshot.dates,
+    resolveStatsDatesForArea,
     planningAreas,
     calendarShifts,
     staffingRules,
@@ -1273,13 +1341,9 @@ export function DashboardOverviewView({
       | null => {
       if (!selectedLocationId || !snapshot.staffingEnabled || !currentDay) return null;
 
-      const scope = areaDetailScopeByAreaId[areaId] ?? "day";
-      const statsDates =
-        scope === "week" ? snapshot.dates : [currentDay.dateISO];
-
       return {
         weekStart,
-        dates: statsDates,
+        dates: resolveStatsDatesForArea(areaId),
         weeklyHoursShifts,
         locations,
         planningAreas,
@@ -1304,8 +1368,7 @@ export function DashboardOverviewView({
       snapshot.staffingEnabled,
       snapshot.readOnlyWeek,
       currentDay,
-      areaDetailScopeByAreaId,
-      snapshot.dates,
+      resolveStatsDatesForArea,
       weekStart,
       weeklyHoursShifts,
       locations,
@@ -1363,11 +1426,21 @@ export function DashboardOverviewView({
   );
 
   const areaScopeDayLabel = useMemo(() => {
-    if (isCurrentWeek) {
+    if (!currentDay) {
       return t("dashboard.areaScopeToday");
     }
-    return formatDashboardAreaScopeDayLabel(weekStart, intlLocale);
-  }, [intlLocale, isCurrentWeek, t, weekStart]);
+    if (isCurrentWeek) {
+      if (currentDay.dateISO === todayISO) {
+        return t("dashboard.areaScopeToday");
+      }
+      const localeKey = isEnglishIntlLocale(intlLocale) ? "en" : "de";
+      return dayCardWeekdayTwoLetter(
+        weekdayIndexFromDate(currentDay.dateISO),
+        localeKey
+      );
+    }
+    return formatDashboardAreaScopeDayLabel(currentDay.dateISO, intlLocale);
+  }, [currentDay, intlLocale, isCurrentWeek, t, todayISO]);
 
   const areaScopeWeekLabel = useMemo(() => {
     if (isCurrentWeek) {
@@ -1381,17 +1454,124 @@ export function DashboardOverviewView({
     );
   }, [intlLocale, isCurrentWeek, t, weekStart]);
 
+  const areaScopeWeekShortLabel = useMemo(() => {
+    if (isCurrentWeek) {
+      return t("dashboard.areaScopeWeek");
+    }
+    const weekHeader = getAreaCalendarWeekHeaderParts(weekStart, intlLocale);
+    return `KW ${weekHeader.calendarWeek}`;
+  }, [intlLocale, isCurrentWeek, t, weekStart]);
+
+  const buildAssignmentOverviewContext = useCallback(
+    (
+      areaId: string,
+      areaName: string,
+      areaCalendarHref: string
+    ): DashboardAreaAssignmentOverviewContext | null => {
+      if (!selectedLocationId || !snapshot.staffingEnabled || !currentDay) {
+        return null;
+      }
+
+      const scope = areaDetailScopeByAreaId[areaId] ?? "day";
+      const statsDates = resolveDashboardAreaStatsDates(scope, {
+        drilldownDayISO: resolveAreaCardScopeDateISO("day"),
+        weekDates: snapshot.dates,
+      });
+
+      const candidatesBase = buildCandidatesPlanning(areaId);
+      if (!candidatesBase) return null;
+
+      return {
+        ...candidatesBase,
+        areaId,
+        areaName,
+        areaCalendarHref,
+        dates: statsDates,
+        shiftConfirmationEnabled,
+        todayISO,
+      };
+    },
+    [
+      selectedLocationId,
+      snapshot.staffingEnabled,
+      currentDay,
+      areaDetailScopeByAreaId,
+      resolveAreaCardScopeDateISO,
+      snapshot.dates,
+      buildCandidatesPlanning,
+      shiftConfirmationEnabled,
+      todayISO,
+    ]
+  );
+
+  const assignmentOverviewStats = useMemo(
+    () =>
+      assignmentOverviewAreaId
+        ? dayAreaStats.find((stats) => stats.areaId === assignmentOverviewAreaId) ??
+          null
+        : null,
+    [assignmentOverviewAreaId, dayAreaStats]
+  );
+
+  const assignmentOverviewContext = useMemo(() => {
+    if (!assignmentOverviewStats) return null;
+    return buildAssignmentOverviewContext(
+      assignmentOverviewStats.areaId,
+      assignmentOverviewStats.areaName,
+      buildAreaHref("/bereich-kalender", assignmentOverviewStats.areaId)
+    );
+  }, [assignmentOverviewStats, buildAssignmentOverviewContext, buildAreaHref]);
+
+  const assignmentOverviewScopeLabel = useMemo(() => {
+    if (!assignmentOverviewAreaId) return "";
+    const scope = areaDetailScopeByAreaId[assignmentOverviewAreaId] ?? "day";
+    return resolveDashboardAreaCardScopeDateLabel(
+      scope,
+      resolveAreaCardScopeDateISO(scope),
+      weekStart,
+      intlLocale
+    );
+  }, [
+    areaDetailScopeByAreaId,
+    assignmentOverviewAreaId,
+    intlLocale,
+    resolveAreaCardScopeDateISO,
+    weekStart,
+  ]);
+
+  const assignmentOverviewShowDayHeaders = useMemo(() => {
+    if (!assignmentOverviewAreaId) return false;
+    return (areaDetailScopeByAreaId[assignmentOverviewAreaId] ?? "day") === "week";
+  }, [areaDetailScopeByAreaId, assignmentOverviewAreaId]);
+
   const renderDayDrilldownAreaSlot = (stats: DashboardAreaWeekStats) => (
     <div key={stats.areaId} className="flex min-w-0 max-w-full flex-col gap-2">
-      <div className="flex min-w-0 max-w-full justify-end overflow-x-auto">
-        <D3AreaScopeToggle
-          scope={getAreaDetailScope(stats.areaId)}
-          dayLabel={areaScopeDayLabel}
-          weekLabel={areaScopeWeekLabel}
-          onScopeChange={(scope) =>
-            setAreaDetailScopeForArea(stats.areaId, scope)
-          }
-        />
+      <div className="flex min-w-0 max-w-full flex-wrap items-center justify-between gap-2">
+        {snapshot.staffingEnabled ? (
+          <button
+            type="button"
+            className={cn(
+              DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS,
+              "max-w-full truncate"
+            )}
+            onClick={() => setAssignmentOverviewAreaId(stats.areaId)}
+          >
+            {t("dashboard.areaAssignmentOverviewButton")}
+          </button>
+        ) : (
+          <span aria-hidden className="shrink-0" />
+        )}
+        <div className="shrink-0">
+          <D3AreaScopeToggle
+            scope={getAreaDetailScope(stats.areaId)}
+            dayLabel={areaScopeDayLabel}
+            weekLabel={areaScopeWeekLabel}
+            weekShortLabel={areaScopeWeekShortLabel}
+            onScopeChange={(scope) =>
+              setAreaDetailScopeForArea(stats.areaId, scope)
+            }
+          />
+        </div>
       </div>
       <div className="min-w-0 max-w-full">
       <DashboardAreaAmpelCard
@@ -1406,16 +1586,17 @@ export function DashboardOverviewView({
         showCalendarFooterLinks={false}
         isPastScope={resolveAreaCardPastScope(
           getAreaDetailScope(stats.areaId),
-          currentDay!.dateISO,
+          resolveAreaCardScopeDateISO(getAreaDetailScope(stats.areaId)),
           weekStart,
           todayISO
         )}
         staffingScopeDateLabel={resolveDashboardAreaCardScopeDateLabel(
           getAreaDetailScope(stats.areaId),
-          currentDay!.dateISO,
+          resolveAreaCardScopeDateISO(getAreaDetailScope(stats.areaId)),
           weekStart,
           intlLocale
         )}
+        staffingScopeMode={getAreaDetailScope(stats.areaId)}
         todayISO={todayISO}
         shiftConfirmationEnabled={shiftConfirmationEnabled}
         windowIssuesContext={buildWindowIssuesContext(stats.areaId)}
@@ -1428,27 +1609,33 @@ export function DashboardOverviewView({
     <>
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col gap-5 px-4 pb-0 md:overflow-y-auto md:px-6",
-          "max-md:flex-none max-md:overflow-visible max-md:pb-4",
-          APP_SHELL_CONTENT_OFFSET_CLASS,
-          MODAL_SCROLLBAR_CLASS
+          "flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col overflow-hidden px-4 pb-0 md:px-6",
+          APP_SHELL_CONTENT_OFFSET_CLASS
         )}
       >
-      <DashboardLocationStatusBar
-          pageTitle={t("nav.dashboard")}
-          weekStart={snapshot.weekStart}
-          locationId={snapshot.locationId}
-          backAction={
-            view.level === "day"
-              ? {
-                  label: t("dashboard.backToWeekView"),
-                  onClick: () => setView({ level: "week" }),
-                }
-              : null
-          }
-        />
+        <div className="min-w-0 max-w-full shrink-0 bg-background max-md:sticky max-md:top-0 max-md:z-20">
+          <DashboardLocationStatusBar
+            pageTitle={t("nav.dashboard")}
+            weekStart={snapshot.weekStart}
+            locationId={snapshot.locationId}
+            backAction={
+              view.level === "day"
+                ? {
+                    label: t("dashboard.backToWeekView"),
+                    onClick: () => setView({ level: "week" }),
+                  }
+                : null
+            }
+          />
+          <div className="mt-5 border-b border-black/20" aria-hidden />
+        </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 border-t border-black/20 pt-3">
+        <div
+          className={cn(
+            "flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pt-3",
+            MODAL_SCROLLBAR_CLASS
+          )}
+        >
       {view.level === "area" ? (
       <div className="space-y-1">
         {currentDay && currentArea && (
@@ -1473,7 +1660,7 @@ export function DashboardOverviewView({
 
       {/* ── WEEK VIEW ────────────────────────────────────────────── */}
       {view.level === "week" && (
-        <div className="flex min-h-0 flex-1 flex-col gap-5 pb-0">
+        <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-5 pb-0">
           {/* Day cards */}
           {days.length === 0 ? (
             <div className={cn(D3_ROUNDED, D3_CARD_FRAME_CLASS, "border-dashed border-black/15 bg-surface px-6 py-10 text-center text-sm text-muted")}>
@@ -1485,6 +1672,7 @@ export function DashboardOverviewView({
                 <DayCard
                   key={day.dateISO}
                   day={day}
+                  areaCount={planningAreas.length}
                   staffingEnabled={snapshot.staffingEnabled}
                   shiftConfirmationEnabled={shiftConfirmationEnabled}
                   onClick={() => {
@@ -1623,8 +1811,18 @@ export function DashboardOverviewView({
           )}
         </div>
       )}
+        </div>
       </div>
-      </div>
+
+      {assignmentOverviewStats && assignmentOverviewContext ? (
+        <DashboardAreaAssignmentOverviewModal
+          rows={assignmentOverviewStats.staffingWindowRows}
+          context={assignmentOverviewContext}
+          scopeLabel={assignmentOverviewScopeLabel}
+          showDayHeaders={assignmentOverviewShowDayHeaders}
+          onClose={() => setAssignmentOverviewAreaId(null)}
+        />
+      ) : null}
     </>
   );
 }

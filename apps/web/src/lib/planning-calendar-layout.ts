@@ -1,6 +1,6 @@
 import { isPastCalendarDate } from "@/lib/dates";
 import { narrowDayColumnGridTrack } from "@/lib/day-column-width";
-import { isAnyAreaOpenInCalendar, serviceWeekdayForDate } from "@/lib/location-staffing-client";
+import { isAnyAreaOpenInCalendar, hasEffectiveServiceHoursOnDate, serviceWeekdayForDate } from "@/lib/location-staffing-client";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import {
   computeCollapsedDayColumnLineWidthPx,
@@ -236,8 +236,8 @@ export function resolveDashboardExpandedDayDates(
 }
 
 /**
- * Mitarbeiter-Kalender: wie Bereich-Kalender — in der aktuellen Woche vergangene Tage
- * zugeklappt; explizit aufgeklappte Tage pro Woche beim Scrollen merken.
+ * Mitarbeiter- + Einsatzort-Kalender: Tage ohne Servicezeiten initial zugeklappt;
+ * explizit aufgeklappte Wochentage und Wochenzustand beim Scrollen merken.
  */
 export function resolveEmployeeCalendarLayoutDayDates(
   dates: readonly string[],
@@ -279,6 +279,63 @@ export function resolveEmployeeCalendarLayoutDayDates(
   }
 
   return eligibleDays;
+}
+
+export function shiftCountByDateForAreas(
+  shiftsByDate: ReadonlyMap<
+    string,
+    readonly { locationAreaId?: string | null }[]
+  >,
+  areaIds: ReadonlySet<string> | readonly string[]
+): Map<string, number> {
+  const scope = areaIds instanceof Set ? areaIds : new Set(areaIds);
+  const map = new Map<string, number>();
+  for (const [date, list] of shiftsByDate) {
+    const count = list.filter(
+      (shift) => shift.locationAreaId && scope.has(shift.locationAreaId)
+    ).length;
+    if (count > 0) map.set(date, count);
+  }
+  return map;
+}
+
+export function dayHasServiceHoursFlagsForAreas(
+  dates: readonly string[],
+  serviceHours: readonly AreaServiceHourRef[],
+  areaIds: readonly string[]
+): boolean[] {
+  if (areaIds.length === 0) {
+    return dates.map(() => false);
+  }
+  return dates.map((date) =>
+    hasEffectiveServiceHoursOnDate(serviceHours, date, areaIds)
+  );
+}
+
+/** Einsatzort-Kalender: Tag-Ein-/Ausklapp nur nach sichtbaren (aktiven) Einsatzorten. */
+export function resolveAreaCalendarLayoutDayDates(
+  dates: readonly string[],
+  serviceHours: readonly AreaServiceHourRef[],
+  shiftsByDate: ReadonlyMap<
+    string,
+    readonly { locationAreaId?: string | null }[]
+  >,
+  scopeAreaIds: readonly string[],
+  userExpandedNoServiceWeekdays: ReadonlySet<number>,
+  options: {
+    weekStart: string;
+    currentWeekStart: string;
+    todayISO: string;
+    savedWeekExpansion: Set<string> | undefined;
+  }
+): Set<string> {
+  return resolveEmployeeCalendarLayoutDayDates(
+    dates,
+    dayHasServiceHoursFlagsForAreas(dates, serviceHours, scopeAreaIds),
+    shiftCountByDateForAreas(shiftsByDate, scopeAreaIds),
+    userExpandedNoServiceWeekdays,
+    options
+  );
 }
 
 export function resolvePlanningCellBackground(

@@ -2,9 +2,17 @@ import {
   calculateSurchargeAdditionPerHour,
   surchargeTriggerMatchesDate,
 } from "@/lib/profile-compensation-calculation";
-import { splitShiftWindowIntoCalendarDaySegments } from "@schichtwerk/database";
+import {
+  resolveShiftWorkBreaks,
+  type ShiftWorkHoursRef,
+} from "@/lib/shift-work-hours";
+import { splitShiftWindowIntoCalendarDayNetWorkSegments, splitShiftWindowIntoCalendarDaySegments } from "@schichtwerk/database";
 import { formatDurationHours } from "@/lib/shift-type-display";
-import type { EffectiveProfileCompensationSurcharge } from "@schichtwerk/types";
+import type {
+  AreaShiftTemplateWithBreaks,
+  EffectiveProfileCompensationSurcharge,
+} from "@schichtwerk/types";
+import type { ShiftTypeBreakInput } from "@schichtwerk/database";
 
 export const DEFAULT_ORGANIZATION_CURRENCY = "EUR";
 
@@ -20,6 +28,11 @@ export type AreaCalendarShiftCompensationByKey = Record<
 >;
 
 export type TagAreaDayFooterStats = {
+  /** Brutto-Schichtstunden vor Pausenabzug. */
+  grossHours: number;
+  /** Pausenstunden (Brutto minus Netto). */
+  breakHours: number;
+  /** Netto-Arbeitsstunden nach Pausenabzug. */
   totalHours: number;
   totalCost: number;
   baseCost: number;
@@ -28,11 +41,14 @@ export type TagAreaDayFooterStats = {
   currency: string;
 };
 
-export type TagAreaShiftRef = {
+export type TagAreaShiftRef = ShiftWorkHoursRef & {
   employeeId: string;
   shift_date: string;
-  startTime: string;
-  endTime: string;
+};
+
+export type TagAreaFooterStatsOptions = {
+  breaksByTemplateId?: ReadonlyMap<string, readonly ShiftTypeBreakInput[]>;
+  areaShiftTemplates?: readonly AreaShiftTemplateWithBreaks[];
 };
 
 export function isTagAreaShiftRef(value: unknown): value is TagAreaShiftRef {
@@ -43,6 +59,17 @@ export function isTagAreaShiftRef(value: unknown): value is TagAreaShiftRef {
     typeof ref.shift_date === "string" &&
     typeof ref.startTime === "string" &&
     typeof ref.endTime === "string"
+  );
+}
+
+function resolveTagAreaShiftBreaks(
+  shift: TagAreaShiftRef,
+  options?: TagAreaFooterStatsOptions
+): readonly ShiftTypeBreakInput[] {
+  return resolveShiftWorkBreaks(
+    shift,
+    options?.breaksByTemplateId,
+    options?.areaShiftTemplates
   );
 }
 
@@ -58,8 +85,10 @@ export function computeTagAreaDayFooterStatsForDate(
   calendarDate: string,
   shifts: readonly TagAreaShiftRef[],
   compensationByKey: AreaCalendarShiftCompensationByKey,
-  defaultCurrency = DEFAULT_ORGANIZATION_CURRENCY
+  defaultCurrency = DEFAULT_ORGANIZATION_CURRENCY,
+  options?: TagAreaFooterStatsOptions
 ): TagAreaDayFooterStats {
+  let grossHours = 0;
   let totalHours = 0;
   let baseCost = 0;
   let surchargeCost = 0;
@@ -67,11 +96,22 @@ export function computeTagAreaDayFooterStatsForDate(
   let currency = defaultCurrency;
 
   for (const shift of shifts) {
-    const segments = splitShiftWindowIntoCalendarDaySegments({
+    const breaks = resolveTagAreaShiftBreaks(shift, options);
+    const grossSegments = splitShiftWindowIntoCalendarDaySegments({
       shiftDate: shift.shift_date,
       startTime: shift.startTime,
       endTime: shift.endTime,
     }).filter((segment) => segment.dateISO === calendarDate);
+    const segments = splitShiftWindowIntoCalendarDayNetWorkSegments({
+      shiftDate: shift.shift_date,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      breaks,
+    }).filter((segment) => segment.dateISO === calendarDate);
+
+    for (const segment of grossSegments) {
+      grossHours += segment.minutes / 60;
+    }
 
     for (const segment of segments) {
       const hours = segment.minutes / 60;
@@ -106,9 +146,13 @@ export function computeTagAreaDayFooterStatsForDate(
 
   const roundedBaseCost = Math.round(baseCost * 100) / 100;
   const roundedSurchargeCost = Math.round(surchargeCost * 100) / 100;
+  const roundedGrossHours = Math.round(grossHours * 10) / 10;
+  const roundedTotalHours = Math.round(totalHours * 10) / 10;
 
   return {
-    totalHours: Math.round(totalHours * 10) / 10,
+    grossHours: roundedGrossHours,
+    breakHours: Math.round((grossHours - totalHours) * 10) / 10,
+    totalHours: roundedTotalHours,
     totalCost: Math.round((roundedBaseCost + roundedSurchargeCost) * 100) / 100,
     baseCost: roundedBaseCost,
     surchargeCost: roundedSurchargeCost,
@@ -122,8 +166,10 @@ export function computeLocationCompensationRollup(
   dates: readonly string[],
   shifts: readonly TagAreaShiftRef[],
   compensationByKey: AreaCalendarShiftCompensationByKey,
-  defaultCurrency = DEFAULT_ORGANIZATION_CURRENCY
+  defaultCurrency = DEFAULT_ORGANIZATION_CURRENCY,
+  options?: TagAreaFooterStatsOptions
 ): TagAreaDayFooterStats {
+  let grossHours = 0;
   let totalHours = 0;
   let baseCost = 0;
   let surchargeCost = 0;
@@ -135,8 +181,10 @@ export function computeLocationCompensationRollup(
       dateISO,
       shifts,
       compensationByKey,
-      defaultCurrency
+      defaultCurrency,
+      options
     );
+    grossHours += dayStats.grossHours;
     totalHours += dayStats.totalHours;
     baseCost += dayStats.baseCost;
     surchargeCost += dayStats.surchargeCost;
@@ -148,9 +196,13 @@ export function computeLocationCompensationRollup(
 
   const roundedBaseCost = Math.round(baseCost * 100) / 100;
   const roundedSurchargeCost = Math.round(surchargeCost * 100) / 100;
+  const roundedGrossHours = Math.round(grossHours * 10) / 10;
+  const roundedTotalHours = Math.round(totalHours * 10) / 10;
 
   return {
-    totalHours: Math.round(totalHours * 10) / 10,
+    grossHours: roundedGrossHours,
+    breakHours: Math.round((grossHours - totalHours) * 10) / 10,
+    totalHours: roundedTotalHours,
     baseCost: roundedBaseCost,
     surchargeCost: roundedSurchargeCost,
     totalCost: Math.round((roundedBaseCost + roundedSurchargeCost) * 100) / 100,

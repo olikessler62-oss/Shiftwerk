@@ -5,6 +5,7 @@ import {
   computeDashboardLocationWeekRollup,
   resolveDashboardAreaAmpelLevelFromWindowRows,
   sortDashboardAreaWeekStats,
+  staffingWindowRowDisplayAssigned,
 } from "./dashboard-area-week-stats";
 
 const testDate = "2026-06-16";
@@ -21,6 +22,32 @@ const baseArea = {
 };
 
 const emptyStaffingWindowRows = [];
+
+describe("staffingWindowRowDisplayAssigned", () => {
+  it("uses uncapped projected count for planned rows", () => {
+    expect(
+      staffingWindowRowDisplayAssigned({
+        serviceHourId: "hour-frueh",
+        label: "Früh",
+        assigned: 0,
+        projectedAssigned: 2,
+        required: 1,
+      })
+    ).toBe(2);
+  });
+
+  it("keeps confirmed count for met rows", () => {
+    expect(
+      staffingWindowRowDisplayAssigned({
+        serviceHourId: "hour-frueh",
+        label: "Früh",
+        assigned: 1,
+        projectedAssigned: 1,
+        required: 1,
+      })
+    ).toBe(1);
+  });
+});
 
 describe("computeDashboardAreaWeekStats", () => {
   it("marks area as met when staffing is fully covered", () => {
@@ -81,6 +108,161 @@ describe("computeDashboardAreaWeekStats", () => {
     expect(stats.staffingWindowRows[0].required).toBe(1);
     expect(stats.hasAreaShiftTemplates).toBe(false);
     expect(stats.staffingWindowRows[0].shiftName).toBe("");
+  });
+
+  it("counts all planned shifts and shows uncapped row totals for overplanned windows", () => {
+    const tourDate = "2026-07-07";
+    const tourWeekday = weekdayIndexFromDate(tourDate);
+    const hourFrueh = "hour-frueh";
+    const hourSpaet = "hour-spaet";
+    const qualPflege = "qual-pflege";
+
+    const stats = computeDashboardAreaWeekStats({
+      area: { ...baseArea, id: "area-tour-1", name: "Tour 1" },
+      dates: [tourDate],
+      shifts: [
+        {
+          id: "s-frueh-1",
+          employee_id: "e1",
+          shift_date: tourDate,
+          shiftName: "Früh",
+          color: "#000",
+          startTime: "08:00",
+          endTime: "17:00",
+          location_area_id: "area-tour-1",
+          area_shift_template_id: null,
+          confirmationStatus: "proposed",
+        },
+        {
+          id: "s-frueh-2",
+          employee_id: "e3",
+          shift_date: tourDate,
+          shiftName: "Früh",
+          color: "#000",
+          startTime: "08:00",
+          endTime: "17:00",
+          location_area_id: "area-tour-1",
+          area_shift_template_id: null,
+          confirmationStatus: "proposed",
+        },
+        {
+          id: "s-spaet",
+          employee_id: "e2",
+          shift_date: tourDate,
+          shiftName: "Spät",
+          color: "#000",
+          startTime: "12:00",
+          endTime: "20:00",
+          location_area_id: "area-tour-1",
+          area_shift_template_id: null,
+          confirmationStatus: "proposed",
+        },
+      ],
+      staffingRules: [
+        {
+          id: "rule-frueh",
+          location_area_id: "area-tour-1",
+          service_hour_id: hourFrueh,
+          qualification_id: qualPflege,
+          required_count: 1,
+        },
+        {
+          id: "rule-spaet",
+          location_area_id: "area-tour-1",
+          service_hour_id: hourSpaet,
+          qualification_id: qualPflege,
+          required_count: 1,
+        },
+      ],
+      staffingOverrides: [],
+      serviceHours: [
+        {
+          id: hourFrueh,
+          location_area_id: "area-tour-1",
+          weekday: tourWeekday,
+          start_time: "08:00",
+          end_time: "17:00",
+        },
+        {
+          id: hourSpaet,
+          location_area_id: "area-tour-1",
+          weekday: tourWeekday,
+          start_time: "12:00",
+          end_time: "20:00",
+        },
+      ],
+      areaShiftTemplates: [],
+      qualifications: [{ id: qualPflege, name: "Pflege", sort_order: 0 }],
+      profileQualificationIds: new Map([
+        ["e1", new Set([qualPflege])],
+        ["e2", new Set([qualPflege])],
+        ["e3", new Set([qualPflege])],
+      ]),
+      compensationByKey: {},
+      staffingEnabled: true,
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start}-${end}`,
+      weekdayLabel: () => "Di",
+      formatCalendarTimeLabel: (start, end) => `${start}-${end}`,
+      formatWeekdayLabel: () => "Di.",
+    });
+
+    expect(stats.shiftCount).toBe(3);
+    expect(stats.requiredTotal).toBe(2);
+    expect(stats.projectedAssignedTotal).toBe(3);
+    expect(stats.grossHours).toBe(26);
+    expect(stats.hasPlannedCoverage).toBe(true);
+    expect(stats.staffingWindowRows.filter((row) => row.rowKind === "staffing_window")).toHaveLength(2);
+    expect(stats.staffingWindowRows.map((row) => row.status)).toEqual([
+      "planned",
+      "planned",
+    ]);
+    expect(stats.staffingWindowRows.map((row) => row.assigned)).toEqual([2, 1]);
+  });
+
+  it("counts shifts only for the requested dates scope", () => {
+    const otherDate = "2026-06-17";
+    const stats = computeDashboardAreaWeekStats({
+      area: baseArea,
+      dates: [testDate],
+      shifts: [
+        {
+          id: "s1",
+          employee_id: "e1",
+          shift_date: testDate,
+          shiftName: "Mittag",
+          color: "#000",
+          startTime: "11:00",
+          endTime: "15:00",
+          location_area_id: "area-1",
+          area_shift_template_id: null,
+        },
+        {
+          id: "s2",
+          employee_id: "e2",
+          shift_date: otherDate,
+          shiftName: "Abend",
+          color: "#000",
+          startTime: "17:00",
+          endTime: "21:00",
+          location_area_id: "area-1",
+          area_shift_template_id: null,
+        },
+      ],
+      staffingRules: [],
+      staffingOverrides: [],
+      serviceHours: [],
+      areaShiftTemplates: [],
+      qualifications: [],
+      profileQualificationIds: new Map(),
+      compensationByKey: {},
+      staffingEnabled: false,
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start}-${end}`,
+      weekdayLabel: () => "Di",
+      formatCalendarTimeLabel: (start, end) => `${start}-${end}`,
+      formatWeekdayLabel: () => "Di.",
+    });
+
+    expect(stats.shiftCount).toBe(1);
   });
 
   it("collects deduplicated confirmation conflict statuses for the area week", () => {
@@ -526,12 +708,17 @@ describe("computeDashboardAreaWeekStats", () => {
         staffingIssues: [],
         confirmationConflictStatuses: [],
         totalHours: 10,
+        grossHours: 10,
+        breakHours: 0,
         baseCost: 100,
         surchargeCost: 20,
         totalCost: 120,
         hasCompensation: true,
         currency: "EUR",
         hasAssignmentMismatch: false,
+        hasPlannedCoverage: false,
+        hasUnderstaffed: true,
+        projectedAssignedTotal: 2,
         hasAreaShiftTemplates: false,
       },
       {
@@ -550,12 +737,17 @@ describe("computeDashboardAreaWeekStats", () => {
         staffingIssues: [],
         confirmationConflictStatuses: [],
         totalHours: 8,
+        grossHours: 8,
+        breakHours: 0,
         baseCost: 80,
         surchargeCost: 10,
         totalCost: 90,
         hasCompensation: true,
         currency: "EUR",
         hasAssignmentMismatch: false,
+        hasPlannedCoverage: false,
+        hasUnderstaffed: true,
+        projectedAssignedTotal: 2,
         hasAreaShiftTemplates: false,
       },
     ]);
@@ -585,12 +777,17 @@ describe("sortDashboardAreaWeekStats", () => {
         staffingIssues: [],
         confirmationConflictStatuses: [],
         totalHours: 0,
+        grossHours: 0,
+        breakHours: 0,
         baseCost: 200,
         surchargeCost: 0,
         totalCost: 200,
         hasCompensation: true,
         currency: "EUR",
         hasAssignmentMismatch: false,
+        hasPlannedCoverage: false,
+        hasUnderstaffed: false,
+        projectedAssignedTotal: 2,
         hasAreaShiftTemplates: false,
       },
       {
@@ -609,12 +806,17 @@ describe("sortDashboardAreaWeekStats", () => {
         staffingIssues: [],
         confirmationConflictStatuses: [],
         totalHours: 0,
+        grossHours: 0,
+        breakHours: 0,
         baseCost: 50,
         surchargeCost: 10,
         totalCost: 60,
         hasCompensation: true,
         currency: "EUR",
         hasAssignmentMismatch: false,
+        hasPlannedCoverage: false,
+        hasUnderstaffed: true,
+        projectedAssignedTotal: 1,
         hasAreaShiftTemplates: false,
       },
     ]);

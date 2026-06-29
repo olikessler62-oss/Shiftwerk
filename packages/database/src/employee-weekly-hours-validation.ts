@@ -1,5 +1,6 @@
 import { isoWeekEndFromWeekStart } from "./shift-confirmation-send";
-import { shiftDurationHours } from "./shift-type-break-rules";
+import { shiftNetWorkHours, roundWorkHours } from "./shift-type-break-rules";
+import type { ShiftTypeBreakInput } from "./interface";
 import { startOfWeekMonday, toISODateLocal } from "./shift-retention";
 
 export const DEFAULT_PROFILE_WEEKLY_HOURS = 40;
@@ -8,6 +9,7 @@ export type WeeklyShiftHourWindow = {
   shiftDate: string;
   startTime: string;
   endTime: string;
+  breaks?: readonly ShiftTypeBreakInput[];
 };
 
 export type WeeklyHoursExistingShift = {
@@ -15,6 +17,9 @@ export type WeeklyHoursExistingShift = {
   shift_date: string;
   starts_at: string;
   ends_at: string;
+  startTime?: string;
+  endTime?: string;
+  breaks?: readonly ShiftTypeBreakInput[];
 };
 
 export function isoWeekStartFromShiftDate(shiftDate: string): string {
@@ -38,8 +43,15 @@ export function shiftHoursFromIsoRange(startsAt: string, endsAt: string): number
   return Math.round((ms / 3_600_000) * 10) / 10;
 }
 
+function shiftWorkHoursForWeeklyTotal(shift: WeeklyHoursExistingShift): number {
+  if (shift.startTime && shift.endTime) {
+    return shiftNetWorkHours(shift.startTime, shift.endTime, shift.breaks);
+  }
+  return shiftHoursFromIsoRange(shift.starts_at, shift.ends_at);
+}
+
 function roundHours(hours: number): number {
-  return Math.round(hours * 10) / 10;
+  return roundWorkHours(hours);
 }
 
 export function sumEmployeeWeekHours(input: {
@@ -54,12 +66,12 @@ export function sumEmployeeWeekHours(input: {
   for (const shift of input.existingShifts) {
     if (excludeIds.has(shift.id)) continue;
     if (!isShiftDateInIsoWeek(shift.shift_date, input.weekStart)) continue;
-    total += shiftHoursFromIsoRange(shift.starts_at, shift.ends_at);
+    total += shiftWorkHoursForWeeklyTotal(shift);
   }
 
   for (const window of input.additionalWindows ?? []) {
     if (!isShiftDateInIsoWeek(window.shiftDate, input.weekStart)) continue;
-    total += shiftDurationHours(window.startTime, window.endTime);
+    total += shiftNetWorkHours(window.startTime, window.endTime, window.breaks);
   }
 
   return roundHours(total);
