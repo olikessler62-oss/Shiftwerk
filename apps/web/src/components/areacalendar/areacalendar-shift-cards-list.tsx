@@ -414,7 +414,8 @@ export function AreaCalendarShiftCardsList({
           : cn(
               "overflow-x-hidden",
               showVerticalScroll ? "overflow-y-auto" : "overflow-y-hidden",
-              showVerticalScroll && MODAL_SCROLLBAR_CLASS
+              showVerticalScroll &&
+                cn(MODAL_SCROLLBAR_CLASS, "modal-scrollbar-inline")
             ),
         className
       )}

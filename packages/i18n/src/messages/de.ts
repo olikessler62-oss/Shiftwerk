@@ -1164,6 +1164,7 @@ export const de = {
     areaAssignmentOverviewWindowStatusOverstaffed: "Überbesetzt",
     areaAssignmentOverviewOpenSlot: "{qualification} — {count} offen",
     backToWeekView: "Wochenübersicht",
+    weekTrayHeaderIntro: "Wöchentliche Schichten/Einsatzzeiten für:",
     weekTrayDayCardHint:
       "Klick auf Datum-Bereich einer Tag-Karte oder auf einzelne Einsatzorte, öffnet die detailierte Tagesansicht",
     dayCardOpenAreaAriaLabel: "Nur {area} in der Tagesansicht",

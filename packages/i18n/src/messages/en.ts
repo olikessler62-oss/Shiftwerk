@@ -1133,6 +1133,7 @@ export const en = {
     areaAssignmentOverviewWindowStatusOverstaffed: "Overstaffed",
     areaAssignmentOverviewOpenSlot: "{qualification} — {count} open",
     backToWeekView: "Week overview",
+    weekTrayHeaderIntro: "Weekly shifts/assignment times for:",
     weekTrayDayCardHint:
       "Click the date section of a day card or individual areas to open the detailed day view",
     dayCardOpenAreaAriaLabel: "{area} only in day view",

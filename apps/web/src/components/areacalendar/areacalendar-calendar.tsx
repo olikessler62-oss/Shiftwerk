@@ -2154,7 +2154,6 @@ export function AreaCalendar({
       className={cn(
         "flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-surface shadow-sm",
         DASHBOARD_PANEL_ROUNDED_CLASS,
-        MODAL_SCROLLBAR_CLASS,
         CALENDAR_FRAME_CLASS,
         CALENDAR_INTERACTION_SURFACE_CLASS,
         !isCalendarVisible && "invisible"
@@ -2165,7 +2164,9 @@ export function AreaCalendar({
         className={cn(
           "h-full min-h-0",
           fillColumnsEqually ? "overflow-x-hidden" : "overflow-x-auto",
-          "overflow-y-auto"
+          "overflow-y-auto",
+          MODAL_SCROLLBAR_CLASS,
+          "modal-scrollbar-inline"
         )}
       >
         <div

@@ -666,7 +666,7 @@ const D3_WEEK_TRAY_CLASS = cn(
 
 const D3_WEEK_TRAY_HEADER_CLASS = cn(
   CALENDAR_DAY_HEADER_ACTIVE_CLASS,
-  "border-b border-black px-3 py-2.5 text-center sm:px-4"
+  "flex flex-col items-center justify-center gap-y-0.5 border-b border-black px-3 py-2 text-center sm:gap-y-1 sm:px-4 sm:py-2.5"
 );
 
 const D3_WEEK_TRAY_BODY_CLASS = "p-2 sm:p-3";
@@ -2006,31 +2006,24 @@ export function DashboardOverviewView({
           ) : (
             <div className={D3_WEEK_TRAY_CLASS}>
               <div className={D3_WEEK_TRAY_HEADER_CLASS}>
-                <p className="text-base font-semibold tabular-nums text-black">
-                  {t("dashboard.headerCalendarWeek", {
-                    week: String(weekTrayHeader.calendarWeek),
-                  })}
+                <p className="text-sm font-semibold leading-snug text-black sm:text-base">
+                  {t("dashboard.weekTrayHeaderIntro")}
                 </p>
-                {isCurrentWeek ? (
-                  <div className="mt-0.5 flex flex-col items-center gap-0.5 min-[420px]:grid min-[420px]:w-full min-[420px]:grid-cols-[1fr_auto_1fr] min-[420px]:items-baseline min-[420px]:gap-x-2">
-                    <span
-                      className="hidden min-[420px]:invisible min-[420px]:justify-self-end min-[420px]:text-[10px] min-[420px]:leading-none"
-                      aria-hidden
-                    >
-                      {t("common.currentWeekHint")}
-                    </span>
-                    <span className="text-xs font-medium leading-snug text-black">
-                      {weekTrayHeader.rangeLabel}
-                    </span>
-                    <span className="text-[10px] leading-none text-black min-[420px]:justify-self-start">
-                      {t("common.currentWeekHint")}
-                    </span>
-                  </div>
-                ) : (
-                  <p className="mt-0.5 text-xs font-medium leading-snug text-black">
+                <p className="flex items-baseline justify-center gap-x-1.5 whitespace-nowrap">
+                  <span className="text-base font-semibold tabular-nums text-black">
+                    {t("dashboard.headerCalendarWeek", {
+                      week: String(weekTrayHeader.calendarWeek),
+                    })}
+                  </span>
+                  <span className="text-xs font-medium leading-snug text-black">
                     {weekTrayHeader.rangeLabel}
-                  </p>
-                )}
+                  </span>
+                  {isCurrentWeek ? (
+                    <span className="text-[10px] leading-none text-black">
+                      {t("common.currentWeekHint")}
+                    </span>
+                  ) : null}
+                </p>
               </div>
               <div className={D3_WEEK_TRAY_BODY_CLASS}>
                 <div
