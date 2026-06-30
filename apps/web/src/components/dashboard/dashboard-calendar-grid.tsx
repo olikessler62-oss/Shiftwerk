@@ -89,10 +89,111 @@ import {
 import { planningCellDataAttribute } from "@/lib/planning-overnight-span-layout";
 import { SHIFT_CARD_TWO_LINE_HEIGHT_PX } from "@/lib/shift-card-row-layout";
 import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
-import { PlanningEmployeeAvailabilityTooltipContent } from "@/components/planning/planning-employee-availability-tooltip-content";
-import { groupRecurringAvailabilityByProfileId, resolvePlanningEmployeeJobsTooltipLabel } from "@/lib/planning-employee-availability-tooltip";
+import { usePlanningEmployeeTooltipNode } from "@/components/planning/planning-employee-tooltip-lazy";
 
 const EMPLOYEE_COLOR_FALLBACK = "#94a3b8";
+
+function DashboardCalendarEmployeeNameCell({
+  employee,
+  referenceDateISO,
+  qualifications,
+  weeklyHoursTooltipDisplay,
+  weeklyHoursCardLabel,
+  overHours,
+  isLastEmployee,
+  gridRow,
+  isEmployeeHighlighted,
+  onEmployeeHover,
+  onEmployeeRowContextMenu,
+  t,
+}: {
+  employee: Profile;
+  referenceDateISO: string;
+  qualifications: readonly Qualification[];
+  weeklyHoursTooltipDisplay: EmployeeWeeklyHoursDisplay | null;
+  weeklyHoursCardLabel: string;
+  overHours: boolean;
+  isLastEmployee: boolean;
+  gridRow: number;
+  isEmployeeHighlighted: boolean;
+  onEmployeeHover?: (employeeId: string | null) => void;
+  onEmployeeRowContextMenu?: (
+    employeeId: string,
+    clientX: number,
+    clientY: number
+  ) => void;
+  t: (key: string, params?: Record<string, string>) => string;
+}) {
+  const { activate, node } = usePlanningEmployeeTooltipNode({
+    employeeId: employee.id,
+    employeeName: employee.full_name,
+    contextDateISO: referenceDateISO,
+    todayISO: referenceDateISO,
+    qualifications,
+    weeklyHoursDisplay: weeklyHoursTooltipDisplay,
+  });
+  const employeeColor = employee.color?.trim() || EMPLOYEE_COLOR_FALLBACK;
+
+  return (
+    <div
+      className={cn(
+        "sticky left-0 z-20 flex min-h-0 cursor-default items-center self-stretch bg-surface px-0 transition-colors",
+        PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
+        !isLastEmployee && PLANNING_ROW_DIVIDER_CLASS,
+        isEmployeeHighlighted && "bg-subtle"
+      )}
+      style={{ gridColumn: 1, gridRow }}
+    >
+      <Tooltip
+        className="flex min-h-0 w-full self-stretch"
+        contentClassName={employeeAvailabilityTooltipContentClassName}
+        openDelayMs={EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS}
+        content={node}
+        placement={employeeAvailabilityTooltipPlacement}
+      >
+        <div
+          data-employee-availability-tooltip-anchor
+          className="flex min-h-0 w-full self-stretch items-center"
+          onMouseEnter={() => {
+            activate();
+            onEmployeeHover?.(employee.id);
+          }}
+          onMouseLeave={() => onEmployeeHover?.(null)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onEmployeeRowContextMenu?.(employee.id, event.clientX, event.clientY);
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-2 py-0 pl-3 pr-2">
+            <span
+              className="shrink-0 rounded-l"
+              style={{
+                width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
+                height: SHIFT_CARD_TWO_LINE_HEIGHT_PX,
+                backgroundColor: employeeColor,
+              }}
+              aria-hidden
+            />
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium leading-tight">
+                {employee.full_name}
+              </div>
+              <div
+                className={cn(
+                  "truncate text-xs leading-tight tabular-nums",
+                  overHours ? "font-medium text-amber-600" : "text-muted"
+                )}
+              >
+                {`${t("common.basic")} ${weeklyHoursCardLabel}`}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Tooltip>
+    </div>
+  );
+}
 
 export const PLANNING_SHIFT_CARD_SELECTOR = "[data-planning-shift-card]";
 
@@ -326,14 +427,6 @@ export function DashboardCalendarGrid({
     () => createPlanningAreaNameById(areas),
     [areas]
   );
-
-  const availabilityByProfileId = useMemo(
-    () => groupRecurringAvailabilityByProfileId(recurringAvailability),
-    [recurringAvailability]
-  );
-  const availabilityTooltipLocale = locale === "en" ? "en" : "de";
-  const emptyAvailabilityTooltipLabel = t("profiles.emptyAvailability");
-  const showEmployeeJobs = qualifications.length > 0;
 
   const shiftJobContextByDate = useMemo(() => {
     const byDate = new Map<string, PlanningShiftJobContext>();
@@ -657,80 +750,20 @@ export function DashboardCalendarGrid({
 
           return (
             <div key={`staff-${emp.id}`} className="contents">
-              <div
-                className={cn(
-                  "sticky left-0 z-20 flex min-h-0 cursor-default items-center self-stretch bg-surface px-0 transition-colors",
-                  PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
-                  !isLastEmployee && PLANNING_ROW_DIVIDER_CLASS,
-                  isEmployeeHighlighted && "bg-subtle"
-                )}
-                style={{ gridColumn: 1, gridRow }}
-              >
-                <Tooltip
-                  className="flex min-h-0 w-full self-stretch"
-                  contentClassName={employeeAvailabilityTooltipContentClassName}
-                  openDelayMs={EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS}
-                  content={
-                    <PlanningEmployeeAvailabilityTooltipContent
-                      slots={availabilityByProfileId.get(emp.id) ?? []}
-                      employeeName={emp.full_name}
-                      locale={availabilityTooltipLocale}
-                      emptyLabel={emptyAvailabilityTooltipLabel}
-                      jobsLabel={
-                        showEmployeeJobs
-                          ? resolvePlanningEmployeeJobsTooltipLabel(
-                              emp.id,
-                              profileQualificationIds,
-                              qualificationMaps.qualificationNameById,
-                              qualificationMaps.qualificationSortOrder
-                            )
-                          : undefined
-                      }
-                      weeklyHoursDisplay={weeklyHoursTooltipDisplay}
-                      weeklyHoursTotalLabel={t("dashboard.weeklyHoursTotalLabel")}
-                    />
-                  }
-                  placement={employeeAvailabilityTooltipPlacement}
-                >
-                  <div
-                    data-employee-availability-tooltip-anchor
-                    className="flex min-h-0 w-full self-stretch items-center"
-                    onMouseEnter={() => onEmployeeHover?.(emp.id)}
-                    onMouseLeave={() => onEmployeeHover?.(null)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onEmployeeRowContextMenu?.(emp.id, event.clientX, event.clientY);
-                    }}
-                  >
-                    <div className="flex min-w-0 items-center gap-2 py-0 pl-3 pr-2">
-                      <span
-                        className="shrink-0 rounded-l"
-                        style={{
-                          width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
-                          height: SHIFT_CARD_TWO_LINE_HEIGHT_PX,
-                          backgroundColor:
-                            emp.color?.trim() || EMPLOYEE_COLOR_FALLBACK,
-                        }}
-                        aria-hidden
-                      />
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium leading-tight">
-                          {emp.full_name}
-                        </div>
-                        <div
-                          className={cn(
-                            "truncate text-xs leading-tight tabular-nums",
-                            overHours ? "font-medium text-amber-600" : "text-muted"
-                          )}
-                        >
-                          {`${t("common.basic")} ${weeklyHoursCardLabel}`}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Tooltip>
-              </div>
+              <DashboardCalendarEmployeeNameCell
+                employee={emp}
+                referenceDateISO={todayISO}
+                qualifications={qualifications}
+                weeklyHoursTooltipDisplay={weeklyHoursTooltipDisplay}
+                weeklyHoursCardLabel={weeklyHoursCardLabel}
+                overHours={overHours}
+                isLastEmployee={isLastEmployee}
+                gridRow={gridRow}
+                isEmployeeHighlighted={isEmployeeHighlighted}
+                onEmployeeHover={onEmployeeHover}
+                onEmployeeRowContextMenu={onEmployeeRowContextMenu}
+                t={t}
+              />
 
               {dates.map((date, dayIndex) => {
                 const key = `${emp.id}:${date}`;

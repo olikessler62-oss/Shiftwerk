@@ -28,7 +28,7 @@ export function useHeaderToolbarDropdownPosition(
 
   useLayoutEffect(() => {
     if (!open) {
-      setStyle(null);
+      setStyle((current) => (current === null ? current : null));
       return;
     }
 
@@ -39,13 +39,26 @@ export function useHeaderToolbarDropdownPosition(
       const rect = anchor.getBoundingClientRect();
       const panelWidth = width ?? resolveWidth?.(rect) ?? rect.width;
 
-      setStyle({
+      const nextStyle: CSSProperties = {
         position: "fixed",
         top: rect.bottom + HEADER_TOOLBAR_DROPDOWN_GAP_PX,
         left: align === "end" ? rect.right - panelWidth : rect.left,
         width: panelWidth,
         minWidth: align === "start" ? rect.width : undefined,
         zIndex: MODAL_DROPDOWN_Z_INDEX,
+      };
+
+      setStyle((current) => {
+        if (
+          current &&
+          current.top === nextStyle.top &&
+          current.left === nextStyle.left &&
+          current.width === nextStyle.width &&
+          current.minWidth === nextStyle.minWidth
+        ) {
+          return current;
+        }
+        return nextStyle;
       });
     };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/cn";
+import { useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import {
   PLANNING_DAY_FOOTER_ROW_HEIGHT,
   PLANNING_HEADER_AREA_COLUMN_BORDER_CLASS,
@@ -37,6 +38,7 @@ export function DashboardWeeklySummaryFooter({
   gridRow,
   t,
 }: Props) {
+  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const hoursUnit = planningHoursUnitLabel(locale);
   const intlLocale = locale === "en" ? "en" : "de";
   const costFormatted = formatTagAreaFooterMoney(
@@ -87,10 +89,12 @@ export function DashboardWeeklySummaryFooter({
           label={t("dashboard.weeklySummaryOpenShifts")}
           value={String(summary.openShifts)}
         />
-        <WeeklySummaryStat
-          label={t("dashboard.weeklySummaryEstimatedCost")}
-          value={`${costFormatted} €`}
-        />
+        {showCompensationInPlanningUi ? (
+          <WeeklySummaryStat
+            label={t("dashboard.weeklySummaryEstimatedCost")}
+            value={`${costFormatted} €`}
+          />
+        ) : null}
       </div>
     </>
   );

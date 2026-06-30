@@ -4,19 +4,15 @@ import { useMemo } from "react";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { AreaCalendarEmployeeLegendCard } from "@/components/areacalendar/areacalendar-employee-legend-card";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-modal-shell";
-import { useTranslations } from "@/i18n/locale-provider";
+import { usePlanningEmployeeTooltipNode } from "@/components/planning/planning-employee-tooltip-lazy";
 import { cn } from "@/lib/cn";
+import { toISODate } from "@/lib/dates";
 import {
   collectWeekLegendEmployeesFromAreaCalendarShifts,
   AREA_CALENDAR_EMPLOYEE_LIST_WIDTH_PX,
   AREA_CALENDAR_EMPLOYEE_LIST_TOP_OFFSET_PX,
+  type AreaCalendarWeekLegendEmployee,
 } from "@/lib/areacalendar-week-employee-legend";
-import { PlanningEmployeeAvailabilityTooltipContent } from "@/components/planning/planning-employee-availability-tooltip-content";
-import {
-  groupRecurringAvailabilityByProfileId,
-  resolvePlanningEmployeeJobsTooltipLabel,
-} from "@/lib/planning-employee-availability-tooltip";
-import { createPlanningShiftJobContextMaps } from "@/lib/planning-shift-card-display";
 import { SHIFT_CARD_LIST_GAP_PX } from "@/lib/shift-card-row-layout";
 import {
   buildAreaIdToLocationIdMap,
@@ -24,6 +20,7 @@ import {
   buildEmployeeWeeklyHoursCardLabelsByEmployeeId,
   buildEmployeeWeeklyHoursDisplayByEmployeeId,
   buildLocationNameByIdMap,
+  type EmployeeWeeklyHoursDisplay,
 } from "@/lib/employee-weekly-hours-display";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type {
@@ -58,13 +55,63 @@ type Props = {
   className?: string;
 };
 
+function AreaCalendarEmployeeLegendCardWithTooltip({
+  employee,
+  weeklyHoursCardLabel,
+  overHours,
+  referenceDateISO,
+  qualifications,
+  weeklyHoursTooltipDisplay,
+  onEmployeeHover,
+  onEmployeeContextMenu,
+}: {
+  employee: AreaCalendarWeekLegendEmployee;
+  weeklyHoursCardLabel: string;
+  overHours: boolean;
+  referenceDateISO: string;
+  qualifications: readonly Qualification[];
+  weeklyHoursTooltipDisplay: EmployeeWeeklyHoursDisplay | null;
+  onEmployeeHover?: (employeeId: string | null) => void;
+  onEmployeeContextMenu?: (
+    employeeId: string,
+    clientX: number,
+    clientY: number
+  ) => void;
+}) {
+  const { activate, node } = usePlanningEmployeeTooltipNode({
+    employeeId: employee.id,
+    employeeName: employee.full_name,
+    contextDateISO: referenceDateISO,
+    todayISO: referenceDateISO,
+    qualifications,
+    weeklyHoursDisplay: weeklyHoursTooltipDisplay,
+  });
+
+  return (
+    <AreaCalendarEmployeeLegendCard
+      employee={employee}
+      weeklyHoursCardLabel={weeklyHoursCardLabel}
+      overHours={overHours}
+      availabilityTooltip={node}
+      onMouseEnter={() => {
+        activate();
+        onEmployeeHover?.(employee.id);
+      }}
+      onMouseLeave={() => onEmployeeHover?.(null)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onEmployeeContextMenu?.(employee.id, event.clientX, event.clientY);
+      }}
+    />
+  );
+}
+
 export function AreaCalendarEmployeeLegendSidebar({
   shifts,
   profiles,
   absences = [],
-  recurringAvailability = [],
   qualifications = [],
-  profileQualificationIds = {},
   locale,
   employeeHoursLabel,
   weekDates,
@@ -76,7 +123,6 @@ export function AreaCalendarEmployeeLegendSidebar({
   onEmployeeContextMenu,
   className,
 }: Props) {
-  const t = useTranslations();
   const employees = useMemo(
     () =>
       collectWeekLegendEmployeesFromAreaCalendarShifts(
@@ -85,14 +131,6 @@ export function AreaCalendarEmployeeLegendSidebar({
         absences
       ),
     [shifts, profiles, absences]
-  );
-  const availabilityByProfileId = useMemo(
-    () => groupRecurringAvailabilityByProfileId(recurringAvailability),
-    [recurringAvailability]
-  );
-  const qualificationMaps = useMemo(
-    () => createPlanningShiftJobContextMaps(qualifications),
-    [qualifications]
   );
   const locationNameById = useMemo(
     () => buildLocationNameByIdMap(locations),
@@ -179,9 +217,7 @@ export function AreaCalendarEmployeeLegendSidebar({
     areaIdToLocationId,
     selectedLocationId,
   ]);
-  const availabilityTooltipLocale = locale === "en" ? "en" : "de";
-  const emptyAvailabilityTooltipLabel = t("profiles.emptyAvailability");
-  const showEmployeeJobs = qualifications.length > 0;
+  const referenceDateISO = toISODate(new Date());
 
   if (employees.length === 0) {
     return null;
@@ -218,38 +254,16 @@ export function AreaCalendarEmployeeLegendSidebar({
               weeklyHoursOverLimitByEmployeeId.get(employee.id) ?? false;
 
             return (
-              <AreaCalendarEmployeeLegendCard
+              <AreaCalendarEmployeeLegendCardWithTooltip
                 key={employee.id}
                 employee={employee}
                 weeklyHoursCardLabel={displayCardLabel}
                 overHours={overHours}
-                availabilityTooltip={
-                  <PlanningEmployeeAvailabilityTooltipContent
-                    slots={availabilityByProfileId.get(employee.id) ?? []}
-                    employeeName={employee.full_name}
-                    locale={availabilityTooltipLocale}
-                    emptyLabel={emptyAvailabilityTooltipLabel}
-                    jobsLabel={
-                      showEmployeeJobs
-                        ? resolvePlanningEmployeeJobsTooltipLabel(
-                            employee.id,
-                            profileQualificationIds,
-                            qualificationMaps.qualificationNameById,
-                            qualificationMaps.qualificationSortOrder
-                          )
-                        : undefined
-                    }
-                    weeklyHoursDisplay={weeklyHoursTooltipDisplay}
-                    weeklyHoursTotalLabel={t("dashboard.weeklyHoursTotalLabel")}
-                  />
-                }
-                onMouseEnter={() => onEmployeeHover?.(employee.id)}
-                onMouseLeave={() => onEmployeeHover?.(null)}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onEmployeeContextMenu?.(employee.id, event.clientX, event.clientY);
-                }}
+                referenceDateISO={referenceDateISO}
+                qualifications={qualifications}
+                weeklyHoursTooltipDisplay={weeklyHoursTooltipDisplay}
+                onEmployeeHover={onEmployeeHover}
+                onEmployeeContextMenu={onEmployeeContextMenu}
               />
             );
           })}

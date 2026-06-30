@@ -51,6 +51,7 @@ create table public.organizations (
   industry text
     check (industry is null or industry in ('gastronomy', 'care', 'retail', 'other')),
   allow_retroactive_compensation_entries boolean not null default true,
+  show_compensation_in_planning_ui boolean not null default true,
   shift_confirmation_enabled boolean not null default false,
   shift_confirmation_disclaimer text,
   auto_approve_sick_absence boolean not null default true,

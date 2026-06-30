@@ -42,7 +42,6 @@ import { LocationStaffingPanelModal } from "./location-staffing-panel-modal";
 import { AreaShiftTemplatesPanelModal } from "./area-shift-templates-panel-modal";
 import { AreaQualificationTemplatesPanelModal } from "./area-qualification-templates-panel-modal";
 import {
-  SETTINGS_LIST_SCROLL_COMPACT_CLASS,
   settingsMasterDetailLayoutClass,
   settingsMasterDetailListsClass,
   settingsModalFooterClass,
@@ -119,6 +118,9 @@ function locationDetailPanelTitle(
 }
 
 const COLUMN_GAP_PX = 20;
+
+/** Mindesthöhe der Listen — wächst mit der höheren Spalte (Standorte / Einsatzorte). */
+const LOCATIONS_LIST_SCROLL_CLASS = "min-h-[calc(1.75rem+7rem)]";
 const MAX_NAME_DISPLAY = 25;
 
 function truncateLabel(name: string, max = MAX_NAME_DISPLAY): string {
@@ -190,7 +192,7 @@ function ColumnShell({
   children,
   actions,
   confirm,
-  listScrollClassName = SETTINGS_LIST_SCROLL_COMPACT_CLASS,
+  listScrollClassName = LOCATIONS_LIST_SCROLL_CLASS,
 }: {
   title: string;
   children: ReactNode;
@@ -204,10 +206,10 @@ function ColumnShell({
         <span className="block min-w-0 w-full truncate">{title}</span>
       </h3>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 bg-background px-2 py-2">
+        <div className="flex min-h-0 flex-1 flex-col bg-background px-2 py-2">
           <div
             className={cn(
-              "min-h-0 overflow-auto rounded-md border border-border bg-surface",
+              "min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface",
               listScrollClassName
             )}
           >
@@ -1058,11 +1060,11 @@ export function LocationsModal({
         </>
       ) : (
         <div
-          className={settingsMasterDetailLayoutClass()}
+          className={settingsMasterDetailLayoutClass("min-h-0 lg:items-stretch")}
           style={{ gap: COLUMN_GAP_PX }}
         >
             <div
-              className={settingsMasterDetailListsClass()}
+              className={settingsMasterDetailListsClass("h-full min-h-0")}
               style={{ gap: COLUMN_GAP_PX }}
             >
               <ColumnShell
@@ -1169,6 +1171,7 @@ export function LocationsModal({
 
             <div
               className={cn(
+                "flex min-h-0 flex-1 flex-col",
                 locationDetailSwitching && "pointer-events-none"
               )}
             >

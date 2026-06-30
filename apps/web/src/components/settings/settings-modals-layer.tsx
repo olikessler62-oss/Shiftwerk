@@ -13,6 +13,7 @@ import type {
   Qualification,
   Role,
 } from "@schichtwerk/types";
+import { GeneralSettingsModal } from "@/components/settings/general-settings-modal";
 import { QualificationsModal } from "@/components/settings/qualifications-modal";
 import { CompensationSurchargeTypesModal } from "@/components/settings/compensation-surcharge-types-modal";
 import { LocationsModal } from "@/components/settings/locations-modal";
@@ -55,6 +56,7 @@ export function SettingsModalsLayer({ data }: Props) {
     closeSettingsModal(router, pathname, searchParams, flag);
   };
 
+  const showGeneral = searchParams.get("allgemein") === "1";
   const showLocations =
     features.areas && searchParams.get("standorte") === "1";
   const showProfiles = searchParams.get("profiles") === "1";
@@ -68,6 +70,7 @@ export function SettingsModalsLayer({ data }: Props) {
 
   const clearMainNavPending = useClearMainNavPendingOptional();
   const anyModalOpen =
+    showGeneral ||
     showLocations ||
     showProfiles ||
     showRoles ||
@@ -86,6 +89,9 @@ export function SettingsModalsLayer({ data }: Props) {
 
   return (
     <>
+      {showGeneral ? (
+        <GeneralSettingsModal onClose={() => onClose("allgemein")} />
+      ) : null}
       {showLocations ? (
         <LocationsModal
           locations={data.locations}

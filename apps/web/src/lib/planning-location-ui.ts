@@ -9,7 +9,7 @@ export function formatPlanningLocationAreaLabel(
   locationCount: number
 ): string {
   if (shouldShowLocationInPlanningUi(locationCount)) {
-    return `${locationName} / ${areaName}`;
+    return `${locationName}/${areaName}`;
   }
   return areaName;
 }

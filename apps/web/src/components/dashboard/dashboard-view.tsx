@@ -77,7 +77,7 @@ import { isPastShiftDate } from "@/lib/planning-readonly";
 import { clearDocumentTextSelection } from "@/lib/calendar-interaction-ui";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures, useOrganization } from "@/lib/org-features-provider";
+import { useOrgFeatures, useOrganization, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import { organizationTodayISO } from "@schichtwerk/database";
 import {
   weeklyHoursByEmployeeIdFromEmployees,
@@ -446,6 +446,7 @@ export function DashboardView({
   const t = useTranslations();
   const { locale } = useLocale();
   const features = useOrgFeatures();
+  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const organization = useOrganization();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
@@ -1193,14 +1194,21 @@ export function DashboardView({
         undefined,
         tagAreaFooterStatsOptions
       );
-      if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
+      if (
+        stats.totalHours <= 0 &&
+        (showCompensationInPlanningUi ? stats.totalCost <= 0 : true)
+      ) {
+        continue;
+      }
       map.set(
         date,
-        formatTagAreaFooterLabels(stats, t, locale === "en" ? "en" : "de")
+        formatTagAreaFooterLabels(stats, t, locale === "en" ? "en" : "de", {
+          showCompensation: showCompensationInPlanningUi,
+        })
       );
     }
     return map;
-  }, [dates, planningTagAreaShiftRefs, shiftCompensation, tagAreaFooterStatsOptions, t, locale]);
+  }, [dates, planningTagAreaShiftRefs, shiftCompensation, tagAreaFooterStatsOptions, t, locale, showCompensationInPlanningUi]);
 
   const shiftsByCellDisplay = useMemo(
     () => buildPlanningShiftsByCellDisplay(dates, calendarDisplayShifts),

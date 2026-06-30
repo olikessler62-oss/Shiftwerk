@@ -133,6 +133,26 @@ export type DashboardAreaWeekStats = {
   hasUnderstaffed: boolean;
   /** Summe der projizierten Besetzung (inkl. geplanter, noch nicht bestätigter Schichten). */
   projectedAssignedTotal: number;
+  /** Bestätigte Besetzung in offenen Fenstern (Header-Segment „unbesetzt“). */
+  headerOpenAssignedTotal: number;
+  /** Bedarf in offenen Fenstern (Header-Segment „unbesetzt“). */
+  headerOpenRequiredTotal: number;
+  /** Projizierte Besetzung in geplanten Fenstern (Header-Segment „geplant“). */
+  headerPlannedAssignedTotal: number;
+  /** Bedarf in geplanten Fenstern (Header-Segment „geplant“). */
+  headerPlannedRequiredTotal: number;
+  /** Besetzung in Fenstern mit Qualifikationskonflikt. */
+  headerMismatchAssignedTotal: number;
+  /** Bedarf in Fenstern mit Qualifikationskonflikt. */
+  headerMismatchRequiredTotal: number;
+  /** Besetzung in überbesetzten Fenstern. */
+  headerOverstaffedAssignedTotal: number;
+  /** Bedarf in überbesetzten Fenstern. */
+  headerOverstaffedRequiredTotal: number;
+  /** Bestätigte Besetzung in voll gedeckten Fenstern. */
+  headerMetAssignedTotal: number;
+  /** Bedarf in voll gedeckten Fenstern. */
+  headerMetRequiredTotal: number;
   /** Mindestens eine Schichtvorlage im Bereich — steuert die Spalte „Schicht“ in der Liste. */
   hasAreaShiftTemplates: boolean;
 };
@@ -583,6 +603,16 @@ export function computeDashboardAreaWeekStats(
 
   let assignedTotal = 0;
   let projectedAssignedTotal = 0;
+  let headerOpenAssignedTotal = 0;
+  let headerOpenRequiredTotal = 0;
+  let headerPlannedAssignedTotal = 0;
+  let headerPlannedRequiredTotal = 0;
+  let headerMismatchAssignedTotal = 0;
+  let headerMismatchRequiredTotal = 0;
+  let headerOverstaffedAssignedTotal = 0;
+  let headerOverstaffedRequiredTotal = 0;
+  let headerMetAssignedTotal = 0;
+  let headerMetRequiredTotal = 0;
   let requiredTotal = 0;
   let openSlots = 0;
   let understaffedWindowCount = 0;
@@ -675,6 +705,23 @@ export function computeDashboardAreaWeekStats(
         if (entryOverstaffed) hasOverstaffed = true;
         if (entryMismatch) hasAssignmentMismatch = true;
         if (entryPlannedCoverage) hasPlannedCoverage = true;
+
+        if (entryUnderstaffed) {
+          headerOpenAssignedTotal += entry.assigned;
+          headerOpenRequiredTotal += entry.required;
+        } else if (entryPlannedCoverage) {
+          headerPlannedAssignedTotal += entry.projectedAssigned ?? entry.assigned;
+          headerPlannedRequiredTotal += entry.required;
+        } else if (entryMismatch) {
+          headerMismatchAssignedTotal += entry.projectedAssigned ?? entry.assigned;
+          headerMismatchRequiredTotal += entry.required;
+        } else if (entryOverstaffed) {
+          headerOverstaffedAssignedTotal += entry.projectedAssigned ?? entry.assigned;
+          headerOverstaffedRequiredTotal += entry.required;
+        } else {
+          headerMetAssignedTotal += entry.assigned;
+          headerMetRequiredTotal += entry.required;
+        }
 
         if (entry.required > 0) {
           const hour = serviceHours.find((item) => item.id === entry.serviceHourId);
@@ -826,6 +873,16 @@ export function computeDashboardAreaWeekStats(
     hasPlannedCoverage,
     hasUnderstaffed,
     projectedAssignedTotal,
+    headerOpenAssignedTotal,
+    headerOpenRequiredTotal,
+    headerPlannedAssignedTotal,
+    headerPlannedRequiredTotal,
+    headerMismatchAssignedTotal,
+    headerMismatchRequiredTotal,
+    headerOverstaffedAssignedTotal,
+    headerOverstaffedRequiredTotal,
+    headerMetAssignedTotal,
+    headerMetRequiredTotal,
     hasAreaShiftTemplates,
   };
 }

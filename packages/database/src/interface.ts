@@ -83,6 +83,20 @@ export type EmployeeShiftRecord = {
   pending_reminder_sent_at?: string | null;
 };
 
+export type EmployeeLastShiftAssignment = {
+  shiftDate: string;
+  locationName: string | null;
+  areaName: string | null;
+  templateName: string | null;
+  startsAt: string;
+  endsAt: string;
+};
+
+export type EmployeeAdjacentShiftAssignments = {
+  lastPast: EmployeeLastShiftAssignment | null;
+  nextFuture: EmployeeLastShiftAssignment | null;
+};
+
 export type ShiftConfirmationWriteFields = {
   confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
   confirmation_status_updated_at?: string;
@@ -156,6 +170,10 @@ export interface SchichtwerkDatabase {
   updateOrganizationAllowRetroactiveCompensationEntries(
     organizationId: string,
     allowed: boolean
+  ): Promise<void>;
+  updateOrganizationShowCompensationInPlanningUi(
+    organizationId: string,
+    enabled: boolean
   ): Promise<void>;
   updateOrganizationShiftConfirmationEnabled(
     organizationId: string,
@@ -422,6 +440,11 @@ export interface SchichtwerkDatabase {
   listEmployeeLastShiftDates(
     organizationId: string
   ): Promise<Record<string, string>>;
+  getEmployeeAdjacentShiftAssignments(
+    organizationId: string,
+    employeeId: string,
+    todayISO: string
+  ): Promise<EmployeeAdjacentShiftAssignments>;
   insertProfileRecurringAvailability(
     organizationId: string,
     profileId: string,

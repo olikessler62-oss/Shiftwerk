@@ -15,6 +15,8 @@ type Props = {
   onConfirm: () => void;
   pending?: boolean;
   message?: string;
+  /** Seiten-Overlay für Slide-in-Panels und Kalender-Kontext. */
+  placement?: "fixed" | "nested";
 };
 
 export function AreaCalendarShiftDeleteConfirmModal({
@@ -22,12 +24,26 @@ export function AreaCalendarShiftDeleteConfirmModal({
   onConfirm,
   pending = false,
   message,
+  placement = "nested",
 }: Props) {
   const t = useTranslations();
 
+  const overlayClass =
+    placement === "fixed"
+      ? cn(
+          "fixed inset-0 z-[120] flex items-center justify-center bg-black/30 p-2 sm:p-4",
+          "max-sm:items-stretch max-sm:justify-stretch max-sm:p-0"
+        )
+      : settingsNestedModalOverlayClass();
+
+  const dialogClass =
+    placement === "fixed"
+      ? cn(settingsConfirmDialogClass(), "relative z-[121]")
+      : settingsConfirmDialogClass();
+
   return (
     <div
-      className={settingsNestedModalOverlayClass()}
+      className={overlayClass}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !pending) onCancel();
@@ -37,7 +53,7 @@ export function AreaCalendarShiftDeleteConfirmModal({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="areacalendar-shift-delete-confirm-desc"
-        className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
+        className={cn(dialogClass, "overflow-hidden p-0")}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <SettingsConfirmDialogCloseHeader

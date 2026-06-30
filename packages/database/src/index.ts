@@ -4,6 +4,8 @@ export type {
   ShiftTypeBreakInput,
   AreaCalendarShiftRow,
   EmployeeShiftRecord,
+  EmployeeLastShiftAssignment,
+  EmployeeAdjacentShiftAssignments,
 } from "./interface";
 export {
   validateAbsenceDateOrder,
@@ -31,6 +33,7 @@ export {
 export {
   createDatabase,
   SupabaseSchichtwerkDatabase,
+  ORGANIZATION_MIGRATION_SHOW_COMPENSATION_IN_PLANNING_UI,
 } from "./supabase-database";
 export {
   validateCompensationSurchargeTypeUniqueness,

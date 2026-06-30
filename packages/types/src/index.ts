@@ -112,6 +112,8 @@ export interface Organization {
   industry: Industry | null;
   /** Nachträgliche Stundensatz-Einträge (Gültig ab in der Vergangenheit). */
   allow_retroactive_compensation_entries: boolean;
+  /** Entgelt/Zuschläge in Kalendern und Dashboard anzeigen. */
+  show_compensation_in_planning_ui: boolean;
   /** Schichtbestätigung durch Mitarbeiter (Default aus). */
   shift_confirmation_enabled: boolean;
   /** MA-Krankmeldung wird sofort genehmigt (Default an). */

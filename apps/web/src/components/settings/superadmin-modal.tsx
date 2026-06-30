@@ -143,6 +143,7 @@ export function SuperadminModal({ onClose }: Props) {
           aria-hidden={overlayOpen}
           className={cn(
             settingsModalDialogClass(),
+            "modal-scrollbar-inline",
             overlayOpen ? "pointer-events-none" : undefined,
             actionPending && "[&_*]:cursor-wait"
           )}
@@ -203,6 +204,7 @@ export function SuperadminModal({ onClose }: Props) {
             className={cn(
               settingsModalBodyPaddingClass(),
               MODAL_SCROLLBAR_CLASS,
+              "modal-scrollbar-inline",
               "min-h-0 flex-1 space-y-6 overflow-y-auto"
             )}
           >

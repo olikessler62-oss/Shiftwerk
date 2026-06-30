@@ -443,6 +443,44 @@ function mapEffectiveProfileCompensationSurcharge(
   };
 }
 
+const ORGANIZATION_SELECT_BASE =
+  "id, name, timezone, country_code, planning_mode, industry, allow_retroactive_compensation_entries, shift_confirmation_enabled, auto_approve_sick_absence, shift_confirmation_disclaimer, created_at";
+
+const ORGANIZATION_SELECT_WITH_COMPENSATION_UI = `${ORGANIZATION_SELECT_BASE}, show_compensation_in_planning_ui`;
+
+export const ORGANIZATION_MIGRATION_SHOW_COMPENSATION_IN_PLANNING_UI =
+  "ORGANIZATION_MIGRATION_SHOW_COMPENSATION_IN_PLANNING_UI";
+
+function isMissingShowCompensationInPlanningUiColumn(message: string): boolean {
+  return message.includes("show_compensation_in_planning_ui");
+}
+
+function mapOrganizationRow(
+  data: Record<string, unknown>,
+  hasCompensationUiColumn: boolean
+): Organization {
+  return {
+    id: data.id as string,
+    name: data.name as string,
+    timezone: data.timezone as string,
+    country_code: data.country_code as string,
+    planning_mode: normalizePlanningMode(data.planning_mode),
+    industry: normalizeIndustry(data.industry),
+    allow_retroactive_compensation_entries:
+      (data.allow_retroactive_compensation_entries as boolean | null) ?? true,
+    show_compensation_in_planning_ui: hasCompensationUiColumn
+      ? ((data.show_compensation_in_planning_ui as boolean | null) ?? true)
+      : true,
+    shift_confirmation_enabled:
+      (data.shift_confirmation_enabled as boolean | null) ?? false,
+    auto_approve_sick_absence:
+      (data.auto_approve_sick_absence as boolean | null) ?? true,
+    shift_confirmation_disclaimer:
+      (data.shift_confirmation_disclaimer as string | null) ?? null,
+    created_at: data.created_at as string,
+  };
+}
+
 export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   constructor(private readonly client: SupabaseClient) {}
 
@@ -588,32 +626,37 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   }
 
   async getOrganization(id: string): Promise<Organization | null> {
-    const { data, error } = await this.client
+    const withCompensationUi = await this.client
       .from(T.organizations)
-      .select(
-        "id, name, timezone, country_code, planning_mode, industry, allow_retroactive_compensation_entries, shift_confirmation_enabled, auto_approve_sick_absence, shift_confirmation_disclaimer, created_at"
-      )
+      .select(ORGANIZATION_SELECT_WITH_COMPENSATION_UI)
       .eq("id", id)
       .maybeSingle();
-    if (error) throw new Error(error.message);
-    if (!data) return null;
-    return {
-      id: data.id as string,
-      name: data.name as string,
-      timezone: data.timezone as string,
-      country_code: data.country_code as string,
-      planning_mode: normalizePlanningMode(data.planning_mode),
-      industry: normalizeIndustry(data.industry),
-      allow_retroactive_compensation_entries:
-        (data.allow_retroactive_compensation_entries as boolean | null) ?? true,
-      shift_confirmation_enabled:
-        (data.shift_confirmation_enabled as boolean | null) ?? false,
-      auto_approve_sick_absence:
-        (data.auto_approve_sick_absence as boolean | null) ?? true,
-      shift_confirmation_disclaimer:
-        (data.shift_confirmation_disclaimer as string | null) ?? null,
-      created_at: data.created_at as string,
-    };
+
+    if (!withCompensationUi.error) {
+      if (!withCompensationUi.data) return null;
+      return mapOrganizationRow(
+        withCompensationUi.data as Record<string, unknown>,
+        true
+      );
+    }
+
+    if (
+      withCompensationUi.error &&
+      !isMissingShowCompensationInPlanningUiColumn(withCompensationUi.error.message)
+    ) {
+      throw new Error(withCompensationUi.error.message);
+    }
+
+    const legacy = await this.client
+      .from(T.organizations)
+      .select(ORGANIZATION_SELECT_BASE)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (legacy.error) throw new Error(legacy.error.message);
+    if (!legacy.data) return null;
+
+    return mapOrganizationRow(legacy.data as Record<string, unknown>, false);
   }
 
   async deleteOrganization(id: string) {
@@ -659,6 +702,22 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .update({ allow_retroactive_compensation_entries: allowed })
       .eq("id", organizationId);
     if (error) throw new Error(error.message);
+  }
+
+  async updateOrganizationShowCompensationInPlanningUi(
+    organizationId: string,
+    enabled: boolean
+  ) {
+    const { error } = await this.client
+      .from(T.organizations)
+      .update({ show_compensation_in_planning_ui: enabled })
+      .eq("id", organizationId);
+    if (error) {
+      if (isMissingShowCompensationInPlanningUiColumn(error.message)) {
+        throw new Error(ORGANIZATION_MIGRATION_SHOW_COMPENSATION_IN_PLANNING_UI);
+      }
+      throw new Error(error.message);
+    }
   }
 
   async updateOrganizationShiftConfirmationEnabled(
@@ -1303,6 +1362,77 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       lastByEmployee[employeeId] = row.shift_date as string;
     }
     return lastByEmployee;
+  }
+
+  async getEmployeeAdjacentShiftAssignments(
+    organizationId: string,
+    employeeId: string,
+    todayISO: string
+  ): Promise<import("./interface").EmployeeAdjacentShiftAssignments> {
+    const select =
+      "shift_date, confirmation_status, starts_at, ends_at, locations(name), location_areas(name), area_shift_templates(name)";
+
+    const [lastPastResult, nextFutureResult] = await Promise.all([
+      this.client
+        .from(T.shifts)
+        .select(select)
+        .eq("organization_id", organizationId)
+        .eq("employee_id", employeeId)
+        .lt("shift_date", todayISO)
+        .order("shift_date", { ascending: false })
+        .order("starts_at", { ascending: false })
+        .limit(15),
+      this.client
+        .from(T.shifts)
+        .select(select)
+        .eq("organization_id", organizationId)
+        .eq("employee_id", employeeId)
+        .gt("shift_date", todayISO)
+        .order("shift_date", { ascending: true })
+        .order("starts_at", { ascending: true })
+        .limit(15),
+    ]);
+
+    if (lastPastResult.error) throw new Error(lastPastResult.error.message);
+    if (nextFutureResult.error) throw new Error(nextFutureResult.error.message);
+
+    const mapRow = (
+      row: Record<string, unknown>
+    ): import("./interface").EmployeeLastShiftAssignment => {
+      const location = relation(
+        row.locations as { name: string } | { name: string }[] | null
+      );
+      const area = relation(
+        row.location_areas as { name: string } | { name: string }[] | null
+      );
+      const template = relation(
+        row.area_shift_templates as { name: string } | { name: string }[] | null
+      );
+
+      return {
+        shiftDate: row.shift_date as string,
+        locationName: location?.name?.trim() || null,
+        areaName: area?.name?.trim() || null,
+        templateName: template?.name?.trim() || null,
+        startsAt: row.starts_at as string,
+        endsAt: row.ends_at as string,
+      };
+    };
+
+    const isActiveShift = (row: Record<string, unknown>) => {
+      const status = row.confirmation_status as
+        | import("@schichtwerk/types").ShiftConfirmationStatus
+        | null;
+      return status !== "canceled" && status !== "rejected";
+    };
+
+    const lastPastRow = (lastPastResult.data ?? []).find(isActiveShift);
+    const nextFutureRow = (nextFutureResult.data ?? []).find(isActiveShift);
+
+    return {
+      lastPast: lastPastRow ? mapRow(lastPastRow) : null,
+      nextFuture: nextFutureRow ? mapRow(nextFutureRow) : null,
+    };
   }
 
   async getNextProfileRecurringAvailabilitySortOrder(profileId: string) {

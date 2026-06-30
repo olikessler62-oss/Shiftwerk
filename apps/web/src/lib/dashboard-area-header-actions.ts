@@ -1,5 +1,6 @@
 import type {
   DashboardAreaAmpelLevel,
+  DashboardAreaWeekStats,
   DashboardStaffingWindowRow,
 } from "@/lib/dashboard-area-week-stats";
 import {
@@ -27,6 +28,116 @@ export function isAreaStaffingPlannedOnly(input: {
     input.hasPlannedCoverage &&
     !input.hasUnderstaffed
   );
+}
+
+export const DASHBOARD_STAFFING_HEADER_SEGMENT_ORDER = [
+  "understaffed",
+  "planned",
+  "mismatch",
+  "overstaffed",
+  "met",
+] as const;
+
+export type DashboardStaffingHeaderSegmentKind =
+  (typeof DASHBOARD_STAFFING_HEADER_SEGMENT_ORDER)[number];
+
+export type DashboardStaffingHeaderSegment = {
+  kind: DashboardStaffingHeaderSegmentKind;
+  assigned: number;
+  required: number;
+};
+
+export type DashboardStaffingHeaderDisplay = {
+  segments: DashboardStaffingHeaderSegment[];
+};
+
+function pushDashboardStaffingHeaderSegment(
+  segments: DashboardStaffingHeaderSegment[],
+  kind: DashboardStaffingHeaderSegmentKind,
+  assigned: number,
+  required: number
+): void {
+  if (required <= 0) return;
+  segments.push({ kind, assigned, required });
+}
+
+/** Besetzt/Bedarf im Bereichskarten-Header — je Status ein Wertepaar, mit Pipe verbunden. */
+export function resolveDashboardStaffingHeaderDisplay(
+  stats: Pick<
+    DashboardAreaWeekStats,
+    | "assignedTotal"
+    | "requiredTotal"
+    | "headerOpenAssignedTotal"
+    | "headerOpenRequiredTotal"
+    | "headerPlannedAssignedTotal"
+    | "headerPlannedRequiredTotal"
+    | "headerMismatchAssignedTotal"
+    | "headerMismatchRequiredTotal"
+    | "headerOverstaffedAssignedTotal"
+    | "headerOverstaffedRequiredTotal"
+    | "headerMetAssignedTotal"
+    | "headerMetRequiredTotal"
+  >
+): DashboardStaffingHeaderDisplay {
+  const segments: DashboardStaffingHeaderSegment[] = [];
+
+  pushDashboardStaffingHeaderSegment(
+    segments,
+    "understaffed",
+    stats.headerOpenAssignedTotal,
+    stats.headerOpenRequiredTotal
+  );
+  pushDashboardStaffingHeaderSegment(
+    segments,
+    "planned",
+    stats.headerPlannedAssignedTotal,
+    stats.headerPlannedRequiredTotal
+  );
+  pushDashboardStaffingHeaderSegment(
+    segments,
+    "mismatch",
+    stats.headerMismatchAssignedTotal,
+    stats.headerMismatchRequiredTotal
+  );
+  pushDashboardStaffingHeaderSegment(
+    segments,
+    "overstaffed",
+    stats.headerOverstaffedAssignedTotal,
+    stats.headerOverstaffedRequiredTotal
+  );
+  pushDashboardStaffingHeaderSegment(
+    segments,
+    "met",
+    stats.headerMetAssignedTotal,
+    stats.headerMetRequiredTotal
+  );
+
+  if (segments.length > 0) {
+    segments.sort(
+      (left, right) =>
+        DASHBOARD_STAFFING_HEADER_SEGMENT_ORDER.indexOf(left.kind) -
+        DASHBOARD_STAFFING_HEADER_SEGMENT_ORDER.indexOf(right.kind)
+    );
+    return { segments };
+  }
+
+  return {
+    segments: [
+      {
+        kind: "met",
+        assigned: stats.assignedTotal,
+        required: stats.requiredTotal,
+      },
+    ],
+  };
+}
+
+export function shouldShowDashboardStaffingHeaderTooltip(
+  segments: readonly DashboardStaffingHeaderSegment[]
+): boolean {
+  if (segments.length === 0) return false;
+  if (segments.length > 1) return true;
+  return segments[0]!.kind !== "met";
 }
 
 /** Zusätzliche „Geplant“-Zeile im Wochen-Scope, wenn neben Lücken auch geplante Deckung existiert. */

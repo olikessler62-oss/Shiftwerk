@@ -16,32 +16,39 @@ import {
   type OverviewModalQueryFlag,
 } from "@/lib/overview-modal-navigation";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
-import { useOrgFeatures } from "@/lib/org-features-provider";
+import { useOrgFeatures, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import {
   buildPlanningPageUrl,
 } from "@/lib/planning-week";
 import { useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
 import { useSuperadminModal } from "@/components/settings/superadmin-modal-context";
 
-function buildOverviewLinks(includeQualifications: boolean) {
+function buildOverviewLinks(
+  includeQualifications: boolean,
+  showCompensationInPlanningUi: boolean
+) {
   return [
     {
       kind: "modal" as const,
       flag: "uebersichtAbwesenheiten" as const,
       labelKey: "nav.overviewAbsences",
     },
-    {
-      kind: "modal" as const,
-      flag: "uebersichtEntgelt" as const,
-      labelKey: "nav.overviewCompensation",
-    },
-    ...(COMPENSATION_SURCHARGES_UI_ENABLED
+    ...(showCompensationInPlanningUi
       ? [
           {
             kind: "modal" as const,
-            flag: "uebersichtZuschlaege" as const,
-            labelKey: "nav.overviewSurcharges" as const,
+            flag: "uebersichtEntgelt" as const,
+            labelKey: "nav.overviewCompensation",
           },
+          ...(COMPENSATION_SURCHARGES_UI_ENABLED
+            ? [
+                {
+                  kind: "modal" as const,
+                  flag: "uebersichtZuschlaege" as const,
+                  labelKey: "nav.overviewSurcharges" as const,
+                },
+              ]
+            : []),
         ]
       : []),
     {
@@ -99,6 +106,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const searchParams = useSearchParams();
   const t = useTranslations();
   const features = useOrgFeatures();
+  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const areaCalendarActive = pathname === "/bereich-kalender";
   const employeeCalendarActive = pathname === "/mitarbeiter-kalender";
   const calendarActive = areaCalendarActive || employeeCalendarActive;
@@ -117,8 +125,12 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const overviewCompensationOpen = searchParams.get("uebersichtEntgelt") === "1";
   const overviewSurchargesOpen = searchParams.get("uebersichtZuschlaege") === "1";
   const overviewQualificationsOpen = searchParams.get("uebersichtTaetigkeiten") === "1";
-  const overviewLinks = buildOverviewLinks(features.qualifications);
+  const overviewLinks = buildOverviewLinks(
+    features.qualifications,
+    showCompensationInPlanningUi
+  );
   const standorteOpen = searchParams.get("standorte") === "1";
+  const allgemeinOpen = searchParams.get("allgemein") === "1";
   const profilesOpen = searchParams.get("profiles") === "1";
   const rollenOpen = searchParams.get("rollen") === "1";
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
@@ -127,6 +139,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const { open: superadminOpen, openSuperadminModal } = useSuperadminModal();
   const beginMainNavPending = useBeginMainNavPending();
   const settingsModalOpen =
+    allgemeinOpen ||
     standorteOpen ||
     profilesOpen ||
     rollenOpen ||
@@ -183,6 +196,11 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   }
 
   const settingsLinks = [
+    {
+      flag: "allgemein" as const,
+      labelKey: "nav.compensationSettings",
+      open: allgemeinOpen,
+    },
     ...(features.areas
       ? [{ flag: "standorte" as const, labelKey: "nav.locations", open: standorteOpen }]
       : []),

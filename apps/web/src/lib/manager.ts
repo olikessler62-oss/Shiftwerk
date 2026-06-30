@@ -30,6 +30,7 @@ export async function loadManagerOrganization(
     planning_mode: "advanced",
     industry: null,
     allow_retroactive_compensation_entries: true,
+    show_compensation_in_planning_ui: true,
     shift_confirmation_enabled: false,
     auto_approve_sick_absence: true,
     shift_confirmation_disclaimer: null,

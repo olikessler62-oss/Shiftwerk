@@ -7,6 +7,8 @@ import {
   isAreaStaffingUncovered,
   isPlannedCoverageHeaderStatusClickable,
   isStaffingHeaderStatusClickable,
+  resolveDashboardStaffingHeaderDisplay,
+  shouldShowDashboardStaffingHeaderTooltip,
   shouldShowAreaCardPlannedCoverageStatusLine,
   shouldShowAreaCardStaffingAmpelStatus,
 } from "@/lib/dashboard-area-header-actions";
@@ -30,6 +32,95 @@ function row(
     ...overrides,
   };
 }
+
+describe("resolveDashboardStaffingHeaderDisplay", () => {
+  const baseStats = {
+    assignedTotal: 0,
+    requiredTotal: 10,
+    headerOpenAssignedTotal: 0,
+    headerOpenRequiredTotal: 7,
+    headerPlannedAssignedTotal: 4,
+    headerPlannedRequiredTotal: 3,
+    headerMismatchAssignedTotal: 0,
+    headerMismatchRequiredTotal: 0,
+    headerOverstaffedAssignedTotal: 0,
+    headerOverstaffedRequiredTotal: 0,
+    headerMetAssignedTotal: 0,
+    headerMetRequiredTotal: 0,
+  };
+
+  it("returns ordered segments when open and planned windows coexist", () => {
+    expect(resolveDashboardStaffingHeaderDisplay(baseStats)).toEqual({
+      segments: [
+        { kind: "understaffed", assigned: 0, required: 7 },
+        { kind: "planned", assigned: 4, required: 3 },
+      ],
+    });
+  });
+
+  it("returns planned-only segment", () => {
+    expect(
+      resolveDashboardStaffingHeaderDisplay({
+        ...baseStats,
+        headerOpenRequiredTotal: 0,
+      })
+    ).toEqual({
+      segments: [{ kind: "planned", assigned: 4, required: 3 }],
+    });
+  });
+
+  it("returns open-only segment", () => {
+    expect(
+      resolveDashboardStaffingHeaderDisplay({
+        ...baseStats,
+        headerPlannedAssignedTotal: 0,
+        headerPlannedRequiredTotal: 0,
+      })
+    ).toEqual({
+      segments: [{ kind: "understaffed", assigned: 0, required: 7 }],
+    });
+  });
+
+  it("appends further status segments in display order", () => {
+    expect(
+      resolveDashboardStaffingHeaderDisplay({
+        ...baseStats,
+        headerMetAssignedTotal: 2,
+        headerMetRequiredTotal: 2,
+      })
+    ).toEqual({
+      segments: [
+        { kind: "understaffed", assigned: 0, required: 7 },
+        { kind: "planned", assigned: 4, required: 3 },
+        { kind: "met", assigned: 2, required: 2 },
+      ],
+    });
+  });
+});
+
+describe("shouldShowDashboardStaffingHeaderTooltip", () => {
+  it("shows tooltip for multiple segments and single non-met segments", () => {
+    expect(
+      shouldShowDashboardStaffingHeaderTooltip([
+        { kind: "understaffed", assigned: 0, required: 7 },
+        { kind: "planned", assigned: 4, required: 3 },
+      ])
+    ).toBe(true);
+    expect(
+      shouldShowDashboardStaffingHeaderTooltip([
+        { kind: "planned", assigned: 4, required: 3 },
+      ])
+    ).toBe(true);
+  });
+
+  it("hides tooltip for a single met segment", () => {
+    expect(
+      shouldShowDashboardStaffingHeaderTooltip([
+        { kind: "met", assigned: 10, required: 10 },
+      ])
+    ).toBe(false);
+  });
+});
 
 describe("isAreaStaffingUncovered", () => {
   it("treats critical and partial as uncovered", () => {

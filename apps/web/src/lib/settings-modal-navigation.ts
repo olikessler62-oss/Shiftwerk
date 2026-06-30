@@ -2,6 +2,7 @@ import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
 
 export const SETTINGS_MODAL_QUERY_FLAGS = [
+  "allgemein",
   "standorte",
   "profiles",
   "rollen",

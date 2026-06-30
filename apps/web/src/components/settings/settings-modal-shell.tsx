@@ -146,6 +146,7 @@ export function settingsMasterDetailLayoutClass(className?: string) {
 export function settingsMasterDetailListsClass(className?: string) {
   return cn(
     "flex min-h-0 min-w-0 flex-col gap-4 md:grid md:grid-cols-2 md:items-stretch",
+    "[&>*]:flex [&>*]:h-full [&>*]:min-h-0 [&>*]:flex-col",
     className
   );
 }

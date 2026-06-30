@@ -17,6 +17,12 @@ export const DASHBOARD_STATUS_BAR_COMPACT_NAV_BUTTON_CLASS = cn(
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
 );
 
+/** Drilldown — Einsatzort-Combobox (Trigger wie Statusleisten-Button). */
+export const DASHBOARD_DAY_DRILLDOWN_AREA_COMBOBOX_TRIGGER_CLASS = cn(
+  DASHBOARD_STATUS_BAR_COMPACT_NAV_BUTTON_CLASS,
+  "relative max-w-full justify-between gap-2 pr-8 text-left"
+);
+
 /** Feste Höhe für `<Button>` — überschreibt Standard-Größen im Dashboard-Kontext. */
 export const DASHBOARD_UI_BUTTON_CLASS = cn(
   DASHBOARD_TOOLBAR_BUTTON_HEIGHT_CLASS,
@@ -80,10 +86,13 @@ export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS = cn(
   "flex h-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-[3px] px-2 text-xs font-medium text-muted transition-colors hover:text-foreground sm:px-2.5"
 );
 
-/** Drilldown — Einsatzübersicht-Button (gleiche Höhe wie Tag/Woche-Schalter). */
+/** Drilldown — Einsatzübersicht-Button neben der Stunden-Checkbox. */
 export const DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS = cn(
-  DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS,
-  "cursor-pointer"
+  DASHBOARD_PANEL_ROUNDED_CLASS,
+  "inline-flex h-[2rem] min-h-[2rem] shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-[3px] border border-black/20 px-3 text-xs font-semibold text-foreground shadow-[0_1px_2px_0_rgba(15,23,42,0.06)] transition-[filter,box-shadow] duration-150 sm:px-3.5 sm:text-sm",
+  "bg-calendar-active-header",
+  "hover:brightness-[0.98]",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
 );
 
 export const DASHBOARD_TEXT_LINK_BUTTON_CLASS = cn(

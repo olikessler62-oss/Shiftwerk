@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   cancelShiftAsManager,
@@ -14,11 +14,14 @@ import {
   DashboardStaffingRowCandidatesModal,
   type DashboardStaffingCandidatesPlanningContext,
 } from "@/components/dashboard/dashboard-staffing-row-candidates-modal";
+import { createPortal } from "react-dom";
+import { SettingsModalHeader } from "@/components/settings/settings-list-ui";
 import {
-  PlanningSidePanel,
-  PlanningSidePanelNestedAlertPortal,
-  PLANNING_SIDE_PANEL_FOOTER_CLASS,
-} from "@/components/planning/planning-side-panel";
+  MODAL_SCROLLBAR_CLASS,
+  settingsModalBodyPaddingClass,
+  settingsModalFooterClass,
+  settingsNestedModalDialogClass,
+} from "@/components/settings/settings-modal-shell";
 import { Alert, Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
@@ -37,6 +40,7 @@ import {
 } from "@/lib/dashboard-staffing-window-issues";
 import {
   DASHBOARD_ASSIGNMENT_OVERVIEW_PANEL_CLASS,
+  DASHBOARD_MODAL_ROUNDED_CLASS,
   DASHBOARD_PANEL_ROUNDED_CLASS,
 } from "@/lib/dashboard-panel-styles";
 import { DASHBOARD_UI_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
@@ -63,6 +67,7 @@ import {
 import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
 import { translateActionError } from "@/lib/translate-action-error";
 import { useAppShellModalLockActive } from "@/lib/app-shell-modal-lock";
+import { formatPlanningLocationAreaLabel } from "@/lib/planning-location-ui";
 
 export type DashboardAreaAssignmentOverviewContext =
   DashboardStaffingCandidatesPlanningContext & {
@@ -75,6 +80,8 @@ type Props = {
   context: DashboardAreaAssignmentOverviewContext;
   scopeLabel: string;
   showDayHeaders: boolean;
+  locationName?: string | null;
+  locationCount?: number;
   onClose: () => void;
 };
 
@@ -203,6 +210,9 @@ function ShiftRowActions({
   );
 }
 
+const overviewWindowBodyIndentClass = "pl-8 pr-3";
+const overviewWindowBodyRowClass = cn("flex gap-3 py-2", overviewWindowBodyIndentClass);
+
 function OverviewWindowSection({
   section,
   context,
@@ -223,17 +233,22 @@ function OverviewWindowSection({
   const t = useTranslations();
   const { row, shifts, openSlots } = section;
   const isNoService = row.rowKind === "no_service_hours";
+  const shiftName = !isNoService && row.shiftName?.trim() ? row.shiftName.trim() : null;
+  const timeRange =
+    !isNoService && row.timeFrom && row.timeTo
+      ? `${row.timeFrom}–${row.timeTo}`
+      : null;
   const headerLine = [
     showDayLabelInHeader ? row.weekdayLabel : null,
-    isNoService
-      ? t("areaCalendar.noServiceHours")
-      : row.timeFrom && row.timeTo
-        ? `${row.timeFrom}–${row.timeTo}`
-        : null,
-    !isNoService && row.shiftName ? row.shiftName : null,
+    isNoService ? t("areaCalendar.noServiceHours") : shiftName,
+    !isNoService ? timeRange : null,
   ]
     .filter(Boolean)
     .join(" · ");
+
+  const headerSeparator = (
+    <span className="font-normal text-foreground/50"> · </span>
+  );
 
   return (
     <section
@@ -242,62 +257,92 @@ function OverviewWindowSection({
         DASHBOARD_PANEL_ROUNDED_CLASS
       )}
     >
-      <header className="space-y-0.5 border-b border-border/60 bg-[#c7d4e5]/60 px-3 py-1.5">
-        <p
-          className="text-sm font-semibold leading-snug text-foreground"
-          title={headerLine}
-        >
-          {headerLine}
-        </p>
-        {!isNoService && row.required > 0 ? (
-          <p className="text-sm font-normal leading-snug text-foreground/90">
-            <span
-              className={cn(
-                "tabular-nums",
-                assignmentOverviewStaffingCountsClassName(
-                  row.assigned,
-                  row.required,
-                  row.status,
-                  row.hasConflict
-                )
-              )}
-            >
-              {t("dashboard.areaAssignmentOverviewStaffingCounts", {
-                assigned: row.assigned,
-                required: row.required,
-              })}
-            </span>
-            <span className="text-foreground/50"> · </span>
-            <span>
-              {t("dashboard.areaAssignmentOverviewStatusLabel")}:{" "}
-              <span
-                className={assignmentOverviewWindowStatusClassName(row.status)}
-              >
-                {t(assignmentOverviewWindowStatusLabelKey(row.status))}
-              </span>
-            </span>
+      <header className="border-b border-border/60 bg-[#c7d4e5]/60 px-3 py-1.5">
+        <div className="flex items-start justify-between gap-3">
+          <p
+            className="min-w-0 flex-1 text-sm leading-snug text-foreground"
+            title={headerLine}
+          >
+            {showDayLabelInHeader ? (
+              <>
+                <span className="font-semibold">{row.weekdayLabel}</span>
+                {isNoService || shiftName || timeRange ? headerSeparator : null}
+              </>
+            ) : null}
+            {isNoService ? (
+              <span className="font-semibold">{t("areaCalendar.noServiceHours")}</span>
+            ) : (
+              <>
+                {shiftName ? (
+                  <>
+                    <span className="font-semibold">{shiftName}</span>
+                    {timeRange ? (
+                      <>
+                        {headerSeparator}
+                        <span className="font-normal">{timeRange}</span>
+                      </>
+                    ) : null}
+                  </>
+                ) : timeRange ? (
+                  <span className="font-semibold">{timeRange}</span>
+                ) : null}
+              </>
+            )}
           </p>
-        ) : null}
+          {!isNoService && row.required > 0 ? (
+            <p className="shrink-0 text-right text-sm font-normal leading-snug text-foreground/90">
+              <span
+                className={cn(
+                  "tabular-nums",
+                  assignmentOverviewStaffingCountsClassName(
+                    row.assigned,
+                    row.required,
+                    row.status,
+                    row.hasConflict
+                  )
+                )}
+              >
+                {t("dashboard.areaAssignmentOverviewStaffingCounts", {
+                  assigned: row.assigned,
+                  required: row.required,
+                })}
+              </span>
+              <span className="text-foreground/50"> · </span>
+              <span>
+                {t("dashboard.areaAssignmentOverviewStatusLabel")}:{" "}
+                <span
+                  className={assignmentOverviewWindowStatusClassName(row.status)}
+                >
+                  {t(assignmentOverviewWindowStatusLabelKey(row.status))}
+                </span>
+              </span>
+            </p>
+          ) : null}
+        </div>
       </header>
 
       <div className="space-y-0 divide-y divide-border/50">
-        {shifts.map(({ shift, employeeName, qualificationName, timeLabel, confirmationStatus, actions }) => (
+        {shifts.map(({ shift, employeeName, qualificationName, confirmationStatus, actions }) => (
           <div
             key={shift.id}
-            className="flex items-start gap-3 px-3 py-2.5"
+            className={cn(overviewWindowBodyRowClass, "items-start")}
           >
             <div className="min-w-0 flex-1 text-sm leading-snug">
               <p className="font-medium text-foreground">{employeeName}</p>
               <p className="text-muted">
-                {[qualificationName, timeLabel, shift.shiftName]
-                  .filter(Boolean)
-                  .join(" · ")}
+                {[qualificationName, shift.shiftName].filter(Boolean).join(" · ")}
+                {confirmationStatus ? (
+                  <>
+                    {qualificationName || shift.shiftName ? (
+                      <span className="text-foreground/50"> · </span>
+                    ) : null}
+                    <span className="text-foreground/70">
+                      {t("dashboard.areaAssignmentOverviewStatusLabel")}:{" "}
+                      {t(shiftConfirmationStatusLabelKey(confirmationStatus))}
+                    </span>
+                  </>
+                ) : null}
               </p>
-              {confirmationStatus ? (
-                <p className="text-xs text-foreground/70">
-                  {t(shiftConfirmationStatusLabelKey(confirmationStatus))}
-                </p>
-              ) : null}
             </div>
             <ShiftRowActions
               actions={actions}
@@ -313,7 +358,7 @@ function OverviewWindowSection({
         {openSlots.map((slot) => (
           <div
             key={`${row.dateISO}:${row.serviceHourId}:${slot.qualificationId ?? "headcount"}`}
-            className="flex items-center gap-3 px-3 py-2.5"
+            className={cn(overviewWindowBodyRowClass, "items-center")}
           >
             <div className="min-w-0 flex-1 text-sm">
               <p className="font-medium text-red-700">
@@ -340,13 +385,13 @@ function OverviewWindowSection({
         ))}
 
         {isNoService && shifts.length === 0 && openSlots.length === 0 ? (
-          <p className="px-3 py-2.5 text-sm text-muted">
+          <p className={cn("py-2 text-sm text-muted", overviewWindowBodyIndentClass)}>
             {t("areaCalendar.noServiceHours")}
           </p>
         ) : null}
 
         {!isNoService && shifts.length === 0 && openSlots.length === 0 ? (
-          <p className="px-3 py-2.5 text-sm text-muted">
+          <p className={cn("py-2 text-sm text-muted", overviewWindowBodyIndentClass)}>
             {t("dashboard.areaAssignmentOverviewEmptyWindow")}
           </p>
         ) : null}
@@ -360,6 +405,8 @@ export function DashboardAreaAssignmentOverviewModal({
   context,
   scopeLabel,
   showDayHeaders,
+  locationName = null,
+  locationCount = 0,
   onClose,
 }: Props) {
   const t = useTranslations();
@@ -378,6 +425,17 @@ export function DashboardAreaAssignmentOverviewModal({
   useAppShellModalLockActive(true);
 
   const nestedDialogOpen = pendingConfirm !== null || candidatesRow !== null;
+
+  useEffect(() => {
+    if (pending || nestedDialogOpen) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [nestedDialogOpen, onClose, pending]);
 
   const openCandidatesForRow = useCallback((row: DashboardStaffingWindowRow) => {
     setCandidatesRow(row);
@@ -459,18 +517,23 @@ export function DashboardAreaAssignmentOverviewModal({
     [context.weekStart]
   );
 
-  const panelSubtitle = useMemo(
-    () => (
-      <p className="mt-0.5 min-w-0 break-words text-xs font-normal text-black sm:text-sm">
-        <span className="font-bold text-black">{context.areaName}</span>
-        {scopeLabel ? (
-          <span className="text-black">{` ${scopeLabel}`}</span>
-        ) : null}
-        <span className="tabular-nums text-black">{` KW ${calendarWeek}`}</span>
+  const panelSubtitle = useMemo(() => {
+    const areaDisplayName = formatPlanningLocationAreaLabel(
+      locationName ?? "",
+      context.areaName,
+      locationCount
+    );
+
+    return (
+      <p className="mt-0.5 min-w-0 break-words text-xs font-normal leading-tight text-foreground sm:text-sm">
+        <span className="text-sm font-bold sm:text-base md:text-lg">
+          {areaDisplayName}
+        </span>
+        {scopeLabel ? <span>{` ${scopeLabel}`}</span> : null}
+        <span className="tabular-nums">{` KW ${calendarWeek}`}</span>
       </p>
-    ),
-    [calendarWeek, context.areaName, scopeLabel]
-  );
+    );
+  }, [calendarWeek, context.areaName, locationCount, locationName, scopeLabel]);
 
   const runDelete = useCallback(
     (shift: PlanningShift) => {
@@ -596,81 +659,124 @@ export function DashboardAreaAssignmentOverviewModal({
 
   return (
     <>
-      <PlanningSidePanel
-        anchor="left"
-        size="default"
-        panelClassName={DASHBOARD_ASSIGNMENT_OVERVIEW_PANEL_CLASS}
-        title={t("dashboard.areaAssignmentOverviewTitle")}
-        subtitleNode={panelSubtitle}
-        titleId="dashboard-area-assignment-overview-title"
-        onClose={onClose}
-        closeDisabled={pending}
-        closeAriaLabel={t("common.close")}
-        dismissOnBackdrop={!pending && !nestedDialogOpen}
-        dismissOnEscape={!pending && !nestedDialogOpen}
-        footer={
-          <div className={PLANNING_SIDE_PANEL_FOOTER_CLASS}>
-            <span />
-            <Button
-              type="button"
-              variant="outline"
-              className={DASHBOARD_UI_BUTTON_CLASS}
-              onClick={onClose}
-              disabled={pending}
+      {typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className={cn(
+                "fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-2 sm:p-4",
+                "md:left-[var(--app-shell-sidebar-width)]"
+              )}
+              role="presentation"
+              onMouseDown={(event) => {
+                if (
+                  event.target === event.currentTarget &&
+                  !pending &&
+                  !nestedDialogOpen
+                ) {
+                  onClose();
+                }
+              }}
             >
-              {t("common.close")}
-            </Button>
-          </div>
-        }
-      >
-        {errorMessage ? (
-          <Alert variant="error" className="mb-3">
-            {errorMessage}
-          </Alert>
-        ) : null}
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="dashboard-area-assignment-overview-title"
+                className={cn(
+                  settingsNestedModalDialogClass(
+                    "2xl",
+                    DASHBOARD_MODAL_ROUNDED_CLASS
+                  ),
+                  DASHBOARD_ASSIGNMENT_OVERVIEW_PANEL_CLASS,
+                  "!max-h-[80%] max-sm:!max-h-[80%] max-sm:!h-auto",
+                  "modal-scrollbar-inline"
+                )}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <SettingsModalHeader
+                  titleId="dashboard-area-assignment-overview-title"
+                  title={t("dashboard.areaAssignmentOverviewTitle")}
+                  subtitle={panelSubtitle}
+                  onClose={onClose}
+                  closeDisabled={pending}
+                  closeAriaLabel={t("common.close")}
+                />
 
-        {dayGroups.length === 0 ? (
-          <p className="text-sm text-muted">
-            {t("dashboard.areaAssignmentOverviewEmpty")}
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {dayGroups.map((dayGroup) => (
-              <div key={dayGroup.dateISO} className="space-y-2">
-                {dayGroup.windows.map((section) => (
-                  <OverviewWindowSection
-                    key={`${section.row.dateISO}:${section.row.serviceHourId}`}
-                    section={section}
-                    context={context}
-                    pending={pending}
-                    pendingAction={pendingAction}
-                    onAction={handleAction}
-                    onAssignRow={openCandidatesForRow}
-                    showDayLabelInHeader={showDayHeaders}
-                  />
-                ))}
+                <div
+                  className={cn(
+                    "min-h-0 flex-1 overflow-y-auto",
+                    MODAL_SCROLLBAR_CLASS,
+                    "modal-scrollbar-inline",
+                    settingsModalBodyPaddingClass()
+                  )}
+                >
+                  {errorMessage ? (
+                    <Alert variant="error" className="mb-3">
+                      {errorMessage}
+                    </Alert>
+                  ) : null}
+
+                  {dayGroups.length === 0 ? (
+                    <p className="text-sm text-muted">
+                      {t("dashboard.areaAssignmentOverviewEmpty")}
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {dayGroups.map((dayGroup) => (
+                        <div key={dayGroup.dateISO} className="space-y-2">
+                          {dayGroup.windows.map((section) => (
+                            <OverviewWindowSection
+                              key={`${section.row.dateISO}:${section.row.serviceHourId}`}
+                              section={section}
+                              context={context}
+                              pending={pending}
+                              pendingAction={pendingAction}
+                              onAction={handleAction}
+                              onAssignRow={openCandidatesForRow}
+                              showDayLabelInHeader={showDayHeaders}
+                            />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className={settingsModalFooterClass()}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className={DASHBOARD_UI_BUTTON_CLASS}
+                    onClick={onClose}
+                    disabled={pending}
+                  >
+                    {t("common.close")}
+                  </Button>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </PlanningSidePanel>
+            </div>,
+            document.body
+          )
+        : null}
 
-      {pendingConfirm?.kind === "delete" ? (
-        <PlanningSidePanelNestedAlertPortal>
+      {pendingConfirm?.kind === "delete" && typeof document !== "undefined"
+        ? createPortal(
           <AreaCalendarShiftDeleteConfirmModal
+            placement="fixed"
             onConfirm={() => {
               const shift = pendingConfirm.shift;
               setPendingConfirm(null);
               runDelete(shift);
             }}
             onCancel={() => setPendingConfirm(null)}
-          />
-        </PlanningSidePanelNestedAlertPortal>
-      ) : null}
+          />,
+          document.body
+        )
+        : null}
 
-      {pendingConfirm?.kind === "cancel" ? (
-        <PlanningSidePanelNestedAlertPortal>
+      {pendingConfirm?.kind === "cancel" && typeof document !== "undefined"
+        ? createPortal(
           <ShiftCancelConfirmModal
+            placement="fixed"
             variant="manager"
             employeeName={
               context.employeeNameById?.get(pendingConfirm.shift.employee_id) ?? "—"
@@ -681,21 +787,23 @@ export function DashboardAreaAssignmentOverviewModal({
               runCancel(shift);
             }}
             onCancel={() => setPendingConfirm(null)}
-          />
-        </PlanningSidePanelNestedAlertPortal>
-      ) : null}
+          />,
+          document.body
+        )
+        : null}
 
-      {candidatesRow ? (
-        <PlanningSidePanelNestedAlertPortal>
+      {candidatesRow && typeof document !== "undefined"
+        ? createPortal(
           <DashboardStaffingRowCandidatesModal
             row={candidatesRow}
             planning={context}
             existingShiftId={reassignShiftId}
             onAssigned={handleAssignSuccess}
             onClose={closeCandidatesModal}
-          />
-        </PlanningSidePanelNestedAlertPortal>
-      ) : null}
+          />,
+          document.body
+        )
+        : null}
     </>
   );
 }

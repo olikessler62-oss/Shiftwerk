@@ -63,25 +63,6 @@ body {
   max-width: 100%;
 }
 
-/** 2px schwarze Linie am oberen Browserrand — volle Viewport-Breite. */
-html::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: #000;
-  z-index: 9999;
-  pointer-events: none;
-}
-
-/** 1px schwarze Linie am unteren Headerrand (Logo-Zeile + Wochen-Toolbar). */
-.app-shell-sidebar > .app-shell-brand-header,
-.app-page-toolbar-header.app-shell-top-panel-toolbar {
-  border-bottom: 1px solid #000;
-}
-
 input,
 textarea,
 [contenteditable="true"],
@@ -887,6 +868,11 @@ body {
 /** Scrollbars in Modals, Sub-Modals und Dashboard-Zellen (Thumb, Track, Pfeile). */
 .modal-scrollbar {
   scrollbar-gutter: stable;
+}
+
+/** Ohne reservierten Gutter — für Dialoge mit innerem Scroll (kein weißer Rand rechts). */
+.modal-scrollbar.modal-scrollbar-inline {
+  scrollbar-gutter: auto;
 }
 
 .modal-scrollbar,

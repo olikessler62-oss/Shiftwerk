@@ -113,7 +113,7 @@ import { useSimpleCalendarDisplay } from "@/lib/simple-calendar-display-context"
 export type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures } from "@/lib/org-features-provider";
+import { useOrgFeatures, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import {
   useEffectiveShiftConfirmationEnabled,
   useShiftConfirmationSimulation,
@@ -458,6 +458,7 @@ export function AreaCalendar({
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
   const features = useOrgFeatures();
+  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
   const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
@@ -1816,15 +1817,22 @@ export function AreaCalendar({
           undefined,
           tagAreaFooterStatsOptions
         );
-        if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
+        if (
+          stats.totalHours <= 0 &&
+          (showCompensationInPlanningUi ? stats.totalCost <= 0 : true)
+        ) {
+          continue;
+        }
         map.set(
           `${area.id}:${date}`,
-          formatTagAreaFooterLabels(stats, t, localeKey)
+          formatTagAreaFooterLabels(stats, t, localeKey, {
+            showCompensation: showCompensationInPlanningUi,
+          })
         );
       }
     }
     return map;
-  }, [areas, dates, tagAreaShiftRefsByAreaId, shiftCompensation, tagAreaFooterStatsOptions, t, localeKey]);
+  }, [areas, dates, tagAreaShiftRefsByAreaId, shiftCompensation, tagAreaFooterStatsOptions, t, localeKey, showCompensationInPlanningUi]);
 
   const dailyFooterLabelsByDate = useMemo(() => {
     const map = new Map<
@@ -1843,8 +1851,18 @@ export function AreaCalendar({
         undefined,
         tagAreaFooterStatsOptions
       );
-      if (stats.totalHours <= 0 && stats.totalCost <= 0) continue;
-      map.set(date, formatTagAreaFooterLabels(stats, t, localeKey));
+      if (
+        stats.totalHours <= 0 &&
+        (showCompensationInPlanningUi ? stats.totalCost <= 0 : true)
+      ) {
+        continue;
+      }
+      map.set(
+        date,
+        formatTagAreaFooterLabels(stats, t, localeKey, {
+          showCompensation: showCompensationInPlanningUi,
+        })
+      );
     }
     return map;
   }, [
@@ -1857,6 +1875,7 @@ export function AreaCalendar({
     tagAreaShiftRefsByAreaId,
     t,
     localeKey,
+    showCompensationInPlanningUi,
   ]);
 
   const calendarFooterShifts = useMemo(() => {

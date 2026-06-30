@@ -20,6 +20,7 @@ import {
   employeeAvailabilityTooltipPlacement,
 } from "@/components/ui/tooltip";
 import type { DashboardStaffingCandidateEmployeeTooltipPayload } from "@/lib/dashboard-staffing-candidate-employee-tooltip";
+import { toISODate, weekDates } from "@/lib/dates";
 import {
   settingsFixedNestedOverlayClass,
   settingsModalBodyPaddingClass,
@@ -55,21 +56,18 @@ import {
   areAreaCalendarShiftTimesComplete,
   profileAvailabilityWeekdayFromAreaCalendarDate,
 } from "@/lib/available-employees-for-shift";
-import { weekDates } from "@/lib/dates";
 import {
   isoWeekStartFromShiftDate,
 } from "@schichtwerk/database";
 import { formatDayHeader } from "@/lib/planning-utils";
-import type { EmployeeWeeklyHoursDisplay } from "@/lib/employee-weekly-hours-display";
 import {
   buildAreaIdToLocationIdMap,
   buildEmployeeWeeklyHoursDisplay,
   buildEmployeeWeeklyHoursDisplayByEmployeeId,
-  buildEmployeeWeeklyHoursDisplayLinesByEmployeeId,
   buildLocationNameByIdMap,
   employeeWeeklyHoursAssignedMinutes,
+  type EmployeeWeeklyHoursDisplay,
 } from "@/lib/employee-weekly-hours-display";
-import { EmployeeWeeklyHoursLines } from "@/components/planning/employee-weekly-hours-lines";
 import { useAppShellModalLockActive } from "@/lib/app-shell-modal-lock";
 import { translateActionError } from "@/lib/translate-action-error";
 import { useSimulatedProposedOnAssignRequest } from "@/lib/shift-confirmation-simulation-context";
@@ -300,44 +298,11 @@ export function DashboardStaffingRowCandidatesModal({
     planning.locationId,
   ]);
 
-  const weeklyHoursLabelByEmployeeId = useMemo(() => {
-    if (!loadedContext) return new Map<string, string[]>();
-
-    return buildEmployeeWeeklyHoursDisplayLinesByEmployeeId({
-      employees: loadedContext.employees,
-      shifts: shiftsForWeeklyHoursDisplay,
-      weekDates: weeklyHoursWeekDates,
-      locale,
-      locationNameById,
-      totalLabel: t("dashboard.weeklyHoursTotalLabel"),
-      areaIdToLocationId,
-      fallbackLocationId: planning.locationId,
-    });
-  }, [
-    loadedContext,
-    shiftsForWeeklyHoursDisplay,
-    weeklyHoursWeekDates,
-    locale,
-    locationNameById,
-    areaIdToLocationId,
-    planning.locationId,
-    t,
-  ]);
-
   const employeeColorById = useMemo(() => {
     const map = new Map<string, string | null>();
     if (!loadedContext) return map;
     for (const employee of loadedContext.employees) {
       map.set(employee.id, employee.color);
-    }
-    return map;
-  }, [loadedContext]);
-
-  const weeklyHoursTargetByEmployeeId = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!loadedContext) return map;
-    for (const employee of loadedContext.employees) {
-      map.set(employee.id, employee.weekly_hours ?? 40);
     }
     return map;
   }, [loadedContext]);
@@ -586,7 +551,10 @@ export function DashboardStaffingRowCandidatesModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="dashboard-staffing-candidates-title"
-        className={settingsNestedModalDialogClass("2xl", DASHBOARD_MODAL_ROUNDED_CLASS)}
+        className={cn(
+          settingsNestedModalDialogClass("2xl", DASHBOARD_MODAL_ROUNDED_CLASS),
+          "modal-scrollbar-inline"
+        )}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <SettingsModalHeader
@@ -689,10 +657,7 @@ export function DashboardStaffingRowCandidatesModal({
                   onAssign={handleAssign}
                   dateISO={row.dateISO}
                   qualifications={planning.qualifications}
-                  weeklyHoursLabelByEmployeeId={weeklyHoursLabelByEmployeeId}
                   weeklyHoursDisplayByEmployeeId={weeklyHoursDisplayByEmployeeId}
-                  weeklyAssignedMinutesByEmployeeId={weeklyAssignedMinutes}
-                  weeklyHoursTargetByEmployeeId={weeklyHoursTargetByEmployeeId}
                   employeeColorById={employeeColorById}
                   t={t}
                 />
@@ -752,12 +717,6 @@ const CANDIDATE_EMPLOYEE_STRIP_WIDTH_PX = 3;
 
 const EMPLOYEE_COLOR_FALLBACK = "#94a3b8";
 
-const CANDIDATE_ASSIGN_HIGHLIGHT_BUTTON_CLASS = cn(
-  "border border-[color-mix(in_srgb,var(--brand-neon-cyan)_45%,rgb(20_60_90))]",
-  "bg-[color-mix(in_srgb,var(--brand-neon-cyan)_62%,rgb(24_72_108))]",
-  "text-white hover:bg-[color-mix(in_srgb,var(--brand-neon-cyan)_70%,rgb(28_80_118))]"
-);
-
 function StaffingCandidateMissingLine({
   count,
   qualification,
@@ -776,16 +735,11 @@ function StaffingCandidateMissingLine({
   );
 }
 
-function weeklyHoursLineClassName(
-  assignedMinutes: number,
-  targetHours: number
-): string {
-  const targetMinutes = targetHours * 60;
-  if (targetMinutes <= 0) return "text-muted-foreground";
-  if (assignedMinutes / targetMinutes >= 0.9) {
-    return "font-medium text-amber-600";
-  }
-  return "text-foreground/75";
+function formatCandidateInlineWeeklyHours(
+  display: EmployeeWeeklyHoursDisplay | null | undefined
+): string | null {
+  if (!display) return null;
+  return `${display.totalHours}/${display.targetHours}`;
 }
 
 type CandidateGroup = {
@@ -801,10 +755,7 @@ function CandidateList({
   onAssign,
   dateISO,
   qualifications,
-  weeklyHoursLabelByEmployeeId,
   weeklyHoursDisplayByEmployeeId,
-  weeklyAssignedMinutesByEmployeeId,
-  weeklyHoursTargetByEmployeeId,
   employeeColorById,
   t,
 }: {
@@ -814,10 +765,7 @@ function CandidateList({
   onAssign: (employeeId: string) => void;
   dateISO: string;
   qualifications: readonly Qualification[];
-  weeklyHoursLabelByEmployeeId: ReadonlyMap<string, readonly string[]>;
   weeklyHoursDisplayByEmployeeId: ReadonlyMap<string, EmployeeWeeklyHoursDisplay>;
-  weeklyAssignedMinutesByEmployeeId: ReadonlyMap<string, number>;
-  weeklyHoursTargetByEmployeeId: ReadonlyMap<string, number>;
   employeeColorById: ReadonlyMap<string, string | null>;
   t: ReturnType<typeof useTranslations>;
 }) {
@@ -825,6 +773,7 @@ function CandidateList({
     Record<string, TooltipCacheEntry>
   >({});
   const tooltipFetchStartedRef = useRef(new Set<string>());
+  const todayISO = useMemo(() => toISODate(new Date()), []);
 
   const ensureTooltipLoaded = useCallback(
     (employeeId: string) => {
@@ -838,7 +787,8 @@ function CandidateList({
 
       void fetchDashboardStaffingCandidateEmployeeTooltip(
         employeeId,
-        dateISO
+        dateISO,
+        todayISO
       ).then((result) => {
         setTooltipCache((current) => ({
           ...current,
@@ -848,7 +798,7 @@ function CandidateList({
         }));
       });
     },
-    [dateISO]
+    [dateISO, todayISO]
   );
 
   return (
@@ -856,7 +806,8 @@ function CandidateList({
       className={cn(
         "flex min-h-0 flex-1 flex-col overflow-y-auto border border-border/50 bg-background/20",
         DASHBOARD_PANEL_ROUNDED_CLASS,
-        MODAL_SCROLLBAR_CLASS
+        MODAL_SCROLLBAR_CLASS,
+        "modal-scrollbar-inline"
       )}
     >
       <div className="space-y-3">
@@ -866,29 +817,18 @@ function CandidateList({
               {group.qualificationName}
             </p>
             <ul className="flex flex-col gap-0.5 px-2 pb-2 pt-0.5" role="list">
-              {group.candidates.map((candidate, candidateIndex) => {
+              {group.candidates.map((candidate) => {
                 const cacheEntry = tooltipCache[candidate.id];
-                const isTopPick = candidateIndex === 0;
-                const weeklyHoursLabel =
-                  weeklyHoursLabelByEmployeeId.get(candidate.id) ?? [];
                 const weeklyHoursDisplay =
                   weeklyHoursDisplayByEmployeeId.get(candidate.id) ?? null;
-                const assignedMinutes =
-                  weeklyAssignedMinutesByEmployeeId.get(candidate.id) ?? 0;
-                const targetHours =
-                  weeklyHoursTargetByEmployeeId.get(candidate.id) ?? 40;
+                const inlineWeeklyHours =
+                  formatCandidateInlineWeeklyHours(weeklyHoursDisplay);
                 const employeeColor =
                   employeeColorById.get(candidate.id) ?? EMPLOYEE_COLOR_FALLBACK;
 
                 return (
                   <li key={`${group.slotKey}:${candidate.id}`}>
-                    <div
-                      className={cn(
-                        "group relative flex min-h-[2.75rem] items-stretch overflow-hidden bg-white/80 transition-colors",
-                        isTopPick &&
-                          "bg-[color-mix(in_srgb,var(--brand-neon-cyan)_6%,white)]"
-                      )}
-                    >
+                    <div className="group relative flex min-h-[2.75rem] items-stretch overflow-hidden bg-white/80 transition-colors">
                       <div
                         className="shrink-0 self-stretch"
                         style={{
@@ -899,69 +839,62 @@ function CandidateList({
                       />
                       <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1">
                         <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <Tooltip
-                              openDelayMs={
-                                DASHBOARD_STAFFING_CANDIDATE_TOOLTIP_OPEN_DELAY_MS
+                          <Tooltip
+                            openDelayMs={
+                              DASHBOARD_STAFFING_CANDIDATE_TOOLTIP_OPEN_DELAY_MS
+                            }
+                            placement={employeeAvailabilityTooltipPlacement}
+                            contentClassName={
+                              employeeAvailabilityTooltipContentClassName
+                            }
+                            className="max-w-full min-w-0 cursor-default justify-start"
+                            content={
+                              <DashboardStaffingCandidateEmployeeTooltipContent
+                                employeeName={candidate.full_name}
+                                todayISO={todayISO}
+                                payload={
+                                  cacheEntry?.status === "loaded"
+                                    ? cacheEntry.data
+                                    : null
+                                }
+                                loading={
+                                  !cacheEntry ||
+                                  cacheEntry.status === "loading"
+                                }
+                                error={cacheEntry?.status === "error"}
+                                qualifications={qualifications}
+                                weeklyHoursDisplay={weeklyHoursDisplay}
+                              />
+                            }
+                          >
+                            <span
+                              data-employee-availability-tooltip-anchor=""
+                              className="flex min-w-0 cursor-default items-baseline gap-1.5 text-left leading-tight"
+                              onMouseEnter={() =>
+                                ensureTooltipLoaded(candidate.id)
                               }
-                              placement={employeeAvailabilityTooltipPlacement}
-                              contentClassName={
-                                employeeAvailabilityTooltipContentClassName
-                              }
-                              className="max-w-full min-w-0 cursor-default justify-start"
-                              content={
-                                <DashboardStaffingCandidateEmployeeTooltipContent
-                                  employeeName={candidate.full_name}
-                                  payload={
-                                    cacheEntry?.status === "loaded"
-                                      ? cacheEntry.data
-                                      : null
-                                  }
-                                  loading={
-                                    !cacheEntry ||
-                                    cacheEntry.status === "loading"
-                                  }
-                                  error={cacheEntry?.status === "error"}
-                                  qualifications={qualifications}
-                                  weeklyHoursDisplay={weeklyHoursDisplay}
-                                />
+                              onFocus={() =>
+                                ensureTooltipLoaded(candidate.id)
                               }
                             >
-                              <span
-                                data-employee-availability-tooltip-anchor=""
-                                className="block min-w-0 cursor-default truncate text-left text-sm font-medium leading-tight text-foreground/90"
-                                onMouseEnter={() =>
-                                  ensureTooltipLoaded(candidate.id)
-                                }
-                                onFocus={() =>
-                                  ensureTooltipLoaded(candidate.id)
-                                }
-                              >
+                              <span className="min-w-0 truncate text-sm font-medium text-foreground/90">
                                 {candidate.full_name}
                               </span>
-                            </Tooltip>
-                          </div>
-                          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                            {weeklyHoursLabel.length > 0 ? (
-                              <EmployeeWeeklyHoursLines
-                                lines={weeklyHoursLabel}
-                                className="text-[0.6875rem] text-muted-foreground"
-                                lineClassName={weeklyHoursLineClassName(
-                                  assignedMinutes,
-                                  targetHours
-                                )}
-                              />
-                            ) : null}
-                          </div>
+                              {inlineWeeklyHours ? (
+                                <span className="shrink-0 text-xs font-normal tabular-nums text-foreground/70">
+                                  {inlineWeeklyHours}
+                                </span>
+                              ) : null}
+                            </span>
+                          </Tooltip>
                         </div>
                         <Button
                           type="button"
                           size="sm"
-                          variant={isTopPick ? "default" : "outline"}
+                          variant="outline"
                           className={cn(
                             DASHBOARD_UI_BUTTON_CLASS,
-                            "shrink-0 px-2.5 text-xs leading-none",
-                            isTopPick && CANDIDATE_ASSIGN_HIGHLIGHT_BUTTON_CLASS
+                            "shrink-0 px-2.5 text-xs leading-none"
                           )}
                           disabled={
                             assignDisabled || pendingEmployeeId === candidate.id

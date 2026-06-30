@@ -39,6 +39,7 @@ import {
 } from "@/lib/overview-modal-navigation";
 
 import { useClearMainNavPendingOptional } from "@/lib/app-shell-main-nav-pending";
+import { useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 
 
 
@@ -51,6 +52,7 @@ export function OverviewModalsLayer() {
   const searchParams = useSearchParams();
 
   const clearMainNavPending = useClearMainNavPendingOptional();
+  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
 
 
 
@@ -92,6 +94,24 @@ export function OverviewModalsLayer() {
   };
 
 
+
+  useEffect(() => {
+    if (!showCompensationInPlanningUi) {
+      if (showCompensation) {
+        closeOverviewModal(router, pathname, searchParams, "uebersichtEntgelt");
+      }
+      if (showSurcharges) {
+        closeOverviewModal(router, pathname, searchParams, "uebersichtZuschlaege");
+      }
+    }
+  }, [
+    pathname,
+    router,
+    searchParams,
+    showCompensation,
+    showCompensationInPlanningUi,
+    showSurcharges,
+  ]);
 
   useEffect(() => {
 
@@ -191,6 +211,8 @@ export function OverviewModalsLayer() {
 
   if (showCompensation) {
 
+    if (!showCompensationInPlanningUi) return null;
+
     return (
 
       <OverviewCompensationModalHost
@@ -208,6 +230,8 @@ export function OverviewModalsLayer() {
 
 
   if (showSurcharges) {
+
+    if (!showCompensationInPlanningUi) return null;
 
     return (
 

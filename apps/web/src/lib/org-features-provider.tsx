@@ -52,3 +52,9 @@ export function useOrganization(): Organization {
   }
   return ctx.organization;
 }
+
+/** Org-Einstellung: Entgelt/Zuschläge in Planungs-UI (Kalender, Dashboard). */
+export function useShowCompensationInPlanningUi(): boolean {
+  const organization = useOrganization();
+  return organization.show_compensation_in_planning_ui;
+}

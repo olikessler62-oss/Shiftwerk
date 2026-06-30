@@ -285,14 +285,15 @@ export type TagAreaFooterLabels = {
 export function formatTagAreaFooterLabels(
   stats: TagAreaDayFooterStats,
   translate: (key: string, params?: Record<string, string>) => string,
-  locale: "de" | "en"
+  locale: "de" | "en",
+  options?: { showCompensation?: boolean }
 ): TagAreaFooterLabels {
+  const showCompensation = options?.showCompensation !== false;
   const hoursLine = formatTagAreaFooterHoursLabel(stats, translate);
-  const costTooltipParts = formatTagAreaFooterCostTooltipParts(
-    stats,
-    translate,
-    locale
-  );
+  const costTooltipParts =
+    showCompensation && stats.hasCompensation
+      ? formatTagAreaFooterCostTooltipParts(stats, translate, locale)
+      : [];
   const costLine = costTooltipParts
     .map((part) => `${part.label} ${part.amount}`)
     .join("\n");
@@ -300,14 +301,19 @@ export function formatTagAreaFooterLabels(
   const shortLinePrefix = translate("areaCalendar.tagAreaFooterShortLineHoursPart", {
     hours: formatDurationHours(stats.totalHours),
   });
-  const shortLineCostAmount = translate("areaCalendar.tagAreaFooterShortLineCostPart", {
-    cost: formattedCost,
-  });
+  const shortLineCostAmount =
+    showCompensation && stats.hasCompensation
+      ? translate("areaCalendar.tagAreaFooterShortLineCostPart", {
+          cost: formattedCost,
+        })
+      : "";
   return {
-    line: translate("areaCalendar.tagAreaFooterShortLine", {
-      hours: formatDurationHours(stats.totalHours),
-      cost: formattedCost,
-    }),
+    line: showCompensation
+      ? translate("areaCalendar.tagAreaFooterShortLine", {
+          hours: formatDurationHours(stats.totalHours),
+          cost: formattedCost,
+        })
+      : hoursLine,
     hoursLine,
     costLine,
     shortLinePrefix,

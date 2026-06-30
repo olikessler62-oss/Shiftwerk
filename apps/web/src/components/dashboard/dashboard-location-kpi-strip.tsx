@@ -1,6 +1,7 @@
 "use client";
 
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import { cn } from "@/lib/cn";
 import { DASHBOARD_PANEL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 import type { DashboardLocationWeekRollup } from "@/lib/dashboard-area-week-stats";
@@ -54,6 +55,7 @@ export function DashboardLocationKpiStrip({
   className,
 }: Props) {
   const t = useTranslations();
+  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const { locale } = useLocale();
   const intlLocale = locale === "en" ? "en" : "de";
   const money = (amount: number) =>
@@ -114,38 +116,42 @@ export function DashboardLocationKpiStrip({
             }
           />
         ) : null}
-        <KpiTile
-          label={t("dashboard.kpiTotalCost")}
-          value={
-            rollup.hasCompensation
-              ? money(rollup.totalCost)
-              : t("dashboard.ampelCompensationIncomplete")
-          }
-          subline={
-            rollup.hasCompensation
-              ? t("dashboard.ampelHours", {
-                  hours: formatDurationHours(rollup.totalHours),
-                })
-              : undefined
-          }
-        />
-        <KpiTile
-          label={t("dashboard.kpiSurcharges")}
-          value={
-            rollup.hasCompensation && rollup.surchargeCost > 0
-              ? money(rollup.surchargeCost)
-              : rollup.hasCompensation
-                ? money(0)
-                : "—"
-          }
-          subline={
-            rollup.hasCompensation
-              ? t("dashboard.kpiBaseCompensation", {
-                  amount: money(rollup.baseCost),
-                })
-              : undefined
-          }
-        />
+        {showCompensationInPlanningUi ? (
+          <>
+            <KpiTile
+              label={t("dashboard.kpiTotalCost")}
+              value={
+                rollup.hasCompensation
+                  ? money(rollup.totalCost)
+                  : t("dashboard.ampelCompensationIncomplete")
+              }
+              subline={
+                rollup.hasCompensation
+                  ? t("dashboard.ampelHours", {
+                      hours: formatDurationHours(rollup.totalHours),
+                    })
+                  : undefined
+              }
+            />
+            <KpiTile
+              label={t("dashboard.kpiSurcharges")}
+              value={
+                rollup.hasCompensation && rollup.surchargeCost > 0
+                  ? money(rollup.surchargeCost)
+                  : rollup.hasCompensation
+                    ? money(0)
+                    : "—"
+              }
+              subline={
+                rollup.hasCompensation
+                  ? t("dashboard.kpiBaseCompensation", {
+                      amount: money(rollup.baseCost),
+                    })
+                  : undefined
+              }
+            />
+          </>
+        ) : null}
       </div>
     </section>
   );

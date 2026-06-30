@@ -15,6 +15,9 @@ export type DashboardSearchParams = {
   week?: string;
   location?: string;
   area?: string;
+  day?: string;
+  focusArea?: string;
+  allgemein?: string;
   standorte?: string;
   profiles?: string;
   rollen?: string;

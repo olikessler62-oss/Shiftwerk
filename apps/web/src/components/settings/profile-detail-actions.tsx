@@ -18,7 +18,7 @@ import { formatHourlyRateLabel } from "@/lib/profile-hourly-rate-display";
 import { formatEffectiveSurchargeSummary } from "@/lib/profile-surcharge-display";
 import { COMPENSATION_SURCHARGES_UI_ENABLED } from "@/lib/compensation-surcharges-feature";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures } from "@/lib/org-features-provider";
+import { useOrgFeatures, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import { SettingsActionRow } from "./settings-list-ui";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -358,7 +358,10 @@ export function ProfileDetailActions({
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
   const features = useOrgFeatures();
+  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const profileActionsDisabled = disabled || !selectedProfile;
+  const compensationActionsDisabled =
+    profileActionsDisabled || !showCompensationInPlanningUi;
   const qualificationNames =
     profileQualifications?.map((item) => item.name) ?? [];
   const qualificationsHint =
@@ -473,7 +476,7 @@ export function ProfileDetailActions({
             icon={<CompensationIcon />}
             label={t("profiles.panelCompensation")}
             hint={compensationHint}
-            disabled={profileActionsDisabled}
+            disabled={compensationActionsDisabled}
             onClick={() => onOpen("compensation")}
           />
           {COMPENSATION_SURCHARGES_UI_ENABLED ? (
@@ -481,7 +484,7 @@ export function ProfileDetailActions({
               icon={<SurchargesIcon />}
               label={t("profiles.surchargesSection")}
               hint={surchargesHint}
-              disabled={profileActionsDisabled}
+              disabled={compensationActionsDisabled}
               onClick={() => onOpen("surcharges")}
             />
           ) : null}

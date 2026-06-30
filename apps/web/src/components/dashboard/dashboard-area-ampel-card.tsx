@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type RefObject } from "react";
+import { useState, Fragment, useCallback, type RefObject } from "react";
 import { DashboardAreaStaffingIssuesModal } from "@/components/dashboard/dashboard-area-staffing-issues-modal";
 import { DashboardStaffingRowCandidatesButton } from "@/components/dashboard/dashboard-staffing-row-candidates-button";
 import {
@@ -12,6 +12,7 @@ import {
   type DashboardStaffingCandidatesPlanningContext,
 } from "@/components/dashboard/dashboard-staffing-row-candidates-modal";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
+import { useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import { useStaffingTableLayout } from "@/lib/use-staffing-table-headers-fit";
 import { cn } from "@/lib/cn";
 import { DASHBOARD_AREA_CARD_HEADER_FRAME_CLASS, DASHBOARD_PANEL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
@@ -34,8 +35,13 @@ import {
   isAreaStaffingUncovered,
   isPlannedCoverageHeaderStatusClickable,
   isStaffingHeaderStatusClickable,
+  resolveDashboardStaffingHeaderDisplay,
+  shouldShowDashboardStaffingHeaderTooltip,
   shouldShowAreaCardPlannedCoverageStatusLine,
   shouldShowAreaCardStaffingAmpelStatus,
+  type DashboardStaffingHeaderDisplay,
+  type DashboardStaffingHeaderSegment,
+  type DashboardStaffingHeaderSegmentKind,
 } from "@/lib/dashboard-area-header-actions";
 import {
   findFirstRowWithConfirmationStatus,
@@ -44,9 +50,11 @@ import {
   staffingRowShowsIssuesButton,
   type DashboardStaffingWindowIssuesContext,
 } from "@/lib/dashboard-staffing-window-issues";
-import { DASHBOARD_TEXT_LINK_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
+import { DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS, DASHBOARD_TEXT_LINK_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
+import { CALENDAR_HOLIDAY_DAY_HEADER_LABEL_INLINE_CLASS } from "@/lib/calendar-day-header-styles";
 import { Tooltip } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui";
 import { buildStaffingWindowRowBesetztTooltip } from "@/lib/dashboard-staffing-row-status";
 import {
   STAFFING_OCHER_ACCENT_BG_CLASS,
@@ -67,11 +75,18 @@ type Props = {
   todayISO?: string;
   staffingScopeDateLabel?: string | null;
   staffingScopeMode?: DashboardAreaDetailScope;
+  /** Feiertagsname — nur Tag-Scope, inline nach dem Datum. */
+  staffingScopeHolidayName?: string | null;
+  /** „Besetzt/Bedarf“ vor dem Datumslabel — im Drilldown aus. */
+  showStaffingWeekCaption?: boolean;
   shiftConfirmationEnabled?: boolean;
   windowIssuesContext?: Omit<
     DashboardStaffingWindowIssuesContext,
     "areaId" | "areaName" | "areaCalendarHref"
   > | null;
+  showMetricsDetails?: boolean;
+  onShowMetricsDetailsChange?: (open: boolean) => void;
+  onOpenAssignmentOverview?: () => void;
 };
 
 function ampelAccentStripeClass(
@@ -115,44 +130,108 @@ function staffingCountClassName(
   }
 }
 
-function staffingHeaderAssignedClassName(
-  assigned: number,
-  required: number,
-  options: { assignmentMismatch?: boolean; plannedOnly?: boolean } = {}
+function staffingHeaderSegmentClassName(
+  kind: DashboardStaffingHeaderSegmentKind
 ): string {
-  const { assignmentMismatch = false, plannedOnly = false } = options;
-  if (plannedOnly) return STAFFING_OCHER_TEXT_CLASS;
-  if (assignmentMismatch && assigned >= required) return STAFFING_OCHER_TEXT_CLASS;
-  if (assigned < required) return "text-red-600";
-  if (assigned > required) return "text-blue-600";
-  return "text-emerald-600";
+  switch (kind) {
+    case "understaffed":
+      return "text-red-600";
+    case "planned":
+    case "mismatch":
+      return STAFFING_OCHER_TEXT_CLASS;
+    case "overstaffed":
+      return "text-blue-600";
+    case "met":
+      return "text-emerald-600";
+  }
 }
 
-function StaffingHeaderRatio({
+function staffingHeaderSegmentLabelKey(
+  kind: DashboardStaffingHeaderSegmentKind
+): `dashboard.ampelStaffingHeaderSegment.${DashboardStaffingHeaderSegmentKind}` {
+  return `dashboard.ampelStaffingHeaderSegment.${kind}`;
+}
+
+function StaffingHeaderRatioSegment({
   assigned,
   required,
-  assignmentMismatch = false,
-  plannedOnly = false,
+  className,
 }: {
   assigned: number;
   required: number;
-  assignmentMismatch?: boolean;
-  plannedOnly?: boolean;
+  className?: string;
 }) {
   return (
-    <p
-      className={cn(
-        "text-xl font-semibold tabular-nums leading-none tracking-tight",
-        staffingHeaderAssignedClassName(assigned, required, {
-          assignmentMismatch,
-          plannedOnly,
-        })
-      )}
-    >
+    <span className={cn("tabular-nums", className)}>
       {assigned}/{required}
-    </p>
+    </span>
   );
 }
+
+function StaffingHeaderTooltipContent({
+  segments,
+  t,
+}: {
+  segments: readonly DashboardStaffingHeaderSegment[];
+  t: ReturnType<typeof useTranslations>;
+}) {
+  return (
+    <div className="space-y-1">
+      {segments.map((segment) => (
+        <p key={segment.kind}>
+          {t(staffingHeaderSegmentLabelKey(segment.kind), {
+            assigned: String(segment.assigned),
+            required: String(segment.required),
+          })}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function StaffingHeaderDisplay({
+  display,
+  t,
+}: {
+  display: DashboardStaffingHeaderDisplay;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const { segments } = display;
+  const baseClass = AREA_CARD_STAFFING_HEADER_ROW_CLASS;
+
+  const content = (
+    <p className={cn(baseClass, "flex min-w-0 items-baseline gap-1.5")}>
+      {segments.map((segment, index) => (
+        <Fragment key={segment.kind}>
+          {index > 0 ? (
+            <span className="font-normal text-muted/60" aria-hidden>
+              |
+            </span>
+          ) : null}
+          <StaffingHeaderRatioSegment
+            assigned={segment.assigned}
+            required={segment.required}
+            className={staffingHeaderSegmentClassName(segment.kind)}
+          />
+        </Fragment>
+      ))}
+    </p>
+  );
+
+  if (!shouldShowDashboardStaffingHeaderTooltip(segments)) return content;
+
+  return (
+    <Tooltip content={<StaffingHeaderTooltipContent segments={segments} t={t} />}>
+      <span className="inline-flex min-w-0 max-w-full">{content}</span>
+    </Tooltip>
+  );
+}
+
+/** Feste Höhe der Besetzt/Bedarf-Zeile — Platzhalter hält Datum in Zeile 3 stabil. */
+const AREA_CARD_STAFFING_HEADER_ROW_CLASS =
+  "text-xl font-semibold leading-none tracking-tight";
+
+const AREA_CARD_STAFFING_HEADER_SLOT_CLASS = "min-h-5";
 
 function DetailRow({
   label,
@@ -168,8 +247,8 @@ function DetailRow({
       <span className="shrink-0 text-sm text-muted">{label}</span>
       <span
         className={cn(
-          "min-w-0 truncate text-right text-sm font-medium tabular-nums text-foreground",
-          valueClassName
+          "min-w-0 truncate text-right text-sm tabular-nums text-foreground",
+          valueClassName ?? "font-normal"
         )}
       >
         {value}
@@ -189,6 +268,7 @@ function CardMetricsPanel({
   totalCost,
   money,
   t,
+  showCompensationInPlanning,
 }: {
   shiftCount: number;
   grossHours: number;
@@ -200,6 +280,7 @@ function CardMetricsPanel({
   totalCost: number;
   money: (amount: number) => string;
   t: ReturnType<typeof useTranslations>;
+  showCompensationInPlanning: boolean;
 }) {
   const shiftCountLabel =
     shiftCount === 1
@@ -208,62 +289,65 @@ function CardMetricsPanel({
 
   return (
     <div className={cn("overflow-hidden border border-border/70 bg-background/40", DASHBOARD_PANEL_ROUNDED_CLASS)}>
-      <div className="space-y-1.5 px-3 py-2.5">
-        <DetailRow label={t("dashboard.ampelDetailShifts")} value={shiftCountLabel} />
-        <DetailRow
-          label={t("dashboard.ampelDetailHours")}
-          value={t("dashboard.ampelHours", {
-            hours: formatDurationHours(grossHours),
-          })}
-        />
-        <DetailRow
-          label={t("dashboard.ampelDetailBreaks")}
-          value={t("dashboard.ampelBreakHours", {
-            hours: formatDurationHours(breakHours),
-          })}
-        />
-      </div>
-      <div className="border-t border-border/50 bg-background/45 px-3 py-2.5">
-        <DetailRow
-          label={t("dashboard.ampelDetailTotalHours")}
-          value={t("dashboard.ampelHours", {
-            hours: formatDurationHours(totalHours),
-          })}
-          valueClassName="font-semibold"
-        />
+      <div className="px-3 py-2">
+        <div className="space-y-1.5">
+          <DetailRow label={t("dashboard.ampelDetailShifts")} value={shiftCountLabel} />
+          <DetailRow
+            label={t("dashboard.ampelDetailHours")}
+            value={t("dashboard.ampelHours", {
+              hours: formatDurationHours(grossHours),
+            })}
+          />
+          <DetailRow
+            label={t("dashboard.ampelDetailBreaks")}
+            value={t("dashboard.ampelBreakHours", {
+              hours: formatDurationHours(breakHours),
+            })}
+          />
+        </div>
+        <div className="mt-1.5 border-t border-border/50 pt-1.5">
+          <DetailRow
+            label={t("dashboard.ampelDetailTotalHours")}
+            value={t("dashboard.ampelHours", {
+              hours: formatDurationHours(totalHours),
+            })}
+          />
+        </div>
       </div>
 
-      {hasCompensation ? (
-        <>
-          <div className="space-y-1.5 border-t border-border/50 px-3 py-2.5">
-            <DetailRow
-              label={t("dashboard.ampelDetailBaseCompensation")}
-              value={money(baseCost)}
-            />
-            <DetailRow
-              label={t("dashboard.kpiSurcharges")}
-              value={
-                surchargeCost > 0 ? `+${money(surchargeCost)}` : money(0)
-              }
-            />
-          </div>
+      {showCompensationInPlanning ? (
+        hasCompensation ? (
+          <>
+            <div className="space-y-1.5 border-t border-border/50 px-3 py-2.5">
+              <DetailRow
+                label={t("dashboard.ampelDetailBaseCompensation")}
+                value={money(baseCost)}
+              />
+              <DetailRow
+                label={t("dashboard.kpiSurcharges")}
+                value={
+                  surchargeCost > 0 ? `+${money(surchargeCost)}` : money(0)
+                }
+              />
+            </div>
+            <div className="border-t-2 border-border/80 bg-background/55 px-3 py-2.5">
+              <DetailRow
+                label={t("dashboard.kpiTotalCost")}
+                value={money(totalCost)}
+                valueClassName="text-base font-bold"
+              />
+            </div>
+          </>
+        ) : (
           <div className="border-t-2 border-border/80 bg-background/55 px-3 py-2.5">
             <DetailRow
               label={t("dashboard.kpiTotalCost")}
-              value={money(totalCost)}
-              valueClassName="text-base font-semibold"
+              value={t("dashboard.ampelCompensationIncomplete")}
+              valueClassName="text-muted"
             />
           </div>
-        </>
-      ) : (
-        <div className="border-t-2 border-border/80 bg-background/55 px-3 py-2.5">
-          <DetailRow
-            label={t("dashboard.kpiTotalCost")}
-            value={t("dashboard.ampelCompensationIncomplete")}
-            valueClassName="text-muted"
-          />
-        </div>
-      )}
+        )
+      ) : null}
     </div>
   );
 }
@@ -1029,6 +1113,8 @@ function AreaCardHeader({
   isPastScope,
   staffingScopeDateLabel = null,
   staffingScopeMode = "week",
+  staffingScopeHolidayName = null,
+  showStaffingWeekCaption = true,
   shiftConfirmationEnabled = false,
   staffingStatusClickable,
   plannedCoverageStatusClickable,
@@ -1044,6 +1130,8 @@ function AreaCardHeader({
   isPastScope: boolean;
   staffingScopeDateLabel?: string | null;
   staffingScopeMode?: DashboardAreaDetailScope;
+  staffingScopeHolidayName?: string | null;
+  showStaffingWeekCaption?: boolean;
   shiftConfirmationEnabled?: boolean;
   staffingStatusClickable: boolean;
   plannedCoverageStatusClickable: boolean;
@@ -1100,6 +1188,11 @@ function AreaCardHeader({
     t,
   };
 
+  const showStaffingHeaderMetrics =
+    staffingEnabled && stats.requiredTotal > 0;
+  const reserveStaffingHeaderRow =
+    staffingEnabled && Boolean(staffingScopeDateLabel);
+
   return (
     <div className={CARD_HEADER_CLASS}>
       <div className={CARD_HEADER_MAIN_CLASS}>
@@ -1114,32 +1207,66 @@ function AreaCardHeader({
           ) : null}
         </div>
 
-        {staffingEnabled && stats.requiredTotal > 0 ? (
+        {reserveStaffingHeaderRow ||
+        showStaffingHeaderMetrics ||
+        staffingScopeDateLabel ? (
           <div className="min-w-0">
-            <StaffingHeaderRatio
-              assigned={
-                plannedOnly
-                  ? stats.projectedAssignedTotal
-                  : stats.assignedTotal
-              }
-              required={stats.requiredTotal}
-              assignmentMismatch={stats.hasAssignmentMismatch}
-              plannedOnly={plannedOnly}
-            />
-            <p className="mt-0.5 flex min-w-0 items-baseline gap-1.5 whitespace-nowrap">
-              <span className="text-xs text-foreground/70">
-                {t("dashboard.ampelStaffingWeekCaption")}
-              </span>
-              {staffingScopeDateLabel ? (
+            {reserveStaffingHeaderRow ? (
+              <div className={AREA_CARD_STAFFING_HEADER_SLOT_CLASS}>
+                {showStaffingHeaderMetrics ? (
+                  <StaffingHeaderDisplay
+                    display={resolveDashboardStaffingHeaderDisplay(stats)}
+                    t={t}
+                  />
+                ) : (
+                  <span
+                    className={cn(
+                      AREA_CARD_STAFFING_HEADER_ROW_CLASS,
+                      "invisible block"
+                    )}
+                    aria-hidden
+                  >
+                    0/0
+                  </span>
+                )}
+              </div>
+            ) : showStaffingHeaderMetrics ? (
+              <StaffingHeaderDisplay
+                display={resolveDashboardStaffingHeaderDisplay(stats)}
+                t={t}
+              />
+            ) : null}
+            {staffingScopeDateLabel ? (
+              <p
+                className={cn(
+                  "flex min-w-0 flex-wrap items-baseline gap-x-2",
+                  showStaffingWeekCaption && "gap-1.5"
+                )}
+              >
+                {showStaffingWeekCaption ? (
+                  <span className="text-xs text-foreground/70">
+                    {t("dashboard.ampelStaffingWeekCaption")}
+                  </span>
+                ) : null}
                 <span className="text-base font-medium tabular-nums tracking-tight text-foreground/85">
                   {staffingScopeDateLabel}
                 </span>
-              ) : null}
-            </p>
+                {staffingScopeMode === "day" && staffingScopeHolidayName ? (
+                  <span
+                    className={cn(
+                      CALENDAR_HOLIDAY_DAY_HEADER_LABEL_INLINE_CLASS,
+                      "min-w-0"
+                    )}
+                  >
+                    {staffingScopeHolidayName}
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
           </div>
-        ) : staffingEnabled ? null : (
+        ) : !staffingEnabled ? (
           <div aria-hidden />
-        )}
+        ) : null}
       </div>
 
       {showStatusList ? (
@@ -1169,10 +1296,16 @@ export function DashboardAreaAmpelCard({
   todayISO = toISODate(new Date()),
   staffingScopeDateLabel = null,
   staffingScopeMode = "week",
+  staffingScopeHolidayName = null,
+  showStaffingWeekCaption = true,
   shiftConfirmationEnabled = false,
   windowIssuesContext = null,
+  showMetricsDetails: showMetricsDetailsProp,
+  onShowMetricsDetailsChange,
+  onOpenAssignmentOverview,
 }: Props) {
   const t = useTranslations();
+  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const { locale } = useLocale();
   const intlLocale = locale === "en" ? "en" : "de";
   const [staffingIssuesOpen, setStaffingIssuesOpen] = useState(false);
@@ -1185,6 +1318,21 @@ export function DashboardAreaAmpelCard({
     useState<DashboardStaffingWindowRow | null>(null);
   const [windowIssuesConfirmationFilter, setWindowIssuesConfirmationFilter] =
     useState<ShiftConfirmationStatus | null>(null);
+  const [uncontrolledShowMetricsDetails, setUncontrolledShowMetricsDetails] =
+    useState(false);
+  const metricsDetailsControlled = showMetricsDetailsProp !== undefined;
+  const showMetricsDetails = metricsDetailsControlled
+    ? showMetricsDetailsProp
+    : uncontrolledShowMetricsDetails;
+  const setShowMetricsDetails = useCallback(
+    (open: boolean) => {
+      if (!metricsDetailsControlled) {
+        setUncontrolledShowMetricsDetails(open);
+      }
+      onShowMetricsDetailsChange?.(open);
+    },
+    [metricsDetailsControlled, onShowMetricsDetailsChange]
+  );
 
   const windowIssuesEnabled = Boolean(
     windowIssuesContext && shiftConfirmationEnabled
@@ -1307,6 +1455,8 @@ export function DashboardAreaAmpelCard({
           isPastScope={isPastScope}
           staffingScopeDateLabel={staffingScopeDateLabel}
           staffingScopeMode={staffingScopeMode}
+          staffingScopeHolidayName={staffingScopeHolidayName}
+          showStaffingWeekCaption={showStaffingWeekCaption}
           shiftConfirmationEnabled={shiftConfirmationEnabled}
           staffingStatusClickable={staffingStatusClickable}
           plannedCoverageStatusClickable={plannedCoverageStatusClickable}
@@ -1358,18 +1508,48 @@ export function DashboardAreaAmpelCard({
         ) : null}
 
         <div className={CARD_METRICS_SECTION_CLASS}>
-          <CardMetricsPanel
-            shiftCount={stats.shiftCount}
-            grossHours={stats.grossHours}
-            breakHours={stats.breakHours}
-            totalHours={stats.totalHours}
-            hasCompensation={stats.hasCompensation}
-            baseCost={stats.baseCost}
-            surchargeCost={stats.surchargeCost}
-            totalCost={stats.totalCost}
-            money={money}
-            t={t}
-          />
+          <div className="flex min-h-[2.75rem] items-center justify-between gap-3">
+            <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm text-foreground">
+              <Checkbox
+                checked={showMetricsDetails}
+                onChange={(event) => setShowMetricsDetails(event.target.checked)}
+                className="shrink-0"
+              />
+              <span>
+                {t(
+                  showCompensationInPlanningUi
+                    ? "dashboard.ampelShowHoursAndCostSummary"
+                    : "dashboard.ampelShowHoursSummary"
+                )}
+              </span>
+            </label>
+            {staffingEnabled && onOpenAssignmentOverview ? (
+              <button
+                type="button"
+                className={DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS}
+                onClick={onOpenAssignmentOverview}
+              >
+                {t("dashboard.areaAssignmentOverviewButton")}
+              </button>
+            ) : null}
+          </div>
+          {showMetricsDetails ? (
+            <div className="mt-2">
+              <CardMetricsPanel
+                shiftCount={stats.shiftCount}
+                grossHours={stats.grossHours}
+                breakHours={stats.breakHours}
+                totalHours={stats.totalHours}
+                hasCompensation={stats.hasCompensation}
+                baseCost={stats.baseCost}
+                surchargeCost={stats.surchargeCost}
+                totalCost={stats.totalCost}
+                money={money}
+                t={t}
+                showCompensationInPlanning={showCompensationInPlanningUi}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 

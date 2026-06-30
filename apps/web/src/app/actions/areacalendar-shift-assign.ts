@@ -328,7 +328,8 @@ export async function fetchDashboardStaffingCandidateContext(
 
 export async function fetchDashboardStaffingCandidateEmployeeTooltip(
   employeeId: string,
-  dateISO: string
+  contextDateISO: string,
+  todayISO: string
 ): Promise<FetchDashboardStaffingCandidateEmployeeTooltipResult> {
   try {
     const { organizationId } = await requireManager();
@@ -338,13 +339,18 @@ export async function fetchDashboardStaffingCandidateEmployeeTooltip(
       return { ok: false, error: "Personal nicht gefunden" };
     }
 
-    const [absences, availability, qualificationMap, shiftPreferences, locations] =
+    const [absences, availability, qualificationMap, shiftPreferences, locations, adjacentAssignments] =
       await Promise.all([
         db.listOrganizationAbsences(organizationId, { statuses: ["approved"] }),
         db.listOrganizationRecurringAvailability(organizationId),
         db.listProfileQualificationIdsByOrganization(organizationId),
         db.listAllOrganizationShiftPreferences(organizationId),
         db.listLocations(organizationId),
+        db.getEmployeeAdjacentShiftAssignments(
+          organizationId,
+          employeeId,
+          todayISO
+        ),
       ]);
 
     const areasNested = await Promise.all(
@@ -374,7 +380,7 @@ export async function fetchDashboardStaffingCandidateEmployeeTooltip(
 
     const absenceType: AbsenceType | null = resolveEmployeeAbsenceTypeOnDate(
       employeeId,
-      dateISO,
+      contextDateISO,
       absences
     );
 
@@ -396,6 +402,7 @@ export async function fetchDashboardStaffingCandidateEmployeeTooltip(
           name: area.name,
           location_id: area.location_id,
         })),
+        adjacentAssignments,
       },
     };
   } catch (e) {
@@ -405,6 +412,9 @@ export async function fetchDashboardStaffingCandidateEmployeeTooltip(
     };
   }
 }
+
+export const fetchPlanningEmployeeTooltip =
+  fetchDashboardStaffingCandidateEmployeeTooltip;
 
 export async function fetchAreaCalendarShiftAssignEmployees(
   date: string,

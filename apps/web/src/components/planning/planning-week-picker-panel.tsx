@@ -1,9 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PlanningSidePanel } from "@/components/planning/planning-side-panel";
+import {
+  PlanningSidePanel,
+  PLANNING_SIDE_PANEL_FOOTER_CLASS,
+  usePlanningSidePanelRequestClose,
+} from "@/components/planning/planning-side-panel";
+import { Button } from "@/components/ui";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import { DASHBOARD_UI_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import { parseISODate } from "@/lib/dates";
 import {
@@ -49,6 +55,45 @@ function monthFromDateISO(dateISO: string) {
   return { year: date.getFullYear(), month: date.getMonth() };
 }
 
+function PlanningWeekPickerPanelFooter({
+  onApply,
+  applyDisabled,
+}: {
+  onApply: () => void;
+  applyDisabled: boolean;
+}) {
+  const t = useTranslations();
+  const requestClose = usePlanningSidePanelRequestClose();
+
+  return (
+    <div className={PLANNING_SIDE_PANEL_FOOTER_CLASS}>
+      <span />
+      <div className="flex shrink-0 flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className={DASHBOARD_UI_BUTTON_CLASS}
+          onClick={requestClose}
+        >
+          {t("common.close")}
+        </Button>
+        <Button
+          type="button"
+          className={DASHBOARD_UI_BUTTON_CLASS}
+          disabled={applyDisabled}
+          onClick={() => {
+            if (applyDisabled) return;
+            onApply();
+            requestClose();
+          }}
+        >
+          {t("common.apply")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function PlanningWeekPickerPanel({
   open,
   onClose,
@@ -63,10 +108,12 @@ export function PlanningWeekPickerPanel({
   const intlLocale = localeKey === "en" ? "en-GB" : "de-DE";
 
   const [viewMonth, setViewMonth] = useState(() => monthFromWeekStart(selectedWeekStart));
+  const [pendingWeekStart, setPendingWeekStart] = useState(selectedWeekStart);
 
   useEffect(() => {
     if (open) {
       setViewMonth(monthFromWeekStart(selectedWeekStart));
+      setPendingWeekStart(selectedWeekStart);
     }
   }, [open, selectedWeekStart]);
 
@@ -104,13 +151,29 @@ export function PlanningWeekPickerPanel({
     setViewMonth(monthFromDateISO(todayISO));
   }, [todayISO]);
 
-  const handleSelectWeek = useCallback(
+  const isPendingWeekDisabled = pendingWeekStart < earliestWeekStart;
+
+  const applyPendingWeek = useCallback(() => {
+    if (disabled || isPendingWeekDisabled) return;
+    onSelectWeek(pendingWeekStart);
+  }, [disabled, isPendingWeekDisabled, onSelectWeek, pendingWeekStart]);
+
+  const applyWeek = useCallback(
     (weekStartISO: string) => {
       if (disabled || weekStartISO < earliestWeekStart) return;
+      setPendingWeekStart(weekStartISO);
       onSelectWeek(weekStartISO);
       onClose();
     },
     [disabled, earliestWeekStart, onClose, onSelectWeek]
+  );
+
+  const handlePendingSelect = useCallback(
+    (weekStartISO: string) => {
+      if (disabled || weekStartISO < earliestWeekStart) return;
+      setPendingWeekStart(weekStartISO);
+    },
+    [disabled, earliestWeekStart]
   );
 
   if (!open) return null;
@@ -126,6 +189,12 @@ export function PlanningWeekPickerPanel({
       dismissOnEscape
       panelClassName="max-w-md"
       bodyClassName="px-3 py-3 sm:px-4 sm:py-4"
+      footer={
+        <PlanningWeekPickerPanelFooter
+          onApply={applyPendingWeek}
+          applyDisabled={disabled || isPendingWeekDisabled}
+        />
+      }
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
@@ -181,7 +250,7 @@ export function PlanningWeekPickerPanel({
           </div>
 
           {weeks.map((week) => {
-            const isSelected = week.weekStartISO === selectedWeekStart;
+            const isSelected = week.weekStartISO === pendingWeekStart;
             const isDisabled = week.weekStartISO < earliestWeekStart;
 
             return (
@@ -193,7 +262,8 @@ export function PlanningWeekPickerPanel({
                 aria-label={t("common.weekPickerSelectWeek", {
                   week: String(week.calendarWeek),
                 })}
-                onClick={() => handleSelectWeek(week.weekStartISO)}
+                onClick={() => handlePendingSelect(week.weekStartISO)}
+                onDoubleClick={() => applyWeek(week.weekStartISO)}
                 className={cn(
                   "grid w-full grid-cols-[2.25rem_repeat(7,minmax(0,1fr))] gap-x-0.5 rounded-[5px] text-left transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",

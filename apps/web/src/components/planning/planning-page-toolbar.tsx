@@ -328,24 +328,26 @@ export function PlanningPageToolbar({ locations }: Props) {
       aria-expanded={weekPickerOpen}
       title={weekLabelTitle}
       className={cn(
-        "header-toolbar-date-trigger relative min-w-0 shrink-0 cursor-pointer rounded-sm px-1 py-0.5 text-left text-sm leading-none text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))] disabled:cursor-not-allowed disabled:opacity-50",
-        compactToolbar && "max-md:flex max-md:flex-col max-md:items-center max-md:justify-center max-md:px-0.5"
+        "header-toolbar-date-trigger relative min-w-0 shrink-0 cursor-pointer rounded-sm px-1 py-0.5 text-center text-sm leading-tight text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--header-toolbar-combobox-ring,rgb(92_122_158/0.35))] disabled:cursor-not-allowed disabled:opacity-50",
+        compactToolbar && "max-md:px-0.5"
       )}
     >
-      <span className="block leading-none">
-        <span className="lg:hidden">
-          <HeaderLabelHyphenBreak
-            label={weekHeader.compactRangeLabel}
-            compact={compactToolbar}
-            className="font-semibold tabular-nums"
-            maxWidthClass="max-w-[3.1rem]"
-          />
-        </span>
-        <span className="hidden font-semibold lg:inline">{weekHeader.rangeLabel}</span>
-        <span className="ml-1.5 hidden text-xs font-normal tabular-nums lg:inline">
+      <span className="flex flex-col items-center gap-0.5">
+        <span className="text-sm font-semibold tabular-nums leading-none">
           {t("dashboard.headerCalendarWeek", {
             week: String(weekHeader.calendarWeek),
           })}
+        </span>
+        <span className="font-semibold tabular-nums leading-snug">
+          <span className="lg:hidden">
+            <HeaderLabelHyphenBreak
+              label={weekHeader.compactRangeLabel}
+              compact={compactToolbar}
+              className="font-semibold tabular-nums"
+              maxWidthClass="max-w-[3.1rem]"
+            />
+          </span>
+          <span className="hidden whitespace-nowrap lg:inline">{weekHeader.rangeLabel}</span>
         </span>
       </span>
       {isCurrentWeek ? (
@@ -483,12 +485,14 @@ export function PlanningPageToolbar({ locations }: Props) {
           ) : null}
           <HeaderToolbarSegment
             className={cn(
-              "min-w-max pr-3 md:pr-6",
+              "min-w-max",
               compactToolbar ? "max-w-none" : "max-w-[7.5rem]"
             )}
           >
             <LanguageSelect variant="header" compact={compactToolbar} className="shrink-0" />
           </HeaderToolbarSegment>
+          <HeaderToolbarDivider />
+          <div className="w-3 shrink-0 self-stretch md:w-6" aria-hidden />
         </div>
       </header>
       <PlanningWeekPickerPanel
@@ -497,7 +501,6 @@ export function PlanningPageToolbar({ locations }: Props) {
         selectedWeekStart={weekStart}
         todayISO={todayISO}
         onSelectWeek={selectWeekFromPicker}
-        disabled={shellLocked}
       />
     </>
   );
