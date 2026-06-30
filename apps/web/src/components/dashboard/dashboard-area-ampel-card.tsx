@@ -1511,14 +1511,14 @@ export function DashboardAreaAmpelCard({
         ) : null}
 
         <div className={CARD_METRICS_SECTION_CLASS}>
-          <div className="flex min-h-[2.75rem] items-center justify-between gap-3">
-            <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm text-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <label className="flex min-w-0 flex-[1_1_12rem] cursor-pointer items-center gap-2 text-sm text-foreground">
               <Checkbox
                 checked={showMetricsDetails}
                 onChange={(event) => setShowMetricsDetails(event.target.checked)}
                 className="shrink-0"
               />
-              <span>
+              <span className="min-w-0">
                 {t(
                   showCompensationInPlanningUi
                     ? "dashboard.ampelShowHoursAndCostSummary"
@@ -1529,7 +1529,10 @@ export function DashboardAreaAmpelCard({
             {staffingEnabled && onOpenAssignmentOverview ? (
               <button
                 type="button"
-                className={DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS}
+                className={cn(
+                  DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS,
+                  "shrink-0"
+                )}
                 onClick={onOpenAssignmentOverview}
               >
                 {t("dashboard.areaAssignmentOverviewButton")}

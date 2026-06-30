@@ -627,7 +627,7 @@ function D3AreaScopeToggle({
             : DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS
         }
       >
-        {dayLabel}
+        <span className="min-w-0 truncate">{dayLabel}</span>
       </button>
       <button
         type="button"
@@ -640,7 +640,7 @@ function D3AreaScopeToggle({
             : DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS
         }
       >
-        {weekButtonLabel}
+        <span className="min-w-0 truncate">{weekButtonLabel}</span>
       </button>
     </div>
   );
@@ -660,7 +660,7 @@ const D3_DAY_CARD_BORDER_CLASS = "border border-black";
 /** Wochen-Tray — Kalender-Objekt: aktiver Kopf, weißer Body, schwarzer Rahmen. */
 const D3_WEEK_TRAY_CLASS = cn(
   D3_ROUNDED,
-  "overflow-hidden border border-black bg-white",
+  "overflow-x-hidden border border-black bg-white",
   "shadow-[0_4px_24px_-4px_rgba(15,23,42,0.12),0_2px_8px_-2px_rgba(15,23,42,0.08)]"
 );
 
@@ -669,19 +669,18 @@ const D3_WEEK_TRAY_HEADER_CLASS = cn(
   "border-b border-black px-3 py-2.5 text-center sm:px-4"
 );
 
-const D3_WEEK_TRAY_BODY_CLASS = "p-2 sm:p-3 lg:p-2";
+const D3_WEEK_TRAY_BODY_CLASS = "p-2 sm:p-3";
 
 /**
- * Wochenansicht: responsive Raster; ab lg sieben Karten nebeneinander mit Abstand
- * (je Karte eigener Rahmen, 5px-Ecken — kein verbundener Monolith).
+ * Wochenansicht: einzelne Karten mit Abstand; Höhe folgt dem Inhalt (kein fr-Stretch).
  */
 const D3_DAY_CARDS_WEEK_TRAY_GRID_CLASS = cn(
-  "grid w-full min-w-0 max-w-full auto-rows-fr items-stretch",
+  "grid w-full min-w-0 max-w-full auto-rows-auto items-start",
   "grid-cols-1 gap-2",
   "min-[380px]:grid-cols-2 min-[380px]:gap-2.5",
   "sm:grid-cols-3 sm:gap-3",
-  "md:grid-cols-4",
-  "lg:grid-cols-7 lg:gap-1.5"
+  "md:grid-cols-4 md:gap-3",
+  "2xl:grid-cols-7 2xl:gap-1.5"
 );
 
 /** Klickbare Bereichszeile in der Daycard (Icon + Name, schmal hinter dem Text). */
@@ -922,20 +921,31 @@ function DayCard({
       }}
       style={{ minHeight: `${cardMinHeightRem}rem` }}
       className={cn(
-        "group relative flex h-full min-h-0 w-full cursor-pointer flex-col overflow-hidden text-left transition-colors",
+        "group relative flex w-full cursor-pointer flex-col overflow-hidden text-left transition-colors",
+        embeddedInWeekTray ? "min-w-0 h-auto" : "h-full min-h-0",
         embeddedInWeekTray
           ? D3_DAY_CARD_WEEK_TRAY_CLASS
-          : cn(D3_ROUNDED, D3_DAY_CARD_FRAME_SHADOW_CLASS, D3_DAY_CARD_BORDER_CLASS),
+          : cn(
+              D3_ROUNDED,
+              D3_DAY_CARD_FRAME_SHADOW_CLASS,
+              D3_DAY_CARD_BORDER_CLASS
+            ),
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
       )}
     >
-      <div className={cn(D3_DAY_CARD_HEADER_SLOT_CLASS, "relative")}>
+      <div
+        className={cn(
+          D3_DAY_CARD_HEADER_SLOT_CLASS,
+          "relative",
+          embeddedInWeekTray && "px-2.5 py-2 sm:px-3.5 sm:py-2.5"
+        )}
+      >
         {showStatusDot ? (
           <span
             className={cn(
               D3_DAY_CARD_STATUS_DOT_CLASS,
               dayCardStatusDotClass(day),
-              "absolute right-3.5 top-3.5"
+              "absolute top-2.5 right-2.5 sm:top-3.5 sm:right-3.5"
             )}
             aria-hidden
           />
@@ -943,7 +953,8 @@ function DayCard({
         <div className={cn("min-w-0", showStatusDot && "pr-5")}>
           <p
             className={cn(
-              "text-xl font-bold leading-none tracking-tight",
+              "font-bold leading-none tracking-tight",
+              embeddedInWeekTray ? "text-base sm:text-lg xl:text-xl" : "text-xl",
               isPastDay ? "text-foreground/80" : "text-foreground"
             )}
           >
@@ -974,8 +985,11 @@ function DayCard({
 
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col px-3.5 pb-4 pt-4 transition-colors",
+          "flex min-h-0 flex-1 flex-col transition-colors",
           "min-w-0",
+          embeddedInWeekTray
+            ? "px-2.5 pb-3 pt-3 sm:px-3.5 sm:pb-4 sm:pt-4"
+            : "px-3.5 pb-4 pt-4",
           isPastDay
             ? D3_DAY_CARD_BODY_PAST_SURFACE_CLASS
             : cn("bg-white", D3_DAY_CARD_BODY_HOVER_SURFACE_CLASS)
@@ -1892,7 +1906,7 @@ export function DashboardOverviewView({
 
   const renderDayDrilldownAreaSlot = (stats: DashboardAreaWeekStats) => (
     <div key={`${stats.areaId}-${activeWeekStart}-${detailDayISO ?? drilldownDateISO ?? ""}`} className="flex min-w-0 max-w-full flex-col gap-2">
-      <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+      <div className="flex min-w-0 max-w-full justify-end">
         <D3AreaScopeToggle
           scope={getAreaDetailScope(stats.areaId)}
           dayLabel={areaScopeDayToggleLabel}
@@ -1983,7 +1997,7 @@ export function DashboardOverviewView({
         >
       {/* ── WEEK VIEW ────────────────────────────────────────────── */}
       {view.level === "week" && (
-        <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-5 pb-0">
+        <div className="flex min-w-0 max-w-full flex-col gap-5 pb-0">
           {/* Day cards */}
           {days.length === 0 ? (
             <div className={cn(D3_WEEK_TRAY_CLASS, "px-6 py-10 text-center text-sm text-muted")}>
@@ -1998,9 +2012,9 @@ export function DashboardOverviewView({
                   })}
                 </p>
                 {isCurrentWeek ? (
-                  <div className="mt-0.5 grid w-full grid-cols-[1fr_auto_1fr] items-baseline gap-x-2">
+                  <div className="mt-0.5 flex flex-col items-center gap-0.5 min-[420px]:grid min-[420px]:w-full min-[420px]:grid-cols-[1fr_auto_1fr] min-[420px]:items-baseline min-[420px]:gap-x-2">
                     <span
-                      className="invisible justify-self-end text-[10px] leading-none"
+                      className="hidden min-[420px]:invisible min-[420px]:justify-self-end min-[420px]:text-[10px] min-[420px]:leading-none"
                       aria-hidden
                     >
                       {t("common.currentWeekHint")}
@@ -2008,7 +2022,7 @@ export function DashboardOverviewView({
                     <span className="text-xs font-medium leading-snug text-black">
                       {weekTrayHeader.rangeLabel}
                     </span>
-                    <span className="justify-self-start text-[10px] leading-none text-black">
+                    <span className="text-[10px] leading-none text-black min-[420px]:justify-self-start">
                       {t("common.currentWeekHint")}
                     </span>
                   </div>
@@ -2043,7 +2057,7 @@ export function DashboardOverviewView({
                 </div>
                 <p
                   id="dashboard-week-tray-day-card-hint"
-                  className="mt-1.5 text-center text-[10px] leading-snug text-muted sm:mt-2"
+                  className="mt-2 whitespace-nowrap text-center text-[10px] leading-none text-muted sm:text-[11px]"
                 >
                   {t("dashboard.weekTrayDayCardHint")}
                 </p>
@@ -2071,7 +2085,7 @@ export function DashboardOverviewView({
           className="min-w-0 max-w-full pb-6"
         >
           {drilldownAreaOptions.length > 0 || dayDrilldownDayOptions.length > 0 ? (
-            <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               {drilldownAreaOptions.length > 0 ? (
                 <DashboardDayDrilldownAreaCombobox
                   areas={drilldownAreaOptions}

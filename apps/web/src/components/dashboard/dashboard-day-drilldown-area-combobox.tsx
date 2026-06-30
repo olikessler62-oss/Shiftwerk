@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { createPortal } from "react-dom";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-modal-shell";
 import { useTranslations } from "@/i18n/locale-provider";
@@ -148,12 +156,18 @@ export function DashboardDayDrilldownAreaCombobox({
     ) : null;
 
   const controlWidthStyle =
-    controlWidthPx != null ? { width: controlWidthPx } : undefined;
+    controlWidthPx != null
+      ? ({
+          ["--drilldown-combo-width" as string]: `${controlWidthPx}px`,
+        } as CSSProperties)
+      : undefined;
 
   return (
     <div
       ref={rootRef}
-      className="relative inline-flex max-w-full"
+      className={cn(
+        "relative flex w-full min-w-0 max-w-full sm:inline-flex sm:w-[var(--drilldown-combo-width)]"
+      )}
       style={controlWidthStyle}
     >
       <div
@@ -186,9 +200,8 @@ export function DashboardDayDrilldownAreaCombobox({
           DASHBOARD_DAY_DRILLDOWN_AREA_COMBOBOX_TRIGGER_CLASS,
           "w-full"
         )}
-        style={controlWidthStyle}
       >
-        <span className="min-w-0 whitespace-nowrap">{selected?.label ?? "—"}</span>
+        <span className="min-w-0 truncate">{selected?.label ?? "—"}</span>
       </button>
       <svg
         viewBox="0 0 12 8"

@@ -69,21 +69,21 @@ export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEIGHT_CLASS =
   "h-[1.65rem] min-h-[1.65rem]";
 
 export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_SHELL_CLASS = cn(
-  "inline-flex w-fit shrink-0 items-stretch overflow-hidden rounded-[4px] border border-black/10 bg-white/80 p-px",
+  "inline-flex w-full max-w-full min-w-0 items-stretch overflow-hidden rounded-[4px] border border-black/10 bg-white/80 p-px sm:w-fit",
   DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEIGHT_CLASS,
   "shadow-[0_1px_2px_0_rgba(15,23,42,0.04)]"
 );
 
 export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS = cn(
   DASHBOARD_PANEL_ROUNDED_CLASS,
-  "inline-flex h-full shrink-0 items-center justify-center whitespace-nowrap rounded-[3px] border border-black/20 px-2 text-xs font-semibold text-foreground shadow-[0_1px_2px_0_rgba(15,23,42,0.06)] transition-[filter,box-shadow] duration-150 sm:px-2.5",
+  "inline-flex h-full min-w-0 max-w-[50%] shrink items-center justify-center rounded-[3px] border border-black/20 px-2 text-xs font-semibold text-foreground shadow-[0_1px_2px_0_rgba(15,23,42,0.06)] transition-[filter,box-shadow] duration-150 sm:max-w-none sm:px-2.5",
   "bg-calendar-active-header",
   "hover:brightness-[0.98]",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
 );
 
 export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS = cn(
-  "flex h-full shrink-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-[3px] px-2 text-xs font-medium text-muted transition-colors hover:text-foreground sm:px-2.5"
+  "flex h-full min-w-0 max-w-[50%] shrink cursor-pointer items-center justify-center rounded-[3px] px-2 text-xs font-medium text-muted transition-colors hover:text-foreground sm:max-w-none sm:px-2.5"
 );
 
 /** Drilldown — Einsatzübersicht-Button neben der Stunden-Checkbox. */
