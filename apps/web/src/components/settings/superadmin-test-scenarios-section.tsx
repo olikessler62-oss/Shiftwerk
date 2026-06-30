@@ -17,7 +17,7 @@ type Props = {
   disabled?: boolean;
 };
 
-type ScenarioRunner = () => Promise<void>;
+type ScenarioRunner = () => void;
 
 function ScenarioCard({
   title,

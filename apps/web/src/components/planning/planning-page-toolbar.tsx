@@ -253,19 +253,21 @@ export function PlanningPageToolbar({ locations }: Props) {
   const hasCommunication = Boolean(bridge.onOpenCommunication);
 
   useEffect(() => {
-    const header = headerRef.current;
-    if (!header) return;
+    const headerEl = headerRef.current;
+    if (!headerEl) return;
 
     function resetHorizontalScrollIfFits() {
-      if (header.scrollWidth <= header.clientWidth + 1) {
-        header.scrollLeft = 0;
+      const node = headerRef.current;
+      if (!node) return;
+      if (node.scrollWidth <= node.clientWidth + 1) {
+        node.scrollLeft = 0;
       }
     }
 
     resetHorizontalScrollIfFits();
     window.addEventListener("resize", resetHorizontalScrollIfFits);
     const observer = new ResizeObserver(resetHorizontalScrollIfFits);
-    observer.observe(header);
+    observer.observe(headerEl);
     return () => {
       window.removeEventListener("resize", resetHorizontalScrollIfFits);
       observer.disconnect();

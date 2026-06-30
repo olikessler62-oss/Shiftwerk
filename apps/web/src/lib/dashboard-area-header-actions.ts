@@ -9,6 +9,7 @@ import {
   findFirstStaffingCandidatesRow,
 } from "@/lib/dashboard-staffing-window-issues";
 import { DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES } from "@/lib/dashboard-day-confirmation-counts";
+import type { DashboardActionableConfirmationStatus } from "@/lib/dashboard-confirmation-employee-dedupe";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export function isAreaStaffingUncovered(
@@ -220,7 +221,7 @@ export function isPlannedCoverageHeaderStatusClickable(input: {
 export function countAreaHeaderStatusLines(input: {
   staffingEnabled: boolean;
   shiftConfirmationEnabled: boolean;
-  confirmationConflictStatuses: readonly ShiftConfirmationStatus[];
+  confirmationConflictStatuses: readonly DashboardActionableConfirmationStatus[];
   showStaffingIssuesButton: boolean;
   showPlannedCoverageStatusLine?: boolean;
 }): number {

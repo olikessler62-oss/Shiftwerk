@@ -389,7 +389,7 @@ async function configureAreaShiftTemplates(
     if (template.breaks.length > 0) {
       await db.replaceAreaShiftTemplateBreaks(
         created.id,
-        template.breaks as ShiftTypeBreakInput[]
+        [...template.breaks]
       );
     }
   }

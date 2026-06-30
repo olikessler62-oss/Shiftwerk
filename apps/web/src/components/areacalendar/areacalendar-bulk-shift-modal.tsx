@@ -1645,7 +1645,7 @@ function BulkShiftRowEditor({
           profileQualificationIds={profileQualificationIds}
           qualificationNameById={qualificationNameById}
           qualificationSortOrder={qualificationSortOrder}
-          weeklyHoursDisplayByEmployeeId={resolvedWeeklyHoursDisplayByEmployeeId}
+          weeklyHoursDisplayByEmployeeId={weeklyHoursDisplayByEmployeeId}
         />
       </td>
       <td className="w-10 shrink-0 px-1 py-1.5 align-middle">

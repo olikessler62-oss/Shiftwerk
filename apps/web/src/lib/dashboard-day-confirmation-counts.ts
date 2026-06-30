@@ -3,6 +3,7 @@ import { findServiceHourIdForShift, type AreaServiceHourRef } from "@/lib/locati
 import {
   countActionableConfirmationStatusesByEmployee,
   isDashboardActionableConfirmationStatus,
+  type DashboardActionableConfirmationStatus,
 } from "@/lib/dashboard-confirmation-employee-dedupe";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 
@@ -97,7 +98,7 @@ export function collectAreaConfirmationConflictStatuses(
   areaId: string,
   dates: readonly string[],
   serviceHours: readonly AreaServiceHourRef[] | null | undefined = []
-): ShiftConfirmationStatus[] {
+): DashboardActionableConfirmationStatus[] {
   const hours = serviceHours ?? [];
   const dateSet = new Set(dates);
   const present = new Set<ShiftConfirmationStatus>();

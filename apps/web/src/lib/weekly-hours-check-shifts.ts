@@ -1,6 +1,6 @@
 import { shiftWorkHoursFromRef } from "@/lib/shift-work-hours";
 import type { ShiftTypeBreakInput } from "@schichtwerk/database";
-import type { AreaShiftTemplateWithBreaks } from "@schichtwerk/types";
+import type { AreaShiftTemplateWithBreaks, ShiftConfirmationStatus } from "@schichtwerk/types";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";

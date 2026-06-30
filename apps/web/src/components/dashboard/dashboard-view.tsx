@@ -1280,8 +1280,8 @@ export function DashboardView({
 
   const weeklyHoursCheckShifts = useMemo(
     () =>
-      visibleCommunicationHubLocationShifts.map(
-        weeklyHoursCheckShiftFromPlanningShift
+      visibleCommunicationHubLocationShifts.map((shift) =>
+        weeklyHoursCheckShiftFromPlanningShift(shift)
       ),
     [visibleCommunicationHubLocationShifts]
   );

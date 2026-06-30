@@ -272,7 +272,9 @@ export function DashboardSummaryView({
         "areaId" | "areaName" | "areaCalendarHref"
       >
     | null => {
-    if (!selectedLocationId || !shiftConfirmationEnabled) return null;
+    if (!selectedLocationId || !shiftConfirmationEnabled || !employeeNameById) {
+      return null;
+    }
 
     return {
       weekStart,

@@ -784,10 +784,8 @@ function accumulateRequiredStaffingForDayHours(
 ): Map<string, number> {
   const requiredByHour = new Map<string, number>();
   const dayHourIds = new Set(dayHours.map((hour) => hour.id));
-  const dayHourIdByTimeKey = new Map(
-    dayHours.map(
-      (hour) => [`${hour.start_time}|${hour.end_time}`, hour.id] as const
-    )
+  const dayHourIdByTimeKey = new Map<string, string>(
+    dayHours.map((hour) => [`${hour.start_time}|${hour.end_time}`, hour.id])
   );
   const areaServiceHours = serviceHours.filter(
     (hour) => hour.location_area_id === areaId

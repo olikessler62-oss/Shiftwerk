@@ -50,6 +50,7 @@ import {
   staffingRowShowsIssuesButton,
   type DashboardStaffingWindowIssuesContext,
 } from "@/lib/dashboard-staffing-window-issues";
+import type { DashboardActionableConfirmationStatus } from "@/lib/dashboard-confirmation-employee-dedupe";
 import { DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS, DASHBOARD_TEXT_LINK_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { CALENDAR_HOLIDAY_DAY_HEADER_LABEL_INLINE_CLASS } from "@/lib/calendar-day-header-styles";
@@ -1036,14 +1037,14 @@ function AreaCardHeaderStatusList({
   showPlannedCoverageStatusLine: boolean;
   shiftConfirmationEnabled: boolean;
   statusBadge: { label: string; dotClassName: string; labelClassName: string };
-  confirmationConflictStatuses: readonly ShiftConfirmationStatus[];
+  confirmationConflictStatuses: readonly DashboardActionableConfirmationStatus[];
   showStaffingIssuesButton: boolean;
   staffingStatusClickable: boolean;
   plannedCoverageStatusClickable: boolean;
   onOpenStaffingCandidates?: () => void;
   onOpenPlannedCoverage?: () => void;
   onOpenStaffingIssues: () => void;
-  onOpenConfirmationIssues?: (status: ShiftConfirmationStatus) => void;
+  onOpenConfirmationIssues?: (status: DashboardActionableConfirmationStatus) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
   const hasStaffingStatus = showStaffingAmpelStatus;
@@ -1138,7 +1139,7 @@ function AreaCardHeader({
   onOpenStaffingCandidates?: () => void;
   onOpenPlannedCoverage?: () => void;
   onOpenStaffingIssues: () => void;
-  onOpenConfirmationIssues?: (status: ShiftConfirmationStatus) => void;
+  onOpenConfirmationIssues?: (status: DashboardActionableConfirmationStatus) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
   const showStaffingAmpelStatus = shouldShowAreaCardStaffingAmpelStatus({
@@ -1371,7 +1372,9 @@ export function DashboardAreaAmpelCard({
     if (row) setCandidatesRow(row);
   };
 
-  const openConfirmationIssuesFromHeader = (status: ShiftConfirmationStatus) => {
+  const openConfirmationIssuesFromHeader = (
+    status: DashboardActionableConfirmationStatus
+  ) => {
     if (!windowIssuesContext) return;
     const row = findFirstRowWithConfirmationStatus(
       stats.staffingWindowRows,

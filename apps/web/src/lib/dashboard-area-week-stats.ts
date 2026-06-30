@@ -40,6 +40,7 @@ import {
   staffingWindowConfirmationCountsKey,
   type DashboardStaffingWindowConfirmationCounts,
 } from "@/lib/dashboard-day-confirmation-counts";
+import type { DashboardActionableConfirmationStatus } from "@/lib/dashboard-confirmation-employee-dedupe";
 
 export type DashboardAreaAmpelLevel =
   | "no_demand"
@@ -117,7 +118,7 @@ export type DashboardAreaWeekStats = {
   criticalWindowLabel: string | null;
   staffingWindowRows: DashboardStaffingWindowRow[];
   staffingIssues: DashboardStaffingIssue[];
-  confirmationConflictStatuses: ShiftConfirmationStatus[];
+  confirmationConflictStatuses: DashboardActionableConfirmationStatus[];
   grossHours: number;
   breakHours: number;
   totalHours: number;

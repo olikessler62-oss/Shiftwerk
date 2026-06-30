@@ -260,7 +260,10 @@ export function AreaCalendarView({
   );
 
   const weeklyHoursCheckShifts = useMemo(
-    () => communicationHubShifts.map(weeklyHoursCheckShiftFromAreaCalendarCard),
+    () =>
+      communicationHubShifts.map((shift) =>
+        weeklyHoursCheckShiftFromAreaCalendarCard(shift)
+      ),
     [communicationHubShifts]
   );
 

@@ -221,7 +221,7 @@ export function isTagAreaHeaderStaffingAssignmentMismatch(
 export function isTagAreaHeaderStaffingOverstaffed(
   entries: readonly TagAreaHeaderStaffingEntry[]
 ): boolean {
-  return entries.some(isTagAreaHeaderStaffingEntryOverstaffed);
+  return entries.some((entry) => isTagAreaHeaderStaffingEntryOverstaffed(entry));
 }
 
 export function resolveStaffingFillGaugeVariant(

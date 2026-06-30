@@ -68,8 +68,12 @@ export function useStaffingTableLayout(headerLabels: StaffingTableHeaderLabels) 
     if (!container || !measure) return;
 
     function update() {
-      const width = container.clientWidth;
-      const fullHeaderWidth = measure.scrollWidth;
+      const containerNode = containerRef.current;
+      const measureNode = measureRef.current;
+      if (!containerNode || !measureNode) return;
+
+      const width = containerNode.clientWidth;
+      const fullHeaderWidth = measureNode.scrollWidth;
       const staffingColumnWidthPx = resolveStaffingTableStaffingColumnWidthPx(
         staffingLabelMeasureRef.current?.scrollWidth ?? 0
       );

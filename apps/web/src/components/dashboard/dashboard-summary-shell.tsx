@@ -189,8 +189,8 @@ export function DashboardSummaryShell({
 
   const weeklyHoursCheckShifts = useMemo(
     () =>
-      visibleCommunicationHubLocationShifts.map(
-        weeklyHoursCheckShiftFromPlanningShift
+      visibleCommunicationHubLocationShifts.map((shift) =>
+        weeklyHoursCheckShiftFromPlanningShift(shift)
       ),
     [visibleCommunicationHubLocationShifts]
   );
