@@ -122,7 +122,6 @@ export function OverviewAvailabilitiesModal({ onClose }: Props) {
           titleId="overview-availabilities-modal-title"
           onClose={onClose}
           closeDisabled={loading}
-          dismissOnBackdrop={!loading}
           closeAriaLabel={t("common.close")}
           footer={
             <div className={settingsModalFooterClass()}>

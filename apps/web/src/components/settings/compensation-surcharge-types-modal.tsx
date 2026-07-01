@@ -203,8 +203,6 @@ export function CompensationSurchargeTypesModal({
       titleId="compensation-surcharge-types-modal-title"
       onClose={onClose}
       closeDisabled={pending}
-      dismissOnBackdrop={!anySubModalOpen}
-      dismissOnEscape={!anySubModalOpen}
       closeAriaLabel={t("common.close")}
       panelClassName={cn(anySubModalOpen && "pointer-events-none")}
       footer={

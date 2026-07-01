@@ -7,8 +7,6 @@ export const AREA_COLUMN_MIN_WIDTH_PX = 50;
 export const AREA_COLUMN_MAX_WIDTH_PX = 280;
 /** pl-[2px] + pr-2 */
 const AREA_COLUMN_PADDING_X_PX = 10;
-/** px-4 links + rechts — Seitenüberschrift in der Kalender-Ecke */
-const AREA_COLUMN_HEADER_PADDING_X_PX = 32;
 const AREA_COLUMN_WIDTH_TOLERANCE_PX = 10;
 
 /**
@@ -33,7 +31,6 @@ export function measureAreaNameText(text: string): number {
 
 export function resolveAreaColumnWidthPx(
   areaNames: readonly string[],
-  columnHeaderLabel?: string,
   measure: (text: string) => number = measureAreaNameText
 ): number {
   const areaNameChrome =
@@ -48,11 +45,7 @@ export function resolveAreaColumnWidthPx(
 
   const areaRowWidthPx = longestNameWidth + areaNameChrome;
 
-  const headerWidthPx = columnHeaderLabel
-    ? measure(columnHeaderLabel.trim()) + AREA_COLUMN_HEADER_PADDING_X_PX
-    : 0;
-
-  const contentWidth = Math.max(areaRowWidthPx, headerWidthPx);
+  const contentWidth = areaRowWidthPx;
 
   if (contentWidth === 0) return AREA_COLUMN_MIN_WIDTH_PX;
 

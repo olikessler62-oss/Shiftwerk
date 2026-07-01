@@ -122,6 +122,8 @@ import {
   lifecycleStatusForConfirmationStatus,
   syncShiftRequestsAfterAssignConfirmationStatus,
   syncShiftRequestsAfterCancellation,
+  syncShiftRequestsAfterEmployeeCancellationRequest,
+  hasOpenEmployeeCancellationRequest,
   syncShiftRequestsAfterConfirmationExpired,
   syncShiftRequestsAfterConfirmationResent,
   syncShiftRequestsAfterConfirmationSent,
@@ -3895,9 +3897,30 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     if (error) throw new Error(error.message);
     if (!data?.length) return [];
 
+    const organizationId = data[0]!.organization_id as string;
+
     const canceledShiftIds = data
       .filter((row) => row.confirmation_status === "canceled")
       .map((row) => row.id as string);
+    const pendingCancellationShiftIds = new Set<string>();
+    const allShiftIds = data.map((row) => row.id as string);
+    if (allShiftIds.length > 0) {
+      const { data: pendingRequests, error: pendingRequestsError } =
+        await this.client
+          .from(T.shiftRequests)
+          .select("shift_id, payload")
+          .eq("organization_id", organizationId)
+          .in("shift_id", allShiftIds)
+          .eq("type", "cancellation")
+          .eq("status", "pending");
+      if (pendingRequestsError) throw new Error(pendingRequestsError.message);
+      for (const request of pendingRequests ?? []) {
+        const payload = request.payload as { cancelled_by?: string } | null;
+        if (payload?.cancelled_by === "employee") {
+          pendingCancellationShiftIds.add(request.shift_id as string);
+        }
+      }
+    }
     const cancelActorsByShiftId = new Map<string, "employee" | "manager">();
     if (canceledShiftIds.length > 0) {
       const { data: cancelEvents, error: cancelEventsError } = await this.client
@@ -3919,7 +3942,6 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       }
     }
 
-    const organizationId = data[0]!.organization_id as string;
     const jobNamesByShiftId = await this.resolveEmployeeShiftJobLabelsForShifts({
       organizationId,
       shifts: data.map((row) => ({
@@ -3955,6 +3977,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         templateColor: template?.color ?? null,
         jobName: jobNamesByShiftId.get(row.id as string) ?? null,
         cancelledBy: cancelActorsByShiftId.get(row.id as string),
+        cancellationPending:
+          row.confirmation_status !== "canceled" &&
+          pendingCancellationShiftIds.has(row.id as string),
       };
     });
   }
@@ -6365,51 +6390,24 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
 
     const now = new Date().toISOString();
 
-    const { data: updated, error: updateError } = await this.client
-      .from(T.shifts)
-      .update({
-        confirmation_status: "canceled",
-        lifecycle_status: "cancelled",
-        confirmation_status_updated_at: now,
-        requested_at: null,
-        pending_since: null,
-        pending_reminder_sent_at: null,
+    if (
+      await hasOpenEmployeeCancellationRequest({
+        client: this.client,
+        organizationId: input.organizationId,
+        shiftId: input.shiftId,
       })
-      .eq("id", input.shiftId)
-      .eq("organization_id", input.organizationId)
-      .eq("confirmation_status", storedStatus)
-      .select("id")
-      .maybeSingle();
-
-    if (updateError) throw new Error(updateError.message);
-    if (!updated) {
-      throw new Error("Schicht konnte nicht abgesagt werden.");
+    ) {
+      throw new Error("Absage wurde bereits angefragt.");
     }
 
-    await syncShiftRequestsAfterCancellation({
+    await syncShiftRequestsAfterEmployeeCancellationRequest({
       client: this.client,
       organizationId: input.organizationId,
       shiftId: input.shiftId,
       actorId: input.actorId,
-      cancelledBy: "employee",
       now,
       payload: { source: "mobile_cancel" },
     });
-
-    const { error: eventError } = await this.client
-      .from(T.shiftConfirmationEvents)
-      .insert({
-        organization_id: input.organizationId,
-        shift_id: input.shiftId,
-        actor_id: input.actorId,
-        from_status: storedStatus,
-        to_status: "canceled",
-        payload: {
-          canceled_by: input.actorRole,
-          source: "mobile_cancel",
-        },
-      });
-    if (eventError) throw new Error(eventError.message);
 
     const notification = buildManagerShiftCanceledNotification({
       employeeName,
@@ -6439,6 +6437,107 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         );
       if (managerError) throw new Error(managerError.message);
     }
+
+    return {
+      locationId: shift.location_id,
+      shiftDate: shift.shift_date,
+      employeeId: shift.employee_id,
+    };
+  }
+
+  async approveEmployeeShiftCancellation(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+  }): Promise<{
+    locationId: string | null;
+    shiftDate: string;
+    employeeId: string;
+  }> {
+    const shift = await this.getShiftRecordById(input.shiftId, input.organizationId);
+    if (!shift) {
+      throw new Error("Schicht nicht gefunden.");
+    }
+
+    if (isShiftDateInPast(shift.shift_date)) {
+      throw new Error(SHIFT_CANCEL_PAST_ERROR);
+    }
+
+    const { data: openRequest, error: requestError } = await this.client
+      .from(T.shiftRequests)
+      .select("id, payload")
+      .eq("organization_id", input.organizationId)
+      .eq("shift_id", input.shiftId)
+      .eq("type", "cancellation")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (requestError) throw new Error(requestError.message);
+    if (!openRequest) {
+      throw new Error("Keine offene Absage-Anfrage für diese Schicht.");
+    }
+
+    const payload = openRequest.payload as { cancelled_by?: string } | null;
+    if (payload?.cancelled_by !== "employee") {
+      throw new Error("Keine offene Mitarbeiter-Absage für diese Schicht.");
+    }
+
+    const storedStatus = shift.confirmation_status ?? "confirmed";
+    const now = new Date().toISOString();
+
+    const { data: approvedRequest, error: approveRequestError } = await this.client
+      .from(T.shiftRequests)
+      .update({
+        status: "approved",
+        responded_at: now,
+        updated_at: now,
+      })
+      .eq("id", openRequest.id)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
+
+    if (approveRequestError) throw new Error(approveRequestError.message);
+    if (!approvedRequest) {
+      throw new Error("Absage-Anfrage konnte nicht bestätigt werden.");
+    }
+
+    const { data: updated, error: updateError } = await this.client
+      .from(T.shifts)
+      .update({
+        confirmation_status: "canceled",
+        lifecycle_status: "cancelled",
+        confirmation_status_updated_at: now,
+        requested_at: null,
+        pending_since: null,
+        pending_reminder_sent_at: null,
+      })
+      .eq("id", input.shiftId)
+      .eq("organization_id", input.organizationId)
+      .select("id")
+      .maybeSingle();
+
+    if (updateError) throw new Error(updateError.message);
+    if (!updated) {
+      throw new Error("Schicht konnte nicht abgesagt werden.");
+    }
+
+    const { error: eventError } = await this.client
+      .from(T.shiftConfirmationEvents)
+      .insert({
+        organization_id: input.organizationId,
+        shift_id: input.shiftId,
+        actor_id: input.actorId,
+        from_status: storedStatus,
+        to_status: "canceled",
+        payload: {
+          canceled_by: "employee",
+          source: "manager_approve_cancellation",
+        },
+      });
+    if (eventError) throw new Error(eventError.message);
 
     return {
       locationId: shift.location_id,

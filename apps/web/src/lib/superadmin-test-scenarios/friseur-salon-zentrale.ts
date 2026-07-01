@@ -8,6 +8,14 @@ import {
   type ShiftTypeBreakInput,
 } from "@schichtwerk/database";
 import type { Profile } from "@schichtwerk/types";
+import { insertPlannedConfirmedShifts } from "@/lib/superadmin-test-scenarios/insert-planned-confirmed-shifts";
+import {
+  buildSuperadminTestScenarioShiftSchedule,
+  coverageTargetForMixedMode,
+  staffingCountPerWindowForScenario,
+  type SuperadminTestScenarioSeedSettings,
+  type TestScenarioShiftTemplate,
+} from "@/lib/superadmin-test-scenarios/superadmin-test-scenario-settings";
 
 export const FRISEUR_SALON_SCENARIO_ORG_NAME = "Lucy's Hairstylings";
 export const FRISEUR_SALON_SCENARIO_LOCATION_NAME = "Zentrale";
@@ -17,27 +25,33 @@ export const FRISEUR_SALON_QUALIFICATION_NAME = "Friseur";
 /** Dienstag–Samstag (Planungs-Wochentag Mo=0 … So=6). */
 const SERVICE_WEEKDAYS = [1, 2, 3, 4, 5] as const;
 
-const STAFFING_WINDOWS = [
-  { start: "08:00", end: "17:00", count: 4 },
-  { start: "12:00", end: "20:00", count: 4 },
-] as const;
+type StaffingWindowWithCount = {
+  start: string;
+  end: string;
+  count: number;
+};
 
-const SHIFT_TEMPLATES = [
-  {
-    name: "Früh",
-    start: "08:00",
-    end: "17:00",
-    color: "#3b82f6",
-    breaks: [{ break_start: "13:00", break_end: "14:00" }],
-  },
-  {
-    name: "Spät",
-    start: "12:00",
-    end: "20:00",
-    color: "#f97316",
-    breaks: [{ break_start: "15:30", break_end: "16:30" }],
-  },
-] as const;
+function buildFriseurStaffingWindows(
+  settings: SuperadminTestScenarioSeedSettings
+): StaffingWindowWithCount[] {
+  const schedule = buildSuperadminTestScenarioShiftSchedule(settings);
+  const countPerWindow = staffingCountPerWindowForScenario({
+    shiftsPerDayMode: settings.shiftsPerDayMode,
+    openDaysPerWeek: SERVICE_WEEKDAYS.length,
+    areaCount: 1,
+  });
+  return schedule.serviceWindows.map((window) => ({
+    start: window.start,
+    end: window.end,
+    count: countPerWindow,
+  }));
+}
+
+function buildFriseurShiftTemplates(
+  settings: SuperadminTestScenarioSeedSettings
+): readonly TestScenarioShiftTemplate[] {
+  return buildSuperadminTestScenarioShiftSchedule(settings).shiftTemplates;
+}
 
 type PlannedShift = {
   employeeId: string;
@@ -359,10 +373,11 @@ async function configureAreaQualificationTemplate(
 async function configureAreaServiceHours(
   db: SchichtwerkDatabase,
   locationId: string,
-  areaId: string
+  areaId: string,
+  staffingWindows: readonly StaffingWindowWithCount[]
 ) {
   const rows = SERVICE_WEEKDAYS.flatMap((weekday) =>
-    STAFFING_WINDOWS.map((window) => ({
+    staffingWindows.map((window) => ({
       weekday,
       start_time: window.start,
       end_time: window.end,
@@ -374,10 +389,11 @@ async function configureAreaServiceHours(
 async function configureAreaShiftTemplates(
   db: SchichtwerkDatabase,
   locationId: string,
-  areaId: string
+  areaId: string,
+  shiftTemplates: readonly TestScenarioShiftTemplate[]
 ) {
   await db.clearAreaShiftTemplatesForArea(areaId, locationId);
-  for (const [index, template] of SHIFT_TEMPLATES.entries()) {
+  for (const [index, template] of shiftTemplates.entries()) {
     const created = await db.insertAreaShiftTemplate({
       location_area_id: areaId,
       name: template.name,
@@ -386,11 +402,8 @@ async function configureAreaShiftTemplates(
       color: template.color,
       sort_order: index,
     });
-    if (template.breaks.length > 0) {
-      await db.replaceAreaShiftTemplateBreaks(
-        created.id,
-        [...template.breaks]
-      );
+    if (template.breaks && template.breaks.length > 0) {
+      await db.replaceAreaShiftTemplateBreaks(created.id, [...template.breaks]);
     }
   }
 }
@@ -399,7 +412,8 @@ async function configureAreaStaffing(
   db: SchichtwerkDatabase,
   locationId: string,
   areaId: string,
-  friseurQualificationId: string
+  friseurQualificationId: string,
+  staffingWindows: readonly StaffingWindowWithCount[]
 ) {
   const hours = await db.listLocationAreaServiceHoursForArea(areaId, locationId);
   const staffingRules: {
@@ -408,7 +422,7 @@ async function configureAreaStaffing(
     required_count: number;
   }[] = [];
 
-  for (const window of STAFFING_WINDOWS) {
+  for (const window of staffingWindows) {
     const matchingHours = hours.filter(
       (hour) =>
         hour.start_time.slice(0, 5) === window.start &&
@@ -434,7 +448,19 @@ async function configureAreaStaffing(
   await db.replaceLocationAreaStaffing(areaId, locationId, staffingRules);
 }
 
-function planFullyCoveredShifts(input: {
+function countStaffingDemandSlots(input: {
+  staffingWindows: readonly StaffingWindowWithCount[];
+  openDates: readonly string[];
+}): number {
+  return (
+    input.openDates.length *
+    input.staffingWindows.reduce((sum, window) => sum + window.count, 0)
+  );
+}
+
+function planShifts(input: {
+  shiftCoverageMode: SuperadminTestScenarioSeedSettings["shiftCoverageMode"];
+  staffingWindows: readonly StaffingWindowWithCount[];
   locationId: string;
   areaId: string;
   openDates: readonly string[];
@@ -445,6 +471,17 @@ function planFullyCoveredShifts(input: {
   friseurQualificationId: string;
   existingShifts: readonly ExistingShiftRef[];
 }): { planned: PlannedShift[]; openSlots: number; coveredSlots: number } {
+  if (input.shiftCoverageMode === "open") {
+    return {
+      planned: [],
+      openSlots: countStaffingDemandSlots({
+        staffingWindows: input.staffingWindows,
+        openDates: input.openDates,
+      }),
+      coveredSlots: 0,
+    };
+  }
+
   const planned: PlannedShift[] = [];
   let openSlots = 0;
   let coveredSlots = 0;
@@ -458,7 +495,7 @@ function planFullyCoveredShifts(input: {
   );
 
   for (const date of input.openDates) {
-    for (const window of STAFFING_WINDOWS) {
+    for (const window of input.staffingWindows) {
       const seed = slotSeed([
         input.locationId,
         input.areaId,
@@ -467,9 +504,17 @@ function planFullyCoveredShifts(input: {
         window.end,
         FRISEUR_SALON_QUALIFICATION_NAME,
       ]);
-      const candidates = shuffleWithSeed(qualifiedEmployees, seed);
-      const targetCount = window.count;
+      const targetCount =
+        input.shiftCoverageMode === "mixed"
+          ? coverageTargetForMixedMode(window.count, seed)
+          : window.count;
 
+      if (input.shiftCoverageMode === "mixed") {
+        openSlots += Math.max(0, window.count - targetCount);
+        coveredSlots += targetCount;
+      }
+
+      const candidates = shuffleWithSeed(qualifiedEmployees, seed);
       let assigned = 0;
       for (const employee of candidates) {
         if (assigned >= targetCount) break;
@@ -501,41 +546,17 @@ function planFullyCoveredShifts(input: {
         assigned += 1;
       }
 
-      coveredSlots += assigned;
-      openSlots += Math.max(0, targetCount - assigned);
+      if (input.shiftCoverageMode === "mixed") {
+        openSlots += Math.max(0, targetCount - assigned);
+        coveredSlots -= Math.max(0, targetCount - assigned);
+      } else {
+        coveredSlots += assigned;
+        openSlots += Math.max(0, targetCount - assigned);
+      }
     }
   }
 
   return { planned, openSlots, coveredSlots };
-}
-
-async function insertPlannedConfirmedShifts(
-  db: SchichtwerkDatabase,
-  organizationId: string,
-  actorId: string,
-  timeZone: string,
-  planned: readonly PlannedShift[]
-) {
-  for (const shift of planned) {
-    const timestamps = buildShiftTimestamps(
-      shift.shiftDate,
-      shift.startTime,
-      shift.endTime,
-      timeZone
-    );
-    await db.insertShift({
-      organization_id: organizationId,
-      employee_id: shift.employeeId,
-      location_id: shift.locationId,
-      location_area_id: shift.areaId,
-      shift_date: shift.shiftDate,
-      starts_at: timestamps.starts_at,
-      ends_at: timestamps.ends_at,
-      created_by: actorId,
-      confirmation_status: "confirmed",
-      confirmation_status_updated_at: new Date().toISOString(),
-    });
-  }
 }
 
 export async function runFriseurSalonZentraleScenario(
@@ -545,9 +566,13 @@ export async function runFriseurSalonZentraleScenario(
     actorId: string;
     timeZone: string;
     todayISO: string;
+    settings: SuperadminTestScenarioSeedSettings;
   }
 ): Promise<FriseurSalonScenarioResult> {
   await db.prepareFriseurSalonScenario(input.organizationId);
+
+  const staffingWindows = buildFriseurStaffingWindows(input.settings);
+  const shiftTemplates = buildFriseurShiftTemplates(input.settings);
 
   const friseurQualificationId = await ensureFriseurQualification(
     db,
@@ -573,9 +598,15 @@ export async function runFriseurSalonZentraleScenario(
     area.id,
     friseurQualificationId
   );
-  await configureAreaServiceHours(db, location.id, area.id);
-  await configureAreaShiftTemplates(db, location.id, area.id);
-  await configureAreaStaffing(db, location.id, area.id, friseurQualificationId);
+  await configureAreaServiceHours(db, location.id, area.id, staffingWindows);
+  await configureAreaShiftTemplates(db, location.id, area.id, shiftTemplates);
+  await configureAreaStaffing(
+    db,
+    location.id,
+    area.id,
+    friseurQualificationId,
+    staffingWindows
+  );
 
   const weekStart = isoWeekStartFromShiftDate(input.todayISO);
   const seedDates = openDatesInWeek(weekStart);
@@ -584,7 +615,9 @@ export async function runFriseurSalonZentraleScenario(
   const qualIdsByProfile =
     await db.listProfileQualificationIdsByOrganization(input.organizationId);
 
-  const { planned, openSlots, coveredSlots } = planFullyCoveredShifts({
+  const { planned, openSlots, coveredSlots } = planShifts({
+    shiftCoverageMode: input.settings.shiftCoverageMode,
+    staffingWindows,
     locationId: location.id,
     areaId: area.id,
     openDates: seedDates,

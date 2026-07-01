@@ -457,7 +457,6 @@ export function OverviewAbsencesEditableModal({
           titleId="overview-absences-editable-modal-title"
           onClose={onClose}
           closeDisabled={pending || waitingForContent || anySubModalOpen}
-          dismissOnBackdrop={!anySubModalOpen && !waitingForContent && !pending}
           closeAriaLabel={t("common.close")}
           contentReady={contentReady}
           panelClassName={cn(anySubModalOpen && "pointer-events-none")}

@@ -37,6 +37,8 @@ import {
   shiftConfirmationTooltipStatusLabelKey,
 } from "@/lib/shift-confirmation-display";
 import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
+import { hasPendingEmployeeCancellation } from "@schichtwerk/database";
+import { ShiftPendingCancellationOverlay } from "@/components/dashboard/shift-pending-cancellation-overlay";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
   canOpenShiftCardContextMenu,
@@ -205,7 +207,12 @@ export function AreaCalendarShiftCardView({
   );
 
   const confirmationStatus = calendarConfirmationStatus;
+  const pendingEmployeeCancellation = hasPendingEmployeeCancellation(
+    shift.displayState
+  );
+
   const showConfirmationOverlay =
+    !pendingEmployeeCancellation &&
     density !== "marker" &&
     confirmationStatus &&
     shiftConfirmationShowsOverlay(confirmationStatus);
@@ -407,7 +414,9 @@ export function AreaCalendarShiftCardView({
               density={density}
               inlineStatusLabel={inlineStatusLabel}
             />
-            {showConfirmationOverlay ? (
+            {pendingEmployeeCancellation ? (
+              <ShiftPendingCancellationOverlay />
+            ) : showConfirmationOverlay ? (
               <DashboardShiftCardConfirmationOverlay status={confirmationStatus} />
             ) : null}
           </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition, Fragment } fr
 import { useRouter } from "next/navigation";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import {
+  approveEmployeeShiftCancellations,
   cancelShiftsAsManager,
   listConfirmationSendShifts,
   submitCommunicationConfirmationRequests,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/shift-hub-conflict";
 import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
 import { translateActionError } from "@/lib/translate-action-error";
+import { hasPendingEmployeeCancellation } from "@schichtwerk/database";
 import { communicationHubShiftHorizonEnd } from "@/lib/communication-hub-scope-data";
 import type { AbsenceRequest, ShiftConfirmationStatus } from "@schichtwerk/types";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
@@ -78,6 +80,7 @@ type Props = {
 type BatchConfirmState =
   | { action: "delete"; shiftIds: string[] }
   | { action: "cancel"; shiftIds: string[] }
+  | { action: "confirmCancellation"; shiftIds: string[] }
   | null;
 
 const RESPONSE_ROW_GRID_WITH_SELECTION_CLASS =
@@ -128,19 +131,43 @@ function actionButtonLabel(
       return t("shiftConfirmation.panel.reassign");
     case "requestConfirmation":
       return t("shiftConfirmation.actions.requestConfirmation");
+    case "confirmCancellation":
+      return t("shiftConfirmation.communication.actionConfirmCancellation");
   }
 }
 
 function isActionDisabled(
   action: CommunicationTabAction,
-  selectedCount: number,
+  selectedShifts: readonly AreaCalendarShiftCard[],
   pending: boolean
 ): boolean {
   if (pending) return true;
+  const selectedCount = selectedShifts.length;
   if (communicationActionRequiresExactlyOneSelection(action)) {
     return selectedCount !== 1;
   }
-  return selectedCount === 0;
+  if (selectedCount === 0) return true;
+  if (action === "confirmCancellation") {
+    return !selectedShifts.every((shift) =>
+      hasPendingEmployeeCancellation(shift.displayState)
+    );
+  }
+  if (action === "delete") {
+    return selectedShifts.some((shift) =>
+      hasPendingEmployeeCancellation(shift.displayState)
+    );
+  }
+  return false;
+}
+
+function responseStatusLabelKeyForShift(shift: AreaCalendarShiftCard):
+  | ReturnType<typeof shiftConfirmationStatusLabelKey>
+  | "shiftConfirmation.communication.statusRequested"
+  | "shiftConfirmation.status.cancellationPending" {
+  if (hasPendingEmployeeCancellation(shift.displayState)) {
+    return "shiftConfirmation.status.cancellationPending";
+  }
+  return responseStatusLabelKey(shift.confirmationStatus ?? "confirmed");
 }
 
 function resolveAreaNameForGroup(
@@ -574,6 +601,33 @@ export function CommunicationResponsesTab({
         return;
       }
 
+      if (batchConfirm.action === "confirmCancellation") {
+        const shiftIds = batchConfirm.shiftIds;
+        setBatchConfirm(null);
+        const result = await approveEmployeeShiftCancellations(shiftIds);
+        if (!result.ok) {
+          setErrorMessage(translateActionError(result.error, t));
+          return;
+        }
+        router.refresh();
+        if (result.failedCount > 0) {
+          setSuccessMessage(
+            t("shiftConfirmation.communication.partialConfirmCancellation", {
+              done: result.approvedCount,
+              failed: result.failedCount,
+            })
+          );
+        } else {
+          setSuccessMessage(
+            t("shiftConfirmation.communication.confirmCancellationSuccess", {
+              count: result.approvedCount,
+            })
+          );
+          setSelected(new Set());
+        }
+        return;
+      }
+
       const shiftIds = batchConfirm.shiftIds;
       setBatchConfirm(null);
       onLocalShiftRemoved?.(shiftIds);
@@ -611,11 +665,17 @@ export function CommunicationResponsesTab({
         : t("shiftConfirmation.communication.deleteConfirmMany", {
             count: batchConfirm.shiftIds.length,
           })
-      : batchConfirm.shiftIds.length === 1
-        ? t("shiftConfirmation.communication.cancelConfirmOne")
-        : t("shiftConfirmation.communication.cancelConfirmMany", {
-            count: batchConfirm.shiftIds.length,
-          })
+      : batchConfirm.action === "confirmCancellation"
+        ? batchConfirm.shiftIds.length === 1
+          ? t("shiftConfirmation.communication.confirmCancellationConfirmOne")
+          : t("shiftConfirmation.communication.confirmCancellationConfirmMany", {
+              count: batchConfirm.shiftIds.length,
+            })
+        : batchConfirm.shiftIds.length === 1
+          ? t("shiftConfirmation.communication.cancelConfirmOne")
+          : t("shiftConfirmation.communication.cancelConfirmMany", {
+              count: batchConfirm.shiftIds.length,
+            })
     : null;
 
   return (
@@ -774,6 +834,12 @@ export function CommunicationResponsesTab({
                     ? shift.shiftName.trim()
                     : t("shiftConfirmation.send.noTemplate");
                   const status = shift.confirmationStatus;
+                  const statusLabelKey = responseStatusLabelKeyForShift(shift);
+                  const statusForStyle = hasPendingEmployeeCancellation(
+                    shift.displayState
+                  )
+                    ? "canceled"
+                    : status;
                   const conflicts =
                     grouped.conflictDetailsByShiftId.get(shift.id) ?? [];
                   const conflictLabels = conflicts.map((conflict) =>
@@ -835,13 +901,14 @@ export function CommunicationResponsesTab({
                         className={cn(
                           CELL_CLASS,
                           "font-medium",
-                          status
-                            ? shiftConfirmationTooltipStatusTextClass(status) ||
-                                "text-foreground/80"
+                          statusForStyle
+                            ? shiftConfirmationTooltipStatusTextClass(
+                                statusForStyle
+                              ) || "text-foreground/80"
                             : "text-muted"
                         )}
                       >
-                        {status ? t(responseStatusLabelKey(status)) : "—"}
+                        {statusLabelKey ? t(statusLabelKey) : "—"}
                       </span>
                       {showConflictColumn ? (
                         <span className={cn(CELL_CLASS, "font-medium text-rose-700")}>
@@ -900,7 +967,11 @@ export function CommunicationResponsesTab({
                   type="button"
                   variant={action === "delete" ? "outline" : "primary"}
                   onClick={() => handleActionClick(action)}
-                  disabled={isActionDisabled(action, selectedCount, pending)}
+                  disabled={isActionDisabled(
+                    action,
+                    selectedActionableShifts,
+                    pending
+                  )}
                 >
                   {actionButtonLabel(action, t)}
                   {selectedCount > 0 &&

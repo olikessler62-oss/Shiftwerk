@@ -136,7 +136,8 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   const qualifikationenOpen = searchParams.get("qualifikationen") === "1";
   const sonderzuschlaegeOpen = searchParams.get("sonderzuschlaege") === "1";
   const abwesenheitenOpen = searchParams.get("abwesenheiten") === "1";
-  const { open: superadminOpen, openSuperadminModal } = useSuperadminModal();
+  const { open: superadminOpen, openSuperadminModal, closeSuperadminModal } =
+    useSuperadminModal();
   const beginMainNavPending = useBeginMainNavPending();
   const settingsModalOpen =
     allgemeinOpen ||
@@ -232,6 +233,7 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   ];
 
   function handlePageNav(pathname: string) {
+    if (superadminOpen) closeSuperadminModal();
     beginMainNavPending({ kind: "page", pathname });
     onNavigate?.();
   }
@@ -244,11 +246,13 @@ export function SidebarNav({ onNavigate, viewerRole, superadminEnabled = false }
   );
 
   function handleSettingsNav(flag: SettingsModalQueryFlag) {
+    if (superadminOpen) closeSuperadminModal();
     beginMainNavPending({ kind: "settings-modal", flag });
     onNavigate?.();
   }
 
   function handleOverviewNav(flag: OverviewModalQueryFlag) {
+    if (superadminOpen) closeSuperadminModal();
     beginMainNavPending({ kind: "overview-modal", flag });
     onNavigate?.();
   }

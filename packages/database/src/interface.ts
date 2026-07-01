@@ -972,6 +972,16 @@ export interface SchichtwerkDatabase {
     employeeId: string;
   }>;
 
+  approveEmployeeShiftCancellation(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+  }): Promise<{
+    locationId: string | null;
+    shiftDate: string;
+    employeeId: string;
+  }>;
+
   dismissCanceledShiftFromEmployeeView(input: {
     organizationId: string;
     shiftId: string;

@@ -1205,12 +1205,8 @@ export function AreaCalendar({
   const areaColumnHeaderLabel = t("nav.areaCalendar");
 
   const areaColumnWidthPx = useMemo(
-    () =>
-      resolveAreaColumnWidthPx(
-        areas.map((area) => area.name),
-        areaColumnHeaderLabel
-      ),
-    [areas, areaColumnHeaderLabel]
+    () => resolveAreaColumnWidthPx(areas.map((area) => area.name)),
+    [areas]
   );
 
   const columnTemplate = useMemo(
@@ -2191,7 +2187,7 @@ export function AreaCalendar({
         >
           <div
             className={cn(
-              "sticky left-0 top-0 z-30 flex items-center px-4 text-left text-sm font-semibold tracking-tight text-foreground md:text-[0.9375rem]",
+              "sticky left-0 top-0 z-30 flex items-center px-2 py-1 text-left text-xs font-semibold leading-tight tracking-tight text-foreground",
               AREA_COLUMN_BG_CLASS,
               CALENDAR_HEADER_ROW_BORDER_CLASS,
               CALENDAR_HEADER_AREA_COLUMN_BORDER_CLASS
@@ -2202,7 +2198,9 @@ export function AreaCalendar({
               height: CALENDAR_DAY_HEADER_ROW_HEIGHT,
             }}
           >
-            <span className="min-w-0 truncate">{areaColumnHeaderLabel}</span>
+            <span className="min-w-0 whitespace-normal break-words">
+              {areaColumnHeaderLabel}
+            </span>
           </div>
 
           {dates.map((date, dayIndex) => {

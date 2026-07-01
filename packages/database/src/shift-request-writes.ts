@@ -245,6 +245,55 @@ export async function syncShiftRequestsAfterCancellation(input: {
   });
 }
 
+export async function syncShiftRequestsAfterEmployeeCancellationRequest(input: {
+  client: SupabaseClient;
+  organizationId: string;
+  shiftId: string;
+  actorId: string;
+  now: string;
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  await cancelShiftConfirmationRequests(
+    input.client,
+    input.organizationId,
+    input.shiftId,
+    input.now,
+    OPEN_CONFIRMATION_STATUSES
+  );
+
+  await insertShiftRequest(input.client, {
+    organization_id: input.organizationId,
+    shift_id: input.shiftId,
+    type: "cancellation",
+    status: "pending",
+    actor_id: input.actorId,
+    sent_at: input.now,
+    payload: {
+      cancelled_by: "employee",
+      ...(input.payload ?? {}),
+    },
+  });
+}
+
+export async function hasOpenEmployeeCancellationRequest(input: {
+  client: SupabaseClient;
+  organizationId: string;
+  shiftId: string;
+}): Promise<boolean> {
+  const { data, error } = await input.client
+    .from(T.shiftRequests)
+    .select("id")
+    .eq("organization_id", input.organizationId)
+    .eq("shift_id", input.shiftId)
+    .eq("type", "cancellation")
+    .eq("status", "pending")
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return Boolean(data);
+}
+
 export async function syncShiftRequestsAfterManagerPastConfirm(input: {
   client: SupabaseClient;
   organizationId: string;

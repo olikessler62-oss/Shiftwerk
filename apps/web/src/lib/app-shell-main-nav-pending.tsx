@@ -89,9 +89,20 @@ export function useClearMainNavPendingOptional(): () => void {
 /** Planungs-Kalender: Nav-Pending nach Mount bzw. wenn Daten bereit sind beenden. */
 export function useClearMainNavPendingWhenReady(ready: boolean): void {
   const clearMainNavPending = useClearMainNavPendingOptional();
+  const pendingTarget = useMainNavPendingTarget();
+  const pathname = usePathname();
+
   useEffect(() => {
-    if (ready) clearMainNavPending();
-  }, [ready, clearMainNavPending]);
+    if (!ready || !pendingTarget) return;
+    if (
+      pendingTarget.kind !== "page" ||
+      !isPlanningCalendarPagePath(pendingTarget.pathname)
+    ) {
+      return;
+    }
+    if (pathname !== pendingTarget.pathname) return;
+    clearMainNavPending();
+  }, [ready, pendingTarget, pathname, clearMainNavPending]);
 }
 
 export function AppShellMainNavPendingBridge() {

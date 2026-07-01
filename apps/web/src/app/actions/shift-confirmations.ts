@@ -760,3 +760,74 @@ export async function cancelShiftsAsManager(shiftIds: string[]): Promise<
     };
   }
 }
+
+export async function approveEmployeeShiftCancellations(shiftIds: string[]): Promise<
+  | {
+      ok: true;
+      approvedCount: number;
+      failedCount: number;
+      errors: string[];
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    const uniqueShiftIds = [...new Set(shiftIds.filter(Boolean))];
+    if (!uniqueShiftIds.length) {
+      return { ok: false, error: "Keine Schichten ausgewählt." };
+    }
+
+    const { organizationId, userId } = await requireManager();
+    const db = await getDatabase();
+    let approvedCount = 0;
+    const errors: string[] = [];
+    const touchedDates = new Map<string | null, Set<string>>();
+
+    for (const shiftId of uniqueShiftIds) {
+      try {
+        const result = await db.approveEmployeeShiftCancellation({
+          organizationId,
+          shiftId,
+          actorId: userId,
+        });
+        approvedCount += 1;
+        const dates = touchedDates.get(result.locationId) ?? new Set<string>();
+        dates.add(result.shiftDate);
+        touchedDates.set(result.locationId, dates);
+      } catch (error) {
+        errors.push(
+          error instanceof Error ? error.message : "Absage konnte nicht bestätigt werden."
+        );
+      }
+    }
+
+    for (const [locationId, dates] of touchedDates) {
+      if (!locationId) continue;
+      revalidateAreaCalendarShiftCacheTags({
+        organizationId,
+        locationId,
+        weekStarts: [...dates],
+      });
+    }
+
+    revalidateAreaCalendarShiftCacheTags({ organizationId });
+
+    if (approvedCount === 0) {
+      return {
+        ok: false,
+        error: errors[0] ?? "Absage konnte nicht bestätigt werden.",
+      };
+    }
+
+    return {
+      ok: true,
+      approvedCount,
+      failedCount: errors.length,
+      errors,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Absage konnte nicht bestätigt werden.",
+    };
+  }
+}

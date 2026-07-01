@@ -31,8 +31,8 @@ describe("employee weekly hours display", () => {
       weekDates,
       targetHours: 40,
       locationNameById: new Map([
-        ["loc-a", "Biergarten"],
-        ["loc-b", "Hadrian-Eck"],
+        ["loc-a", "L'Orangerie"],
+        ["loc-b", "Biergarten"],
       ]),
     });
 
@@ -84,14 +84,14 @@ describe("employee weekly hours display", () => {
       weekDates,
       targetHours: 40,
       locationNameById: new Map([
-        ["loc-a", "Biergarten"],
-        ["loc-b", "Hadrian-Eck"],
+        ["loc-a", "L'Orangerie"],
+        ["loc-b", "Biergarten"],
       ]),
     });
 
     expect(formatEmployeeWeeklyHoursDisplayLines(display, "de", "Summe")).toEqual([
-      "Biergarten, 9 Std",
-      "Hadrian-Eck, 8 Std",
+      "Biergarten, 8 Std",
+      "L'Orangerie, 9 Std",
       "Summe 17/40 Std",
     ]);
     expect(display.showTotalLine).toBe(true);

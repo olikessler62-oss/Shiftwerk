@@ -36,10 +36,12 @@ import {
   toWeeklyHoursExistingShift,
   toWeeklyShiftHourWindow,
   resolveBreaksForTemplateId,
+  resolveAreaShiftTemplateIdByTimes,
   type ShiftTypeBreakInput,
   type PlanningMode,
   type WeeklyShiftHourWindow,
 } from "@schichtwerk/database";
+import type { AreaShiftTemplateWithBreaks } from "@schichtwerk/types";
 import { remainingAssignableWeekDates } from "@/lib/shift-assign-rest-of-week";
 import type { ShiftAssignValidationContext } from "@/lib/shift-assign-validation";
 import {
@@ -142,6 +144,35 @@ function findOverlappingShifts(
 ): EmployeeShiftRecord[] {
   return existing.filter((shift) =>
     shiftsOverlapIso(shift.starts_at, shift.ends_at, startsAt, endsAt)
+  );
+}
+
+async function resolvePersistedAreaShiftTemplateId(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  input: {
+    areaShiftTemplateId: string | null;
+    locationId: string;
+    locationAreaId: string | null;
+    startTime: string;
+    endTime: string;
+  },
+  areaTemplates?: readonly AreaShiftTemplateWithBreaks[]
+): Promise<string | null> {
+  if (input.areaShiftTemplateId) return input.areaShiftTemplateId;
+  if (!input.locationAreaId) return null;
+
+  const templates =
+    areaTemplates ??
+    (await db.listAreaShiftTemplatesWithBreaksForArea(
+      input.locationAreaId,
+      input.locationId
+    ));
+
+  return resolveAreaShiftTemplateIdByTimes(
+    input.locationAreaId,
+    input.startTime,
+    input.endTime,
+    templates
   );
 }
 
@@ -254,7 +285,8 @@ async function assignShiftToRemainingWeekDaysSilently(
   weekDates: readonly string[],
   undoBatch: ShiftAssignUndoBatch,
   timeZone: string,
-  shiftConfirmationEnabled: boolean
+  shiftConfirmationEnabled: boolean,
+  areaTemplates?: readonly AreaShiftTemplateWithBreaks[]
 ): Promise<string[]> {
   const db = await getDatabase();
   const assignedDates: string[] = [];
@@ -281,7 +313,8 @@ async function assignShiftToRemainingWeekDaysSilently(
         { ...input, shiftDate: targetDate, existingShiftId: undefined },
         undoBatch,
         timeZone,
-        shiftConfirmationEnabled
+        shiftConfirmationEnabled,
+        areaTemplates
       );
       assignedDates.push(targetDate);
     } catch {
@@ -503,7 +536,8 @@ async function persistShiftWithTimes(
   input: AssignShiftWithTimesInput,
   undoBatch: ShiftAssignUndoBatch,
   timeZone: string,
-  shiftConfirmationEnabled: boolean
+  shiftConfirmationEnabled: boolean,
+  areaTemplates?: readonly AreaShiftTemplateWithBreaks[]
 ): Promise<void> {
   const db = await getDatabase();
 
@@ -518,10 +552,30 @@ async function persistShiftWithTimes(
     timeZone
   );
 
-  const nextSnapshot = buildAssignSnapshotSource(input, starts_at, ends_at);
+  const areaShiftTemplateId = await resolvePersistedAreaShiftTemplateId(
+    db,
+    {
+      areaShiftTemplateId: input.areaShiftTemplateId,
+      locationId: input.locationId,
+      locationAreaId: input.locationAreaId,
+      startTime: input.startTime,
+      endTime: input.endTime,
+    },
+    areaTemplates
+  );
+  const persistedInput: AssignShiftWithTimesInput = {
+    ...input,
+    areaShiftTemplateId,
+  };
+
+  const nextSnapshot = buildAssignSnapshotSource(
+    persistedInput,
+    starts_at,
+    ends_at
+  );
 
   const payload = {
-    area_shift_template_id: input.areaShiftTemplateId,
+    area_shift_template_id: areaShiftTemplateId,
     location_id: input.locationId,
     location_area_id: input.locationAreaId,
     starts_at,
@@ -776,13 +830,21 @@ export async function assignShiftWithTimes(
       replacements: [],
     };
 
+    const areaShiftTemplates = input.locationAreaId
+      ? await db.listAreaShiftTemplatesWithBreaksForArea(
+          input.locationAreaId,
+          input.locationId
+        )
+      : undefined;
+
     await persistShiftWithTimes(
       organizationId,
       userId,
       input,
       undoBatch,
       timeZone,
-      assignMode.shiftConfirmationEnabled
+      assignMode.shiftConfirmationEnabled,
+      areaShiftTemplates
     );
 
     const revalidatedDates = new Set<string>([input.shiftDate]);
@@ -801,7 +863,8 @@ export async function assignShiftWithTimes(
         input.weekDates,
         undoBatch,
         timeZone,
-        assignMode.shiftConfirmationEnabled
+        assignMode.shiftConfirmationEnabled,
+        areaShiftTemplates
       );
       for (const date of extraDates) {
         revalidatedDates.add(date);
@@ -1170,6 +1233,11 @@ export async function assignShiftBatch(input: {
       anySuccess = true;
     }
 
+    const areaShiftTemplates = await db.listAreaShiftTemplatesWithBreaksForArea(
+      input.locationAreaId,
+      input.locationId
+    );
+
     for (const row of validRows) {
       if (results.some((r) => !r.ok && r.rowIndex === row.rowIndex)) continue;
 
@@ -1190,7 +1258,8 @@ export async function assignShiftBatch(input: {
           },
           undoBatch,
           timeZone,
-          assignMode.shiftConfirmationEnabled
+          assignMode.shiftConfirmationEnabled,
+          areaShiftTemplates
         );
         results.push({ rowIndex: row.rowIndex, ok: true, warnings: row.warnings });
         anySuccess = true;
@@ -1215,7 +1284,8 @@ export async function assignShiftBatch(input: {
             input.weekDates,
             undoBatch,
             timeZone,
-            assignMode.shiftConfirmationEnabled
+            assignMode.shiftConfirmationEnabled,
+            areaShiftTemplates
           );
           for (const date of extraDates) {
             revalidatedDates.add(date);

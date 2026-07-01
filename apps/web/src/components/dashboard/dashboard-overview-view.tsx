@@ -67,7 +67,7 @@ import type {
   Profile,
   Qualification,
 } from "@schichtwerk/types";
-import { useClearMainNavPendingWhenReady } from "@/lib/app-shell-main-nav-pending";
+import { useClearMainNavPendingWhenReady, useBeginMainNavPending } from "@/lib/app-shell-main-nav-pending";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import type { DashboardExtPanelSnapshot } from "@/lib/dashboard-ext-panel-data";
 import {
@@ -246,6 +246,7 @@ export function DashboardLocationStatusBar({
   backButtonRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const t = useTranslations();
+  const beginMainNavPending = useBeginMainNavPending();
 
   const employeeCalendarHref = useMemo(
     () => buildDashboardCalendarHref("/mitarbeiter-kalender", weekStart, locationId),
@@ -258,10 +259,17 @@ export function DashboardLocationStatusBar({
 
   const navButtonClass = DASHBOARD_STATUS_BAR_COMPACT_NAV_BUTTON_CLASS;
 
+  function handleCalendarNav(
+    pathname: "/bereich-kalender" | "/mitarbeiter-kalender"
+  ) {
+    beginMainNavPending({ kind: "page", pathname });
+  }
+
   const calendarNavLinks = (
     <>
       <Link
         href={employeeCalendarHref}
+        onClick={() => handleCalendarNav("/mitarbeiter-kalender")}
         className={cn(navButtonClass, "shrink-0 justify-center max-sm:px-2")}
       >
         <span className="sm:hidden">{t("dashboard.calendarNavEmployee")}</span>
@@ -269,6 +277,7 @@ export function DashboardLocationStatusBar({
       </Link>
       <Link
         href={areaCalendarHref}
+        onClick={() => handleCalendarNav("/bereich-kalender")}
         className={cn(navButtonClass, "shrink-0 justify-center max-sm:px-2")}
       >
         <span className="sm:hidden">{t("dashboard.calendarNavArea")}</span>

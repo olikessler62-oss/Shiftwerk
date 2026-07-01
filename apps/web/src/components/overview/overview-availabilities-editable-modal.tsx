@@ -401,7 +401,6 @@ export function OverviewAvailabilitiesEditableModal({
           titleId="overview-availabilities-modal-title"
           onClose={onClose}
           closeDisabled={pending || waitingForContent || anySubModalOpen}
-          dismissOnBackdrop={!anySubModalOpen && !waitingForContent && !pending}
           closeAriaLabel={t("common.close")}
           contentReady={contentReady}
           panelClassName={cn(anySubModalOpen && "pointer-events-none")}

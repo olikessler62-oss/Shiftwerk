@@ -10,12 +10,29 @@ import {
   type SchichtwerkDatabase,
 } from "@schichtwerk/database";
 import type { AbsenceRequest, Profile, ProfileRecurringAvailability } from "@schichtwerk/types";
+import { insertPlannedConfirmedShifts } from "@/lib/superadmin-test-scenarios/insert-planned-confirmed-shifts";
+import {
+  buildSuperadminTestScenarioShiftSchedule,
+  coverageTargetForMixedMode,
+  targetShiftCountForMode,
+  type SuperadminTestScenarioSeedSettings,
+  type SuperadminTestScenarioShiftCoverageMode,
+  type SuperadminTestScenarioShiftsPerDayMode,
+  type TestScenarioShiftTemplate,
+  type TestScenarioShiftWindow,
+} from "@/lib/superadmin-test-scenarios/superadmin-test-scenario-settings";
 
 export const BIERGARTEN_HADRIAN_SCENARIO_ORG_NAME = "Giovanni's Gastro";
 
+export type {
+  SuperadminTestScenarioShiftCoverageMode as BiergartenHadrianShiftCoverageMode,
+  SuperadminTestScenarioShiftsPerDayMode as BiergartenHadrianShiftsPerDayMode,
+} from "@/lib/superadmin-test-scenarios/superadmin-test-scenario-settings";
+
+
 export const BIERGARTEN_HADRIAN_SCENARIO_LOCATION_NAMES = [
+  "L'Orangerie",
   "Biergarten",
-  "Hadrian-Eck",
 ] as const;
 
 const AREA_NAMES = ["Restaurant", "Küche", "Bar"] as const;
@@ -35,18 +52,6 @@ const AREA_QUALIFICATION_NAMES: Record<string, readonly string[]> = {
 
 const OPEN_WEEKDAYS = [0, 1, 2, 4, 5, 6] as const;
 
-const SERVICE_WINDOWS = [
-  { start: "08:00", end: "10:00" },
-  { start: "12:00", end: "15:00" },
-  { start: "18:00", end: "22:00" },
-] as const;
-
-const SHIFT_TEMPLATES = [
-  { name: "Früh", start: "08:00", end: "10:00", color: "#3b82f6" },
-  { name: "Mittel", start: "12:00", end: "15:00", color: "#22c55e" },
-  { name: "Spät", start: "18:00", end: "22:00", color: "#f97316" },
-] as const;
-
 type StaffingQualRule = { qualName: string; count: number };
 
 type StaffingWindowRule = {
@@ -55,46 +60,149 @@ type StaffingWindowRule = {
   qualifications: readonly StaffingQualRule[];
 };
 
-const STAFFING_BY_AREA_KEY: Record<string, () => readonly StaffingWindowRule[]> = {
-  restaurant: () =>
-    SERVICE_WINDOWS.map((window) => ({
-      start: window.start,
-      end: window.end,
-      qualifications: [{ qualName: "Kellner/in", count: 2 }],
-    })),
-  küche: () => [
-    {
-      start: "08:00",
-      end: "10:00",
-      qualifications: [{ qualName: "Koch/Köchin", count: 1 }],
-    },
-    {
-      start: "12:00",
-      end: "15:00",
-      qualifications: [
-        { qualName: "Koch/Köchin", count: 1 },
-        { qualName: "Spülkraft", count: 1 },
-      ],
-    },
-    {
-      start: "18:00",
-      end: "22:00",
-      qualifications: [
-        { qualName: "Koch/Köchin", count: 1 },
-        { qualName: "Spülkraft", count: 1 },
-      ],
-    },
-  ],
-  bar: () =>
-    SERVICE_WINDOWS.map((window) => ({
-      start: window.start,
-      end: window.end,
-      qualifications: [
-        { qualName: "Barista", count: 1 },
-        { qualName: "Spülkraft", count: 1 },
-      ],
-    })),
+type ShiftWindow = TestScenarioShiftWindow;
+
+type ShiftTemplateDef = TestScenarioShiftTemplate;
+
+export type BiergartenHadrianShiftScenarioConfig = {
+  shiftsPerDayMode: SuperadminTestScenarioShiftsPerDayMode;
+  serviceWindows: readonly ShiftWindow[];
+  shiftTemplates: readonly ShiftTemplateDef[];
+  staffingByAreaKey: Record<string, () => readonly StaffingWindowRule[]>;
 };
+
+export function buildBiergartenHadrianShiftConfig(
+  settings: Pick<SuperadminTestScenarioSeedSettings, "shiftsPerDayMode" | "shifts">
+): BiergartenHadrianShiftScenarioConfig {
+  const schedule = buildSuperadminTestScenarioShiftSchedule(settings);
+  const { shiftsPerDayMode, serviceWindows, shiftTemplates } = schedule;
+
+  if (shiftsPerDayMode === "one") {
+    const window = serviceWindows[0]!;
+    return {
+      shiftsPerDayMode,
+      serviceWindows,
+      shiftTemplates,
+      staffingByAreaKey: {
+        restaurant: () => [
+          {
+            start: window.start,
+            end: window.end,
+            qualifications: [{ qualName: "Kellner/in", count: 2 }],
+          },
+        ],
+        küche: () => [
+          {
+            start: window.start,
+            end: window.end,
+            qualifications: [{ qualName: "Koch/Köchin", count: 1 }],
+          },
+        ],
+        bar: () => [
+          {
+            start: window.start,
+            end: window.end,
+            qualifications: [
+              { qualName: "Barista", count: 1 },
+              { qualName: "Spülkraft", count: 1 },
+            ],
+          },
+        ],
+      },
+    };
+  }
+
+  if (shiftsPerDayMode === "two") {
+    const earlyWindow = serviceWindows[0]!;
+    const lateWindow = serviceWindows[1]!;
+    return {
+      shiftsPerDayMode,
+      serviceWindows,
+      shiftTemplates,
+      staffingByAreaKey: {
+        restaurant: () =>
+          serviceWindows.map((window) => ({
+            start: window.start,
+            end: window.end,
+            qualifications: [{ qualName: "Kellner/in", count: 2 }],
+          })),
+        küche: () => [
+          {
+            start: earlyWindow.start,
+            end: earlyWindow.end,
+            qualifications: [{ qualName: "Koch/Köchin", count: 1 }],
+          },
+          {
+            start: lateWindow.start,
+            end: lateWindow.end,
+            qualifications: [
+              { qualName: "Koch/Köchin", count: 1 },
+              { qualName: "Spülkraft", count: 1 },
+            ],
+          },
+        ],
+        bar: () =>
+          serviceWindows.map((window) => ({
+            start: window.start,
+            end: window.end,
+            qualifications: [
+              { qualName: "Barista", count: 1 },
+              { qualName: "Spülkraft", count: 1 },
+            ],
+          })),
+      },
+    };
+  }
+
+  const earlyWindow = serviceWindows[0]!;
+  const midWindow = serviceWindows[1]!;
+  const lateWindow = serviceWindows[2]!;
+  return {
+    shiftsPerDayMode,
+    serviceWindows,
+    shiftTemplates,
+    staffingByAreaKey: {
+      restaurant: () =>
+        serviceWindows.map((window) => ({
+          start: window.start,
+          end: window.end,
+          qualifications: [{ qualName: "Kellner/in", count: 2 }],
+        })),
+      küche: () => [
+        {
+          start: earlyWindow.start,
+          end: earlyWindow.end,
+          qualifications: [{ qualName: "Koch/Köchin", count: 1 }],
+        },
+        {
+          start: midWindow.start,
+          end: midWindow.end,
+          qualifications: [
+            { qualName: "Koch/Köchin", count: 1 },
+            { qualName: "Spülkraft", count: 1 },
+          ],
+        },
+        {
+          start: lateWindow.start,
+          end: lateWindow.end,
+          qualifications: [
+            { qualName: "Koch/Köchin", count: 1 },
+            { qualName: "Spülkraft", count: 1 },
+          ],
+        },
+      ],
+      bar: () =>
+        serviceWindows.map((window) => ({
+          start: window.start,
+          end: window.end,
+          qualifications: [
+            { qualName: "Barista", count: 1 },
+            { qualName: "Spülkraft", count: 1 },
+          ],
+        })),
+    },
+  };
+}
 
 type PlannedShift = {
   employeeId: string;
@@ -122,8 +230,6 @@ export type BiergartenHadrianScenarioResult = {
   openSlots: number;
   coveredSlots: number;
 };
-
-export type BiergartenHadrianShiftCoverageMode = "open" | "covered" | "mixed";
 
 function areaKey(name: string): string {
   return name.trim().toLowerCase();
@@ -191,12 +297,7 @@ function slotSeed(parts: readonly string[]): number {
 }
 
 function coverageTarget(requiredCount: number, seed: number): number {
-  const bucket = seed % 10;
-  if (bucket < 3) return 0;
-  if (bucket < 6) {
-    return requiredCount <= 1 ? 0 : Math.max(1, requiredCount - 1);
-  }
-  return requiredCount;
+  return coverageTargetForMixedMode(requiredCount, seed);
 }
 
 function profileHasQualification(
@@ -404,10 +505,11 @@ async function ensureAreas(
 async function configureAreaServiceHours(
   db: SchichtwerkDatabase,
   locationId: string,
-  areaId: string
+  areaId: string,
+  serviceWindows: readonly ShiftWindow[]
 ) {
   const rows = OPEN_WEEKDAYS.flatMap((weekday) =>
-    SERVICE_WINDOWS.map((window) => ({
+    serviceWindows.map((window) => ({
       weekday,
       start_time: window.start,
       end_time: window.end,
@@ -419,10 +521,11 @@ async function configureAreaServiceHours(
 async function configureAreaShiftTemplates(
   db: SchichtwerkDatabase,
   locationId: string,
-  areaId: string
+  areaId: string,
+  shiftTemplates: readonly ShiftTemplateDef[]
 ) {
   await db.clearAreaShiftTemplatesForArea(areaId, locationId);
-  for (const [index, template] of SHIFT_TEMPLATES.entries()) {
+  for (const [index, template] of shiftTemplates.entries()) {
     await db.insertAreaShiftTemplate({
       location_area_id: areaId,
       name: template.name,
@@ -439,9 +542,10 @@ async function configureAreaStaffing(
   locationId: string,
   areaId: string,
   areaName: string,
-  qualificationIdsByName: Map<string, string>
+  qualificationIdsByName: Map<string, string>,
+  staffingByAreaKey: BiergartenHadrianShiftScenarioConfig["staffingByAreaKey"]
 ) {
-  const ruleFactory = STAFFING_BY_AREA_KEY[areaKey(areaName)];
+  const ruleFactory = staffingByAreaKey[areaKey(areaName)];
   if (!ruleFactory) {
     throw new Error(`Kein Personalbedarf für Bereich „${areaName}“ definiert`);
   }
@@ -532,6 +636,7 @@ function orderEmployeesByWeeklyHoursForAssign(
 }
 
 function planRandomShifts(input: {
+  shiftConfig: BiergartenHadrianShiftScenarioConfig;
   locations: readonly { id: string; areas: readonly { id: string; name: string }[] }[];
   openDates: readonly string[];
   weekStart: string;
@@ -551,7 +656,7 @@ function planRandomShifts(input: {
 
   for (const location of input.locations) {
     for (const area of location.areas) {
-      const ruleFactory = STAFFING_BY_AREA_KEY[areaKey(area.name)];
+      const ruleFactory = input.shiftConfig.staffingByAreaKey[areaKey(area.name)];
       const staffingRules = ruleFactory ? ruleFactory() : [];
 
       for (const date of input.openDates) {
@@ -632,6 +737,7 @@ function planRandomShifts(input: {
 }
 
 function planFullyCoveredShifts(input: {
+  shiftConfig: BiergartenHadrianShiftScenarioConfig;
   locations: readonly { id: string; areas: readonly { id: string; name: string }[] }[];
   openDates: readonly string[];
   weekStart: string;
@@ -651,7 +757,7 @@ function planFullyCoveredShifts(input: {
 
   for (const location of input.locations) {
     for (const area of location.areas) {
-      const ruleFactory = STAFFING_BY_AREA_KEY[areaKey(area.name)];
+      const ruleFactory = input.shiftConfig.staffingByAreaKey[areaKey(area.name)];
       const staffingRules = ruleFactory ? ruleFactory() : [];
 
       for (const date of input.openDates) {
@@ -729,7 +835,49 @@ function planFullyCoveredShifts(input: {
   return { planned, openSlots, coveredSlots };
 }
 
+function scaleStaffingCountsInConfig(
+  config: BiergartenHadrianShiftScenarioConfig,
+  scale: number
+): BiergartenHadrianShiftScenarioConfig {
+  if (scale === 1) return config;
+
+  const scaleRules = (rules: readonly StaffingWindowRule[]): StaffingWindowRule[] =>
+    rules.map((rule) => ({
+      ...rule,
+      qualifications: rule.qualifications.map((qualRule) => ({
+        ...qualRule,
+        count: Math.max(1, Math.round(qualRule.count * scale)),
+      })),
+    }));
+
+  const staffingByAreaKey: BiergartenHadrianShiftScenarioConfig["staffingByAreaKey"] = {};
+  for (const key of Object.keys(config.staffingByAreaKey)) {
+    const factory = config.staffingByAreaKey[key]!;
+    staffingByAreaKey[key] = () => scaleRules(factory());
+  }
+
+  return { ...config, staffingByAreaKey };
+}
+
+function scaleShiftConfigToWeeklyTarget(
+  config: BiergartenHadrianShiftScenarioConfig,
+  locations: readonly { id: string; areas: readonly { id: string; name: string }[] }[],
+  openDates: readonly string[],
+  qualificationIdsByName: Map<string, string>,
+  targetPerWeek: number
+): BiergartenHadrianShiftScenarioConfig {
+  const current = countStaffingDemandSlots({
+    shiftConfig: config,
+    locations,
+    openDates,
+    qualificationIdsByName,
+  });
+  if (current <= 0 || current === targetPerWeek) return config;
+  return scaleStaffingCountsInConfig(config, targetPerWeek / current);
+}
+
 function countStaffingDemandSlots(input: {
+  shiftConfig: BiergartenHadrianShiftScenarioConfig;
   locations: readonly { id: string; areas: readonly { id: string; name: string }[] }[];
   openDates: readonly string[];
   qualificationIdsByName: Map<string, string>;
@@ -738,7 +886,7 @@ function countStaffingDemandSlots(input: {
 
   for (const location of input.locations) {
     for (const area of location.areas) {
-      const ruleFactory = STAFFING_BY_AREA_KEY[areaKey(area.name)];
+      const ruleFactory = input.shiftConfig.staffingByAreaKey[areaKey(area.name)];
       const staffingRules = ruleFactory ? ruleFactory() : [];
 
       for (const date of input.openDates) {
@@ -756,6 +904,7 @@ function countStaffingDemandSlots(input: {
 }
 
 type ShiftPlanningContext = {
+  shiftConfig: BiergartenHadrianShiftScenarioConfig;
   locations: readonly { id: string; areas: readonly { id: string; name: string }[] }[];
   weekStart: string;
   timeZone: string;
@@ -769,7 +918,7 @@ type ShiftPlanningContext = {
 };
 
 function planShiftsForWeek(
-  mode: BiergartenHadrianShiftCoverageMode,
+  mode: SuperadminTestScenarioShiftCoverageMode,
   context: ShiftPlanningContext
 ): { planned: PlannedShift[]; openSlots: number; coveredSlots: number } {
   const openDates = openDatesInWeek(context.weekStart);
@@ -778,6 +927,7 @@ function planShiftsForWeek(
     return {
       planned: [],
       openSlots: countStaffingDemandSlots({
+        shiftConfig: context.shiftConfig,
         locations: context.locations,
         openDates,
         qualificationIdsByName: context.qualificationIdsByName,
@@ -787,6 +937,7 @@ function planShiftsForWeek(
   }
 
   const plannerInput = {
+    shiftConfig: context.shiftConfig,
     locations: context.locations,
     openDates,
     weekStart: context.weekStart,
@@ -808,7 +959,7 @@ function planShiftsForWeek(
 }
 
 function planShiftsForTwoWeeks(
-  mode: BiergartenHadrianShiftCoverageMode,
+  mode: SuperadminTestScenarioShiftCoverageMode,
   weekStart: string,
   context: Omit<ShiftPlanningContext, "weekStart" | "plannedShifts">
 ): { planned: PlannedShift[]; openSlots: number; coveredSlots: number } {
@@ -834,7 +985,8 @@ function planShiftsForTwoWeeks(
 async function configureBiergartenHadrianLocations(
   db: SchichtwerkDatabase,
   organizationId: string,
-  qualificationIdsByName: Map<string, string>
+  qualificationIdsByName: Map<string, string>,
+  shiftConfig: BiergartenHadrianShiftScenarioConfig
 ): Promise<{ id: string; areas: { id: string; name: string }[] }[]> {
   const configuredLocations: {
     id: string;
@@ -854,14 +1006,25 @@ async function configureBiergartenHadrianLocations(
         area.name,
         qualificationIdsByName
       );
-      await configureAreaServiceHours(db, location.id, area.id);
-      await configureAreaShiftTemplates(db, location.id, area.id);
+      await configureAreaServiceHours(
+        db,
+        location.id,
+        area.id,
+        shiftConfig.serviceWindows
+      );
+      await configureAreaShiftTemplates(
+        db,
+        location.id,
+        area.id,
+        shiftConfig.shiftTemplates
+      );
       await configureAreaStaffing(
         db,
         location.id,
         area.id,
         area.name,
-        qualificationIdsByName
+        qualificationIdsByName,
+        shiftConfig.staffingByAreaKey
       );
     }
 
@@ -940,35 +1103,6 @@ async function prepareBiergartenHadrianQualifications(
   return qualificationIdsByName;
 }
 
-async function insertPlannedConfirmedShifts(
-  db: SchichtwerkDatabase,
-  organizationId: string,
-  actorId: string,
-  timeZone: string,
-  planned: readonly PlannedShift[]
-) {
-  for (const shift of planned) {
-    const timestamps = buildShiftTimestamps(
-      shift.shiftDate,
-      shift.startTime,
-      shift.endTime,
-      timeZone
-    );
-    await db.insertShift({
-      organization_id: organizationId,
-      employee_id: shift.employeeId,
-      location_id: shift.locationId,
-      location_area_id: shift.areaId,
-      shift_date: shift.shiftDate,
-      starts_at: timestamps.starts_at,
-      ends_at: timestamps.ends_at,
-      created_by: actorId,
-      confirmation_status: "confirmed",
-      confirmation_status_updated_at: new Date().toISOString(),
-    });
-  }
-}
-
 export async function runBiergartenHadrianEckScenario(
   db: SchichtwerkDatabase,
   input: {
@@ -976,7 +1110,7 @@ export async function runBiergartenHadrianEckScenario(
     actorId: string;
     timeZone: string;
     todayISO: string;
-    shiftCoverageMode: BiergartenHadrianShiftCoverageMode;
+    settings: Pick<SuperadminTestScenarioSeedSettings, "shiftCoverageMode" | "shiftsPerDayMode" | "shifts">;
   }
 ): Promise<BiergartenHadrianScenarioResult> {
   await db.prepareBiergartenHadrianScenario(input.organizationId);
@@ -986,13 +1120,29 @@ export async function runBiergartenHadrianEckScenario(
     input.organizationId
   );
 
+  const weekStart = isoWeekStartFromShiftDate(input.todayISO);
+  const mockLocations = BIERGARTEN_HADRIAN_SCENARIO_LOCATION_NAMES.map((_, locationIndex) => ({
+    id: `mock-location-${locationIndex}`,
+    areas: AREA_NAMES.map((areaName, areaIndex) => ({
+      id: `mock-area-${locationIndex}-${areaIndex}`,
+      name: areaName,
+    })),
+  }));
+
+  const shiftConfig = scaleShiftConfigToWeeklyTarget(
+    buildBiergartenHadrianShiftConfig(input.settings),
+    mockLocations,
+    openDatesInWeek(weekStart),
+    qualificationIdsByName,
+    targetShiftCountForMode(input.settings.shiftsPerDayMode)
+  );
+
   const configuredLocations = await configureBiergartenHadrianLocations(
     db,
     input.organizationId,
-    qualificationIdsByName
+    qualificationIdsByName,
+    shiftConfig
   );
-
-  const weekStart = isoWeekStartFromShiftDate(input.todayISO);
 
   const employees = await db.listPlanningEmployees(input.organizationId);
   if (employees.length === 0) {
@@ -1009,9 +1159,10 @@ export async function runBiergartenHadrianEckScenario(
   ]);
 
   const { planned, openSlots, coveredSlots } = planShiftsForTwoWeeks(
-    input.shiftCoverageMode,
+    input.settings.shiftCoverageMode,
     weekStart,
     {
+      shiftConfig,
       locations: configuredLocations,
       timeZone: input.timeZone,
       employees,
@@ -1031,7 +1182,7 @@ export async function runBiergartenHadrianEckScenario(
     planned
   );
 
-  if (input.shiftCoverageMode !== "open" && planned.length === 0) {
+  if (input.settings.shiftCoverageMode !== "open" && planned.length === 0) {
     throw new Error(
       "Keine Schichten geplant — planbare Mitarbeitende mit passenden Qualifikationen und Verfügbarkeit prüfen."
     );

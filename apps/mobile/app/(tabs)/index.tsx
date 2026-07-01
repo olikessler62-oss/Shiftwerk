@@ -5,11 +5,15 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  ScrollView,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { isShiftDateInPast } from "@schichtwerk/database";
-import { isEmployeeDismissableShift } from "@/lib/employee-shift-dismiss";
+import {
+  isEmployeeDismissableShift,
+  isEmployeeCancellationPending,
+} from "@/lib/employee-shift-dismiss";
 import { isOpenEmployeeConfirmationShift } from "@/lib/open-confirmation-shift";
 import type { ConfirmationDecision, ConfirmationWeekItem, EmployeeWeekShiftDisplayItem, Shift } from "@schichtwerk/types";
 import { WeekNavHeader } from "@/components/week-nav-header";
@@ -29,6 +33,7 @@ import {
 import { MobileApiError } from "@/lib/mobile-api-client";
 import { confirmAlert, showAppAlert } from "@/lib/app-alert";
 import { buildWeekPlanDays, weekRangeForOffset } from "@/lib/mobile-week-plan";
+import { resolveWeekDaySlotHeights } from "@/lib/mobile-week-day-layout";
 import { usePendingConfirmations } from "@/lib/pending-confirmations-context";
 import { useWeekPlanLayout } from "@/lib/responsive-layout";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
@@ -156,8 +161,9 @@ export default function WeekScreen() {
   );
 
   const shiftCanCancel = useCallback(
-    (shift: Shift) =>
+    (shift: Shift, display?: EmployeeWeekShiftDisplayItem) =>
       !isShiftDateInPast(shift.shift_date) &&
+      !isEmployeeCancellationPending(shift, display) &&
       shift.confirmation_status === "confirmed",
     []
   );
@@ -219,7 +225,10 @@ export default function WeekScreen() {
     try {
       await cancelConfirmationShift(shiftId);
       setActionSheetContext(null);
-      showAppAlert("Abgesagt", "Die Schicht wurde abgesagt.");
+      showAppAlert(
+        "Absage angefragt",
+        "Deine Absage wurde übermittelt und muss vom Team bestätigt werden."
+      );
       setRefreshing(true);
       await load();
     } catch (error) {
@@ -262,8 +271,21 @@ export default function WeekScreen() {
     }
   }
 
-  const daySlotHeight =
-    weekGridHeight > 0 ? Math.floor(weekGridHeight / weekDays.length) : 0;
+  const daySlotLayout = useMemo(() => {
+    if (weekGridHeight <= 0) {
+      return {
+        heights: weekDays.map(() => 0),
+        scrollable: false,
+      };
+    }
+    return resolveWeekDaySlotHeights(
+      weekDays.map((day) => day.shifts.length),
+      weekGridHeight
+    );
+  }, [weekDays, weekGridHeight]);
+
+  const weekGridScrollable = daySlotLayout.scrollable;
+  const weekDayHeights = daySlotLayout.heights;
 
   const weekNav = (
     <WeekNavHeader
@@ -335,20 +357,34 @@ export default function WeekScreen() {
           style={styles.weekGridHost}
           onLayout={(event) => setWeekGridHeight(event.nativeEvent.layout.height)}
         >
-          {daySlotHeight > 0
-            ? weekDays.map((day) => (
-                <View key={day.dateISO} style={{ height: daySlotHeight }}>
+          {weekDayHeights.some((height) => height > 0) ? (
+            <ScrollView
+              style={styles.weekGridScroll}
+              contentContainerStyle={[
+                styles.weekGridScrollContent,
+                !weekGridScrollable && styles.weekGridScrollContentFill,
+              ]}
+              showsVerticalScrollIndicator={weekGridScrollable}
+              bounces={weekGridScrollable}
+              scrollEnabled={weekGridScrollable}
+            >
+              {weekDays.map((day, index) => (
+                <View
+                  key={day.dateISO}
+                  style={{ height: weekDayHeights[index] ?? 0 }}
+                >
                   <WeekDaySlot
                     day={day}
-                    slotHeight={daySlotHeight}
+                    slotHeight={weekDayHeights[index] ?? 0}
                     drafts={drafts}
                     onShiftPress={setActionSheetContext}
                     onDismissShift={(shiftId) => void handleDismissShift(shiftId)}
                     dismissingShiftId={dismissingShiftId}
                   />
                 </View>
-              ))
-            : null}
+              ))}
+            </ScrollView>
+          ) : null}
         </View>
 
         {draftEntries.length > 0 ? (
@@ -387,7 +423,10 @@ export default function WeekScreen() {
           }
           canCancel={
             actionSheetContext
-              ? shiftCanCancel(actionSheetContext.shift)
+              ? shiftCanCancel(
+                  actionSheetContext.shift,
+                  actionSheetContext.display
+                )
               : false
           }
           canDismiss={
@@ -426,6 +465,15 @@ const styles = StyleSheet.create({
   weekGridHost: {
     flex: 1,
     minHeight: 0,
+  },
+  weekGridScroll: {
+    flex: 1,
+  },
+  weekGridScrollContent: {
+    flexGrow: 1,
+  },
+  weekGridScrollContentFill: {
+    minHeight: "100%",
   },
   centered: {
     flex: 1,

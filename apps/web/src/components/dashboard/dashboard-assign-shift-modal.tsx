@@ -683,9 +683,6 @@ export function DashboardAssignShiftModal({
         onClose={onClose}
         closeDisabled={busy}
         closeAriaLabel={t("common.close")}
-        dismissOnBackdrop={
-          !busy && !messagePrompt && !outsideServiceHoursConfirm
-        }
         footer={
           <div className={PLANNING_SIDE_PANEL_FOOTER_CLASS}>
             {showAssignRestOfWeekDaysOption ? (

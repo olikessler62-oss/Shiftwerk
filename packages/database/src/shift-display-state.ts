@@ -254,9 +254,27 @@ export function resolveShiftCardDisplayState(
       status: "approved",
       cancelledBy: readCancelledBy(latestCancellation.payload),
     };
+  } else if (
+    latestCancellation?.status === "pending" &&
+    readCancelledBy(latestCancellation.payload) === "employee"
+  ) {
+    state.openCancellation = {
+      requestId: latestCancellation.id,
+      status: "pending",
+      cancelledBy: "employee",
+    };
   }
 
   return state;
+}
+
+export function hasPendingEmployeeCancellation(
+  displayState: ShiftCardDisplayState | undefined | null
+): boolean {
+  return (
+    displayState?.openCancellation?.status === "pending" &&
+    displayState.openCancellation.cancelledBy === "employee"
+  );
 }
 
 /** Spiegel der SQL-View shifts_with_legacy_confirmation (für Tests/Adapter). */

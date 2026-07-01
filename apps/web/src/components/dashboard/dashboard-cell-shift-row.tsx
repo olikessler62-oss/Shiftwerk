@@ -47,6 +47,8 @@ import {
   shiftConfirmationShowsUnresolvedCardStyle,
 } from "@/lib/shift-confirmation-display";
 import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
+import { hasPendingEmployeeCancellation } from "@schichtwerk/database";
+import { ShiftPendingCancellationOverlay } from "@/components/dashboard/shift-pending-cancellation-overlay";
 import { SHIFT_ABSENCE_CONFLICT_RING_CLASS } from "@/lib/shift-absence-conflict";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
@@ -257,6 +259,10 @@ export function DashboardCellShiftRow({
           }
         );
 
+        const pendingEmployeeCancellation = hasPendingEmployeeCancellation(
+          shift.displayState
+        );
+
         return (
           <Tooltip
             key={segmentKey}
@@ -366,9 +372,13 @@ export function DashboardCellShiftRow({
                     inlineStatusLabel={inlineStatusLabel}
                   />
                 ) : null}
-                <DashboardShiftCardConfirmationOverlay
-                  status={calendarConfirmationStatus}
-                />
+                {pendingEmployeeCancellation ? (
+                  <ShiftPendingCancellationOverlay />
+                ) : (
+                  <DashboardShiftCardConfirmationOverlay
+                    status={calendarConfirmationStatus}
+                  />
+                )}
               </DashboardShiftCardTextArea>
               </button>
             </div>

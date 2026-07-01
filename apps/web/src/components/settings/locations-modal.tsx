@@ -890,8 +890,6 @@ export function LocationsModal({
       titleId="locations-modal-title"
       onClose={onClose}
       closeDisabled={pending}
-      dismissOnBackdrop={!anySubModalOpen && !detailPanel}
-      dismissOnEscape={!anySubModalOpen && !detailPanel}
       closeAriaLabel={t("common.close")}
       contentReady={!deferInitialRender}
       panelClassName={cn(

@@ -93,6 +93,27 @@ describe("groupCommunicationResponseShifts", () => {
     expect(grouped.canceled.map((row) => row.id)).toEqual(["canceled-employee"]);
   });
 
+  it("groups pending employee cancellation requests into canceled tab", () => {
+    const grouped = groupCommunicationResponseShifts([
+      shift({
+        id: "pending-cancel",
+        confirmationStatus: "confirmed",
+        displayState: {
+          shiftId: "pending-cancel",
+          lifecycle: "confirmed",
+          legacyConfirmationStatus: "confirmed",
+          openCancellation: {
+            requestId: "cancel-pending",
+            status: "pending",
+            cancelledBy: "employee",
+          },
+        },
+      }),
+    ]);
+
+    expect(grouped.canceled.map((row) => row.id)).toEqual(["pending-cancel"]);
+  });
+
   it("prefers displayState cancellation actor over legacy cancelActors map", () => {
     const grouped = groupCommunicationResponseShifts(
       [

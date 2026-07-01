@@ -29,7 +29,9 @@ import type {
 } from "@/lib/dashboard-area-week-stats";
 import {
   resolveDashboardDayAreaStaffingGaugeFromWindowRows,
+  staffingWindowRowHasUnconfirmedPlannedCoverage,
 } from "@/lib/dashboard-area-week-stats";
+import type { DashboardActionableConfirmationStatus } from "@/lib/dashboard-confirmation-employee-dedupe";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import {
   DashboardAreaStatusFooterLines,
@@ -1027,7 +1029,7 @@ function AreaCardHeader({
   staffingStatusClickable: boolean;
   onOpenStaffingCandidates?: () => void;
   onOpenPlannedCoverage?: () => void;
-  onOpenConfirmationIssues?: (status: ShiftConfirmationStatus) => void;
+  onOpenConfirmationIssues?: (status: DashboardActionableConfirmationStatus) => void;
   onOpenSwapRequests?: () => void;
   statusFooterLayout?: "stack" | "two-column";
   areaScopeToggle?: Props["areaScopeToggle"];
@@ -1320,7 +1322,9 @@ export function DashboardAreaAmpelCard({
     if (row) setCandidatesRow(row);
   };
 
-  const openConfirmationIssuesFromHeader = (status: ShiftConfirmationStatus) => {
+  const openConfirmationIssuesFromHeader = (
+    status: DashboardActionableConfirmationStatus
+  ) => {
     if (!windowIssuesContext) return;
     const row = findFirstRowWithConfirmationStatus(
       stats.staffingWindowRows,
@@ -1337,20 +1341,17 @@ export function DashboardAreaAmpelCard({
   };
 
   const openPlannedCoverageFromHeader = () => {
-    const proposedRow = findFirstRowWithConfirmationStatus(
-      stats.staffingWindowRows,
-      "proposed"
-    );
-    if (proposedRow) {
-      setWindowIssuesConfirmationFilter("proposed");
-      setWindowIssuesRow(proposedRow);
-      return;
-    }
     const row = findFirstPlannedStaffingWindowRow(
       stats.staffingWindowRows,
       todayISO
     );
-    if (row) openWindowIssuesForRow(row);
+    if (!row) return;
+    if (staffingWindowRowHasUnconfirmedPlannedCoverage(row)) {
+      setWindowIssuesConfirmationFilter("proposed");
+    } else {
+      setWindowIssuesConfirmationFilter(null);
+    }
+    setWindowIssuesRow(row);
   };
 
   const closeWindowIssuesModal = () => {

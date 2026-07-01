@@ -1,12 +1,9 @@
-import type { Organization } from "@schichtwerk/types";
-
 /** Voreinstellung: 3 Stunden nach Bestätigungsanfrage. */
 export const DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES = 180;
 
-export type OrganizationShiftConfirmationPendingInput = Pick<
-  Organization,
-  "shift_confirmation_pending_after_minutes"
->;
+export type OrganizationShiftConfirmationPendingInput = {
+  shift_confirmation_pending_after_minutes?: number | null;
+};
 
 /** Kurze Fristen zum Testen; danach 30-Minuten-Schritte bis 24:00. */
 const SHIFT_CONFIRMATION_PENDING_AFTER_SHORT_OPTIONS_MINUTES = [5, 10, 15] as const;

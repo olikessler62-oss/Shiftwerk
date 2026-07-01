@@ -1667,13 +1667,6 @@ export function AreaCalendarAddShiftModal({
         onClose={onClose}
         closeDisabled={saving}
         closeAriaLabel={t("common.close")}
-        dismissOnBackdrop={
-          !saving &&
-          !outsideServiceHoursConfirm &&
-          !availabilityConflictPrompt &&
-          !weeklyHoursAlertMessage &&
-          !complianceNotice
-        }
         footer={
           <div className={PLANNING_SIDE_PANEL_FOOTER_CLASS}>
             {showAssignRestOfWeekDaysOption ? (

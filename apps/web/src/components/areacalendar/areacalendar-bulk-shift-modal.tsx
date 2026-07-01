@@ -2838,7 +2838,6 @@ export function AreaCalendarBulkShiftModal({
         onClose={onClose}
         closeDisabled={saving || modalLocked}
         closeAriaLabel={t("common.close")}
-        dismissOnBackdrop={!saving && !prompt}
         headerAside={
           staffingTableRows.length > 0 ? (
             <BulkShiftStaffingTable

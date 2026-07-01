@@ -26,6 +26,7 @@ import {
 } from "@schichtwerk/database";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import { isConfirmedShiftCard } from "@/lib/shift-card-context-menu-actions";
+import { hasPendingEmployeeCancellation } from "@schichtwerk/database";
 
 export type CommunicationResponseTab =
   | "pending"
@@ -276,6 +277,11 @@ export function groupCommunicationResponseShifts(
   const canceled: AreaCalendarShiftCard[] = [];
 
   for (const shift of shifts) {
+    if (hasPendingEmployeeCancellation(shift.displayState)) {
+      canceled.push(shift);
+      continue;
+    }
+
     const tab = communicationResponseTabForStatus(shift.confirmationStatus);
     if (tab === "pending") pending.push(shift);
     else if (tab === "rejected") rejected.push(shift);

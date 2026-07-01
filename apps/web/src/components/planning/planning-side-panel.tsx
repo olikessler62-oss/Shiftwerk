@@ -30,9 +30,9 @@ type PlanningSidePanelProps = {
   onClose: () => void;
   closeDisabled?: boolean;
   closeAriaLabel: string;
-  /** Klick auf die abgedunkelte Fläche schließt das Panel. */
+  /** Klick auf die abgedunkelte Fläche schließt das Panel (Standard: aus — nur X/Schließen). */
   dismissOnBackdrop?: boolean;
-  /** Escape schließt das Panel (z. B. deaktivieren bei offenen Unterdialogen). */
+  /** Escape schließt das Panel (Standard: aus — nur X/Schließen). */
   dismissOnEscape?: boolean;
   /** Standard: schmales Panel. Wide: breite Tabellen / Schicht-Stati. */
   size?: "default" | "wide";
@@ -129,8 +129,8 @@ export function PlanningSidePanel({
   onClose,
   closeDisabled = false,
   closeAriaLabel,
-  dismissOnBackdrop = true,
-  dismissOnEscape = true,
+  dismissOnBackdrop = false,
+  dismissOnEscape = false,
   size = "default",
   headerAside,
   panelClassName,

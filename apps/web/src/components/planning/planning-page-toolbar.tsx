@@ -354,7 +354,7 @@ export function PlanningPageToolbar({ locations }: Props) {
       </span>
       {isCurrentWeek ? (
         <span
-          className="pointer-events-none absolute left-1/2 top-full mt-0.5 -translate-x-1/2 whitespace-nowrap text-[10px] font-normal leading-none text-white/75"
+          className="pointer-events-none absolute left-1/2 top-full -mt-px -translate-x-1/2 whitespace-nowrap text-[10px] font-normal leading-none text-white/75"
           aria-hidden
         >
           {t("common.currentWeekHint")}

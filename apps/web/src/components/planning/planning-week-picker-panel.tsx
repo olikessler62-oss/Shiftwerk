@@ -185,8 +185,6 @@ export function PlanningWeekPickerPanel({
       titleId="planning-week-picker-title"
       onClose={onClose}
       closeAriaLabel={t("common.close")}
-      dismissOnBackdrop
-      dismissOnEscape
       panelClassName="max-w-md"
       bodyClassName="px-3 py-3 sm:px-4 sm:py-4"
       footer={

@@ -635,8 +635,6 @@ export function ProfilesModal({
       titleId="profiles-modal-title"
       onClose={onClose}
       closeDisabled={pending}
-      dismissOnBackdrop={!anySubModalOpen && !detailPanel}
-      dismissOnEscape={!anySubModalOpen && !detailPanel}
       closeAriaLabel={t("common.close")}
       contentReady={!deferInitialRender}
       panelClassName={cn(

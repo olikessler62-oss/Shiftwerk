@@ -1,4 +1,4 @@
--- Superadmin-Testszenario „Biergarten & Hadrian-Eck“: vollständiger Standort-Reset.
+-- Superadmin-Testszenario „L'Orangerie & Biergarten“: vollständiger Standort-Reset.
 -- Die App führt dieselbe Logik in TypeScript aus (prepareBiergartenHadrianScenario).
 
 create or replace function public.prepare_biergarten_hadrian_scenario(p_organization_id uuid)

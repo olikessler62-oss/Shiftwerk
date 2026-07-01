@@ -17,6 +17,7 @@ import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 type WeekShiftCardConfirmationOverlayProps = {
   status: ShiftConfirmationStatus;
   cancelledBy?: ShiftRequestActorRole;
+  cancellationPending?: boolean;
   badgeFontSize?: number;
   isPastDay?: boolean;
   showDismiss?: boolean;
@@ -27,13 +28,14 @@ type WeekShiftCardConfirmationOverlayProps = {
 export function WeekShiftCardConfirmationOverlay({
   status,
   cancelledBy,
+  cancellationPending = false,
   badgeFontSize = 9,
   isPastDay = false,
   showDismiss = false,
   dismissing = false,
   onDismiss,
 }: WeekShiftCardConfirmationOverlayProps) {
-  if (!shiftConfirmationShowsOverlay(status)) {
+  if (!cancellationPending && !shiftConfirmationShowsOverlay(status)) {
     return null;
   }
 
@@ -41,6 +43,17 @@ export function WeekShiftCardConfirmationOverlay({
     badgeFontSize + 3,
     Math.round(badgeFontSize * 1.35)
   );
+
+  if (cancellationPending) {
+    return (
+      <>
+        <View style={styles.pendingOverlay} pointerEvents="none" />
+        <View style={styles.pendingXWrap} pointerEvents="none">
+          <Text style={styles.pendingX}>✕</Text>
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
@@ -87,6 +100,23 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: `rgba(0, 0, 0, ${SHIFT_CONFIRMATION_OVERLAY_OPACITY})`,
     zIndex: 1,
+  },
+  pendingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(220, 38, 38, 0.14)",
+    zIndex: 1,
+  },
+  pendingXWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  pendingX: {
+    color: "#dc2626",
+    fontSize: 28,
+    fontWeight: "800",
+    lineHeight: 30,
   },
   badge: {
     position: "absolute",

@@ -18,8 +18,6 @@ type Props = {
   titleId: string;
   onClose: () => void;
   closeDisabled?: boolean;
-  dismissOnBackdrop?: boolean;
-  dismissOnEscape?: boolean;
   closeAriaLabel: string;
   contentReady?: boolean;
   panelClassName?: string;

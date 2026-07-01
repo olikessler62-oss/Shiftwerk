@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasPendingEmployeeCancellation,
   mapLegacyConfirmationStatusToLifecycleAndRequestStatus,
   resolveLegacyConfirmationStatusForViewRow,
   resolveLegacyConfirmationStatusFromLegacyFields,
@@ -177,6 +178,34 @@ describe("resolveShiftCardDisplayState", () => {
       status: "approved",
       cancelledBy: "employee",
     });
+  });
+
+  it("exposes pending employee cancellation while shift stays confirmed", () => {
+    const state = resolveShiftCardDisplayState({
+      shiftId: "shift-pending-cancel",
+      lifecycle: "confirmed",
+      confirmationStatus: "confirmed",
+      requests: [
+        {
+          id: "cancel-pending",
+          shift_id: "shift-pending-cancel",
+          type: "cancellation",
+          status: "pending",
+          sent_at: "2025-06-09T12:00:00.000Z",
+          responded_at: null,
+          payload: { cancelled_by: "employee" },
+          created_at: "2025-06-09T12:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(state.legacyConfirmationStatus).toBe("confirmed");
+    expect(state.openCancellation).toEqual({
+      requestId: "cancel-pending",
+      status: "pending",
+      cancelledBy: "employee",
+    });
+    expect(hasPendingEmployeeCancellation(state)).toBe(true);
   });
 
   it("prefers confirmed shift row over stale pending shift_requests", () => {

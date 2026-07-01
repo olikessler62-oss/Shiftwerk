@@ -381,7 +381,6 @@ export function OverviewShiftPreferencesEditableModal({
           titleId="overview-shift-preferences-modal-title"
           onClose={onClose}
           closeDisabled={pending || waitingForContent || anySubModalOpen}
-          dismissOnBackdrop={!anySubModalOpen && !waitingForContent && !pending}
           closeAriaLabel={t("common.close")}
           contentReady={contentReady}
           panelClassName={cn(anySubModalOpen && "pointer-events-none")}

@@ -110,7 +110,6 @@ export function CommunicationHubModal({
       onClose={onClose}
       closeDisabled={busy}
       closeAriaLabel={t("common.close")}
-      dismissOnBackdrop={!busy}
       panelClassName={cn(busy && "cursor-wait [&_*]:cursor-wait")}
       bodyClassName="flex min-h-0 flex-col gap-4 overflow-hidden"
       footer={

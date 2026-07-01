@@ -81,7 +81,7 @@ export type ShiftCardDisplayState = {
   };
   openCancellation?: {
     requestId: string;
-    status: "approved";
+    status: "pending" | "approved";
     cancelledBy?: ShiftRequestActorRole;
   };
 };
@@ -449,8 +449,10 @@ export interface EmployeeWeekShiftDisplayItem {
   templateName: string | null;
   templateColor: string | null;
   jobName: string | null;
-  /** Wer die Schicht abgesagt/storniert hat (nur bei confirmation_status canceled). */
+  /** Wer die Schicht abgesagt/storniert hat (nur bei bestätigter Absage). */
   cancelledBy?: ShiftRequestActorRole;
+  /** MA-Absage wartet auf Bestätigung durch Admin/Manager. */
+  cancellationPending?: boolean;
 }
 
 export interface ConfirmationRespondItem {

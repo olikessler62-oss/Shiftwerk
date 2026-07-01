@@ -1,5 +1,5 @@
 import { cn } from "@/lib/cn";
-import type { DashboardAreaAmpelLevel } from "@/lib/dashboard-ext-panel-data";
+import type { DashboardAreaAmpelLevel } from "@/lib/dashboard-area-week-stats";
 import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
 
 const ICON_SIZE_CLASS = "h-5 w-5 shrink-0";

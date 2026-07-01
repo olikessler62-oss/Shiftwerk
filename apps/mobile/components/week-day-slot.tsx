@@ -3,13 +3,18 @@ import type { ConfirmationDecision } from "@schichtwerk/types";
 import { WeekDayHeader } from "@/components/week-day-header";
 import { WeekShiftCard } from "@/components/week-shift-card";
 import type { WeekShiftActionContext } from "@/components/week-shift-action-sheet";
+import {
+  getWeekDayGridRowCount,
+  getWeekDayShiftsLayout,
+} from "@/lib/mobile-week-day-layout";
 import { isPastDateISO, isTodayDateISO, type WeekPlanDay } from "@/lib/mobile-week-plan";
 import { useWeekPlanLayout } from "@/lib/responsive-layout";
 import { WEEK_PLAN_ACTIVE, WEEK_PLAN_PAST } from "@/lib/week-plan-theme";
 import { spacing } from "@schichtwerk/ui-tokens";
 
-const SHIFT_CARD_AREA_HEIGHT_RATIO = 0.9;
+const SHIFT_CARD_AREA_HEIGHT_RATIO = 0.95;
 const SHIFT_CARD_GAP = 4;
+const GRID_CARD_WIDTH_PERCENT = "49.5%";
 
 type WeekDaySlotProps = {
   day: WeekPlanDay;
@@ -19,6 +24,20 @@ type WeekDaySlotProps = {
   onDismissShift: (shiftId: string) => void;
   dismissingShiftId?: string | null;
 };
+
+function resolveCardHeight(
+  cardsAreaHeight: number,
+  layout: WeekDayShiftsLayout,
+  shiftCount: number
+): number {
+  if (layout === "grid") {
+    const rowCount = getWeekDayGridRowCount(shiftCount);
+    return Math.floor(
+      (cardsAreaHeight - SHIFT_CARD_GAP * Math.max(rowCount - 1, 0)) / rowCount
+    );
+  }
+  return cardsAreaHeight;
+}
 
 export function WeekDaySlot({
   day,
@@ -34,13 +53,8 @@ export function WeekDaySlot({
   const theme = isPastDay ? WEEK_PLAN_PAST : WEEK_PLAN_ACTIVE;
   const cardsAreaHeight = Math.floor(slotHeight * SHIFT_CARD_AREA_HEIGHT_RATIO);
   const shiftCount = day.shifts.length;
-  const cardHeight =
-    shiftCount > 0
-      ? Math.floor(
-          (cardsAreaHeight - SHIFT_CARD_GAP * Math.max(shiftCount - 1, 0)) /
-            shiftCount
-        )
-      : 0;
+  const shiftsLayout = getWeekDayShiftsLayout(shiftCount);
+  const cardHeight = resolveCardHeight(cardsAreaHeight, shiftsLayout, shiftCount);
 
   return (
     <View
@@ -78,7 +92,14 @@ export function WeekDaySlot({
         ]}
       >
         {shiftCount > 0 ? (
-          <View style={[styles.cardsStack, { height: cardsAreaHeight }]}>
+          <View
+            style={[
+              styles.cardsStack,
+              { height: cardsAreaHeight },
+              shiftsLayout === "pair" && styles.cardsRow,
+              shiftsLayout === "grid" && styles.cardsGrid,
+            ]}
+          >
             {day.shifts.map(({ shift, display, confirmation }) => (
               <WeekShiftCard
                 key={shift.id}
@@ -92,6 +113,8 @@ export function WeekDaySlot({
                 dismissing={dismissingShiftId === shift.id}
                 compact={layout.shiftCardCompact}
                 height={cardHeight}
+                shiftsOnDay={shiftCount}
+                shiftsLayout={shiftsLayout}
               />
             ))}
           </View>
@@ -121,5 +144,15 @@ const styles = StyleSheet.create({
   cardsStack: {
     justifyContent: "center",
     gap: SHIFT_CARD_GAP,
+  },
+  cardsRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+  },
+  cardsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignContent: "flex-start",
+    justifyContent: "space-between",
   },
 });

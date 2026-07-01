@@ -51,6 +51,12 @@ export {
   type ShiftTypeUniquenessInput,
 } from "./shift-type-validation";
 export {
+  findAreaShiftTemplatesMatchingTimes,
+  resolveAreaShiftTemplateIdByTimes,
+  shiftAssignmentTimeKey,
+  type AreaShiftTemplateTimeRef,
+} from "./area-shift-template-match";
+export {
   validateQualificationUniqueness,
   validateQualificationArchive,
   type QualificationUniquenessInput,
@@ -458,6 +464,7 @@ export {
   resolveLegacyConfirmationStatusFromModel,
   resolveShiftCardDisplayState,
   resolveShiftLifecycleFromLegacy,
+  hasPendingEmployeeCancellation,
   type ShiftDisplayInput,
   type ShiftRequestSummary,
 } from "./shift-display-state";
@@ -540,6 +547,8 @@ export {
   lifecycleStatusForConfirmationStatus,
   syncShiftRequestsAfterAssignConfirmationStatus,
   syncShiftRequestsAfterCancellation,
+  syncShiftRequestsAfterEmployeeCancellationRequest,
+  hasOpenEmployeeCancellationRequest,
   syncShiftRequestsAfterConfirmationExpired,
   syncShiftRequestsAfterConfirmationResent,
   syncShiftRequestsAfterConfirmationSent,

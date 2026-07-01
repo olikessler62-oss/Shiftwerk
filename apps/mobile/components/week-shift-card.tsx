@@ -1,6 +1,6 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View, ActivityIndicator } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import type {
   ConfirmationDecision,
   ConfirmationWeekItem,
@@ -10,13 +10,18 @@ import type {
 import { shiftConfirmationShowsOverlay } from "@schichtwerk/ui-tokens";
 import { WeekShiftCardConfirmationOverlay } from "@/components/week-shift-card-confirmation-overlay";
 import type { WeekShiftActionContext } from "@/components/week-shift-action-sheet";
-import { isEmployeeDismissableShift } from "@/lib/employee-shift-dismiss";
+import { isEmployeeDismissableShift, isEmployeeCancellationPending } from "@/lib/employee-shift-dismiss";
 import {
   SHIFT_CARD_CONTENT_INSET_RIGHT_RATIO,
   WEEK_PLAN_PAST,
   resolveShiftCardContentTextColor,
 } from "@/lib/week-plan-theme";
 import { useWeekPlanLayout } from "@/lib/responsive-layout";
+import {
+  getWeekDayShiftsLayout,
+  WEEK_DAY_GRID_CARD_WIDTH_PERCENT,
+  type WeekDayShiftsLayout,
+} from "@/lib/mobile-week-day-layout";
 import { colors, radius, spacing, buildShiftCardLinearGradient } from "@schichtwerk/ui-tokens";
 
 const SHIFT_CARD_BORDER_RADIUS = radius.lg / 2;
@@ -54,6 +59,8 @@ type WeekShiftCardProps = {
   draft?: ConfirmationDecision;
   compact?: boolean;
   height?: number;
+  shiftsOnDay?: number;
+  shiftsLayout?: WeekDayShiftsLayout;
   isPastDay?: boolean;
   onPress: (context: WeekShiftActionContext) => void;
   onDismiss?: (shiftId: string) => void;
@@ -75,19 +82,47 @@ type ShiftCardSizing = {
   overlayBadgeReserveWidth: number;
 };
 
-const META_HEIGHT_RATIO = 0.16;
 const OVERLAY_BADGE_RESERVE_RATIO = 0.38;
+const META_LINE_HEIGHT_RATIO = 0.13;
 
-function scaleShiftCardForHeight(height: number): ShiftCardSizing {
+function scaleShiftCardForHeight(
+  height: number,
+  width: number,
+  shiftsLayout: WeekDayShiftsLayout
+): ShiftCardSizing {
+  const multiColumn = shiftsLayout !== "single";
   const bodyHeight = height;
+
   const titleFontSize = fontSizeFromCardHeight(bodyHeight, TITLE_HEIGHT_RATIO);
   const timeFontSize = fontSizeFromCardHeight(bodyHeight, TIME_PRIMARY_HEIGHT_RATIO);
   const timeSecondaryFontSize = fontSizeFromCardHeight(
     bodyHeight,
     TIME_SECONDARY_HEIGHT_RATIO
   );
-  const metaFontSize =
-    fontSizeFromCardHeight(bodyHeight, META_HEIGHT_RATIO) + SHIFT_META_FONT_PX_OFFSET;
+  let metaFontSize =
+    fontSizeFromCardHeight(bodyHeight, META_LINE_HEIGHT_RATIO) +
+    SHIFT_META_FONT_PX_OFFSET;
+
+  if (multiColumn) {
+    const widthCap = width > 0 ? Math.max(9, Math.round(width / 11)) : 11;
+    metaFontSize = Math.min(metaFontSize, widthCap);
+    const primaryCap = width > 0 ? Math.max(9, Math.round(width / 10)) : 12;
+    return {
+      paddingVertical: Math.max(2, Math.round(height * 0.04)),
+      paddingHorizontal: Math.max(4, Math.round(height * 0.06)),
+      timeFontSize: Math.min(timeFontSize, primaryCap),
+      timeSecondaryFontSize: Math.min(timeSecondaryFontSize, primaryCap),
+      titleFontSize: Math.min(titleFontSize, primaryCap),
+      metaFontSize,
+      badgeFontSize: Math.max(8, Math.round(Math.min(10, bodyHeight * 0.14))),
+      metaGap: 1,
+      showNotes: false,
+      notesFontSize: 11,
+      notesMarginTop: 2,
+      overlayBadgeReserveWidth: Math.max(28, Math.round(height * 0.32)),
+    };
+  }
+
   const badgeFontSize = Math.max(
     8,
     Math.round(Math.min(11, bodyHeight * 0.14))
@@ -133,6 +168,14 @@ function getAreaLabel(display?: EmployeeWeekShiftDisplayItem): string | null {
   return display.areaName;
 }
 
+function getJobLabel(
+  display?: EmployeeWeekShiftDisplayItem,
+  confirmation?: ConfirmationWeekItem
+): string | null {
+  const label = confirmation?.jobName ?? display?.jobName ?? null;
+  return label?.trim() ? label.trim() : null;
+}
+
 function buildShiftMetaLabel(
   locationLabel: string | null,
   areaLabel: string | null,
@@ -144,6 +187,16 @@ function buildShiftMetaLabel(
     .join(" / ");
 }
 
+function buildAreaJobLabel(
+  areaLabel: string | null,
+  jobLabel: string | null
+): string | null {
+  const parts = [areaLabel?.trim(), jobLabel?.trim()].filter(
+    (part): part is string => Boolean(part)
+  );
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 export function WeekShiftCard({
   shift,
   display,
@@ -151,6 +204,8 @@ export function WeekShiftCard({
   draft,
   compact = false,
   height,
+  shiftsOnDay = 1,
+  shiftsLayout: shiftsLayoutProp,
   isPastDay = false,
   onPress,
   onDismiss,
@@ -158,6 +213,9 @@ export function WeekShiftCard({
 }: WeekShiftCardProps) {
   const layout = useWeekPlanLayout();
   const [cardWidth, setCardWidth] = useState(0);
+  const shiftsLayout = shiftsLayoutProp ?? getWeekDayShiftsLayout(shiftsOnDay);
+  const multiColumn = shiftsLayout !== "single";
+  const useCompactDetail = shiftsLayout !== "single";
   const cardTextColor = resolveShiftCardContentTextColor(
     shift.confirmation_status,
     isPastDay
@@ -168,15 +226,23 @@ export function WeekShiftCard({
       : 0;
   const locationLabel = getLocationLabel(display);
   const areaLabel = getAreaLabel(display);
-  const jobLabel = confirmation?.jobName ?? display?.jobName ?? null;
+  const jobLabel = getJobLabel(display, confirmation);
   const metaLabel = buildShiftMetaLabel(locationLabel, areaLabel, jobLabel);
+  const areaJobLabel = buildAreaJobLabel(areaLabel, jobLabel);
   const hasMeta = metaLabel.length > 0;
+  const hasCompactDetail =
+    useCompactDetail && (Boolean(locationLabel) || Boolean(areaJobLabel));
   const templateLabel = display?.templateName ?? null;
   const shiftTimeLabel = `${formatShiftTime(shift.starts_at)} – ${formatShiftTime(shift.ends_at)}`;
-  const showsOverlay = shiftConfirmationShowsOverlay(shift.confirmation_status);
+  const cancellationPending = isEmployeeCancellationPending(shift, display);
+  const showsOverlay =
+    cancellationPending || shiftConfirmationShowsOverlay(shift.confirmation_status);
   const canDismiss = isEmployeeDismissableShift(shift, display) && onDismiss != null;
   const cardDisabled = isPastDay && !canDismiss;
-  const sizing = height != null ? scaleShiftCardForHeight(height) : null;
+  const sizing =
+    height != null
+      ? scaleShiftCardForHeight(height, cardWidth, shiftsLayout)
+      : null;
   const shiftGradient = useMemo(
     () =>
       buildShiftCardLinearGradient(
@@ -190,6 +256,7 @@ export function WeekShiftCard({
       shiftTitle: { color: cardTextColor },
       timeSecondary: { color: cardTextColor },
       time: { color: cardTextColor },
+      detailLine: { color: cardTextColor },
       metaLine: { color: cardTextColor },
       notes: { color: cardTextColor },
     }),
@@ -201,6 +268,9 @@ export function WeekShiftCard({
       style={[
         styles.cardShell,
         compact && styles.cardShellCompact,
+        shiftsLayout === "single" && styles.cardShellSingle,
+        shiftsLayout === "pair" && styles.cardShellColumn,
+        shiftsLayout === "grid" && styles.cardShellGrid,
         height != null && {
           height,
           marginBottom: 0,
@@ -229,7 +299,7 @@ export function WeekShiftCard({
             flex: 1,
             paddingVertical: sizing!.paddingVertical,
             paddingHorizontal: sizing!.paddingHorizontal,
-            justifyContent: "flex-start",
+            justifyContent: multiColumn ? "flex-start" : "flex-start",
           },
         ]}
       >
@@ -251,6 +321,7 @@ export function WeekShiftCard({
         <WeekShiftCardConfirmationOverlay
           status={shift.confirmation_status}
           cancelledBy={display?.cancelledBy}
+          cancellationPending={cancellationPending}
           badgeFontSize={sizing?.badgeFontSize}
           isPastDay={isPastDay}
           showDismiss={canDismiss}
@@ -264,7 +335,7 @@ export function WeekShiftCard({
             styles.cardBody,
             height != null && {
               flex: 1,
-              justifyContent: "center",
+              justifyContent: multiColumn ? "flex-start" : "center",
             },
           ]}
         >
@@ -282,7 +353,12 @@ export function WeekShiftCard({
             <View style={styles.headerRow}>
               <View style={styles.primaryLine}>
                 {templateLabel ? (
-                  <View style={styles.titleRow}>
+                  <View
+                    style={[
+                      styles.titleRow,
+                      multiColumn && styles.titleRowStacked,
+                    ]}
+                  >
                     <Text
                       style={[
                         styles.shiftTitle,
@@ -339,7 +415,42 @@ export function WeekShiftCard({
               </View>
             </View>
 
-            {hasMeta ? (
+            {hasCompactDetail ? (
+              <View style={styles.detailBlock}>
+                {locationLabel ? (
+                  <Text
+                    style={[
+                      styles.detailLine,
+                      textStyles.detailLine,
+                      {
+                        fontSize:
+                          sizing?.metaFontSize ??
+                          SHIFT_META_BASE_SIZE + SHIFT_META_FONT_PX_OFFSET,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {locationLabel}
+                  </Text>
+                ) : null}
+                {areaJobLabel ? (
+                  <Text
+                    style={[
+                      styles.detailLine,
+                      textStyles.detailLine,
+                      {
+                        fontSize:
+                          sizing?.metaFontSize ??
+                          SHIFT_META_BASE_SIZE + SHIFT_META_FONT_PX_OFFSET,
+                      },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {areaJobLabel}
+                  </Text>
+                ) : null}
+              </View>
+            ) : hasMeta ? (
               <Text
                 style={[
                   styles.metaLine,
@@ -381,11 +492,21 @@ export function WeekShiftCard({
 const styles = StyleSheet.create({
   cardShell: {
     marginBottom: spacing.sm,
-    flex: 1,
     minHeight: 0,
   },
   cardShellCompact: {
     marginBottom: spacing.xs,
+  },
+  cardShellSingle: {
+    flex: 1,
+  },
+  cardShellColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  cardShellGrid: {
+    width: WEEK_DAY_GRID_CARD_WIDTH_PERCENT,
+    minWidth: 0,
   },
   card: {
     backgroundColor: colors.surface,
@@ -450,6 +571,12 @@ const styles = StyleSheet.create({
     columnGap: spacing.sm,
     rowGap: 2,
   },
+  titleRowStacked: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    columnGap: 0,
+    rowGap: 0,
+  },
   shiftTitle: {
     fontWeight: "600",
     flexShrink: 1,
@@ -464,6 +591,14 @@ const styles = StyleSheet.create({
   },
   metaLine: {
     fontSize: SHIFT_META_BASE_SIZE,
+    fontWeight: "500",
+    minWidth: 0,
+  },
+  detailBlock: {
+    minWidth: 0,
+    gap: 1,
+  },
+  detailLine: {
     fontWeight: "500",
     minWidth: 0,
   },
