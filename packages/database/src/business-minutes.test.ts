@@ -48,4 +48,14 @@ describe("isShiftConfirmationPendingDue", () => {
     expect(PENDING_ELAPSED_HOURS_REQUIRED).toBe(3);
     expect(PENDING_ELAPSED_MINUTES_REQUIRED).toBe(180);
   });
+
+  it("honours a custom short threshold of five minutes", () => {
+    const requestedAt = "2025-06-09T10:00:00.000Z";
+    expect(
+      isShiftConfirmationPendingDue(requestedAt, "2025-06-09T10:04:59.000Z", 5)
+    ).toBe(false);
+    expect(
+      isShiftConfirmationPendingDue(requestedAt, "2025-06-09T10:05:00.000Z", 5)
+    ).toBe(true);
+  });
 });

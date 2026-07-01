@@ -17,11 +17,14 @@ describe("organization shift confirmation pending settings", () => {
 
   it("formats and parses HH:MM durations", () => {
     expect(formatShiftConfirmationPendingAfterDuration(180)).toBe("03:00");
+    expect(formatShiftConfirmationPendingAfterDuration(5)).toBe("00:05");
     expect(parseShiftConfirmationPendingAfterDuration("02:30")).toBe(150);
+    expect(parseShiftConfirmationPendingAfterDuration("00:05")).toBe(5);
     expect(parseShiftConfirmationPendingAfterDuration("invalid")).toBeNull();
   });
 
-  it("validates 30-minute steps up to 24 hours", () => {
+  it("validates selectable duration options", () => {
+    expect(isValidShiftConfirmationPendingAfterMinutes(5)).toBe(true);
     expect(isValidShiftConfirmationPendingAfterMinutes(30)).toBe(true);
     expect(isValidShiftConfirmationPendingAfterMinutes(45)).toBe(false);
     expect(isValidShiftConfirmationPendingAfterMinutes(1440)).toBe(true);

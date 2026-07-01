@@ -8,11 +8,22 @@ export type OrganizationShiftConfirmationPendingInput = Pick<
   "shift_confirmation_pending_after_minutes"
 >;
 
-/** 30-Minuten-Schritte von 00:30 bis 24:00. */
-export const SHIFT_CONFIRMATION_PENDING_AFTER_DURATION_OPTIONS_MINUTES = Array.from(
+/** Kurze Fristen zum Testen; danach 30-Minuten-Schritte bis 24:00. */
+const SHIFT_CONFIRMATION_PENDING_AFTER_SHORT_OPTIONS_MINUTES = [5, 10, 15] as const;
+
+const SHIFT_CONFIRMATION_PENDING_AFTER_HALF_HOUR_OPTIONS_MINUTES = Array.from(
   { length: 48 },
   (_, index) => (index + 1) * 30
-) as readonly number[];
+);
+
+export const SHIFT_CONFIRMATION_PENDING_AFTER_DURATION_OPTIONS_MINUTES = [
+  ...SHIFT_CONFIRMATION_PENDING_AFTER_SHORT_OPTIONS_MINUTES,
+  ...SHIFT_CONFIRMATION_PENDING_AFTER_HALF_HOUR_OPTIONS_MINUTES,
+] as readonly number[];
+
+const SHIFT_CONFIRMATION_PENDING_AFTER_DURATION_OPTIONS_SET = new Set(
+  SHIFT_CONFIRMATION_PENDING_AFTER_DURATION_OPTIONS_MINUTES
+);
 
 export function resolveOrganizationShiftConfirmationPendingAfterMinutes(
   organization: OrganizationShiftConfirmationPendingInput | null | undefined
@@ -44,8 +55,8 @@ export function parseShiftConfirmationPendingAfterDuration(
     return null;
   }
   const total = hours * 60 + mins;
-  if (total <= 0 || total > 1440 || total % 30 !== 0) return null;
-  return total;
+  if (total <= 0 || total > 1440) return null;
+  return isValidShiftConfirmationPendingAfterMinutes(total) ? total : null;
 }
 
 export function isValidShiftConfirmationPendingAfterMinutes(
@@ -53,8 +64,6 @@ export function isValidShiftConfirmationPendingAfterMinutes(
 ): boolean {
   return (
     Number.isFinite(minutes) &&
-    minutes > 0 &&
-    minutes <= 1440 &&
-    minutes % 30 === 0
+    SHIFT_CONFIRMATION_PENDING_AFTER_DURATION_OPTIONS_SET.has(minutes)
   );
 }
