@@ -3,10 +3,10 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario,
   seedSuperadminBiergartenHadrianScenario,
   seedSuperadminFriseurSalonZentraleScenario,
   seedSuperadminPflegedienstZentraleScenario,
+  type BiergartenHadrianShiftCoverageMode,
 } from "@/app/actions/superadmin-test-scenarios";
 import { Alert, Button } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
@@ -18,6 +18,12 @@ type Props = {
 };
 
 type ScenarioRunner = () => void;
+
+const BIERGARTEN_SHIFT_COVERAGE_MODES: BiergartenHadrianShiftCoverageMode[] = [
+  "open",
+  "covered",
+  "mixed",
+];
 
 function ScenarioCard({
   title,
@@ -57,12 +63,106 @@ function ScenarioCard({
   );
 }
 
+function BiergartenHadrianScenarioCard({
+  disabled,
+  pending,
+  shiftCoverageMode,
+  onShiftCoverageModeChange,
+  onRun,
+  runLabel,
+  pendingLabel,
+}: {
+  disabled: boolean;
+  pending: boolean;
+  shiftCoverageMode: BiergartenHadrianShiftCoverageMode;
+  onShiftCoverageModeChange: (mode: BiergartenHadrianShiftCoverageMode) => void;
+  onRun: ScenarioRunner;
+  runLabel: string;
+  pendingLabel: string;
+}) {
+  const t = useTranslations();
+
+  return (
+    <li
+      className={cn(
+        "border border-border/70 bg-background/40 px-4 py-3",
+        DASHBOARD_PANEL_ROUNDED_CLASS
+      )}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-3">
+          <p className="text-sm font-semibold text-foreground">
+            {t("nav.superadminTestScenarioBiergartenHadrianTitle")}
+          </p>
+          <p className="text-xs leading-relaxed text-muted">
+            {t("nav.superadminTestScenarioBiergartenHadrianDescription")}
+          </p>
+          <fieldset className="space-y-2" disabled={disabled || pending}>
+            <legend className="text-xs font-medium text-muted">
+              {t("nav.superadminTestScenarioBiergartenHadrianShiftModeLabel")}
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {BIERGARTEN_SHIFT_COVERAGE_MODES.map((mode) => {
+                const selected = shiftCoverageMode === mode;
+                return (
+                  <label
+                    key={mode}
+                    className={cn(
+                      "inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 transition-colors",
+                      selected
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-background hover:bg-subtle/60",
+                      (disabled || pending) && "cursor-not-allowed opacity-60"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="biergarten-shift-coverage-mode"
+                      value={mode}
+                      checked={selected}
+                      disabled={disabled || pending}
+                      onChange={() => onShiftCoverageModeChange(mode)}
+                      className="size-4 shrink-0"
+                    />
+                    <span className="text-sm text-foreground">
+                      {t(
+                        `nav.superadminTestScenarioBiergartenHadrianShiftMode${
+                          mode === "open"
+                            ? "Open"
+                            : mode === "covered"
+                              ? "Covered"
+                              : "Mixed"
+                        }`
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="shrink-0 self-start"
+          disabled={disabled || pending}
+          onClick={onRun}
+        >
+          {pending ? pendingLabel : runLabel}
+        </Button>
+      </div>
+    </li>
+  );
+}
+
 export function SuperadminTestScenariosSection({ disabled = false }: Props) {
   const t = useTranslations();
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [pendingScenario, setPendingScenario] = useState<string | null>(null);
+  const [biergartenShiftCoverageMode, setBiergartenShiftCoverageMode] =
+    useState<BiergartenHadrianShiftCoverageMode>("mixed");
   const [, startTransition] = useTransition();
 
   function runScenario(
@@ -114,29 +214,17 @@ export function SuperadminTestScenariosSection({ disabled = false }: Props) {
       {successMessage ? <Alert variant="success">{successMessage}</Alert> : null}
 
       <ul className="space-y-2">
-        <ScenarioCard
-          title={t("nav.superadminTestScenarioBiergartenHadrianTitle")}
+        <BiergartenHadrianScenarioCard
           disabled={disabled}
           pending={pendingScenario === "biergarten-hadrian"}
+          shiftCoverageMode={biergartenShiftCoverageMode}
+          onShiftCoverageModeChange={setBiergartenShiftCoverageMode}
           onRun={() =>
             runScenario(
               "biergarten-hadrian",
-              seedSuperadminBiergartenHadrianScenario,
+              () =>
+                seedSuperadminBiergartenHadrianScenario(biergartenShiftCoverageMode),
               "nav.superadminTestScenarioBiergartenHadrianSuccess"
-            )
-          }
-          runLabel={runLabel}
-          pendingLabel={pendingLabel}
-        />
-        <ScenarioCard
-          title={t("nav.superadminTestScenarioBiergartenHadrianCurrentWeekTitle")}
-          disabled={disabled}
-          pending={pendingScenario === "biergarten-hadrian-current-week"}
-          onRun={() =>
-            runScenario(
-              "biergarten-hadrian-current-week",
-              seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario,
-              "nav.superadminTestScenarioBiergartenHadrianCurrentWeekSuccess"
             )
           }
           runLabel={runLabel}

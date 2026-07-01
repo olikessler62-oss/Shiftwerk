@@ -1,13 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { organizationTodayISO, resolveOrganizationTimeZone } from "@schichtwerk/database";
+import { organizationTodayISO, resolveOrganizationTimeZone, addDaysISO } from "@schichtwerk/database";
 import { revalidateAreaCalendarShiftCacheTags } from "@/lib/cached-areacalendar-shifts";
-import { getDatabase } from "@/lib/db";
+import { getAdminDatabase } from "@/lib/db";
 import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
 import {
-  runBiergartenHadrianEckCurrentWeekFullyCoveredScenario,
   runBiergartenHadrianEckScenario,
+  type BiergartenHadrianShiftCoverageMode,
 } from "@/lib/superadmin-test-scenarios/biergarten-hadrian-eck";
 import { runFriseurSalonZentraleScenario } from "@/lib/superadmin-test-scenarios/friseur-salon-zentrale";
 import { runPflegedienstZentraleScenario } from "@/lib/superadmin-test-scenarios/pflegedienst-zentrale";
@@ -24,6 +24,8 @@ export type SuperadminTestScenarioActionResult =
     }
   | { ok: false; errorKey: string; error?: string };
 
+export type { BiergartenHadrianShiftCoverageMode };
+
 function actionError(
   errorKey: string,
   error: unknown
@@ -35,11 +37,13 @@ function actionError(
   };
 }
 
-export async function seedSuperadminBiergartenHadrianScenario(): Promise<SuperadminTestScenarioActionResult> {
+export async function seedSuperadminBiergartenHadrianScenario(
+  shiftCoverageMode: BiergartenHadrianShiftCoverageMode
+): Promise<SuperadminTestScenarioActionResult> {
   try {
     const { organizationId, userId, organization } =
       await requireSuperadminDeveloper();
-    const db = await getDatabase();
+    const db = getAdminDatabase();
     const timeZone = resolveOrganizationTimeZone(organization);
     const todayISO = organizationTodayISO(timeZone);
 
@@ -48,42 +52,12 @@ export async function seedSuperadminBiergartenHadrianScenario(): Promise<Superad
       actorId: userId,
       timeZone,
       todayISO,
+      shiftCoverageMode,
     });
 
     revalidateAreaCalendarShiftCacheTags({
       organizationId,
-      weekStarts: [result.weekStart],
-    });
-    revalidatePath("/dashboard");
-    revalidatePath("/bereich-kalender");
-
-    return { ok: true, ...result };
-  } catch (error) {
-    return actionError("superadmin.errors.seedTestScenarioFailed", error);
-  }
-}
-
-export async function seedSuperadminBiergartenHadrianCurrentWeekCoveredScenario(): Promise<SuperadminTestScenarioActionResult> {
-  try {
-    const { organizationId, userId, organization } =
-      await requireSuperadminDeveloper();
-    const db = await getDatabase();
-    const timeZone = resolveOrganizationTimeZone(organization);
-    const todayISO = organizationTodayISO(timeZone);
-
-    const result = await runBiergartenHadrianEckCurrentWeekFullyCoveredScenario(
-      db,
-      {
-        organizationId,
-        actorId: userId,
-        timeZone,
-        todayISO,
-      }
-    );
-
-    revalidateAreaCalendarShiftCacheTags({
-      organizationId,
-      weekStarts: [result.weekStart],
+      weekStarts: [result.weekStart, addDaysISO(result.weekStart, 7)],
     });
     revalidatePath("/dashboard");
     revalidatePath("/bereich-kalender");
@@ -98,7 +72,7 @@ export async function seedSuperadminFriseurSalonZentraleScenario(): Promise<Supe
   try {
     const { organizationId, userId, organization } =
       await requireSuperadminDeveloper();
-    const db = await getDatabase();
+    const db = getAdminDatabase();
     const timeZone = resolveOrganizationTimeZone(organization);
     const todayISO = organizationTodayISO(timeZone);
 
@@ -126,7 +100,7 @@ export async function seedSuperadminPflegedienstZentraleScenario(): Promise<Supe
   try {
     const { organizationId, userId, organization } =
       await requireSuperadminDeveloper();
-    const db = await getDatabase();
+    const db = getAdminDatabase();
     const timeZone = resolveOrganizationTimeZone(organization);
     const todayISO = organizationTodayISO(timeZone);
 

@@ -119,7 +119,7 @@ function locationDetailPanelTitle(
 
 const COLUMN_GAP_PX = 20;
 
-/** Mindesthöhe der Listen — wächst mit der höheren Spalte (Standorte / Einsatzorte). */
+/** Mindesthöhe der Listen — wächst mit der höheren Spalte (Standorte / Einsatzbereiche). */
 const LOCATIONS_LIST_SCROLL_CLASS = "min-h-[calc(1.75rem+7rem)]";
 const MAX_NAME_DISPLAY = 25;
 

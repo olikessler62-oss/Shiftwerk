@@ -4,9 +4,10 @@ import {
   type DashboardStaffingWindowConfirmationCounts,
 } from "@/lib/dashboard-day-confirmation-counts";
 import { dedupeConfirmationShiftsByEmployee } from "@/lib/dashboard-confirmation-employee-dedupe";
-import type {
-  DashboardStaffingIssue,
-  DashboardStaffingWindowRow,
+import {
+  staffingWindowRowHasUnconfirmedPlannedCoverage,
+  type DashboardStaffingIssue,
+  type DashboardStaffingWindowRow,
 } from "@/lib/dashboard-area-week-stats";
 import { findServiceHourIdForShift, type AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { PlanningShift } from "@/lib/planning-shift-card";
@@ -28,7 +29,9 @@ export type DashboardStaffingWindowIssuesContext = {
   calendarShifts: readonly PlanningShift[];
   serviceHours: readonly AreaServiceHourRef[];
   employeeNameById: ReadonlyMap<string, string>;
+  employeeColorById?: ReadonlyMap<string, string | null | undefined>;
   shiftConfirmationEnabled: boolean;
+  pendingAfterMinutes?: number;
   readOnlyWeek: boolean;
   todayISO: string;
 };
@@ -115,6 +118,12 @@ export function staffingRowShowsIssuesButton(
   if (shiftConfirmationEnabled && row.status === "planned") return true;
   if (
     shiftConfirmationEnabled &&
+    staffingWindowRowHasUnconfirmedPlannedCoverage(row)
+  ) {
+    return true;
+  }
+  if (
+    shiftConfirmationEnabled &&
     listStaffingWindowConfirmationStatuses(row.confirmationCounts).length > 0
   ) {
     return true;
@@ -138,6 +147,7 @@ function shiftCardMenuOptions(
     isPastShiftDate: (shiftDate) =>
       isPastCalendarDate(shiftDate, context.todayISO),
     displayState: shift.displayState,
+    pendingAfterMinutes: context.pendingAfterMinutes,
   };
 }
 
@@ -189,6 +199,7 @@ export function shiftOverviewActionsForShift(
       confirmationStatus: shift.confirmationStatus,
       requestedAt: shift.requestedAt,
       isPastShiftDate: menuOptions.isPastShiftDate,
+      pendingAfterMinutes: context.pendingAfterMinutes,
     })
   ) {
     return ["delete"];
@@ -216,7 +227,12 @@ export function listConfirmationShiftsForStaffingWindow(
 
     const status = shift.confirmationStatus;
     if (!status) return false;
-    if (status === "proposed") return row.status === "planned";
+    if (status === "proposed") {
+      return (
+        row.status === "planned" ||
+        staffingWindowRowHasUnconfirmedPlannedCoverage(row)
+      );
+    }
     return (
       DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES as readonly string[]
     ).includes(status);

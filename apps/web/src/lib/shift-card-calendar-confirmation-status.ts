@@ -14,13 +14,16 @@ export function resolveShiftCardConfirmationStatusForCalendar(
     requestedAt?: string | null;
     displayState?: ShiftCardDisplayState;
   },
-  cellDateISO?: string
+  cellDateISO?: string,
+  pendingAfterMinutes?: number
 ): ShiftConfirmationStatus | undefined {
   const base =
     shift.displayState?.legacyConfirmationStatus ??
     resolveEffectiveConfirmationStatus(
       shift.confirmationStatus,
-      shift.requestedAt
+      shift.requestedAt,
+      new Date(),
+      pendingAfterMinutes
     ) ??
     shift.confirmationStatus ??
     undefined;
@@ -31,5 +34,6 @@ export function resolveShiftCardConfirmationStatusForCalendar(
     status: base,
     requestedAt: shift.requestedAt,
     shiftDateISO: cellDateISO ?? shift.shift_date,
+    pendingAfterMinutes,
   });
 }

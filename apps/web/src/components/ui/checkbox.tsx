@@ -9,7 +9,7 @@ type Props = InputHTMLAttributes<HTMLInputElement> & {
 };
 
 const standardCheckboxClasses =
-  "border-2 border-slate-300/90 bg-surface shadow-sm peer-hover:border-primary/70 peer-hover:shadow peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-primary/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface peer-checked:border-primary peer-checked:bg-primary peer-checked:shadow-md";
+  "border-2 border-slate-300/90 bg-surface shadow-sm peer-enabled:peer-hover:border-primary/70 peer-enabled:peer-hover:shadow peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-primary/35 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface peer-checked:border-primary peer-checked:bg-primary peer-checked:shadow-md";
 
 export const Checkbox = forwardRef<HTMLInputElement, Props>(function Checkbox(
   { className = "", variant = "default", ...props },
@@ -20,8 +20,8 @@ export const Checkbox = forwardRef<HTMLInputElement, Props>(function Checkbox(
   return (
     <label
       className={cn(
-        "inline-flex shrink-0 cursor-pointer select-none leading-none",
-        props.disabled && "cursor-not-allowed",
+        "inline-flex shrink-0 select-none leading-none",
+        props.disabled ? "cursor-default" : "cursor-pointer",
         className
       )}
     >
@@ -30,7 +30,7 @@ export const Checkbox = forwardRef<HTMLInputElement, Props>(function Checkbox(
         aria-hidden
         className={cn(
           "flex items-center justify-center transition-all duration-150 ease-out",
-          "peer-disabled:cursor-not-allowed peer-disabled:opacity-45",
+          "peer-disabled:cursor-default peer-disabled:opacity-45",
           "peer-checked:[&>svg]:scale-100 peer-checked:[&>svg]:opacity-100",
           "[&>svg]:scale-75 [&>svg]:opacity-0 [&>svg]:transition-all [&>svg]:duration-150",
           isArea

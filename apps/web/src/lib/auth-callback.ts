@@ -7,9 +7,22 @@ export function sanitizeAuthNextPath(next: string | null, fallback = "/dashboard
 }
 
 export function buildAuthCallbackRedirectUrl(request: NextRequest, path: string): string {
-  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const trustedHost = (() => {
+    try {
+      return new URL(getPublicSiteUrl()).host;
+    } catch {
+      return null;
+    }
+  })();
   const isLocal = process.env.NODE_ENV === "development";
-  if (!isLocal && forwardedHost) {
+
+  if (
+    !isLocal &&
+    forwardedHost &&
+    trustedHost &&
+    forwardedHost.toLowerCase() === trustedHost.toLowerCase()
+  ) {
     return `https://${forwardedHost}${path}`;
   }
   const { origin } = new URL(request.url);

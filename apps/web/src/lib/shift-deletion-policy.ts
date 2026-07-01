@@ -34,14 +34,15 @@ export function canDeleteShift(input: {
 
   isPastShiftDate: (shiftDate: string) => boolean;
 
+  pendingAfterMinutes?: number;
+
 }): boolean {
 
   const effectiveStatus = resolveEffectiveConfirmationStatus(
-
     input.confirmationStatus,
-
-    input.requestedAt
-
+    input.requestedAt,
+    new Date(),
+    input.pendingAfterMinutes
   );
 
 

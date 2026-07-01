@@ -21,10 +21,10 @@ export const getServerAuthSession = cache(async () => {
   return db.authGetSession();
 });
 
-/** User aus der lokalen Session (getUser nur in der Middleware). */
+/** User per Server-JWT-Validierung (nicht nur Cookie-Session lesen). */
 export const getServerAuthUser = cache(async () => {
-  const session = await getServerAuthSession();
-  return session?.user ?? null;
+  const db = await getDatabase();
+  return db.authGetUser();
 });
 
 /**

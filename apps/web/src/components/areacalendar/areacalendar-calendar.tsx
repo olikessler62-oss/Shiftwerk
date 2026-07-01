@@ -113,7 +113,7 @@ import { useSimpleCalendarDisplay } from "@/lib/simple-calendar-display-context"
 export type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
+import { useOrgFeatures, useShiftConfirmationPendingAfterMinutes, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import {
   useEffectiveShiftConfirmationEnabled,
   useShiftConfirmationSimulation,
@@ -460,6 +460,7 @@ export function AreaCalendar({
   const features = useOrgFeatures();
   const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
+  const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
   const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
     useSimulatedProposedOnAssignRequest();
@@ -1077,6 +1078,7 @@ export function AreaCalendar({
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate,
+        pendingAfterMinutes,
       })
     ) {
       setDeleteShiftError(
@@ -1086,7 +1088,7 @@ export function AreaCalendar({
     }
 
     setShiftDeleteConfirm(shift);
-  }, [shiftContextMenu, t]);
+  }, [shiftContextMenu, t, pendingAfterMinutes]);
 
   const handleConfirmDeleteShift = useCallback(() => {
     if (!shiftDeleteConfirm) return;
@@ -1501,6 +1503,7 @@ export function AreaCalendar({
         {
           shiftConfirmationEnabled,
           hasSwapRequest: swapRequestShiftIds?.has(shift.id),
+          pendingAfterMinutes,
         }
       );
 
@@ -1518,6 +1521,7 @@ export function AreaCalendar({
           {
             shiftConfirmationEnabled,
             hasSwapRequest: swapRequestShiftIds?.has(shift.id),
+            pendingAfterMinutes,
           }
         )
       ) {
@@ -3096,6 +3100,7 @@ export function AreaCalendar({
                             shiftContextMenu.shift.confirmationStatus,
                           requestedAt: shiftContextMenu.shift.requestedAt,
                           isPastShiftDate,
+                          pendingAfterMinutes,
                         }))) ||
                     (action === "cancel" && cancelShiftPending) ||
                     (action === "requestConfirmation" && sendConfirmationPending) ||
@@ -3119,6 +3124,7 @@ export function AreaCalendar({
                     confirmationStatus: shiftContextMenu.shift.confirmationStatus,
                     requestedAt: shiftContextMenu.shift.requestedAt,
                     isPastShiftDate,
+                    pendingAfterMinutes,
                   })
                 }
               >

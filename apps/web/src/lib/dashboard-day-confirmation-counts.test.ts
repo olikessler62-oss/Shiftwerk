@@ -53,6 +53,22 @@ describe("aggregateConfirmationCountsForDay", () => {
     expect(counts.confirmed).toBe(1);
     expect(hasActionableConfirmationCounts(counts)).toBe(false);
   });
+
+  it("filters counts to a single area when areaId is provided", () => {
+    const counts = aggregateConfirmationCountsForDay(
+      [
+        shift("2026-06-23", "requested", { location_area_id: "area-a" }),
+        shift("2026-06-23", "pending", { location_area_id: "area-b" }),
+        shift("2026-06-23", "proposed", { location_area_id: "area-a" }),
+      ],
+      "2026-06-23",
+      "area-a"
+    );
+
+    expect(counts.requested).toBe(1);
+    expect(counts.proposed).toBe(1);
+    expect(counts.pending).toBe(0);
+  });
 });
 
 describe("collectAreaConfirmationConflictStatuses", () => {

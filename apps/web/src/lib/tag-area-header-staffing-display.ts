@@ -264,10 +264,7 @@ export function gaugeCountsForTagAreaHeaderStaffingEntry(
   if (isTagAreaHeaderStaffingEntryPlannedCoverage(entry)) {
     return { assigned: projected, required };
   }
-  if (
-    isTagAreaHeaderStaffingEntryOverstaffed(entry, "projected") &&
-    projected > entry.assigned
-  ) {
+  if (projected > entry.assigned) {
     return { assigned: projected, required };
   }
   return { assigned: entry.assigned, required };

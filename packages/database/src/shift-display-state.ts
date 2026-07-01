@@ -8,6 +8,7 @@ import type {
 } from "@schichtwerk/types";
 
 import { isShiftConfirmationPendingDue } from "./business-minutes";
+import { DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES } from "./organization-shift-confirmation-settings";
 
 export type ShiftRequestSummary = Pick<
   ShiftRequest,
@@ -28,6 +29,7 @@ export type ShiftDisplayInput = {
   confirmationStatus?: ShiftConfirmationStatus | null;
   requestedAt?: string | null;
   requests?: readonly ShiftRequestSummary[];
+  pendingAfterMinutes?: number;
 };
 
 const OPEN_CONFIRMATION_STATUSES = new Set<ShiftRequestStatus>([
@@ -96,8 +98,15 @@ export function resolveLegacyConfirmationStatusFromModel(input: {
   latestConfirmation?: ShiftRequestSummary;
   requestedAt?: string | null;
   now?: Date;
+  pendingAfterMinutes?: number;
 }): ShiftConfirmationStatus {
-  const { lifecycle, latestConfirmation, requestedAt, now = new Date() } = input;
+  const {
+    lifecycle,
+    latestConfirmation,
+    requestedAt,
+    now = new Date(),
+    pendingAfterMinutes = DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES,
+  } = input;
 
   if (lifecycle === "cancelled") return "canceled";
   if (lifecycle === "confirmed") return "confirmed";
@@ -109,7 +118,7 @@ export function resolveLegacyConfirmationStatusFromModel(input: {
   if (latestConfirmation.status === "expired") return "pending";
   if (latestConfirmation.status === "pending") {
     const sentAt = latestConfirmation.sent_at ?? requestedAt;
-    if (sentAt && isShiftConfirmationPendingDue(sentAt, now)) {
+    if (sentAt && isShiftConfirmationPendingDue(sentAt, now, pendingAfterMinutes)) {
       return "pending";
     }
     return "requested";
@@ -122,14 +131,20 @@ export function resolveLegacyConfirmationStatusFromLegacyFields(input: {
   confirmationStatus?: ShiftConfirmationStatus | null;
   requestedAt?: string | null;
   now?: Date;
+  pendingAfterMinutes?: number;
 }): ShiftConfirmationStatus | undefined {
-  const { confirmationStatus, requestedAt, now = new Date() } = input;
+  const {
+    confirmationStatus,
+    requestedAt,
+    now = new Date(),
+    pendingAfterMinutes = DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES,
+  } = input;
   if (!confirmationStatus) return undefined;
 
   if (confirmationStatus === "unresolved") return "unresolved";
 
   if (confirmationStatus === "requested" && requestedAt) {
-    if (isShiftConfirmationPendingDue(requestedAt, now)) {
+    if (isShiftConfirmationPendingDue(requestedAt, now, pendingAfterMinutes)) {
       return "pending";
     }
     return "requested";
@@ -171,6 +186,8 @@ export function resolveShiftCardDisplayState(
   input: ShiftDisplayInput,
   now: Date = new Date()
 ): ShiftCardDisplayState {
+  const pendingAfterMinutes =
+    input.pendingAfterMinutes ?? DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES;
   const lifecycle = resolveLifecycleFromInput(input);
   const latestConfirmation = latestConfirmationRequest(input.requests);
   const latestCancellation = latestCancellationRequest(input.requests);
@@ -180,12 +197,14 @@ export function resolveShiftCardDisplayState(
     latestConfirmation,
     requestedAt: input.requestedAt,
     now,
+    pendingAfterMinutes,
   });
 
   const legacyFromFields = resolveLegacyConfirmationStatusFromLegacyFields({
     confirmationStatus: input.confirmationStatus,
     requestedAt: input.requestedAt,
     now,
+    pendingAfterMinutes,
   });
 
   const legacyConfirmationStatus = resolveLegacyConfirmationStatus({
@@ -267,6 +286,7 @@ export function mapLegacyConfirmationStatusToLifecycleAndRequestStatus(input: {
   requestedAt?: string | null;
   confirmationStatusUpdatedAt?: string | null;
   now?: Date;
+  pendingAfterMinutes?: number;
 }): {
   lifecycle: ShiftLifecycleStatus;
   confirmationRequest?: {
@@ -280,6 +300,7 @@ export function mapLegacyConfirmationStatusToLifecycleAndRequestStatus(input: {
     requestedAt = null,
     confirmationStatusUpdatedAt = null,
     now = new Date(),
+    pendingAfterMinutes = DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES,
   } = input;
 
   const lifecycle = resolveShiftLifecycleFromLegacy(confirmationStatus);
@@ -300,7 +321,7 @@ export function mapLegacyConfirmationStatusToLifecycleAndRequestStatus(input: {
       status = "expired";
     } else if (
       requestedAt &&
-      isShiftConfirmationPendingDue(requestedAt, now)
+      isShiftConfirmationPendingDue(requestedAt, now, pendingAfterMinutes)
     ) {
       status = "expired";
     } else {

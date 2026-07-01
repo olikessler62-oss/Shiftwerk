@@ -22,6 +22,7 @@ import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui";
 import { DashboardShiftCardConfirmationOverlay } from "@/components/dashboard/dashboard-shift-card-confirmation-overlay";
 import { ShiftCardTooltipContent } from "@/components/shift-card-tooltip-content";
 import { useTranslations } from "@/i18n/locale-provider";
+import { useShiftConfirmationPendingAfterMinutes } from "@/lib/org-features-provider";
 import { cn } from "@/lib/cn";
 import {
   buildEmployeeShiftHighlightBoxShadow,
@@ -184,6 +185,7 @@ export function AreaCalendarShiftCardView({
   employeeHighlighted = false,
 }: Props) {
   const t = useTranslations();
+  const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const employeeColor =
     shift.employeeColor?.trim() || DASHBOARD_SHIFT_CARD_EMPLOYEE_FALLBACK_COLOR;
 
@@ -194,7 +196,8 @@ export function AreaCalendarShiftCardView({
 
   const calendarConfirmationStatus = resolveShiftCardConfirmationStatusForCalendar(
     shift,
-    cellDateISO
+    cellDateISO,
+    pendingAfterMinutes
   );
 
   const showUnresolvedCardStyle = shiftConfirmationShowsUnresolvedCardStyle(
@@ -256,7 +259,8 @@ export function AreaCalendarShiftCardView({
         requestedAt: shift.requestedAt,
       },
       cellDateISO ?? shift.shift_date,
-      isPastShiftDate
+      isPastShiftDate,
+      { pendingAfterMinutes }
     );
 
   return (

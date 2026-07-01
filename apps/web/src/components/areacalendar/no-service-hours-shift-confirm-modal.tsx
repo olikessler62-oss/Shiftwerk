@@ -2,13 +2,10 @@
 
 import { createPortal } from "react-dom";
 import { useTranslations } from "@/i18n/locale-provider";
-import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui";
 import {
-  settingsConfirmDialogClass,
   settingsFixedNestedOverlayClass,
-  settingsModalFooterClass,
-  SettingsConfirmDialogCloseHeader,
+  SettingsConfirmDialogShell,
 } from "@/components/settings/settings-list-ui";
 
 type Props = {
@@ -37,27 +34,30 @@ export function NoServiceHoursShiftConfirmModal({
       <div
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="no-service-hours-shift-confirm-desc"
-        className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0")}
+        aria-labelledby="no-service-hours-shift-confirm-title"
+        aria-describedby="no-service-hours-shift-confirm-desc"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <SettingsConfirmDialogCloseHeader
+        <SettingsConfirmDialogShell
+          titleId="no-service-hours-shift-confirm-title"
+          title={t("areaCalendar.noServiceHours")}
           onClose={onCancel}
           closeAriaLabel={t("common.close")}
-        />
-        <div className="px-4 py-4 sm:px-5">
-        <p id="no-service-hours-shift-confirm-desc" className="text-sm text-foreground">
-          {t("areaCalendar.noServiceHoursShiftConfirm", { area: areaName })}
-        </p>
-        <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0")}>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            {t("common.no")}
-          </Button>
-          <Button type="button" variant="primary" onClick={onConfirm}>
-            {t("common.yes")}
-          </Button>
-        </div>
-        </div>
+          footer={
+            <>
+              <Button type="button" variant="outline" onClick={onCancel}>
+                {t("common.no")}
+              </Button>
+              <Button type="button" variant="primary" onClick={onConfirm}>
+                {t("common.yes")}
+              </Button>
+            </>
+          }
+        >
+          <p id="no-service-hours-shift-confirm-desc" className="text-sm text-foreground">
+            {t("areaCalendar.noServiceHoursShiftConfirm", { area: areaName })}
+          </p>
+        </SettingsConfirmDialogShell>
       </div>
     </div>,
     document.body

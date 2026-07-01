@@ -444,7 +444,7 @@ function mapEffectiveProfileCompensationSurcharge(
 }
 
 const ORGANIZATION_SELECT_BASE =
-  "id, name, timezone, country_code, planning_mode, industry, allow_retroactive_compensation_entries, shift_confirmation_enabled, auto_approve_sick_absence, shift_confirmation_disclaimer, created_at";
+  "id, name, timezone, country_code, planning_mode, industry, allow_retroactive_compensation_entries, shift_confirmation_enabled, auto_approve_sick_absence, shift_confirmation_disclaimer, shift_confirmation_pending_after_minutes, created_at";
 
 const ORGANIZATION_SELECT_WITH_COMPENSATION_UI = `${ORGANIZATION_SELECT_BASE}, show_compensation_in_planning_ui`;
 
@@ -477,6 +477,8 @@ function mapOrganizationRow(
       (data.auto_approve_sick_absence as boolean | null) ?? true,
     shift_confirmation_disclaimer:
       (data.shift_confirmation_disclaimer as string | null) ?? null,
+    shift_confirmation_pending_after_minutes:
+      (data.shift_confirmation_pending_after_minutes as number | null) ?? 180,
     created_at: data.created_at as string,
   };
 }
@@ -718,6 +720,25 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       }
       throw new Error(error.message);
     }
+  }
+
+  async updateOrganizationName(organizationId: string, name: string) {
+    const { error } = await this.client
+      .from(T.organizations)
+      .update({ name })
+      .eq("id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
+  async updateOrganizationShiftConfirmationPendingAfterMinutes(
+    organizationId: string,
+    minutes: number
+  ) {
+    const { error } = await this.client
+      .from(T.organizations)
+      .update({ shift_confirmation_pending_after_minutes: minutes })
+      .eq("id", organizationId);
+    if (error) throw new Error(error.message);
   }
 
   async updateOrganizationShiftConfirmationEnabled(
@@ -1181,6 +1202,55 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .eq("id", id)
       .eq("organization_id", organizationId)
       .is("archived_at", null);
+    if (error) throw new Error(error.message);
+  }
+
+  async resetOrganizationQualifications(organizationId: string): Promise<void> {
+    const locations = await this.listLocations(organizationId);
+    for (const location of locations) {
+      const areas = await this.listLocationAreas(location.id);
+      for (const area of areas) {
+        await this.replaceLocationAreaStaffing(area.id, location.id, []);
+
+        const { error: overrideError } = await this.client
+          .from(T.locationAreaStaffingOverrides)
+          .delete()
+          .eq("location_area_id", area.id);
+        if (overrideError) throw new Error(overrideError.message);
+
+        const templates = await this.listAreaQualificationTemplatesForArea(
+          area.id,
+          location.id
+        );
+        for (const template of templates) {
+          await this.removeAreaQualificationTemplate(
+            area.id,
+            location.id,
+            template.id
+          );
+        }
+      }
+    }
+
+    const employees = await this.listPlanningEmployees(organizationId);
+    for (const employee of employees) {
+      const qualifications = await this.listProfileQualifications(
+        organizationId,
+        employee.id
+      );
+      for (const qualification of qualifications) {
+        await this.removeProfileQualification(
+          organizationId,
+          employee.id,
+          qualification.id
+        );
+      }
+    }
+
+    const { error } = await this.client
+      .from(T.qualifications)
+      .delete()
+      .eq("organization_id", organizationId);
     if (error) throw new Error(error.message);
   }
 
@@ -2825,6 +2895,40 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     return (data ?? []) as Location[];
   }
 
+  async findOrganizationLocationByName(
+    organizationId: string,
+    name: string,
+    options?: { includeArchived?: boolean }
+  ): Promise<Location | null> {
+    let query = this.client
+      .from(T.locations)
+      .select("*")
+      .eq("organization_id", organizationId);
+
+    if (!options?.includeArchived) {
+      query = query.is("archived_at", null);
+    }
+
+    const { data, error } = await query.order("sort_order");
+    if (error) throw new Error(error.message);
+
+    const normalized = name.trim().toLowerCase();
+    return (
+      ((data ?? []) as Location[]).find(
+        (location) => location.name.trim().toLowerCase() === normalized
+      ) ?? null
+    );
+  }
+
+  async unarchiveOrganizationLocation(id: string, organizationId: string) {
+    const { error } = await this.client
+      .from(T.locations)
+      .update({ archived_at: null })
+      .eq("id", id)
+      .eq("organization_id", organizationId);
+    if (error) throw new Error(error.message);
+  }
+
   async listLocationsForAreaCalendar(
     organizationId: string,
     from: string,
@@ -4354,10 +4458,219 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   }
 
   async preparePflegedienstScenario(organizationId: string): Promise<void> {
-    const { error } = await this.client.rpc("prepare_pflegedienst_scenario", {
-      p_organization_id: organizationId,
-    });
-    if (error) throw new Error(error.message);
+    const { data: organization, error: organizationError } = await this.client
+      .from(T.organizations)
+      .select("id")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (organizationError) throw new Error(organizationError.message);
+    if (!organization) throw new Error("Organisation nicht gefunden");
+
+    const { error: updateOrganizationError } = await this.client
+      .from(T.organizations)
+      .update({
+        name: "Giovanni's Gastro",
+        planning_mode: "advanced",
+        industry: "care",
+      })
+      .eq("id", organizationId);
+    if (updateOrganizationError) throw new Error(updateOrganizationError.message);
+
+    await this.deleteOrganizationPflegedienstOperationalData(organizationId);
+    await this.wipeOrganizationShiftsAndLocations(organizationId);
+
+    const { error: qualificationsError } = await this.client
+      .from(T.qualifications)
+      .delete()
+      .eq("organization_id", organizationId);
+    if (qualificationsError) throw new Error(qualificationsError.message);
+  }
+
+  async prepareBiergartenHadrianScenario(organizationId: string): Promise<void> {
+    const { data: organization, error: organizationError } = await this.client
+      .from(T.organizations)
+      .select("id")
+      .eq("id", organizationId)
+      .maybeSingle();
+    if (organizationError) throw new Error(organizationError.message);
+    if (!organization) throw new Error("Organisation nicht gefunden");
+
+    const { error: updateOrganizationError } = await this.client
+      .from(T.organizations)
+      .update({
+        name: "Giovanni's Gastro",
+        planning_mode: "advanced",
+        industry: "gastronomy",
+      })
+      .eq("id", organizationId);
+    if (updateOrganizationError) throw new Error(updateOrganizationError.message);
+
+    await this.wipeOrganizationShiftsAndLocations(organizationId);
+  }
+
+  private async wipeOrganizationShiftsAndLocations(
+    organizationId: string
+  ): Promise<void> {
+    const { data: allLocations, error: locationsError } = await this.client
+      .from(T.locations)
+      .select("id")
+      .eq("organization_id", organizationId);
+    if (locationsError) throw new Error(locationsError.message);
+
+    const locationIds = (allLocations ?? []).map((location) => location.id);
+
+    const { error: shiftsError } = await this.client
+      .from(T.shifts)
+      .delete()
+      .eq("organization_id", organizationId);
+    if (shiftsError) throw new Error(shiftsError.message);
+
+    const { error: archiveShiftsError } = await this.client
+      .from(T.shiftsArchive)
+      .delete()
+      .eq("organization_id", organizationId);
+    if (archiveShiftsError) throw new Error(archiveShiftsError.message);
+
+    await this.deleteOrganizationLocationsWithDependencies(
+      organizationId,
+      locationIds
+    );
+  }
+
+  private async deleteOrganizationPflegedienstOperationalData(
+    organizationId: string
+  ): Promise<void> {
+    const { data: confirmationBatches, error: confirmationBatchesError } =
+      await this.client
+        .from(T.confirmationRequestBatches)
+        .select("id")
+        .eq("organization_id", organizationId);
+    if (confirmationBatchesError) {
+      throw new Error(confirmationBatchesError.message);
+    }
+
+    const batchIds = (confirmationBatches ?? []).map((batch) => batch.id);
+    if (batchIds.length > 0) {
+      const { error: confirmationItemsError } = await this.client
+        .from(T.confirmationRequestItems)
+        .delete()
+        .in("batch_id", batchIds);
+      if (confirmationItemsError) throw new Error(confirmationItemsError.message);
+    }
+
+    const operationalDeletes: Array<{
+      table: (typeof T)[keyof typeof T];
+      column: string;
+    }> = [
+      { table: T.confirmationRequestBatches, column: "organization_id" },
+      { table: T.shiftRequests, column: "organization_id" },
+      { table: T.shiftConfirmationEvents, column: "organization_id" },
+      { table: T.shiftDeletionEvents, column: "organization_id" },
+      { table: T.swapRequests, column: "organization_id" },
+      { table: T.notificationOutbox, column: "organization_id" },
+      { table: T.managerNotifications, column: "organization_id" },
+      { table: T.profileShiftPreferences, column: "organization_id" },
+    ];
+
+    for (const { table, column } of operationalDeletes) {
+      const { error } = await this.client
+        .from(table)
+        .delete()
+        .eq(column, organizationId);
+      if (error) throw new Error(error.message);
+    }
+
+    const { data: profiles, error: profilesError } = await this.client
+      .from(T.profiles)
+      .select("id")
+      .eq("organization_id", organizationId);
+    if (profilesError) throw new Error(profilesError.message);
+
+    const profileIds = (profiles ?? []).map((profile) => profile.id);
+    if (profileIds.length > 0) {
+      const { error: profileQualificationsError } = await this.client
+        .from(T.profileQualifications)
+        .delete()
+        .in("profile_id", profileIds);
+      if (profileQualificationsError) {
+        throw new Error(profileQualificationsError.message);
+      }
+    }
+  }
+
+  private async deleteOrganizationLocationsWithDependencies(
+    organizationId: string,
+    locationIds: readonly string[]
+  ): Promise<void> {
+    if (!locationIds.length) return;
+
+    const { data: removeAreas, error: areasError } = await this.client
+      .from(T.locationAreas)
+      .select("id")
+      .in("location_id", [...locationIds]);
+    if (areasError) throw new Error(areasError.message);
+
+    const removeAreaIds = (removeAreas ?? []).map((area) => area.id);
+
+    if (removeAreaIds.length > 0) {
+      const { error: overridesError } = await this.client
+        .from(T.locationAreaStaffingOverrides)
+        .delete()
+        .in("location_area_id", removeAreaIds);
+      if (overridesError) throw new Error(overridesError.message);
+
+      const { error: staffingError } = await this.client
+        .from(T.locationAreaStaffing)
+        .delete()
+        .in("location_area_id", removeAreaIds);
+      if (staffingError) throw new Error(staffingError.message);
+
+      const { error: serviceHoursError } = await this.client
+        .from(T.locationAreaServiceHours)
+        .delete()
+        .in("location_area_id", removeAreaIds);
+      if (serviceHoursError) throw new Error(serviceHoursError.message);
+
+      const { data: shiftTemplates, error: templatesError } = await this.client
+        .from(T.areaShiftTemplates)
+        .select("id")
+        .in("location_area_id", removeAreaIds);
+      if (templatesError) throw new Error(templatesError.message);
+
+      const templateIds = (shiftTemplates ?? []).map((template) => template.id);
+      if (templateIds.length > 0) {
+        const { error: breaksError } = await this.client
+          .from(T.areaShiftTemplateBreaks)
+          .delete()
+          .in("area_shift_template_id", templateIds);
+        if (breaksError) throw new Error(breaksError.message);
+      }
+
+      const { error: deleteTemplatesError } = await this.client
+        .from(T.areaShiftTemplates)
+        .delete()
+        .in("location_area_id", removeAreaIds);
+      if (deleteTemplatesError) throw new Error(deleteTemplatesError.message);
+
+      const { error: qualTemplatesError } = await this.client
+        .from(T.areaQualificationTemplates)
+        .delete()
+        .in("location_area_id", removeAreaIds);
+      if (qualTemplatesError) throw new Error(qualTemplatesError.message);
+
+      const { error: deleteAreasError } = await this.client
+        .from(T.locationAreas)
+        .delete()
+        .in("id", removeAreaIds);
+      if (deleteAreasError) throw new Error(deleteAreasError.message);
+    }
+
+    const { error: deleteLocationsError } = await this.client
+      .from(T.locations)
+      .delete()
+      .in("id", [...locationIds])
+      .eq("organization_id", organizationId);
+    if (deleteLocationsError) throw new Error(deleteLocationsError.message);
   }
 
   async saveOrganizationShiftSnapshot(organizationId: string): Promise<number> {
@@ -5239,7 +5552,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await this.client
       .from(T.shifts)
       .select(
-        "id, organization_id, employee_id, shift_date, requested_at, organizations!inner(shift_confirmation_enabled, timezone, country_code), profiles!employee_id(full_name, email_fallback_mode)"
+        "id, organization_id, employee_id, shift_date, requested_at, organizations!inner(shift_confirmation_enabled, timezone, country_code, shift_confirmation_pending_after_minutes), profiles!employee_id(full_name, email_fallback_mode)"
       )
       .eq("confirmation_status", "requested")
       .not("requested_at", "is", null);
@@ -5252,11 +5565,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
             shift_confirmation_enabled: boolean;
             timezone: string | null;
             country_code: string | null;
+            shift_confirmation_pending_after_minutes: number | null;
           }
         | {
             shift_confirmation_enabled: boolean;
             timezone: string | null;
             country_code: string | null;
+            shift_confirmation_pending_after_minutes: number | null;
           }[]
         | null;
       const profileRel = row.profiles as
@@ -5283,6 +5598,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           organization: {
             timezone: organization?.timezone ?? null,
             country_code: organization?.country_code ?? null,
+            shift_confirmation_pending_after_minutes:
+              organization?.shift_confirmation_pending_after_minutes ?? null,
           },
         },
       ];

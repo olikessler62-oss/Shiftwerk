@@ -81,7 +81,7 @@ type BatchConfirmState =
   | null;
 
 const RESPONSE_ROW_GRID_WITH_SELECTION_CLASS =
-  "grid h-10 grid-cols-[minmax(9.5rem,1.05fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.85fr)] items-center gap-x-3";
+  "grid h-10 grid-cols-[minmax(4.75rem,max-content)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.85fr)] items-center gap-x-3";
 
 const RESPONSE_ROW_GRID_READONLY_CLASS =
   "grid h-10 grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.85fr)] items-center gap-x-3";
@@ -89,11 +89,12 @@ const RESPONSE_ROW_GRID_READONLY_CLASS =
 const CELL_CLASS = "min-w-0 truncate text-left text-sm";
 const HEADER_CELL_CLASS =
   "min-w-0 truncate text-left text-xs font-semibold uppercase tracking-wide text-muted";
-const CHECKBOX_LABEL_CLASS =
-  "flex min-w-0 items-center gap-2 whitespace-nowrap text-left text-xs text-muted";
+const SELECTION_HEADER_CELL_CLASS =
+  "shrink-0 whitespace-nowrap text-left text-xs font-semibold uppercase tracking-wide text-muted";
+const CHECKBOX_CELL_CLASS = "inline-flex shrink-0 items-center justify-center";
 
 const RESPONSE_ROW_GRID_CONFLICTS_CLASS =
-  "grid h-10 grid-cols-[minmax(9.5rem,1.05fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.85fr)_minmax(0,0.75fr)] items-center gap-x-3";
+  "grid h-10 grid-cols-[minmax(4.75rem,max-content)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.85fr)_minmax(0,0.75fr)] items-center gap-x-3";
 
 const SWAP_ROW_GRID_CLASS =
   "grid h-10 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,1fr)] items-center gap-x-3";
@@ -251,6 +252,7 @@ export function CommunicationResponsesTab({
   const visibleShifts = useMemo(() => {
     if (activeCategory === "conflicts") return grouped.conflicts;
     if (activeCategory === "swaps") return [];
+    if (activeCategory === "unresolved") return grouped.unresolved;
     return grouped[activeCategory as keyof typeof grouped] as
       | AreaCalendarShiftCard[]
       | undefined ?? [];
@@ -708,7 +710,7 @@ export function CommunicationResponsesTab({
             className={cn(rowGridClass, "border-b border-border bg-subtle/40 px-3")}
           >
             {showSelection ? (
-              <span className={HEADER_CELL_CLASS}>
+              <span className={SELECTION_HEADER_CELL_CLASS}>
                 {t("shiftConfirmation.communication.colSelection")}
               </span>
             ) : null}
@@ -787,7 +789,7 @@ export function CommunicationResponsesTab({
                   const row = (
                     <li className={cn(rowGridClass, "px-3")}>
                       {showSelection ? (
-                        <label className={CHECKBOX_LABEL_CLASS}>
+                        <label className={CHECKBOX_CELL_CLASS}>
                           <input
                             type="checkbox"
                             className="h-4 w-4 shrink-0 rounded border-border"
@@ -798,9 +800,6 @@ export function CommunicationResponsesTab({
                             onChange={() => toggleShift(shift.id)}
                             aria-label={t(checkboxLabelKey(activeCategory))}
                           />
-                          <span className="truncate">
-                            {t(checkboxLabelKey(activeCategory))}
-                          </span>
                         </label>
                       ) : null}
                       <span
@@ -870,7 +869,7 @@ export function CommunicationResponsesTab({
 
           {showSelection ? (
             <div className={cn(rowGridClass, "border-t border-border px-3")}>
-              <label className={CHECKBOX_LABEL_CLASS}>
+              <label className={CHECKBOX_CELL_CLASS}>
                 <input
                   type="checkbox"
                   className="h-4 w-4 shrink-0 rounded border-border"
@@ -884,7 +883,6 @@ export function CommunicationResponsesTab({
                   onChange={(event) => toggleAllVisible(event.target.checked)}
                   aria-label={t("shiftConfirmation.send.selectAll")}
                 />
-                <span>{t("shiftConfirmation.send.selectAll")}</span>
               </label>
               <span aria-hidden className="min-w-0" />
               <span aria-hidden className="min-w-0" />
@@ -915,12 +913,6 @@ export function CommunicationResponsesTab({
           ) : null}
         </div>
       )}
-
-      <div className="flex justify-end pt-1">
-        <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
-          {t("common.close")}
-        </Button>
-      </div>
 
       {batchConfirm && batchConfirmMessage ? (
         <AreaCalendarShiftDeleteConfirmModal

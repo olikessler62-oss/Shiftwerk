@@ -1,7 +1,13 @@
 import { cn } from "@/lib/cn";
 import { DASHBOARD_STAFFING_VACANCY_SILHOUETTE_COLOR } from "@/lib/dashboard-panel-styles";
 
-const ROW_ACTION_ICON_SIZE_CLASS = "h-[22px] w-[22px]";
+/** Feste Klickfläche — Platzhalter und Buttons teilen dieselbe Box. */
+export const DASHBOARD_STAFFING_ROW_ACTION_SLOT_CLASS =
+  "inline-flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden leading-none";
+
+/** SVG block + feste Größe — vermeidet Inline-Baseline-Lücken unter dem Icon. */
+export const DASHBOARD_STAFFING_ROW_ACTION_ICON_CLASS =
+  "block h-5 w-5 shrink-0";
 
 type IconProps = {
   className?: string;
@@ -18,7 +24,7 @@ export function StaffingVacancyIcon({ className }: IconProps) {
       viewBox="0 0 20 20"
       fill="none"
       aria-hidden
-      className={cn(ROW_ACTION_ICON_SIZE_CLASS, className)}
+      className={cn(DASHBOARD_STAFFING_ROW_ACTION_ICON_CLASS, className)}
     >
       <circle cx="9.25" cy="7.25" r="2.65" fill={DASHBOARD_STAFFING_VACANCY_SILHOUETTE_COLOR} />
       <path
@@ -48,7 +54,7 @@ export function StaffingConflictIcon({ className }: IconProps) {
       viewBox="0 0 20 20"
       fill="none"
       aria-hidden
-      className={cn(ROW_ACTION_ICON_SIZE_CLASS, className)}
+      className={cn(DASHBOARD_STAFFING_ROW_ACTION_ICON_CLASS, className)}
     >
       <path
         d="M10 3.5 17.5 16.5H2.5L10 3.5Z"
@@ -76,7 +82,7 @@ export function StaffingOpenPointsIcon({ className }: IconProps) {
       viewBox="0 0 20 20"
       fill="none"
       aria-hidden
-      className={cn(ROW_ACTION_ICON_SIZE_CLASS, className)}
+      className={cn(DASHBOARD_STAFFING_ROW_ACTION_ICON_CLASS, className)}
     >
       <rect
         x="4.5"

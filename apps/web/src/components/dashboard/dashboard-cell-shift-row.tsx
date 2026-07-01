@@ -4,6 +4,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AREA_CALENDAR_SHIFT_CARD_BOX_SHADOW } from "@/components/areacalendar/areacalendar-shift-card-view";
 import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
+import { useShiftConfirmationPendingAfterMinutes } from "@/lib/org-features-provider";
 import { cn } from "@/lib/cn";
 import {
   buildEmployeeShiftHighlightBoxShadow,
@@ -118,6 +119,7 @@ export function DashboardCellShiftRow({
   shiftConfirmationEnabled = true,
 }: Props) {
   const t = useTranslations();
+  const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidthPx, setContainerWidthPx] = useState(0);
 
@@ -190,7 +192,11 @@ export function DashboardCellShiftRow({
         const showEmployeeStrip = planningShiftSegmentShowsEmployeeStrip(part);
         const isPastShift = isPastShiftDate(cellDate);
         const calendarConfirmationStatus =
-          resolveShiftCardConfirmationStatusForCalendar(shift, cellDate);
+          resolveShiftCardConfirmationStatusForCalendar(
+            shift,
+            cellDate,
+            pendingAfterMinutes
+          );
         const showUnresolvedCardStyle = shiftConfirmationShowsUnresolvedCardStyle(
           calendarConfirmationStatus
         );
@@ -247,6 +253,7 @@ export function DashboardCellShiftRow({
             shiftConfirmationEnabled,
             hasAbsenceConflict: absenceConflictShiftIds?.has(shift.id),
             hasSwapRequest: swapRequestShiftIds?.has(shift.id),
+            pendingAfterMinutes,
           }
         );
 

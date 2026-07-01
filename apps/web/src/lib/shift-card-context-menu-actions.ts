@@ -37,6 +37,7 @@ export type ShiftCardContextMenuOptions = {
   isPastShiftDate: (shiftDate: string) => boolean;
   displayState?: ShiftCardDisplayState;
   hasAbsenceConflict?: boolean;
+  pendingAfterMinutes?: number;
 };
 
 
@@ -57,7 +58,9 @@ export function resolveShiftCardContextMenuStatus(
 
   requestedAt?: string | null,
 
-  displayState?: ShiftCardDisplayState
+  displayState?: ShiftCardDisplayState,
+
+  pendingAfterMinutes?: number
 
 ): ShiftConfirmationStatus | undefined {
 
@@ -67,7 +70,12 @@ export function resolveShiftCardContextMenuStatus(
 
   return (
 
-    resolveEffectiveConfirmationStatus(confirmationStatus, requestedAt) ??
+    resolveEffectiveConfirmationStatus(
+      confirmationStatus,
+      requestedAt,
+      new Date(),
+      pendingAfterMinutes
+    ) ??
 
     confirmationStatus
 
@@ -90,13 +98,10 @@ export function isPastUnconfirmedShift(
   if (!options.isPastShiftDate(pastReferenceDate)) return false;
 
   const status = resolveShiftCardContextMenuStatus(
-
     confirmationStatus,
-
     requestedAt,
-
-    options.displayState
-
+    options.displayState,
+    options.pendingAfterMinutes
   );
 
   return status !== undefined && status !== "confirmed";
@@ -106,13 +111,15 @@ export function isPastUnconfirmedShift(
 export function isConfirmedShiftCard(
   confirmationStatus: ShiftConfirmationStatus | undefined | null,
   requestedAt?: string | null,
-  displayState?: ShiftCardDisplayState
+  displayState?: ShiftCardDisplayState,
+  pendingAfterMinutes?: number
 ): boolean {
   return (
     resolveShiftCardContextMenuStatus(
       confirmationStatus,
       requestedAt,
-      displayState
+      displayState,
+      pendingAfterMinutes
     ) === "confirmed"
   );
 }
@@ -146,7 +153,9 @@ export function isPastConfirmedPlanningShift(
 
   isPastShiftDate: (shiftDate: string) => boolean,
 
-  cellDate?: string
+  cellDate?: string,
+
+  pendingAfterMinutes?: number
 
 ): boolean {
 
@@ -155,13 +164,10 @@ export function isPastConfirmedPlanningShift(
   if (!isPastShiftDate(pastReferenceDate)) return false;
 
   const status = resolveShiftCardContextMenuStatus(
-
     shift.confirmationStatus,
-
     shift.requestedAt,
-
-    shift.displayState
-
+    shift.displayState,
+    pendingAfterMinutes
   );
 
   return status === "confirmed" || status === undefined;
@@ -220,7 +226,8 @@ export function canOpenShiftCardContextMenu(
         displayState: options.displayState,
       },
       options.isPastShiftDate,
-      options.cellDate
+      options.cellDate,
+      options.pendingAfterMinutes
     )
   ) {
     return false;
@@ -241,13 +248,10 @@ export function canOpenShiftCardContextMenu(
 
 
   const status = resolveShiftCardContextMenuStatus(
-
     confirmationStatus,
-
     requestedAt,
-
-    options?.displayState
-
+    options?.displayState,
+    options?.pendingAfterMinutes
   );
 
 
@@ -318,13 +322,10 @@ export function shiftCardContextMenuActions(
 
 
   const status = resolveShiftCardContextMenuStatus(
-
     confirmationStatus,
-
     requestedAt,
-
-    options?.displayState
-
+    options?.displayState,
+    options?.pendingAfterMinutes
   );
 
   if (

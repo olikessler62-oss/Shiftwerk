@@ -418,7 +418,7 @@ describe("isTagAreaHeaderStaffingEntryPlannedCoverage", () => {
     });
   });
 
-  it("stays red when even projected shifts do not cover demand", () => {
+  it("shows projected count for partial planned coverage while understaffed", () => {
     const openEntry: TagAreaHeaderStaffingEntry = {
       serviceHourId: "a",
       label: "08:00–12:00",
@@ -429,6 +429,10 @@ describe("isTagAreaHeaderStaffingEntryPlannedCoverage", () => {
 
     expect(isTagAreaHeaderStaffingEntryUnderstaffed(openEntry)).toBe(true);
     expect(isTagAreaHeaderStaffingEntryPlannedCoverage(openEntry)).toBe(false);
+    expect(gaugeCountsForTagAreaHeaderStaffingEntry(openEntry)).toEqual({
+      assigned: 1,
+      required: 2,
+    });
   });
 });
 

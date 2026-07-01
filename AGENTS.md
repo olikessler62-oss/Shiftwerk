@@ -117,6 +117,7 @@ Diese Regeln stehen ausführlicher in `.cursor/rules/`:
 | Thema | Regel |
 |-------|--------|
 | **Tooltips** | Kein natives HTML `title` — `@/components/ui/tooltip` verwenden |
+| **Modal-Scrollbars** | Dialog-Container über Shell-Klassen + `MODAL_SCROLLBAR_CLASS` (enthält `modal-scrollbar-inline`) — kein weißer Rand rechts |
 | **Comboboxen** | `useComboboxCloseOnPointerDistance` für Schließen bei Mausabstand |
 | **Edit-Validierung** | Beim Bearbeiten Datensatz aus Duplikat-/Overlap-Checks ausschließen (Skill: `edit-validation-exclude-self`) |
 | **Textauswahl** | Global `user-select: none` — Eingabefelder bleiben selektierbar |

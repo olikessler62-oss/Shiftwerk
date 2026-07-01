@@ -120,6 +120,8 @@ export interface Organization {
   auto_approve_sick_absence: boolean;
   /** Editierbarer Hinweistext für Mitarbeiter-Antworten. */
   shift_confirmation_disclaimer: string | null;
+  /** Minuten nach requested_at, danach Anzeige/Übergang requested → pending. */
+  shift_confirmation_pending_after_minutes: number;
   created_at: string;
 }
 

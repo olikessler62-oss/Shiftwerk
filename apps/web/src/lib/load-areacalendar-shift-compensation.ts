@@ -1,11 +1,70 @@
 import type { SchichtwerkDatabase } from "@/lib/db";
 import { splitShiftWindowIntoCalendarDaySegments } from "@schichtwerk/database";
+import type {
+  EffectiveProfileCompensationSurcharge,
+  ProfileCompensationSurcharge,
+  ProfileHourlyRate,
+} from "@schichtwerk/types";
 import {
   DEFAULT_ORGANIZATION_CURRENCY,
   type AreaCalendarShiftCompensationByKey,
   type TagAreaShiftRef,
   shiftCompensationKey,
 } from "@/lib/tag-area-footer-stats";
+
+function isEffectiveOnDate(
+  validFrom: string,
+  validTo: string | null,
+  dateISO: string
+): boolean {
+  return validFrom <= dateISO && (!validTo || validTo >= dateISO);
+}
+
+function hourlyRateForDate(
+  rates: readonly ProfileHourlyRate[],
+  profileId: string,
+  dateISO: string
+): { amount: number; currency: string } | null {
+  const match = rates
+    .filter(
+      (rate) =>
+        rate.profile_id === profileId &&
+        isEffectiveOnDate(rate.valid_from, rate.valid_to, dateISO)
+    )
+    .sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0];
+
+  if (!match) return null;
+  return {
+    amount: match.amount,
+    currency: match.currency || DEFAULT_ORGANIZATION_CURRENCY,
+  };
+}
+
+function effectiveSurchargesForDate(
+  surcharges: readonly ProfileCompensationSurcharge[],
+  profileId: string,
+  dateISO: string
+): EffectiveProfileCompensationSurcharge[] {
+  const byType = new Map<string, ProfileCompensationSurcharge>();
+
+  for (const row of surcharges) {
+    if (row.profile_id !== profileId) continue;
+    if (!isEffectiveOnDate(row.valid_from, row.valid_to, dateISO)) continue;
+    const existing = byType.get(row.surcharge_type_id);
+    if (!existing || row.valid_from > existing.valid_from) {
+      byType.set(row.surcharge_type_id, row);
+    }
+  }
+
+  return [...byType.values()].map((row) => ({
+    id: row.id,
+    surcharge_type_id: row.surcharge_type_id,
+    name: row.surcharge_type_name,
+    trigger: row.trigger,
+    amount: row.amount ?? row.type_default_amount,
+    unit: row.unit ?? row.type_default_unit,
+  }));
+}
 
 export async function loadAreaCalendarShiftCompensation(
   db: SchichtwerkDatabase,
@@ -33,53 +92,26 @@ export async function loadAreaCalendarShiftCompensation(
 
   if (pairs.size === 0) return {};
 
-  const datesNeeded = [...new Set([...pairs.values()].map((pair) => pair.dateISO))];
-  const ratesByDate = new Map<
-    string,
-    Map<string, { amount: number; currency: string }>
-  >();
-
-  for (const dateISO of datesNeeded) {
-    const rates = await db.listCurrentOrganizationProfileHourlyRates(
-      organizationId,
-      dateISO
-    );
-    ratesByDate.set(
-      dateISO,
-      new Map(
-        rates.map((rate) => [
-          rate.profile_id,
-          {
-            amount: rate.amount,
-            currency: rate.currency || DEFAULT_ORGANIZATION_CURRENCY,
-          },
-        ])
-      )
-    );
-  }
+  const [allRates, allSurcharges] = await Promise.all([
+    db.listAllOrganizationProfileHourlyRates(organizationId),
+    db.listAllOrganizationProfileCompensationSurcharges(organizationId),
+  ]);
 
   const result: AreaCalendarShiftCompensationByKey = {};
 
-  await Promise.all(
-    [...pairs.values()].map(async ({ employeeId, dateISO }) => {
-      const rate = ratesByDate.get(dateISO)?.get(employeeId);
-      const key = shiftCompensationKey(employeeId, dateISO);
-      if (!rate) {
-        result[key] = undefined;
-        return;
-      }
-      const surcharges = await db.listEffectiveProfileCompensationSurchargesForDate(
-        organizationId,
-        employeeId,
-        dateISO
-      );
-      result[key] = {
-        baseHourlyRate: rate.amount,
-        currency: rate.currency,
-        surcharges,
-      };
-    })
-  );
+  for (const { employeeId, dateISO } of pairs.values()) {
+    const key = shiftCompensationKey(employeeId, dateISO);
+    const rate = hourlyRateForDate(allRates, employeeId, dateISO);
+    if (!rate) {
+      result[key] = undefined;
+      continue;
+    }
+    result[key] = {
+      baseHourlyRate: rate.amount,
+      currency: rate.currency,
+      surcharges: effectiveSurchargesForDate(allSurcharges, employeeId, dateISO),
+    };
+  }
 
   return result;
 }

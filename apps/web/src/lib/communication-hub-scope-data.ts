@@ -5,6 +5,7 @@ import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data
 import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { SchichtwerkDatabase } from "@/lib/db";
+import { resolveOrganizationShiftConfirmationPendingAfterMinutes } from "@schichtwerk/database";
 import type {
   AbsenceRequest,
   AreaShiftTemplateWithBreaks,
@@ -29,7 +30,8 @@ export function mapAreaCalendarShiftRowsToPlanningShifts(
   shiftRows: Awaited<ReturnType<SchichtwerkDatabase["listAreaCalendarShifts"]>>,
   timeZone: string,
   areaShiftTemplates: readonly AreaShiftTemplateWithBreaks[] = [],
-  locationId?: string | null
+  locationId?: string | null,
+  pendingAfterMinutes?: number
 ): PlanningShift[] {
   const shifts: PlanningShift[] = [];
 
@@ -51,7 +53,10 @@ export function mapAreaCalendarShiftRowsToPlanningShifts(
           )
         : null;
 
-    const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(row);
+    const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(
+      row,
+      pendingAfterMinutes
+    );
 
     shifts.push({
       id: row.id,
@@ -131,7 +136,8 @@ export async function loadCommunicationHubScopeData(input: {
     shiftRows,
     timeZone,
     areaShiftTemplates,
-    locationId
+    locationId,
+    resolveOrganizationShiftConfirmationPendingAfterMinutes(organization)
   );
 
   const canceledShiftIds = locationShifts

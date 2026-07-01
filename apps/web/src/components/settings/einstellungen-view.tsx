@@ -6,7 +6,7 @@ export function EinstellungenView() {
       <div>
         <h1 className="text-2xl font-semibold text-foreground">Einstellungen</h1>
         <p className="mt-1 text-sm text-muted">
-          Einstellungen finden Sie im Einsatzort-Kalender unter dem Menüpunkt Einstellungen.
+          Einstellungen finden Sie im Einsatzbereich-Kalender unter dem Menüpunkt Einstellungen.
         </p>
       </div>
     </div>

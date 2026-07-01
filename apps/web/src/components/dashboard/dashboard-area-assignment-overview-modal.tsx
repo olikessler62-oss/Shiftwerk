@@ -72,6 +72,7 @@ import { formatPlanningLocationAreaLabel } from "@/lib/planning-location-ui";
 export type DashboardAreaAssignmentOverviewContext =
   DashboardStaffingCandidatesPlanningContext & {
     shiftConfirmationEnabled: boolean;
+    pendingAfterMinutes?: number;
     todayISO: string;
   };
 
@@ -112,6 +113,7 @@ function isShiftActionDisabled(
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate: menuOptions.isPastShiftDate,
+        pendingAfterMinutes: context.pendingAfterMinutes,
       });
     case "cancel":
       return !canCancelShift({
@@ -461,7 +463,9 @@ export function DashboardAreaAssignmentOverviewModal({
       calendarShifts: context.calendarShifts,
       serviceHours: context.serviceHours,
       employeeNameById: context.employeeNameById ?? new Map(),
+      employeeColorById: context.employeeColorById,
       shiftConfirmationEnabled: context.shiftConfirmationEnabled,
+      pendingAfterMinutes: context.pendingAfterMinutes,
       readOnlyWeek: context.readOnlyWeek,
       todayISO: context.todayISO,
     }),

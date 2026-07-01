@@ -1,4 +1,5 @@
 import { cn } from "@/lib/cn";
+import { DASHBOARD_AREA_CARD_HEADER_SURFACE_CLASS } from "@/lib/dashboard-panel-styles";
 import { DASHBOARD_PANEL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 
 /** Referenzhöhe: Wochenübersicht-, Bereichs- und Mitarbeiter-Kalender-Buttons. */
@@ -17,7 +18,7 @@ export const DASHBOARD_STATUS_BAR_COMPACT_NAV_BUTTON_CLASS = cn(
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
 );
 
-/** Drilldown — Einsatzort-Combobox (Trigger wie Statusleisten-Button). */
+/** Drilldown — Einsatzbereich-Combobox (Trigger wie Statusleisten-Button). */
 export const DASHBOARD_DAY_DRILLDOWN_AREA_COMBOBOX_TRIGGER_CLASS = cn(
   DASHBOARD_STATUS_BAR_COMPACT_NAV_BUTTON_CLASS,
   "relative max-w-full justify-between gap-2 pr-8 text-left"
@@ -69,14 +70,20 @@ export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEIGHT_CLASS =
   "h-[1.65rem] min-h-[1.65rem]";
 
 export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_SHELL_CLASS = cn(
-  "inline-flex w-full max-w-full min-w-0 items-stretch overflow-hidden rounded-[4px] border border-black/10 bg-white/80 p-px sm:w-fit",
+  "inline-flex w-full max-w-full min-w-0 cursor-pointer items-stretch overflow-hidden rounded-[4px] border border-black/10 bg-white/80 p-px sm:w-fit",
   DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEIGHT_CLASS,
   "shadow-[0_1px_2px_0_rgba(15,23,42,0.04)]"
 );
 
+/** Im Bereichskarten-Header — gleiche Fläche wie DASHBOARD_AREA_CARD_HEADER_SURFACE_CLASS. */
+export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEADER_CLASS = cn(
+  "w-fit max-w-full shrink-0 border-black/15 shadow-none",
+  DASHBOARD_AREA_CARD_HEADER_SURFACE_CLASS
+);
+
 export const DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS = cn(
   DASHBOARD_PANEL_ROUNDED_CLASS,
-  "inline-flex h-full min-w-0 max-w-[50%] shrink items-center justify-center rounded-[3px] border border-black/20 px-2 text-xs font-semibold text-foreground shadow-[0_1px_2px_0_rgba(15,23,42,0.06)] transition-[filter,box-shadow] duration-150 sm:max-w-none sm:px-2.5",
+  "inline-flex h-full min-w-0 max-w-[50%] shrink cursor-pointer items-center justify-center rounded-[3px] border border-black/20 px-2 text-xs font-semibold text-foreground shadow-[0_1px_2px_0_rgba(15,23,42,0.06)] transition-[filter,box-shadow] duration-150 sm:max-w-none sm:px-2.5",
   "bg-calendar-active-header",
   "hover:brightness-[0.98]",
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"

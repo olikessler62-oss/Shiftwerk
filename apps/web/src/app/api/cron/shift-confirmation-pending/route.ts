@@ -19,12 +19,6 @@ export async function GET(request: Request) {
 
   try {
     const result = await runShiftConfirmationPendingJobSafe();
-    if (!result) {
-      return NextResponse.json(
-        { ok: false, error: "Pending job unavailable." },
-        { status: 500 }
-      );
-    }
     return NextResponse.json({
       ok: true,
       ...result,

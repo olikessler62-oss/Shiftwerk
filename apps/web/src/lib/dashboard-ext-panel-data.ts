@@ -17,8 +17,10 @@ import {
   computeDashboardAreaWeekStats,
   computeDashboardLocationWeekRollup,
   resolveDashboardAreaAmpelLevelFromWindowRows,
+  resolveDashboardDayAreaStaffingGaugeFromWindowRows,
   sortDashboardAreaWeekStats,
   type DashboardAreaAmpelLevel,
+  type DashboardDayAreaStaffingGauge,
   type DashboardLocationWeekRollup,
   type DashboardStaffingIssue,
 } from "@/lib/dashboard-area-week-stats";
@@ -31,6 +33,8 @@ import {
   aggregateConfirmationCountsForDay,
   type DashboardDayConfirmationCounts,
 } from "@/lib/dashboard-day-confirmation-counts";
+import { countSwapRequestsForAreaDates } from "@/lib/dashboard-area-status-footer-lines";
+import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 
 export type DashboardExtDayAreaSnapshot = {
   areaId: string;
@@ -38,8 +42,12 @@ export type DashboardExtDayAreaSnapshot = {
   shiftCount: number;
   openSlots: number;
   ampelLevel: DashboardAreaAmpelLevel;
+  /** Aggregierter Tages-Füllstand (Wochentray); null wenn kein Bedarf. */
+  staffingGauge: DashboardDayAreaStaffingGauge | null;
   /** Planbare Servicezeit-Fenster für diesen Bereich an diesem Tag. */
   hasServiceHours: boolean;
+  confirmationCounts: DashboardDayConfirmationCounts;
+  swapRequestedCount: number;
 };
 
 export type DashboardExtDaySnapshot = {
@@ -158,10 +166,18 @@ function buildDaySnapshots(input: {
   areaStats: ReturnType<typeof sortDashboardAreaWeekStats>;
   shifts: readonly PlanningShift[];
   confirmationShifts: readonly PlanningShift[];
+  swapRequests: readonly CommunicationSwapRequestRow[];
   serviceHours: DashboardSummaryPageBundle["serviceHours"];
 }): DashboardExtDaySnapshot[] {
-  const { dates, todayISO, areaStats, shifts, confirmationShifts, serviceHours } =
-    input;
+  const {
+    dates,
+    todayISO,
+    areaStats,
+    shifts,
+    confirmationShifts,
+    swapRequests,
+    serviceHours,
+  } = input;
   const areaIds = areaStats.map((stats) => stats.areaId);
 
   return dates.map((dateISO) => {
@@ -179,11 +195,23 @@ function buildDaySnapshots(input: {
         shiftCount: countShiftsOnDate(shifts, dateISO, stats.areaId),
         openSlots,
         ampelLevel: resolveDashboardAreaAmpelLevelFromWindowRows(dayRows),
+        staffingGauge: resolveDashboardDayAreaStaffingGaugeFromWindowRows(dayRows),
         hasServiceHours: areaHasEffectiveServiceHoursOnDate(
           serviceHours,
           stats.areaId,
           dateISO
         ),
+        confirmationCounts: aggregateConfirmationCountsForDay(
+          confirmationShifts,
+          dateISO,
+          stats.areaId
+        ),
+        swapRequestedCount: countSwapRequestsForAreaDates({
+          swapRequests,
+          shifts: confirmationShifts,
+          areaId: stats.areaId,
+          dateISOs: [dateISO],
+        }),
       };
     });
 
@@ -316,6 +344,7 @@ export async function loadDashboardExtPanelSnapshot(input: {
         formatCalendarTimeLabel,
         formatCriticalWindowLabel,
         formatWeekdayLabel,
+        swapRequests: bundle.communicationSwapRequests,
       })
     )
   );
@@ -329,6 +358,7 @@ export async function loadDashboardExtPanelSnapshot(input: {
     areaStats,
     shifts: calendarStaffingShifts,
     confirmationShifts: bundle.locationShifts,
+    swapRequests: bundle.communicationSwapRequests,
     serviceHours: bundle.serviceHours,
   });
 

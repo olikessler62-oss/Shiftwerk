@@ -8,11 +8,12 @@ export type StaffingTableHeaderLabels = {
   showShiftColumn: boolean;
 };
 
-const STAFFING_TABLE_ACTION_COL_PX = 32;
-const STAFFING_TABLE_STAFFING_COL_FALLBACK_PX = 84;
-const STAFFING_TABLE_STAFFING_COL_PADDING_PX = 16;
-const STAFFING_TABLE_MIN_DAY_COL_PX = 36;
-const STAFFING_TABLE_MIN_TIME_COL_PX = 80;
+/** Zwei Aktions-Icons nebeneinander (Zuweisen + Offene Punkte). */
+export const STAFFING_TABLE_ACTION_COL_PX = 52;
+const STAFFING_TABLE_STAFFING_COL_FALLBACK_PX = 76;
+const STAFFING_TABLE_STAFFING_COL_PADDING_PX = 12;
+const STAFFING_TABLE_MIN_DAY_COL_PX = 34;
+const STAFFING_TABLE_MIN_TIME_COL_PX = 68;
 const STAFFING_TABLE_MIN_SHIFT_COL_PX = 40;
 
 /** Mindestbreite, unter der Tabellenspalten trotz Ellipsis überlappen würden. */

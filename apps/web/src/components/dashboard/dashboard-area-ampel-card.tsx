@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState, Fragment, useCallback, type RefObject } from "react";
+import { useState, useCallback, useMemo, type RefObject } from "react";
 import { DashboardAreaStaffingIssuesModal } from "@/components/dashboard/dashboard-area-staffing-issues-modal";
 import { DashboardStaffingRowCandidatesButton } from "@/components/dashboard/dashboard-staffing-row-candidates-button";
+import { DASHBOARD_STAFFING_ROW_ACTION_SLOT_CLASS } from "@/components/dashboard/dashboard-staffing-row-action-icons";
 import {
   DashboardStaffingWindowIssuesModal,
 } from "@/components/dashboard/dashboard-staffing-window-issues-modal";
@@ -13,7 +14,10 @@ import {
 } from "@/components/dashboard/dashboard-staffing-row-candidates-modal";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
-import { useStaffingTableLayout } from "@/lib/use-staffing-table-headers-fit";
+import {
+  STAFFING_TABLE_ACTION_COL_PX,
+  useStaffingTableLayout,
+} from "@/lib/use-staffing-table-headers-fit";
 import { cn } from "@/lib/cn";
 import { DASHBOARD_AREA_CARD_HEADER_FRAME_CLASS, DASHBOARD_PANEL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 import type {
@@ -23,8 +27,21 @@ import type {
   DashboardStaffingWindowRow,
   DashboardStaffingWindowRowStatus,
 } from "@/lib/dashboard-area-week-stats";
+import {
+  resolveDashboardDayAreaStaffingGaugeFromWindowRows,
+} from "@/lib/dashboard-area-week-stats";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
-import { shiftConfirmationConflictDotClass } from "@/lib/shift-confirmation-display";
+import {
+  DashboardAreaStatusFooterLines,
+  DASHBOARD_AREA_CARD_HEADER_STATUS_TWO_COLUMN_MIN_HEIGHT_CLASS,
+  DASHBOARD_AREA_STATUS_FOOTER_COLUMN_CLASS,
+  DASHBOARD_AREA_STATUS_FOOTER_TWO_COLUMN_CLASS,
+} from "@/components/dashboard/dashboard-area-status-footer-lines";
+import { DashboardAreaScopeToggle } from "@/components/dashboard/dashboard-area-scope-toggle";
+import {
+  resolveDashboardAreaStatusFooterLines,
+  type DashboardAreaStatusFooterLineId,
+} from "@/lib/dashboard-area-status-footer-lines";
 import { formatTagAreaFooterMoney } from "@/lib/tag-area-footer-stats";
 import { formatDurationHours } from "@/lib/shift-type-display";
 import { isPastCalendarDate, toISODate } from "@/lib/dates";
@@ -33,33 +50,35 @@ import type { DashboardAreaDetailScope } from "@/lib/dashboard-drilldown-week-na
 import {
   isAreaStaffingPlannedOnly,
   isAreaStaffingUncovered,
-  isPlannedCoverageHeaderStatusClickable,
   isStaffingHeaderStatusClickable,
-  resolveDashboardStaffingHeaderDisplay,
-  shouldShowDashboardStaffingHeaderTooltip,
-  shouldShowAreaCardPlannedCoverageStatusLine,
-  shouldShowAreaCardStaffingAmpelStatus,
-  type DashboardStaffingHeaderDisplay,
-  type DashboardStaffingHeaderSegment,
-  type DashboardStaffingHeaderSegmentKind,
 } from "@/lib/dashboard-area-header-actions";
 import {
   findFirstRowWithConfirmationStatus,
   findFirstPlannedStaffingWindowRow,
   findFirstStaffingCandidatesRow,
-  staffingRowShowsIssuesButton,
   type DashboardStaffingWindowIssuesContext,
 } from "@/lib/dashboard-staffing-window-issues";
-import type { DashboardActionableConfirmationStatus } from "@/lib/dashboard-confirmation-employee-dedupe";
-import { DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS, DASHBOARD_TEXT_LINK_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
+import { DASHBOARD_AREA_ASSIGNMENT_OVERVIEW_BUTTON_CLASS, DASHBOARD_TEXT_LINK_BUTTON_CLASS, DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEADER_CLASS, DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEIGHT_CLASS } from "@/lib/dashboard-toolbar-ui";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { CALENDAR_HOLIDAY_DAY_HEADER_LABEL_INLINE_CLASS } from "@/lib/calendar-day-header-styles";
+import { StaffingFillGauge } from "@/components/areacalendar/staffing-fill-gauge";
+import { StaffingStatusStrokeIcon } from "@/components/dashboard/staffing-status-stroke-icon";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui";
-import { buildStaffingWindowRowBesetztTooltip } from "@/lib/dashboard-staffing-row-status";
+import {
+  buildStaffingWindowRowDisplayLineBesetztTooltip,
+  filterStaffingWindowRowsForWeekView,
+  flattenStaffingWindowTableLines,
+  resolveStaffingWindowDisplayLinePrimaryAction,
+  staffingWindowDisplayLineCountClassName,
+  staffingWindowRowsHaveDetailsPerStatusSplit,
+  type FlattenStaffingWindowTableLinesOptions,
+  type StaffingWindowDisplayLineAction,
+  type StaffingWindowRowDisplayLine,
+} from "@/lib/dashboard-staffing-row-status";
+import { useDashboardAreaStaffingViewPrefs } from "@/lib/use-dashboard-area-staffing-view-prefs";
 import {
   STAFFING_OCHER_ACCENT_BG_CLASS,
-  STAFFING_OCHER_TEXT_CLASS,
 } from "@/lib/staffing-ocher-styles";
 
 type Props = {
@@ -88,6 +107,17 @@ type Props = {
   showMetricsDetails?: boolean;
   onShowMetricsDetailsChange?: (open: boolean) => void;
   onOpenAssignmentOverview?: () => void;
+  onOpenSwapRequests?: () => void;
+  /** Tagesansicht: Status zweispaltig (4 Zeilen statt 8). */
+  statusFooterLayout?: "stack" | "two-column";
+  /** Tages-Drilldown: Tag/Woche-Schalter rechts oben im Karten-Header. */
+  areaScopeToggle?: {
+    scope: DashboardAreaDetailScope;
+    dayLabel: string;
+    weekLabel: string;
+    weekShortLabel?: string;
+    onScopeChange: (scope: DashboardAreaDetailScope) => void;
+  };
 };
 
 function ampelAccentStripeClass(
@@ -98,141 +128,71 @@ function ampelAccentStripeClass(
   return isAreaStaffingUncovered(level) ? "bg-red-600" : "bg-emerald-600";
 }
 
-function staffingCountClassName(
-  row: DashboardStaffingWindowRow,
-  isPastDay: boolean,
-  shiftConfirmationEnabled: boolean
-): string {
-  if (staffingRowShowsIssuesButton(row, shiftConfirmationEnabled)) {
-    return cn("font-semibold", STAFFING_OCHER_TEXT_CLASS);
-  }
+/** Feste Höhe der Füllstandsanzeigen-Zeile — Tag und Woche gleich, Datum in Zeile 3 bleibt stabil. */
+const AREA_CARD_STAFFING_HEADER_SLOT_CLASS =
+  "flex h-8 shrink-0 items-center";
 
-  const status = row.status;
-  if (isPastDay) {
-    switch (status) {
-      case "understaffed":
-        return "font-semibold text-red-950";
-      case "planned":
-      case "overstaffed":
-        return cn("font-semibold", STAFFING_OCHER_TEXT_CLASS);
-      case "met":
-        return "font-semibold text-emerald-950";
-    }
-  }
+const AREA_CARD_STAFFING_HEADER_NO_SERVICE_HOURS_CLASS =
+  "text-[11px] font-medium leading-snug text-foreground/70";
 
-  switch (status) {
-    case "understaffed":
-      return "font-semibold text-red-600";
-    case "planned":
-    case "overstaffed":
-      return cn("font-semibold", STAFFING_OCHER_TEXT_CLASS);
-    case "met":
-      return "font-semibold text-emerald-700";
-  }
+const AREA_CARD_STAFFING_HEADER_NO_SHIFTS_CLASS =
+  "text-[11px] leading-snug text-muted/80";
+
+function areaHasStaffingWindowsInScope(
+  rows: readonly DashboardStaffingWindowRow[]
+): boolean {
+  return rows.some((row) => row.rowKind === "staffing_window");
 }
 
-function staffingHeaderSegmentClassName(
-  kind: DashboardStaffingHeaderSegmentKind
-): string {
-  switch (kind) {
-    case "understaffed":
-      return "text-red-600";
-    case "planned":
-    case "mismatch":
-      return STAFFING_OCHER_TEXT_CLASS;
-    case "overstaffed":
-      return "text-blue-600";
-    case "met":
-      return "text-emerald-600";
-  }
-}
+/** Bereichskarten-Header — eine aggregierte Füllstandsanzeige (Tag- und Wochen-Scope). */
+const DASHBOARD_AREA_CARD_HEADER_GAUGE_SIZE_PX = 32;
 
-function staffingHeaderSegmentLabelKey(
-  kind: DashboardStaffingHeaderSegmentKind
-): `dashboard.ampelStaffingHeaderSegment.${DashboardStaffingHeaderSegmentKind}` {
-  return `dashboard.ampelStaffingHeaderSegment.${kind}`;
-}
-
-function StaffingHeaderRatioSegment({
-  assigned,
-  required,
-  className,
-}: {
-  assigned: number;
-  required: number;
-  className?: string;
-}) {
-  return (
-    <span className={cn("tabular-nums", className)}>
-      {assigned}/{required}
-    </span>
-  );
-}
-
-function StaffingHeaderTooltipContent({
-  segments,
+/** Eine Füllstandsanzeige im Bereichskarten-Header — aggregiert über alle Fenster im Scope. */
+function AreaCardStaffingHeaderGauge({
+  stats,
   t,
 }: {
-  segments: readonly DashboardStaffingHeaderSegment[];
+  stats: DashboardAreaWeekStats;
   t: ReturnType<typeof useTranslations>;
 }) {
-  return (
-    <div className="space-y-1">
-      {segments.map((segment) => (
-        <p key={segment.kind}>
-          {t(staffingHeaderSegmentLabelKey(segment.kind), {
-            assigned: String(segment.assigned),
-            required: String(segment.required),
-          })}
-        </p>
-      ))}
-    </div>
+  if (!areaHasStaffingWindowsInScope(stats.staffingWindowRows)) {
+    return (
+      <span className={AREA_CARD_STAFFING_HEADER_NO_SERVICE_HOURS_CLASS}>
+        {t("areaCalendar.noServiceHours")}
+      </span>
+    );
+  }
+
+  if (stats.shiftCount === 0) {
+    return (
+      <span className={AREA_CARD_STAFFING_HEADER_NO_SHIFTS_CLASS}>
+        {t("dashboard.dayCardNoShifts")}
+      </span>
+    );
+  }
+
+  const gauge = resolveDashboardDayAreaStaffingGaugeFromWindowRows(
+    stats.staffingWindowRows
   );
+
+  if (gauge) {
+    return (
+      <StaffingFillGauge
+        assigned={gauge.assigned}
+        required={gauge.required}
+        variant={gauge.variant}
+        sizePx={DASHBOARD_AREA_CARD_HEADER_GAUGE_SIZE_PX}
+        className="gap-0"
+      />
+    );
+  }
+
+  return <StaffingStatusStrokeIcon level={stats.ampelLevel} muted={false} />;
 }
 
-function StaffingHeaderDisplay({
-  display,
-  t,
-}: {
-  display: DashboardStaffingHeaderDisplay;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const { segments } = display;
-  const baseClass = AREA_CARD_STAFFING_HEADER_ROW_CLASS;
-
-  const content = (
-    <p className={cn(baseClass, "flex min-w-0 items-baseline gap-1.5")}>
-      {segments.map((segment, index) => (
-        <Fragment key={segment.kind}>
-          {index > 0 ? (
-            <span className="font-normal text-muted/60" aria-hidden>
-              |
-            </span>
-          ) : null}
-          <StaffingHeaderRatioSegment
-            assigned={segment.assigned}
-            required={segment.required}
-            className={staffingHeaderSegmentClassName(segment.kind)}
-          />
-        </Fragment>
-      ))}
-    </p>
-  );
-
-  if (!shouldShowDashboardStaffingHeaderTooltip(segments)) return content;
-
-  return (
-    <Tooltip content={<StaffingHeaderTooltipContent segments={segments} t={t} />}>
-      <span className="inline-flex min-w-0 max-w-full">{content}</span>
-    </Tooltip>
-  );
-}
-
-/** Feste Höhe der Besetzt/Bedarf-Zeile — Platzhalter hält Datum in Zeile 3 stabil. */
-const AREA_CARD_STAFFING_HEADER_ROW_CLASS =
-  "text-xl font-semibold leading-none tracking-tight";
-
-const AREA_CARD_STAFFING_HEADER_SLOT_CLASS = "min-h-5";
+/** Feste Mindesthöhe der Datumszeile — einzeilig stabil, Feiertag darf umbrechen. */
+const AREA_CARD_DATE_ROW_CLASS =
+  "flex min-h-5 min-w-0 flex-wrap items-baseline gap-x-2";
 
 function DetailRow({
   label,
@@ -355,17 +315,6 @@ function CardMetricsPanel({
 
 const NO_SERVICE_HOURS_TEXT_CLASS = "text-[#718095]";
 
-function staffingRowShowsCandidatesButton(
-  row: DashboardStaffingWindowRow,
-  isPastDay: boolean
-): boolean {
-  return (
-    !isPastDay &&
-    row.rowKind === "staffing_window" &&
-    row.status === "understaffed"
-  );
-}
-
 type StaffingWindowRowViewProps = {
   row: DashboardStaffingWindowRow;
   rowIndex: number;
@@ -390,60 +339,51 @@ function resolveStaffingWindowRowFlags(
   row: DashboardStaffingWindowRow,
   rowIndex: number,
   rows: readonly DashboardStaffingWindowRow[],
-  todayISO: string,
-  shiftConfirmationEnabled: boolean,
-  windowIssuesEnabled: boolean
+  todayISO: string
 ) {
   const isPastDay = isPastCalendarDate(row.dateISO, todayISO);
   const isToday = row.dateISO === todayISO;
   const isNoServiceHours = row.rowKind === "no_service_hours";
   const showDayLabel =
     rowIndex === 0 || rows[rowIndex - 1]?.dateISO !== row.dateISO;
-  const showCandidatesButton = staffingRowShowsCandidatesButton(row, isPastDay);
-  const showIssuesButton =
-    (row.staffingConflicts?.length ?? 0) > 0 ||
-    (row.staffingHints?.length ?? 0) > 0;
-  const showWindowIssuesButton =
-    windowIssuesEnabled &&
-    staffingRowShowsIssuesButton(row, shiftConfirmationEnabled) &&
-    !showIssuesButton;
 
   return {
     isPastDay,
     isToday,
     isNoServiceHours,
     showDayLabel,
-    showCandidatesButton,
-    showIssuesButton,
-    showWindowIssuesButton,
   };
 }
 
 function StaffingWindowStaffingCount({
   row,
+  line,
   isPastDay,
   shiftConfirmationEnabled,
   t,
 }: {
   row: DashboardStaffingWindowRow;
+  line: StaffingWindowRowDisplayLine;
   isPastDay: boolean;
   shiftConfirmationEnabled: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
-  const tooltipContent = buildStaffingWindowRowBesetztTooltip(
+  const tooltipContent = buildStaffingWindowRowDisplayLineBesetztTooltip(
     row,
+    line,
     shiftConfirmationEnabled,
     t
   );
   const count = (
     <span
-      className={staffingCountClassName(
+      className={staffingWindowDisplayLineCountClassName(
         row,
+        line,
         isPastDay,
         shiftConfirmationEnabled
       )}
     >
-      {row.assigned}/{row.required}
+      {line.assigned}/{line.required}
     </span>
   );
 
@@ -452,10 +392,8 @@ function StaffingWindowStaffingCount({
   return <Tooltip content={tooltipContent}>{count}</Tooltip>;
 }
 
-function StaffingWindowRowActions({
-  showCandidatesButton,
-  showIssuesButton,
-  showWindowIssuesButton,
+function StaffingWindowRowAction({
+  action,
   assignEmployeeTooltipLabel,
   staffingIssuesButtonLabel,
   windowIssuesButtonLabel,
@@ -465,9 +403,7 @@ function StaffingWindowRowActions({
   onOpenStaffingIssues,
   onOpenWindowIssues,
 }: {
-  showCandidatesButton: boolean;
-  showIssuesButton: boolean;
-  showWindowIssuesButton: boolean;
+  action: StaffingWindowDisplayLineAction | null;
   assignEmployeeTooltipLabel: string;
   staffingIssuesButtonLabel: string;
   windowIssuesButtonLabel: string;
@@ -477,38 +413,48 @@ function StaffingWindowRowActions({
   onOpenStaffingIssues?: (row: DashboardStaffingWindowRow) => void;
   onOpenWindowIssues?: (row: DashboardStaffingWindowRow) => void;
 }) {
-  if (!showCandidatesButton && !showIssuesButton && !showWindowIssuesButton) {
-    return null;
+  if (!action) {
+    return (
+      <span className={DASHBOARD_STAFFING_ROW_ACTION_SLOT_CLASS} aria-hidden />
+    );
+  }
+
+  if (action === "candidates") {
+    return (
+      <Tooltip
+        content={assignEmployeeTooltipLabel}
+        className={DASHBOARD_STAFFING_ROW_ACTION_SLOT_CLASS}
+      >
+        <DashboardStaffingRowCandidatesButton
+          variant="candidates"
+          ariaLabel={assignEmployeeTooltipLabel}
+          onClick={() => onOpenCandidates?.(row)}
+        />
+      </Tooltip>
+    );
+  }
+
+  if (action === "staffingIssues") {
+    return (
+      <DashboardStaffingRowCandidatesButton
+        variant="staffingIssues"
+        ariaLabel={staffingIssuesButtonLabel}
+        onClick={() => onOpenStaffingIssues?.(row)}
+      />
+    );
   }
 
   return (
-    <div className="flex shrink-0 flex-col items-center justify-center gap-0.5">
-      {showCandidatesButton ? (
-        <Tooltip content={assignEmployeeTooltipLabel}>
-          <DashboardStaffingRowCandidatesButton
-            variant="candidates"
-            ariaLabel={assignEmployeeTooltipLabel}
-            onClick={() => onOpenCandidates?.(row)}
-          />
-        </Tooltip>
-      ) : null}
-      {showIssuesButton ? (
-        <DashboardStaffingRowCandidatesButton
-          variant="staffingIssues"
-          ariaLabel={staffingIssuesButtonLabel}
-          onClick={() => onOpenStaffingIssues?.(row)}
-        />
-      ) : null}
-      {showWindowIssuesButton ? (
-        <Tooltip content={windowIssuesTooltipLabel}>
-          <DashboardStaffingRowCandidatesButton
-            variant="windowIssues"
-            ariaLabel={windowIssuesButtonLabel}
-            onClick={() => onOpenWindowIssues?.(row)}
-          />
-        </Tooltip>
-      ) : null}
-    </div>
+    <Tooltip
+      content={windowIssuesTooltipLabel}
+      className={DASHBOARD_STAFFING_ROW_ACTION_SLOT_CLASS}
+    >
+      <DashboardStaffingRowCandidatesButton
+        variant="windowIssues"
+        ariaLabel={windowIssuesButtonLabel}
+        onClick={() => onOpenWindowIssues?.(row)}
+      />
+    </Tooltip>
   );
 }
 
@@ -527,6 +473,7 @@ function StaffingWindowMobileList({
   onOpenWindowIssues,
   todayISO,
   t,
+  tableLineOptions,
 }: Omit<
   StaffingWindowRowViewProps,
   | "row"
@@ -538,27 +485,37 @@ function StaffingWindowMobileList({
   rows: DashboardStaffingWindowRow[];
   todayISO: string;
   assignEmployeeTooltipLabel: string;
+  tableLineOptions?: FlattenStaffingWindowTableLinesOptions;
   t: ReturnType<typeof useTranslations>;
 }) {
   if (rows.length === 0) return null;
 
+  const tableLines = flattenStaffingWindowTableLines(rows, tableLineOptions);
+
   return (
     <ul className="divide-y divide-border/50">
-      {rows.map((row, rowIndex) => {
+      {tableLines.map((item, index) => {
+        const { row, line, isFirstInShiftGroup, showDayLabel } = item;
         const flags = resolveStaffingWindowRowFlags(
           row,
-          rowIndex,
+          rows.indexOf(row),
           rows,
+          todayISO
+        );
+        const action = resolveStaffingWindowDisplayLinePrimaryAction(
+          row,
+          line,
           todayISO,
           shiftConfirmationEnabled,
-          windowIssuesEnabled
+          windowIssuesEnabled,
+          tableLineOptions
         );
 
         return (
           <li
-            key={`${row.dateISO}:${row.serviceHourId}`}
+            key={`${row.dateISO}:${row.serviceHourId}:${line.kind}:${index}`}
             className={cn(
-              "flex items-start gap-2 px-3 py-2",
+              "flex min-h-7 items-center gap-2 px-3 py-2",
               flags.isPastDay && "bg-muted/14",
               flags.isNoServiceHours
                 ? NO_SERVICE_HOURS_TEXT_CLASS
@@ -566,7 +523,7 @@ function StaffingWindowMobileList({
             )}
           >
             <div className="min-w-0 flex-1">
-              {flags.showDayLabel ? (
+              {showDayLabel ? (
                 <p
                   className={cn(
                     "text-xs font-medium",
@@ -578,41 +535,47 @@ function StaffingWindowMobileList({
                   {row.weekdayLabel}
                 </p>
               ) : null}
-              <p
-                className={cn(
-                  "text-sm",
-                  !flags.isNoServiceHours && "tabular-nums"
-                )}
-              >
-                {flags.isNoServiceHours
-                  ? noServiceHoursLabel
-                  : `${row.timeFrom} – ${row.timeTo}`}
-              </p>
-              {showShiftColumn && !flags.isNoServiceHours && row.shiftName ? (
+              {isFirstInShiftGroup ? (
+                <p
+                  className={cn(
+                    "text-sm",
+                    !flags.isNoServiceHours && "tabular-nums"
+                  )}
+                >
+                  {flags.isNoServiceHours
+                    ? noServiceHoursLabel
+                    : `${row.timeFrom} – ${row.timeTo}`}
+                </p>
+              ) : null}
+              {showShiftColumn &&
+              isFirstInShiftGroup &&
+              !flags.isNoServiceHours &&
+              row.shiftName ? (
                 <p className="truncate text-xs text-muted">{row.shiftName}</p>
               ) : null}
             </div>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              {flags.isNoServiceHours && !row.hasUnplannedShifts ? null : (
+            {flags.isNoServiceHours && !row.hasUnplannedShifts ? null : (
+              <div className="flex shrink-0 flex-row items-center justify-end gap-1.5">
                 <StaffingWindowStaffingCount
                   row={row}
+                  line={line}
                   isPastDay={flags.isPastDay}
                   shiftConfirmationEnabled={shiftConfirmationEnabled}
                   t={t}
                 />
-              )}
-              <StaffingWindowRowActions
-                {...flags}
-                assignEmployeeTooltipLabel={assignEmployeeTooltipLabel}
-                staffingIssuesButtonLabel={staffingIssuesButtonLabel}
-                windowIssuesButtonLabel={windowIssuesButtonLabel}
-                windowIssuesTooltipLabel={windowIssuesTooltipLabel}
-                row={row}
-                onOpenCandidates={onOpenCandidates}
-                onOpenStaffingIssues={onOpenStaffingIssues}
-                onOpenWindowIssues={onOpenWindowIssues}
-              />
-            </div>
+                <StaffingWindowRowAction
+                  action={action}
+                  assignEmployeeTooltipLabel={assignEmployeeTooltipLabel}
+                  staffingIssuesButtonLabel={staffingIssuesButtonLabel}
+                  windowIssuesButtonLabel={windowIssuesButtonLabel}
+                  windowIssuesTooltipLabel={windowIssuesTooltipLabel}
+                  row={row}
+                  onOpenCandidates={onOpenCandidates}
+                  onOpenStaffingIssues={onOpenStaffingIssues}
+                  onOpenWindowIssues={onOpenWindowIssues}
+                />
+              </div>
+            )}
           </li>
         );
       })}
@@ -623,7 +586,12 @@ function StaffingWindowMobileList({
 const STAFFING_TABLE_HEAD_CELL_CLASS =
   "overflow-hidden px-2.5 py-1 text-left text-sm font-medium text-muted";
 const STAFFING_TABLE_HEAD_LABEL_CLASS = "block truncate";
-const STAFFING_TABLE_BODY_CELL_CLASS = "min-w-0 overflow-hidden px-2.5 py-0.5";
+const STAFFING_TABLE_BODY_CELL_CLASS =
+  "min-h-7 min-w-0 overflow-hidden px-2.5 py-0.5";
+const STAFFING_TABLE_BODY_ACTION_CELL_CLASS =
+  "flex min-h-7 items-center justify-center px-0 py-0.5";
+const STAFFING_TABLE_BODY_COUNT_CELL_CLASS =
+  "min-h-7 overflow-hidden px-1.5 py-0.5 text-right tabular-nums";
 
 function StaffingWindowTableHeaderCell({
   label,
@@ -681,7 +649,11 @@ function StaffingWindowHeaderMeasure({
           <span className="px-2.5 py-1">{shiftColumnLabel}</span>
         ) : null}
         <span className="px-2 py-1">{staffingColumnLabel}</span>
-        <span className="w-8 shrink-0" aria-hidden />
+        <span
+          className="shrink-0"
+          style={{ width: STAFFING_TABLE_ACTION_COL_PX }}
+          aria-hidden
+        />
       </div>
       <span
         ref={staffingLabelMeasureRef}
@@ -712,6 +684,7 @@ function StaffingWindowTable({
   shiftConfirmationEnabled = false,
   windowIssuesEnabled = false,
   showShiftColumn = false,
+  tableLineOptions,
   t,
 }: {
   rows: DashboardStaffingWindowRow[];
@@ -731,6 +704,7 @@ function StaffingWindowTable({
   shiftConfirmationEnabled?: boolean;
   windowIssuesEnabled?: boolean;
   showShiftColumn?: boolean;
+  tableLineOptions?: FlattenStaffingWindowTableLinesOptions;
   t: ReturnType<typeof useTranslations>;
 }) {
   const {
@@ -772,11 +746,11 @@ function StaffingWindowTable({
       <div className="min-w-0 overflow-x-auto">
       <table className="w-full min-w-0 table-fixed border-collapse text-sm">
         <colgroup>
-          <col className="w-[13%]" />
-          <col className={showShiftColumn ? "w-[28%]" : "w-[42%]"} />
+          <col className="w-[11%]" />
+          <col className={showShiftColumn ? "w-[24%]" : "w-[36%]"} />
           {showShiftColumn ? <col /> : null}
           <col style={{ width: staffingColumnWidthPx }} />
-          <col className="w-8" />
+          <col style={{ width: STAFFING_TABLE_ACTION_COL_PX }} />
         </colgroup>
         <thead>
           <tr className="border-b border-border/70 bg-background/60">
@@ -799,108 +773,182 @@ function StaffingWindowTable({
               truncate={false}
               align="right"
             />
-            <th className="w-8 px-0 py-1" aria-hidden />
+            <th
+              className="px-0 py-1"
+              style={{ width: STAFFING_TABLE_ACTION_COL_PX }}
+              aria-hidden
+            />
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, rowIndex) => {
+          {flattenStaffingWindowTableLines(rows, tableLineOptions).map((item, index) => {
+            const { row, line, isFirstInShiftGroup, showDayLabel } = item;
+            const rowIndex = rows.indexOf(row);
             const flags = resolveStaffingWindowRowFlags(
               row,
               rowIndex,
               rows,
+              todayISO
+            );
+            const action = resolveStaffingWindowDisplayLinePrimaryAction(
+              row,
+              line,
               todayISO,
               shiftConfirmationEnabled,
-              windowIssuesEnabled
+              windowIssuesEnabled,
+              tableLineOptions
+            );
+            const rowClassName = cn(
+              "border-b border-border/40 last:border-b-0",
+              flags.isPastDay && "bg-muted/14",
+              flags.isNoServiceHours
+                ? NO_SERVICE_HOURS_TEXT_CLASS
+                : "text-foreground"
             );
 
-            return (
-            <tr
-              key={`${row.dateISO}:${row.serviceHourId}`}
-              className={cn(
-                "border-b border-border/40 last:border-b-0",
-                flags.isPastDay && "bg-muted/14",
-                flags.isNoServiceHours
-                  ? NO_SERVICE_HOURS_TEXT_CLASS
-                  : "text-foreground"
-              )}
-            >
-              <td
-                className={cn(
-                  STAFFING_TABLE_BODY_CELL_CLASS,
-                  "font-medium",
-                  flags.isToday &&
-                    flags.showDayLabel &&
-                    !flags.isNoServiceHours &&
-                    CALENDAR_TODAY_WEEKDAY_TEXT_CLASS
-                )}
-              >
-                {flags.showDayLabel ? (
-                  <span className="block truncate">{row.weekdayLabel}</span>
-                ) : null}
-              </td>
-              <td
-                className={cn(
-                  STAFFING_TABLE_BODY_CELL_CLASS,
-                  !flags.isNoServiceHours && "tabular-nums"
-                )}
-                colSpan={
-                  flags.isNoServiceHours
-                    ? showShiftColumn
-                      ? row.hasUnplannedShifts
-                        ? 2
-                        : 3
-                      : row.hasUnplannedShifts
-                        ? 1
-                        : 2
-                    : undefined
-                }
-              >
-                {flags.isNoServiceHours ? (
-                  <span
+            if (flags.isNoServiceHours) {
+              return (
+                <tr
+                  key={`${row.dateISO}:${row.serviceHourId}:${index}`}
+                  className={rowClassName}
+                >
+                  <td
                     className={cn(
-                      "block",
-                      headersTruncate ? "truncate" : "whitespace-normal"
+                      STAFFING_TABLE_BODY_CELL_CLASS,
+                      "font-medium",
+                      flags.isToday &&
+                        showDayLabel &&
+                        CALENDAR_TODAY_WEEKDAY_TEXT_CLASS
                     )}
                   >
-                    {noServiceHoursLabel}
-                  </span>
-                ) : (
-                  <span className="block truncate">
-                    {`${row.timeFrom} – ${row.timeTo}`}
-                  </span>
-                )}
-              </td>
-              {showShiftColumn && !flags.isNoServiceHours ? (
-                <td className={STAFFING_TABLE_BODY_CELL_CLASS}>
-                  {row.shiftName ? (
-                    <span className="block truncate">{row.shiftName}</span>
+                    {showDayLabel ? (
+                      <span className="block truncate">{row.weekdayLabel}</span>
+                    ) : null}
+                  </td>
+                  <td
+                    className={cn(STAFFING_TABLE_BODY_CELL_CLASS, "tabular-nums")}
+                    colSpan={
+                      showShiftColumn
+                        ? row.hasUnplannedShifts
+                          ? 2
+                          : 3
+                        : row.hasUnplannedShifts
+                          ? 1
+                          : 2
+                    }
+                  >
+                    <span
+                      className={cn(
+                        "block",
+                        headersTruncate ? "truncate" : "whitespace-normal"
+                      )}
+                    >
+                      {noServiceHoursLabel}
+                    </span>
+                  </td>
+                  {showShiftColumn && row.hasUnplannedShifts ? (
+                    <td className={STAFFING_TABLE_BODY_CELL_CLASS}>
+                      {row.shiftName ? (
+                        <span className="block truncate">{row.shiftName}</span>
+                      ) : null}
+                    </td>
+                  ) : null}
+                  {row.hasUnplannedShifts ? (
+                    <>
+                      <td className={STAFFING_TABLE_BODY_COUNT_CELL_CLASS}>
+                        <StaffingWindowStaffingCount
+                          row={row}
+                          line={line}
+                          isPastDay={flags.isPastDay}
+                          shiftConfirmationEnabled={shiftConfirmationEnabled}
+                          t={t}
+                        />
+                      </td>
+                      <td
+                        className={STAFFING_TABLE_BODY_ACTION_CELL_CLASS}
+                        style={{ width: STAFFING_TABLE_ACTION_COL_PX }}
+                      >
+                        <StaffingWindowRowAction
+                          action={action}
+                          assignEmployeeTooltipLabel={assignEmployeeTooltipLabel}
+                          staffingIssuesButtonLabel={staffingIssuesButtonLabel}
+                          windowIssuesButtonLabel={windowIssuesButtonLabel}
+                          windowIssuesTooltipLabel={windowIssuesTooltipLabel}
+                          row={row}
+                          onOpenCandidates={onOpenCandidates}
+                          onOpenStaffingIssues={onOpenStaffingIssues}
+                          onOpenWindowIssues={onOpenWindowIssues}
+                        />
+                      </td>
+                    </>
+                  ) : null}
+                </tr>
+              );
+            }
+
+            return (
+              <tr
+                key={`${row.dateISO}:${row.serviceHourId}:${line.kind}:${index}`}
+                className={rowClassName}
+              >
+                <td
+                  className={cn(
+                    STAFFING_TABLE_BODY_CELL_CLASS,
+                    "font-medium",
+                    flags.isToday &&
+                      showDayLabel &&
+                      CALENDAR_TODAY_WEEKDAY_TEXT_CLASS
+                  )}
+                >
+                  {showDayLabel ? (
+                    <span className="block truncate">{row.weekdayLabel}</span>
                   ) : null}
                 </td>
-              ) : null}
-              {!(flags.isNoServiceHours && !row.hasUnplannedShifts) ? (
-                <td className="overflow-hidden px-2 py-0.5 text-right tabular-nums">
+                <td
+                  className={cn(
+                    STAFFING_TABLE_BODY_CELL_CLASS,
+                    isFirstInShiftGroup && "tabular-nums"
+                  )}
+                >
+                  {isFirstInShiftGroup ? (
+                    <span className="block truncate">
+                      {`${row.timeFrom} – ${row.timeTo}`}
+                    </span>
+                  ) : null}
+                </td>
+                {showShiftColumn ? (
+                  <td className={STAFFING_TABLE_BODY_CELL_CLASS}>
+                    {isFirstInShiftGroup && row.shiftName ? (
+                      <span className="block truncate">{row.shiftName}</span>
+                    ) : null}
+                  </td>
+                ) : null}
+                <td className={STAFFING_TABLE_BODY_COUNT_CELL_CLASS}>
                   <StaffingWindowStaffingCount
                     row={row}
+                    line={line}
                     isPastDay={flags.isPastDay}
                     shiftConfirmationEnabled={shiftConfirmationEnabled}
                     t={t}
                   />
                 </td>
-              ) : null}
-              <td className="w-8 px-0 py-0.5 align-middle">
-                <StaffingWindowRowActions
-                  {...flags}
-                  assignEmployeeTooltipLabel={assignEmployeeTooltipLabel}
-                  staffingIssuesButtonLabel={staffingIssuesButtonLabel}
-                  windowIssuesButtonLabel={windowIssuesButtonLabel}
-                  windowIssuesTooltipLabel={windowIssuesTooltipLabel}
-                  row={row}
-                  onOpenCandidates={onOpenCandidates}
-                  onOpenStaffingIssues={onOpenStaffingIssues}
-                  onOpenWindowIssues={onOpenWindowIssues}
-                />
-              </td>
-            </tr>
+                <td
+                  className={STAFFING_TABLE_BODY_ACTION_CELL_CLASS}
+                  style={{ width: STAFFING_TABLE_ACTION_COL_PX }}
+                >
+                  <StaffingWindowRowAction
+                    action={action}
+                    assignEmployeeTooltipLabel={assignEmployeeTooltipLabel}
+                    staffingIssuesButtonLabel={staffingIssuesButtonLabel}
+                    windowIssuesButtonLabel={windowIssuesButtonLabel}
+                    windowIssuesTooltipLabel={windowIssuesTooltipLabel}
+                    row={row}
+                    onOpenCandidates={onOpenCandidates}
+                    onOpenStaffingIssues={onOpenStaffingIssues}
+                    onOpenWindowIssues={onOpenWindowIssues}
+                  />
+                </td>
+              </tr>
             );
           })}
         </tbody>
@@ -921,6 +969,7 @@ function StaffingWindowTable({
           onOpenStaffingIssues={onOpenStaffingIssues}
           onOpenWindowIssues={onOpenWindowIssues}
           todayISO={todayISO}
+          tableLineOptions={tableLineOptions}
           t={t}
         />
       )}
@@ -931,348 +980,197 @@ function StaffingWindowTable({
 const CARD_CONTENT_CLASS = "flex min-w-0 flex-1 flex-col";
 
 const CARD_HEADER_CLASS = cn(
-  "grid min-h-0 min-w-0 grid-cols-1 items-start gap-2 overflow-y-hidden px-3 py-2 md:h-[5.25rem] md:grid-cols-[minmax(0,1fr)_auto] md:gap-3 md:px-4",
+  "grid min-h-0 min-w-0 grid-cols-1 items-start gap-2 overflow-y-hidden px-3 py-2 md:grid-cols-[minmax(0,1fr)_auto] md:gap-3 md:px-4",
   DASHBOARD_AREA_CARD_HEADER_FRAME_CLASS
 );
 
-const CARD_HEADER_MAIN_CLASS = "flex min-w-0 flex-col justify-between py-0.5";
+const CARD_HEADER_MAIN_CLASS = "flex min-w-0 flex-col gap-1 py-0.5";
 
-const CARD_HEADER_STATUS_COLUMN_CLASS =
-  "flex w-full min-h-0 max-h-full shrink-0 flex-col items-stretch justify-start gap-0 self-stretch overflow-y-auto py-0.5 md:w-max";
+const CARD_HEADER_SCOPE_AND_STATUS_COLUMN_CLASS =
+  "flex w-full min-w-0 max-w-[min(100%,14rem)] shrink-0 flex-col items-end self-stretch overflow-y-auto py-0.5 md:w-max";
 
-function areaCardStatusBadgeProps(
-  level: DashboardAreaAmpelLevel,
-  isPastScope: boolean,
-  plannedOnly: boolean,
-  t: ReturnType<typeof useTranslations>
-): { label: string; dotClassName: string; labelClassName: string } {
-  if (plannedOnly) {
-    return {
-      label: t("dashboard.ampelBadgePlanned"),
-      dotClassName: "bg-[#CA8A04]",
-      labelClassName: "text-foreground/90",
-    };
-  }
+/** Reserviert Platz für den Schalter — Statuszeilen bleiben unverändert. */
+const CARD_HEADER_SCOPE_TOGGLE_SPACER_CLASS = cn(
+  "mb-[3px] shrink-0",
+  DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEIGHT_CLASS
+);
 
-  if (isAreaStaffingUncovered(level)) {
-    if (isPastScope) {
-      return {
-        label: t("dashboard.ampelBadgeCriticalPast"),
-        dotClassName: "bg-foreground/45",
-        labelClassName: "text-foreground/80",
-      };
-    }
-
-    return {
-      label: t("dashboard.ampelBadgeCritical"),
-      dotClassName: "bg-red-600",
-      labelClassName: "text-foreground/90",
-    };
-  }
-
-  return {
-    label: t("dashboard.ampelStatusCovered"),
-    dotClassName: "bg-emerald-600",
-    labelClassName: "text-foreground/90",
-  };
-}
-
-const AREA_HEADER_STATUS_BADGE_CLASS =
-  "flex shrink-0 items-center gap-1.5 text-xs font-medium leading-4 max-md:whitespace-normal md:whitespace-nowrap";
-
-function AreaCardHeaderStatusLine({
-  dotClassName,
-  labelClassName,
-  label,
-  onClick,
-}: {
-  dotClassName: string;
-  labelClassName: string;
-  label: string;
-  onClick?: () => void;
-}) {
-  const className = cn(
-    AREA_HEADER_STATUS_BADGE_CLASS,
-    onClick &&
-      "cursor-pointer rounded-sm hover:bg-black/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-  );
-
-  const content = (
-    <>
-      <span
-        className={cn("h-2 w-2 shrink-0 rounded-full", dotClassName)}
-        aria-hidden
-      />
-      <span className={labelClassName}>{label}</span>
-    </>
-  );
-
-  if (onClick) {
-    return (
-      <button type="button" className={className} onClick={onClick}>
-        {content}
-      </button>
-    );
-  }
-
-  return <div className={className}>{content}</div>;
-}
-
-function AreaCardHeaderStatusList({
-  showStaffingAmpelStatus,
-  showPlannedCoverageStatusLine,
-  shiftConfirmationEnabled,
-  statusBadge,
-  confirmationConflictStatuses,
-  showStaffingIssuesButton,
-  staffingStatusClickable,
-  plannedCoverageStatusClickable,
-  onOpenStaffingCandidates,
-  onOpenPlannedCoverage,
-  onOpenStaffingIssues,
-  onOpenConfirmationIssues,
-  t,
-}: {
-  showStaffingAmpelStatus: boolean;
-  showPlannedCoverageStatusLine: boolean;
-  shiftConfirmationEnabled: boolean;
-  statusBadge: { label: string; dotClassName: string; labelClassName: string };
-  confirmationConflictStatuses: readonly DashboardActionableConfirmationStatus[];
-  showStaffingIssuesButton: boolean;
-  staffingStatusClickable: boolean;
-  plannedCoverageStatusClickable: boolean;
-  onOpenStaffingCandidates?: () => void;
-  onOpenPlannedCoverage?: () => void;
-  onOpenStaffingIssues: () => void;
-  onOpenConfirmationIssues?: (status: DashboardActionableConfirmationStatus) => void;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const hasStaffingStatus = showStaffingAmpelStatus;
-  const hasConfirmationStatuses =
-    shiftConfirmationEnabled && confirmationConflictStatuses.length > 0;
-
-  if (
-    !hasStaffingStatus &&
-    !showPlannedCoverageStatusLine &&
-    !hasConfirmationStatuses &&
-    !showStaffingIssuesButton
-  ) {
-    return null;
-  }
-
-  return (
-    <div className={cn(CARD_HEADER_STATUS_COLUMN_CLASS, MODAL_SCROLLBAR_CLASS)}>
-      {hasStaffingStatus ? (
-        <AreaCardHeaderStatusLine
-          dotClassName={statusBadge.dotClassName}
-          labelClassName={statusBadge.labelClassName}
-          label={statusBadge.label}
-          onClick={staffingStatusClickable ? onOpenStaffingCandidates : undefined}
-        />
-      ) : null}
-      {showPlannedCoverageStatusLine ? (
-        <AreaCardHeaderStatusLine
-          dotClassName="bg-[#CA8A04]"
-          labelClassName="text-foreground/90"
-          label={t("dashboard.ampelBadgePlanned")}
-          onClick={
-            plannedCoverageStatusClickable ? onOpenPlannedCoverage : undefined
-          }
-        />
-      ) : null}
-      {hasConfirmationStatuses
-        ? confirmationConflictStatuses.map((status) => (
-            <AreaCardHeaderStatusLine
-              key={status}
-              dotClassName={shiftConfirmationConflictDotClass(status)}
-              labelClassName="text-foreground/85"
-              label={t(`dashboard.ampelHeaderConfirmationConflict.${status}`)}
-              onClick={
-                onOpenConfirmationIssues
-                  ? () => onOpenConfirmationIssues(status)
-                  : undefined
-              }
-            />
-          ))
-        : null}
-      {showStaffingIssuesButton ? (
-        <AreaCardHeaderStatusLine
-          dotClassName="bg-[#CA8A04]"
-          labelClassName="text-foreground/85"
-          label={t("dashboard.ampelHeaderStaffingConflicts")}
-          onClick={onOpenStaffingIssues}
-        />
-      ) : null}
-    </div>
-  );
-}
+const CARD_HEADER_SCOPE_TOGGLE_ANCHOR_CLASS =
+  "absolute top-1 right-2 z-10 md:top-1.5 md:right-3";
 
 function AreaCardHeader({
   areaName,
   staffingEnabled,
   stats,
-  isPastScope,
   staffingScopeDateLabel = null,
   staffingScopeMode = "week",
   staffingScopeHolidayName = null,
   showStaffingWeekCaption = true,
   shiftConfirmationEnabled = false,
   staffingStatusClickable,
-  plannedCoverageStatusClickable,
   onOpenStaffingCandidates,
   onOpenPlannedCoverage,
-  onOpenStaffingIssues,
   onOpenConfirmationIssues,
+  onOpenSwapRequests,
+  statusFooterLayout = "stack",
+  areaScopeToggle,
   t,
 }: {
   areaName: string;
   staffingEnabled: boolean;
   stats: DashboardAreaWeekStats;
-  isPastScope: boolean;
   staffingScopeDateLabel?: string | null;
   staffingScopeMode?: DashboardAreaDetailScope;
   staffingScopeHolidayName?: string | null;
   showStaffingWeekCaption?: boolean;
   shiftConfirmationEnabled?: boolean;
   staffingStatusClickable: boolean;
-  plannedCoverageStatusClickable: boolean;
   onOpenStaffingCandidates?: () => void;
   onOpenPlannedCoverage?: () => void;
-  onOpenStaffingIssues: () => void;
-  onOpenConfirmationIssues?: (status: DashboardActionableConfirmationStatus) => void;
+  onOpenConfirmationIssues?: (status: ShiftConfirmationStatus) => void;
+  onOpenSwapRequests?: () => void;
+  statusFooterLayout?: "stack" | "two-column";
+  areaScopeToggle?: Props["areaScopeToggle"];
   t: ReturnType<typeof useTranslations>;
 }) {
-  const showStaffingAmpelStatus = shouldShowAreaCardStaffingAmpelStatus({
-    staffingEnabled,
-    shiftCount: stats.shiftCount,
-    ampelLevel: stats.ampelLevel,
-  });
-  const showStaffingIssuesButton =
-    staffingEnabled && stats.staffingIssues.length > 0;
-  const plannedOnly = isAreaStaffingPlannedOnly({
-    ampelLevel: stats.ampelLevel,
-    hasPlannedCoverage: stats.hasPlannedCoverage,
-    hasUnderstaffed: stats.hasUnderstaffed,
-  });
-  const statusBadge = areaCardStatusBadgeProps(
-    stats.ampelLevel,
-    isPastScope,
-    plannedOnly,
-    t
-  );
-  const showPlannedCoverageStatusLine = shouldShowAreaCardPlannedCoverageStatusLine(
-    {
-      staffingScopeMode,
-      hasPlannedCoverage: stats.hasPlannedCoverage,
-      plannedOnly,
-    }
-  );
-  const showStatusList =
-    showStaffingAmpelStatus ||
-    showPlannedCoverageStatusLine ||
-    showStaffingIssuesButton ||
-    (shiftConfirmationEnabled && stats.confirmationConflictStatuses.length > 0);
-
-  const statusListProps = {
-    showStaffingAmpelStatus,
-    showPlannedCoverageStatusLine,
+  const statusFooterLines = resolveDashboardAreaStatusFooterLines({
+    openSlots: stats.openSlots,
     shiftConfirmationEnabled,
-    statusBadge,
-    confirmationConflictStatuses: stats.confirmationConflictStatuses,
-    showStaffingIssuesButton,
-    staffingStatusClickable,
-    plannedCoverageStatusClickable,
-    onOpenStaffingCandidates,
-    onOpenPlannedCoverage,
-    onOpenStaffingIssues,
-    onOpenConfirmationIssues,
-    t,
+    shiftCount: stats.shiftCount,
+    confirmationCounts: stats.confirmationCounts,
+    swapRequestedCount: stats.swapRequestedCount,
+  });
+  const showStatusList = statusFooterLines.length > 0;
+  const statusFooterTwoColumn = statusFooterLayout === "two-column";
+  const hasScopeColumn = Boolean(areaScopeToggle);
+  const headerShellClass = cn(
+    CARD_HEADER_CLASS,
+    hasScopeColumn && "relative grid-cols-[minmax(0,1fr)_auto]",
+    showStatusList &&
+      statusFooterTwoColumn &&
+      DASHBOARD_AREA_CARD_HEADER_STATUS_TWO_COLUMN_MIN_HEIGHT_CLASS
+  );
+  const statusFooterShellClass = statusFooterTwoColumn
+    ? DASHBOARD_AREA_STATUS_FOOTER_TWO_COLUMN_CLASS
+    : DASHBOARD_AREA_STATUS_FOOTER_COLUMN_CLASS;
+
+  const handleStatusFooterLineClick = (id: DashboardAreaStatusFooterLineId) => {
+    switch (id) {
+      case "open":
+        if (staffingStatusClickable) onOpenStaffingCandidates?.();
+        return;
+      case "proposed":
+        onOpenPlannedCoverage?.();
+        return;
+      case "swap_requested":
+        onOpenSwapRequests?.();
+        return;
+      case "requested":
+      case "pending":
+      case "rejected":
+      case "canceled":
+      case "unresolved":
+        onOpenConfirmationIssues?.(id);
+        return;
+      default:
+        return;
+    }
   };
 
-  const showStaffingHeaderMetrics =
-    staffingEnabled && stats.requiredTotal > 0;
-  const reserveStaffingHeaderRow =
-    staffingEnabled && Boolean(staffingScopeDateLabel);
+  const showStaffingHeaderMetrics = staffingEnabled;
 
   return (
-    <div className={CARD_HEADER_CLASS}>
+    <div className={headerShellClass}>
+      {areaScopeToggle ? (
+        <div className={CARD_HEADER_SCOPE_TOGGLE_ANCHOR_CLASS}>
+          <DashboardAreaScopeToggle
+            {...areaScopeToggle}
+            className={DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_HEADER_CLASS}
+          />
+        </div>
+      ) : null}
       <div className={CARD_HEADER_MAIN_CLASS}>
-        <div className="flex items-start justify-between gap-2 md:contents">
-          <h2 className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-foreground md:min-w-0">
+        {hasScopeColumn ? (
+          <h2 className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-foreground">
             {areaName}
           </h2>
-          {showStatusList ? (
-            <div className="shrink-0 md:hidden">
-              <AreaCardHeaderStatusList {...statusListProps} />
-            </div>
-          ) : null}
-        </div>
-
-        {reserveStaffingHeaderRow ||
-        showStaffingHeaderMetrics ||
-        staffingScopeDateLabel ? (
-          <div className="min-w-0">
-            {reserveStaffingHeaderRow ? (
-              <div className={AREA_CARD_STAFFING_HEADER_SLOT_CLASS}>
-                {showStaffingHeaderMetrics ? (
-                  <StaffingHeaderDisplay
-                    display={resolveDashboardStaffingHeaderDisplay(stats)}
-                    t={t}
-                  />
-                ) : (
-                  <span
-                    className={cn(
-                      AREA_CARD_STAFFING_HEADER_ROW_CLASS,
-                      "invisible block"
-                    )}
-                    aria-hidden
-                  >
-                    0/0
-                  </span>
-                )}
-              </div>
-            ) : showStaffingHeaderMetrics ? (
-              <StaffingHeaderDisplay
-                display={resolveDashboardStaffingHeaderDisplay(stats)}
-                t={t}
-              />
-            ) : null}
-            {staffingScopeDateLabel ? (
-              <p
+        ) : (
+          <div className="flex items-start justify-between gap-2 md:contents">
+            <h2 className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-foreground md:min-w-0">
+              {areaName}
+            </h2>
+            {showStatusList ? (
+              <div
                 className={cn(
-                  "flex min-w-0 flex-wrap items-baseline gap-x-2",
-                  showStaffingWeekCaption && "gap-1.5"
+                  "shrink-0 md:hidden",
+                  statusFooterTwoColumn && "ml-auto max-w-[min(100%,14rem)]"
                 )}
               >
-                {showStaffingWeekCaption ? (
-                  <span className="text-xs text-foreground/70">
-                    {t("dashboard.ampelStaffingWeekCaption")}
-                  </span>
-                ) : null}
-                <span className="text-base font-medium tabular-nums tracking-tight text-foreground/85">
-                  {staffingScopeDateLabel}
-                </span>
-                {staffingScopeMode === "day" && staffingScopeHolidayName ? (
-                  <span
-                    className={cn(
-                      CALENDAR_HOLIDAY_DAY_HEADER_LABEL_INLINE_CLASS,
-                      "min-w-0"
-                    )}
-                  >
-                    {staffingScopeHolidayName}
-                  </span>
-                ) : null}
-              </p>
+                <DashboardAreaStatusFooterLines
+                  lines={statusFooterLines}
+                  t={t}
+                  layout={statusFooterLayout}
+                  onLineClick={handleStatusFooterLineClick}
+                />
+              </div>
             ) : null}
           </div>
+        )}
+
+        {showStaffingHeaderMetrics ? (
+          <div className={AREA_CARD_STAFFING_HEADER_SLOT_CLASS}>
+            <AreaCardStaffingHeaderGauge stats={stats} t={t} />
+          </div>
+        ) : null}
+        {staffingScopeDateLabel ? (
+          <p
+            className={cn(
+              AREA_CARD_DATE_ROW_CLASS,
+              showStaffingWeekCaption && "gap-1.5"
+            )}
+          >
+            {showStaffingWeekCaption ? (
+              <span className="text-xs text-foreground/70">
+                {t("dashboard.ampelStaffingWeekCaption")}
+              </span>
+            ) : null}
+            <span className="text-base font-medium tabular-nums tracking-tight text-foreground/85">
+              {staffingScopeDateLabel}
+            </span>
+            {staffingScopeMode === "day" && staffingScopeHolidayName ? (
+              <span
+                className={cn(
+                  CALENDAR_HOLIDAY_DAY_HEADER_LABEL_INLINE_CLASS,
+                  "min-w-0"
+                )}
+              >
+                {staffingScopeHolidayName}
+              </span>
+            ) : null}
+          </p>
         ) : !staffingEnabled ? (
           <div aria-hidden />
         ) : null}
       </div>
 
       {showStatusList ? (
-        <div className="hidden md:block">
-          <AreaCardHeaderStatusList {...statusListProps} />
+        <div
+          className={cn(
+            hasScopeColumn
+              ? CARD_HEADER_SCOPE_AND_STATUS_COLUMN_CLASS
+              : cn("hidden md:block", statusFooterShellClass),
+            !hasScopeColumn && MODAL_SCROLLBAR_CLASS
+          )}
+        >
+          {hasScopeColumn ? (
+            <div className={CARD_HEADER_SCOPE_TOGGLE_SPACER_CLASS} aria-hidden />
+          ) : null}
+          <DashboardAreaStatusFooterLines
+            lines={statusFooterLines}
+            t={t}
+            layout={statusFooterLayout}
+            onLineClick={handleStatusFooterLineClick}
+          />
         </div>
       ) : null}
     </div>
@@ -1281,6 +1179,9 @@ function AreaCardHeader({
 
 const CARD_BODY_SECTION_CLASS =
   "min-w-0 border-b border-border/50 px-4 py-3 last:border-b-0";
+
+const STAFFING_VIEW_CONTROLS_CLASS =
+  "mb-2 flex flex-wrap items-center gap-x-4 gap-y-2";
 
 const CARD_METRICS_SECTION_CLASS = "px-4 pb-3 pt-3";
 
@@ -1304,6 +1205,9 @@ export function DashboardAreaAmpelCard({
   showMetricsDetails: showMetricsDetailsProp,
   onShowMetricsDetailsChange,
   onOpenAssignmentOverview,
+  onOpenSwapRequests,
+  statusFooterLayout = "stack",
+  areaScopeToggle,
 }: Props) {
   const t = useTranslations();
   const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
@@ -1339,30 +1243,74 @@ export function DashboardAreaAmpelCard({
     windowIssuesContext && shiftConfirmationEnabled
   );
 
+  const [staffingViewPrefs, updateStaffingViewPrefs] =
+    useDashboardAreaStaffingViewPrefs(stats.areaId);
+
+  const resolvedStaffingScope =
+    areaScopeToggle?.scope ?? staffingScopeMode ?? "week";
+  const showIncludePastDaysCheckbox = resolvedStaffingScope === "week";
+
+  const staffingTableRows = useMemo(() => {
+    const rows = stats.staffingWindowRows;
+    if (!showIncludePastDaysCheckbox || staffingViewPrefs.includePastDaysInWeek) {
+      return rows;
+    }
+    return filterStaffingWindowRowsForWeekView(
+      rows,
+      todayISO,
+      staffingViewPrefs.includePastDaysInWeek
+    );
+  }, [
+    stats.staffingWindowRows,
+    showIncludePastDaysCheckbox,
+    staffingViewPrefs.includePastDaysInWeek,
+    todayISO,
+  ]);
+
+  const staffingTableLineOptions = useMemo(
+    (): FlattenStaffingWindowTableLinesOptions => ({
+      compactStaffingRows: staffingViewPrefs.compactStaffingRows,
+      todayISO,
+      shiftConfirmationEnabled,
+      windowIssuesEnabled,
+    }),
+    [
+      staffingViewPrefs.compactStaffingRows,
+      todayISO,
+      shiftConfirmationEnabled,
+      windowIssuesEnabled,
+    ]
+  );
+
+  const staffingDetailsPerStatusAvailable = useMemo(
+    () =>
+      staffingWindowRowsHaveDetailsPerStatusSplit(staffingTableRows, {
+        todayISO,
+        shiftConfirmationEnabled,
+        windowIssuesEnabled,
+      }),
+    [
+      staffingTableRows,
+      todayISO,
+      shiftConfirmationEnabled,
+      windowIssuesEnabled,
+    ]
+  );
+
+  const effectiveStaffingTableLineOptions = useMemo(
+    (): FlattenStaffingWindowTableLinesOptions => ({
+      ...staffingTableLineOptions,
+      compactStaffingRows:
+        staffingTableLineOptions.compactStaffingRows === true &&
+        staffingDetailsPerStatusAvailable,
+    }),
+    [staffingTableLineOptions, staffingDetailsPerStatusAvailable]
+  );
+
   const staffingStatusClickable = isStaffingHeaderStatusClickable({
     ampelLevel: stats.ampelLevel,
     isPastScope,
     hasCandidatesPlanning: Boolean(candidatesPlanning),
-    staffingWindowRows: stats.staffingWindowRows,
-    todayISO,
-  });
-
-  const plannedOnly = isAreaStaffingPlannedOnly({
-    ampelLevel: stats.ampelLevel,
-    hasPlannedCoverage: stats.hasPlannedCoverage,
-    hasUnderstaffed: stats.hasUnderstaffed,
-  });
-  const showPlannedCoverageStatusLine = shouldShowAreaCardPlannedCoverageStatusLine(
-    {
-      staffingScopeMode,
-      hasPlannedCoverage: stats.hasPlannedCoverage,
-      plannedOnly,
-    }
-  );
-  const plannedCoverageStatusClickable = isPlannedCoverageHeaderStatusClickable({
-    windowIssuesEnabled,
-    isPastScope,
-    showPlannedCoverageStatusLine,
     staffingWindowRows: stats.staffingWindowRows,
     todayISO,
   });
@@ -1372,9 +1320,7 @@ export function DashboardAreaAmpelCard({
     if (row) setCandidatesRow(row);
   };
 
-  const openConfirmationIssuesFromHeader = (
-    status: DashboardActionableConfirmationStatus
-  ) => {
+  const openConfirmationIssuesFromHeader = (status: ShiftConfirmationStatus) => {
     if (!windowIssuesContext) return;
     const row = findFirstRowWithConfirmationStatus(
       stats.staffingWindowRows,
@@ -1391,6 +1337,15 @@ export function DashboardAreaAmpelCard({
   };
 
   const openPlannedCoverageFromHeader = () => {
+    const proposedRow = findFirstRowWithConfirmationStatus(
+      stats.staffingWindowRows,
+      "proposed"
+    );
+    if (proposedRow) {
+      setWindowIssuesConfirmationFilter("proposed");
+      setWindowIssuesRow(proposedRow);
+      return;
+    }
     const row = findFirstPlannedStaffingWindowRow(
       stats.staffingWindowRows,
       todayISO
@@ -1455,33 +1410,70 @@ export function DashboardAreaAmpelCard({
           areaName={stats.areaName}
           staffingEnabled={staffingEnabled}
           stats={stats}
-          isPastScope={isPastScope}
           staffingScopeDateLabel={staffingScopeDateLabel}
           staffingScopeMode={staffingScopeMode}
           staffingScopeHolidayName={staffingScopeHolidayName}
           showStaffingWeekCaption={showStaffingWeekCaption}
           shiftConfirmationEnabled={shiftConfirmationEnabled}
           staffingStatusClickable={staffingStatusClickable}
-          plannedCoverageStatusClickable={plannedCoverageStatusClickable}
           onOpenStaffingCandidates={
             staffingStatusClickable ? openStaffingCandidatesFromHeader : undefined
           }
           onOpenPlannedCoverage={
-            plannedCoverageStatusClickable
-              ? openPlannedCoverageFromHeader
-              : undefined
+            windowIssuesEnabled ? openPlannedCoverageFromHeader : undefined
           }
-          onOpenStaffingIssues={() => openStaffingIssuesModal()}
           onOpenConfirmationIssues={
             windowIssuesEnabled ? openConfirmationIssuesFromHeader : undefined
           }
+          onOpenSwapRequests={onOpenSwapRequests}
+          statusFooterLayout={statusFooterLayout}
+          areaScopeToggle={areaScopeToggle}
           t={t}
         />
 
         {showStaffingTable ? (
           <div className={CARD_BODY_SECTION_CLASS}>
+            <div className={STAFFING_VIEW_CONTROLS_CLASS}>
+              <label
+                className={cn(
+                  "flex items-center gap-2 text-sm text-foreground",
+                  staffingDetailsPerStatusAvailable
+                    ? "cursor-pointer"
+                    : "cursor-default opacity-60"
+                )}
+              >
+                <Checkbox
+                  checked={
+                    staffingViewPrefs.compactStaffingRows &&
+                    staffingDetailsPerStatusAvailable
+                  }
+                  disabled={!staffingDetailsPerStatusAvailable}
+                  onChange={(event) =>
+                    updateStaffingViewPrefs({
+                      compactStaffingRows: event.target.checked,
+                    })
+                  }
+                  className="shrink-0"
+                />
+                <span>{t("dashboard.staffingViewCompact")}</span>
+              </label>
+              {showIncludePastDaysCheckbox ? (
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                  <Checkbox
+                    checked={staffingViewPrefs.includePastDaysInWeek}
+                    onChange={(event) =>
+                      updateStaffingViewPrefs({
+                        includePastDaysInWeek: event.target.checked,
+                      })
+                    }
+                    className="shrink-0"
+                  />
+                  <span>{t("dashboard.staffingViewIncludePastDays")}</span>
+                </label>
+              ) : null}
+            </div>
             <StaffingWindowTable
-              rows={stats.staffingWindowRows}
+              rows={staffingTableRows}
               dayColumnLabel={t("dashboard.ampelColumnDay")}
               timeColumnLabel={t("dashboard.ampelColumnTime")}
               shiftColumnLabel={t("dashboard.ampelColumnShift")}
@@ -1505,6 +1497,7 @@ export function DashboardAreaAmpelCard({
               shiftConfirmationEnabled={shiftConfirmationEnabled}
               windowIssuesEnabled={windowIssuesEnabled}
               showShiftColumn={stats.hasAreaShiftTemplates}
+              tableLineOptions={effectiveStaffingTableLineOptions}
               t={t}
             />
           </div>

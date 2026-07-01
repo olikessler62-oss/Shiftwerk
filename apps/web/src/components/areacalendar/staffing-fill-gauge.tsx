@@ -9,7 +9,18 @@ import {
 import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
 
 export { STAFFING_FILL_GAUGE_SIZE_PX };
-const STROKE_WIDTH = 2.5;
+
+function staffingFillGaugeStrokeWidth(sizePx: number): number {
+  if (sizePx <= 20) return 1.5;
+  if (sizePx < 36) return 2;
+  return 2.5;
+}
+
+function staffingFillGaugeCountTextClass(sizePx: number): string {
+  if (sizePx >= 40) return "text-xs font-bold";
+  if (sizePx <= 20) return "text-[10px] font-bold";
+  return "text-[9px] font-bold";
+}
 
 const STAFFING_FILL_GAUGE_RING_COLOR: Record<StaffingFillGaugeVariant, string> = {
   understaffed: "#dc2626",
@@ -37,13 +48,11 @@ export function StaffingFillGauge({
   sizePx = STAFFING_FILL_GAUGE_SIZE_PX,
   className,
 }: Props) {
-  const radius = (sizePx - STROKE_WIDTH) / 2;
+  const strokeWidth = staffingFillGaugeStrokeWidth(sizePx);
+  const radius = (sizePx - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const center = sizePx / 2;
-  const countTextClass =
-    sizePx >= 40
-      ? "text-xs font-bold"
-      : "text-[8px] font-bold";
+  const countTextClass = staffingFillGaugeCountTextClass(sizePx);
   const ringColor = STAFFING_FILL_GAUGE_RING_COLOR[variant];
   const countText = formatStaffingCount(assigned, required);
 
@@ -70,7 +79,7 @@ export function StaffingFillGauge({
             r={radius}
             fill={variant === "planned" ? ringColor : "none"}
             stroke={ringColor}
-            strokeWidth={STROKE_WIDTH}
+            strokeWidth={strokeWidth}
             strokeDasharray={variant === "planned" ? undefined : circumference}
             strokeDashoffset={0}
           />

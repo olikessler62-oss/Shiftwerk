@@ -175,6 +175,11 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     enabled: boolean
   ): Promise<void>;
+  updateOrganizationName(organizationId: string, name: string): Promise<void>;
+  updateOrganizationShiftConfirmationPendingAfterMinutes(
+    organizationId: string,
+    minutes: number
+  ): Promise<void>;
   updateOrganizationShiftConfirmationEnabled(
     organizationId: string,
     enabled: boolean
@@ -278,6 +283,7 @@ export interface SchichtwerkDatabase {
   ): Promise<number>;
   archiveQualification(id: string, organizationId: string): Promise<void>;
   reorderQualifications(organizationId: string, orderedIds: string[]): Promise<void>;
+  resetOrganizationQualifications(organizationId: string): Promise<void>;
 
   // —— Profile qualifications ——
   listProfileQualifications(
@@ -551,6 +557,12 @@ export interface SchichtwerkDatabase {
 
   // —— Locations (Standorte) ——
   listLocations(organizationId: string): Promise<Location[]>;
+  findOrganizationLocationByName(
+    organizationId: string,
+    name: string,
+    options?: { includeArchived?: boolean }
+  ): Promise<Location | null>;
+  unarchiveOrganizationLocation(id: string, organizationId: string): Promise<void>;
   /** Aktive Standorte plus archivierte, die in der Woche noch Schichten haben. */
   listLocationsForAreaCalendar(
     organizationId: string,
@@ -997,6 +1009,7 @@ export interface SchichtwerkDatabase {
   ): Promise<void>;
   prepareFriseurSalonScenario(organizationId: string): Promise<void>;
   preparePflegedienstScenario(organizationId: string): Promise<void>;
+  prepareBiergartenHadrianScenario(organizationId: string): Promise<void>;
 
   saveOrganizationShiftSnapshot(organizationId: string): Promise<number>;
 

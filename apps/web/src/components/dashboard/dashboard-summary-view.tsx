@@ -7,7 +7,7 @@ import { DashboardSummaryHeader } from "@/components/dashboard/dashboard-summary
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures } from "@/lib/org-features-provider";
+import { useOrgFeatures, useShiftConfirmationPendingAfterMinutes } from "@/lib/org-features-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
 import { formatDayHeader } from "@/lib/planning-utils";
@@ -59,6 +59,7 @@ type Props = {
   qualifications: Qualification[];
   profileQualificationIds: Record<string, string[]>;
   employeeNameById?: ReadonlyMap<string, string>;
+  employeeColorById?: ReadonlyMap<string, string | null | undefined>;
   staffingEnabled: boolean;
   readOnlyWeek?: boolean;
   settingsModals?: {
@@ -84,6 +85,7 @@ export function DashboardSummaryView({
   qualifications,
   profileQualificationIds,
   employeeNameById,
+  employeeColorById,
   staffingEnabled,
   readOnlyWeek = false,
   settingsModals,
@@ -94,6 +96,7 @@ export function DashboardSummaryView({
   const features = useOrgFeatures();
   const simplePlanning = !features.areas;
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
+  const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const todayISO = toISODate(new Date());
 
   useClearMainNavPendingWhenReady(true);
@@ -240,6 +243,7 @@ export function DashboardSummaryView({
       qualifications,
       profileQualificationIds: profileQualificationIdsMap,
       employeeNameById,
+      employeeColorById,
       readOnlyWeek,
       formatTimeLabel: formatStaffingTimeLabel,
       weekdayLabel: staffingWeekdayLabel,
@@ -260,6 +264,7 @@ export function DashboardSummaryView({
     qualifications,
     profileQualificationIdsMap,
     employeeNameById,
+    employeeColorById,
     readOnlyWeek,
     formatStaffingTimeLabel,
     staffingWeekdayLabel,
@@ -282,17 +287,21 @@ export function DashboardSummaryView({
       calendarShifts,
       serviceHours,
       employeeNameById,
+      employeeColorById,
       shiftConfirmationEnabled,
+      pendingAfterMinutes,
       readOnlyWeek,
       todayISO,
     };
   }, [
     selectedLocationId,
     shiftConfirmationEnabled,
+    pendingAfterMinutes,
     weekStart,
     calendarShifts,
     serviceHours,
     employeeNameById,
+    employeeColorById,
     readOnlyWeek,
     todayISO,
   ]);

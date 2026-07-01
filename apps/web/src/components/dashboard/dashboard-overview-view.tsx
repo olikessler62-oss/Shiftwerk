@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Tooltip } from "@/components/ui/tooltip";
 import { DashboardAreaAmpelCard } from "@/components/dashboard/dashboard-area-ampel-card";
+import { DashboardOpsCommandBar } from "@/components/dashboard/dashboard-ops-command-bar";
 import { DashboardDayDrilldownAreaCombobox } from "@/components/dashboard/dashboard-day-drilldown-area-combobox";
 import {
   DashboardDayDrilldownDayCombobox,
@@ -38,27 +38,25 @@ import {
 import { formatDayHeader } from "@/lib/planning-utils";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import {
-  CALENDAR_DAY_HEADER_ACTIVE_CLASS,
   CALENDAR_HOLIDAY_DAY_HEADER_LABEL_LEFT_CLASS,
 } from "@/lib/calendar-day-header-styles";
 import {
   DASHBOARD_AREA_CARD_HEADER_SURFACE_CLASS,
 } from "@/lib/dashboard-panel-styles";
-import { dayCardMinHeightRem } from "@/lib/dashboard-day-card-layout";
+import { dayCardMinHeightRem, weekTrayEmptyDayCardMinHeightRem } from "@/lib/dashboard-day-card-layout";
 // Experiment Wochentags-Farben — zum Reaktivieren Import + DayCard-Block unten einkommentieren:
 // import {
 //   DAY_CARD_WEEKDAY_BODY_SURFACE_CLASS,
 //   resolveDayCardWeekdaySurfaces,
 // } from "@/lib/dashboard-day-card-weekday-colors";
-import { useOrgFeatures, useOrganization, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
+import { useOrgFeatures, useOrganization, useShiftConfirmationPendingAfterMinutes } from "@/lib/org-features-provider";
 import { buildPlanningPageUrl, planningWeekStartFromParam } from "@/lib/planning-week";
 import { APP_SHELL_CONTENT_OFFSET_CLASS } from "@/lib/app-shell-layout";
-import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
+import { DashboardAreaStatusFooterLines } from "@/components/dashboard/dashboard-area-status-footer-lines";
+import { resolveDashboardAreaStatusFooterLines } from "@/lib/dashboard-area-status-footer-lines";
+import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-modal-shell";
 import {
-  DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS,
-  DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS,
-  DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_SHELL_CLASS,
   DASHBOARD_STATUS_BAR_COMPACT_NAV_BUTTON_CLASS,
 } from "@/lib/dashboard-toolbar-ui";
 import type {
@@ -86,13 +84,6 @@ import {
 import { useLazyShiftCompensation } from "@/lib/use-lazy-shift-compensation";
 import { buildBreaksByTemplateIdFromAreaTemplates } from "@/lib/shift-work-hours";
 import type { PlanningShift } from "@/lib/planning-shift-card";
-import {
-  DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES,
-  DASHBOARD_DAY_CONFIRMATION_STATUSES,
-  hasActionableConfirmationCounts,
-  type DashboardDayConfirmationCounts,
-} from "@/lib/dashboard-day-confirmation-counts";
-import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
 import { useEffectiveShiftConfirmationEnabled } from "@/lib/shift-confirmation-simulation-context";
 import { resolveDashboardAreaCardScopeDateLabel, resolveDashboardAreaCardScopeDateISO, resolveDashboardAreaStatsDates } from "@/lib/dashboard-area-card-scope-label";
 import {
@@ -106,15 +97,19 @@ import {
   resolveDashboardOverviewViewFromSearchParams,
   type DashboardOverviewDrilldownUrlState,
 } from "@/lib/dashboard-overview-drilldown-url";
-import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import { getAreaCalendarWeekHeaderParts } from "@/lib/planning-utils";
-import { formatDurationHours } from "@/lib/shift-type-display";
 import type { DashboardExtDaySnapshot } from "@/lib/dashboard-ext-panel-data";
 import { organizationTodayISO } from "@schichtwerk/database";
 import { isPastWeek } from "@/lib/planning-readonly";
+import {
+  STATUS_SPHERE_DOT_FRAME_CLASS,
+  statusSphereDotSurfaceClass,
+} from "@/lib/status-sphere-dot-styles";
+import { StaffingStatusStrokeIcon } from "@/components/dashboard/staffing-status-stroke-icon";
+import { StaffingFillGauge } from "@/components/areacalendar/staffing-fill-gauge";
 
-/** Dashboard 3 — Ecken maximal 5px. */
+/** Dashboard — Ecken maximal 5px. */
 const D3_ROUNDED = "rounded-[5px]";
 
 /** Feiner Rahmen + dezenter Schatten für Content-Karten. */
@@ -123,99 +118,38 @@ const D3_CARD_FRAME_CLASS =
 
 // ── Ampel helpers ──────────────────────────────────────────────────────────
 
-function ampelDot(level: DashboardAreaAmpelLevel) {
-  return <StaffingStatusStrokeIcon level={level} />;
-}
+/** Platzhalter-Slot für Bereichszeilen ohne Servicezeiten (gleiche Breite wie Füllstandsanzeiger). */
+const D3_DAY_CARD_AREA_ICON_SLOT_CLASS = "h-5 w-5 shrink-0";
 
-function ampelLabel(level: DashboardAreaAmpelLevel): string {
-  const labels: Record<DashboardAreaAmpelLevel, string> = {
-    met: "Vollständig besetzt",
-    no_demand: "Kein Bedarf",
-    partial: "Teilweise besetzt",
-    critical: "Kritisch – offen",
-    overstaffed_only: "Überbesetzt",
-  };
-  return labels[level];
-}
+/** Füllstandsanzeiger in Wochentray-Tagkarten — kompakt wie im Mitarbeiter-Kalender. */
+const D3_DAY_CARD_WEEK_TRAY_GAUGE_SIZE_PX = 24;
 
-const D3_STAFFING_STROKE_ICON_CLASS = "h-5 w-5 shrink-0";
-
-const D3_STROKE_ICON_PROPS = {
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.75,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-};
-
-const D3_STAFFING_STROKE_COLOR: Record<DashboardAreaAmpelLevel, string> = {
-  met: "text-green-600",
-  partial: STAFFING_OCHER_TEXT_CLASS,
-  critical: "text-red-600",
-  no_demand: "text-slate-400",
-  overstaffed_only: "text-blue-600",
-};
-
-/** Monoline-Stroke-Icons (Lucide-Stil) — einheitlich 20 px, semantische Farbe. */
-function StaffingStatusStrokeIcon({
-  level,
-  muted,
-  className,
+function DayCardAreaStaffingIndicator({
+  area,
+  embeddedInWeekTray,
+  staffingEnabled,
 }: {
-  level: DashboardAreaAmpelLevel;
-  muted?: boolean;
-  className?: string;
+  area: DashboardExtDaySnapshot["areas"][number];
+  embeddedInWeekTray: boolean;
+  staffingEnabled: boolean;
 }) {
-  const label = ampelLabel(level);
-  const svgClass = cn(
-    D3_STAFFING_STROKE_ICON_CLASS,
-    D3_STAFFING_STROKE_COLOR[level],
-    muted && "opacity-40",
-    className
-  );
-
-  switch (level) {
-    case "met":
-      return (
-        <svg {...D3_STROKE_ICON_PROPS} className={svgClass} aria-label={label}>
-          <circle cx="12" cy="12" r="10" />
-          <path d="m9 12 2 2 4-4" />
-        </svg>
-      );
-    case "partial":
-      return (
-        <svg {...D3_STROKE_ICON_PROPS} className={svgClass} aria-label={label}>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 8v4" />
-          <path d="M12 16h.01" />
-        </svg>
-      );
-    case "critical":
-      return (
-        <svg {...D3_STROKE_ICON_PROPS} className={svgClass} aria-label={label}>
-          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
-          <path d="M12 9v4" />
-          <path d="M12 17h.01" />
-        </svg>
-      );
-    case "no_demand":
-      return (
-        <svg {...D3_STROKE_ICON_PROPS} className={svgClass} aria-label={label}>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M8 12h8" />
-        </svg>
-      );
-    case "overstaffed_only":
-      return (
-        <svg {...D3_STROKE_ICON_PROPS} className={svgClass} aria-label={label}>
-          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-          <circle cx="9" cy="7" r="4" />
-          <path d="M19 8v6" />
-          <path d="M22 11h-6" />
-        </svg>
-      );
+  if (!area.hasServiceHours) {
+    return <span className={D3_DAY_CARD_AREA_ICON_SLOT_CLASS} aria-hidden />;
   }
+
+  if (embeddedInWeekTray && staffingEnabled && area.staffingGauge) {
+    return (
+      <StaffingFillGauge
+        assigned={area.staffingGauge.assigned}
+        required={area.staffingGauge.required}
+        variant={area.staffingGauge.variant}
+        sizePx={D3_DAY_CARD_WEEK_TRAY_GAUGE_SIZE_PX}
+        className="gap-0"
+      />
+    );
+  }
+
+  return <DayCardAreaAmpelIcon level={area.ampelLevel} muted={false} />;
 }
 
 function DayCardAreaAmpelIcon({
@@ -236,217 +170,7 @@ type View =
   | { level: "week" }
   | { level: "day"; dayIndex: number };
 
-// ── Wochen-Kennzahlen (dezent als Tabelle) ─────────────────────────────────
-
-type D3WeekSummaryAccent = "green" | "red" | "yellow" | "gray" | "neutral";
-
-type D3WeekSummaryTableRow = {
-  key: string;
-  label: string;
-  value: string | number;
-  detail?: string;
-  accent?: D3WeekSummaryAccent;
-};
-
-const D3_WEEK_SUMMARY_TABLE_SHELL_CLASS = cn(
-  D3_ROUNDED,
-  "overflow-hidden border border-black/15"
-);
-
-const D3_WEEK_SUMMARY_LABEL_CLASS =
-  "text-[10px] font-medium leading-tight text-foreground/80";
-const D3_WEEK_SUMMARY_DETAIL_CLASS =
-  "text-[10px] leading-tight text-foreground/72";
-
-function d3WeekSummaryValueClass(accent: D3WeekSummaryAccent = "neutral"): string {
-  switch (accent) {
-    case "green":
-      return "text-green-700/90";
-    case "red":
-      return "text-red-700/90";
-    case "yellow":
-      return "text-[#784e00]/90";
-    case "gray":
-      return "text-foreground/72";
-    default:
-      return "text-foreground";
-  }
-}
-
-function D3WeekSummaryTableCell({
-  row,
-  isLabelRow,
-}: {
-  row: D3WeekSummaryTableRow;
-  isLabelRow: boolean;
-}) {
-  if (isLabelRow) {
-    return (
-      <th
-        scope="col"
-        className="border-l border-black/[0.08] px-2 py-1 text-left font-normal first:border-l-0 sm:px-3"
-      >
-        <span className={cn("block truncate", D3_WEEK_SUMMARY_LABEL_CLASS)}>
-          {row.label}
-        </span>
-      </th>
-    );
-  }
-
-  return (
-    <td className="border-l border-black/[0.08] px-2 pb-1.5 pt-0 align-top first:border-l-0 sm:px-3 sm:pb-2">
-      <span
-        className={cn(
-          "block truncate text-sm font-semibold tabular-nums leading-tight",
-          d3WeekSummaryValueClass(row.accent)
-        )}
-      >
-        {row.value}
-      </span>
-      {row.detail ? (
-        <span className={cn("mt-0.5 block truncate", D3_WEEK_SUMMARY_DETAIL_CLASS)}>
-          {row.detail}
-        </span>
-      ) : null}
-    </td>
-  );
-}
-
-function D3WeekSummarySection({
-  rows,
-  showTopBorder = false,
-}: {
-  rows: readonly D3WeekSummaryTableRow[];
-  showTopBorder?: boolean;
-}) {
-  return (
-    <tbody className={cn(showTopBorder && "border-t border-black/12")}>
-      <tr>
-        {rows.map((row) => (
-          <D3WeekSummaryTableCell key={`${row.key}-label`} row={row} isLabelRow />
-        ))}
-      </tr>
-      <tr>
-        {rows.map((row) => (
-          <D3WeekSummaryTableCell key={`${row.key}-value`} row={row} isLabelRow={false} />
-        ))}
-      </tr>
-    </tbody>
-  );
-}
-
-function D3WeekSummaryMetrics({
-  todayDay,
-  coveragePct,
-  rollup,
-}: {
-  todayDay: DashboardExtDaySnapshot | undefined;
-  coveragePct: number | null;
-  rollup: DashboardLocationWeekRollup;
-}) {
-  const t = useTranslations();
-  const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
-  const { locale } = useLocale();
-  const intlLocale = locale === "en" ? "en" : "de";
-  const money = (amount: number) =>
-    `${formatTagAreaFooterMoney(amount, intlLocale)} €`;
-  const incomplete = t("dashboard.ampelCompensationIncomplete");
-
-  const staffingRows: D3WeekSummaryTableRow[] = [
-    {
-      key: "today-open",
-      label: "Heute offen",
-      value: todayDay
-        ? todayDay.openSlots === 0
-          ? "✓ Besetzt"
-          : todayDay.openSlots
-        : "—",
-      detail: todayDay
-        ? `${todayDay.shiftCount} Schichten heute`
-        : undefined,
-      accent: !todayDay
-        ? "gray"
-        : todayDay.openSlots === 0
-          ? "green"
-          : "red",
-    },
-    {
-      key: "week-coverage",
-      label: "Woche gesamt",
-      value: coveragePct !== null ? `${coveragePct}%` : "—",
-      detail:
-        rollup.requiredTotal > 0
-          ? `${rollup.assignedTotal}/${rollup.requiredTotal} besetzt`
-          : "Kein Bedarf konfiguriert",
-      accent:
-        coveragePct === null
-          ? "gray"
-          : coveragePct >= 90
-            ? "green"
-            : coveragePct >= 60
-              ? "yellow"
-              : "red",
-    },
-    {
-      key: "open-slots",
-      label: "Offene Stellen",
-      value: rollup.openSlots,
-      detail:
-        rollup.criticalAreaCount > 0
-          ? `${rollup.criticalAreaCount} kritische Bereiche`
-          : "Alles im grünen Bereich",
-      accent:
-        rollup.openSlots === 0
-          ? "green"
-          : rollup.criticalAreaCount > 0
-            ? "red"
-            : "yellow",
-    },
-  ];
-
-  const compensationRows: D3WeekSummaryTableRow[] = [
-    {
-      key: "base",
-      label: t("dashboard.ampelDetailBaseCompensation"),
-      value: rollup.hasCompensation ? money(rollup.baseCost) : incomplete,
-      accent: "neutral",
-    },
-    {
-      key: "surcharges",
-      label: t("dashboard.kpiSurcharges"),
-      value: !rollup.hasCompensation
-        ? incomplete
-        : rollup.surchargeCost > 0
-          ? `+${money(rollup.surchargeCost)}`
-          : money(0),
-      accent: "neutral",
-    },
-    {
-      key: "total",
-      label: t("dashboard.kpiTotalCost"),
-      value: rollup.hasCompensation ? money(rollup.totalCost) : incomplete,
-      detail: rollup.hasCompensation
-        ? t("dashboard.ampelHours", {
-            hours: formatDurationHours(rollup.totalHours),
-          })
-        : undefined,
-      accent: "neutral",
-    },
-  ];
-
-  return (
-    <div className={D3_WEEK_SUMMARY_TABLE_SHELL_CLASS}>
-      <table className="w-full table-fixed border-collapse">
-        <D3WeekSummarySection rows={staffingRows} />
-        {showCompensationInPlanningUi ? (
-          <D3WeekSummarySection rows={compensationRows} showTopBorder />
-        ) : null}
-      </table>
-    </div>
-  );
-}
-
-/** Tag-Karten + Statuszeile — gemeinsames Raster für Kalender-Button-Ausrichtung. */
+/** Tag-Karten — gemeinsames Raster für Kalender-Button-Ausrichtung. */
 const D3_DAY_CARDS_GRID_CLASS =
   "grid min-w-0 max-w-full auto-rows-fr grid-cols-1 items-stretch gap-2 min-[380px]:grid-cols-2 min-[380px]:gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7";
 
@@ -592,60 +316,6 @@ export function DashboardLocationStatusBar({
   );
 }
 
-// ── Area scope toggle ──────────────────────────────────────────────────────
-
-function D3AreaScopeToggle({
-  scope,
-  dayLabel,
-  weekLabel,
-  weekShortLabel,
-  onScopeChange,
-}: {
-  scope: AreaDetailScope;
-  dayLabel: string;
-  weekLabel: string;
-  weekShortLabel?: string;
-  onScopeChange: (scope: AreaDetailScope) => void;
-}) {
-  const t = useTranslations();
-  const weekButtonLabel = weekShortLabel ?? weekLabel;
-
-  return (
-    <div
-      role="group"
-      aria-label={t("dashboard.areaScopeAriaLabel")}
-      className={DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_SHELL_CLASS}
-    >
-      <button
-        type="button"
-        aria-pressed={scope === "day"}
-        title={dayLabel}
-        onClick={() => onScopeChange("day")}
-        className={
-          scope === "day"
-            ? DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS
-            : DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS
-        }
-      >
-        <span className="min-w-0 truncate">{dayLabel}</span>
-      </button>
-      <button
-        type="button"
-        aria-pressed={scope === "week"}
-        title={weekLabel}
-        onClick={() => onScopeChange("week")}
-        className={
-          scope === "week"
-            ? DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_ACTIVE_CLASS
-            : DASHBOARD_AREA_SCOPE_TOGGLE_DRILLDOWN_INACTIVE_CLASS
-        }
-      >
-        <span className="min-w-0 truncate">{weekButtonLabel}</span>
-      </button>
-    </div>
-  );
-}
-
 /** Tag-Karten — Schatten (einzeln). */
 const D3_DAY_CARD_FRAME_SHADOW_CLASS =
   "shadow-[0_2px_6px_-1px_rgba(15,23,42,0.1),0_1px_3px_0_rgba(15,23,42,0.06)]";
@@ -657,19 +327,22 @@ const D3_DAY_CARD_IN_WEEK_TRAY_SHADOW_CLASS =
 /** Tag-Karten — einheitlicher schwarzer 1px-Rahmen. */
 const D3_DAY_CARD_BORDER_CLASS = "border border-black";
 
-/** Wochen-Tray — Kalender-Objekt: aktiver Kopf, weißer Body, schwarzer Rahmen. */
+/** Wochen-Tray — wie Ops-Panel: aktiver Kopf, dezenter Rahmen. */
+const D3_WEEK_TRAY_HEADER_SURFACE_CLASS = "bg-[#d4dee8]";
+
 const D3_WEEK_TRAY_CLASS = cn(
   D3_ROUNDED,
-  "overflow-x-hidden border border-black bg-white",
-  "shadow-[0_4px_24px_-4px_rgba(15,23,42,0.12),0_2px_8px_-2px_rgba(15,23,42,0.08)]"
+  "overflow-x-hidden border border-black/15 shadow-sm"
 );
 
 const D3_WEEK_TRAY_HEADER_CLASS = cn(
-  CALENDAR_DAY_HEADER_ACTIVE_CLASS,
-  "flex flex-col items-center justify-center gap-y-0.5 border-b border-black px-3 py-2 text-center sm:gap-y-1 sm:px-4 sm:py-2.5"
+  D3_WEEK_TRAY_HEADER_SURFACE_CLASS,
+  "border-b border-black/15 px-2 py-2.5 text-left sm:px-3 sm:py-3"
 );
 
-const D3_WEEK_TRAY_BODY_CLASS = "p-2 sm:p-3";
+const D3_WEEK_TRAY_CONTENT_SURFACE_CLASS = "bg-[#eff4f7]";
+
+const D3_WEEK_TRAY_BODY_CLASS = cn(D3_WEEK_TRAY_CONTENT_SURFACE_CLASS, "p-2 sm:p-3");
 
 /**
  * Wochenansicht: einzelne Karten mit Abstand; Höhe folgt dem Inhalt (kein fr-Stretch).
@@ -694,10 +367,21 @@ const D3_DAY_CARD_AREA_ROW_BUTTON_CLASS = cn(
 const D3_DAY_CARD_AREA_ROW_STATIC_CLASS =
   "inline-flex max-w-full items-center gap-x-2.5 pr-[5px]";
 
+const D3_DAY_CARD_AREA_NAME_CLASS =
+  "min-h-5 min-w-0 truncate text-[11px] leading-5 text-foreground/75";
+
+/** Wochentray: Bereichsname neben Füllstandsanzeiger — statische Klasse für Tailwind-Scan. */
+const D3_DAY_CARD_WEEK_TRAY_AREA_NAME_CLASS =
+  "min-h-5 min-w-0 truncate text-[11px] font-bold leading-5 text-foreground";
+
+/** Tag-Karte im Wochen-Tray — Rahmen wie Wochentray; Hover nur am Rand. */
+const D3_DAY_CARD_WEEK_TRAY_BORDER_CLASS =
+  "border border-black/15 transition-colors hover:border-black";
+
 /** Tag-Karte im Wochen-Tray — dezente abgerundete Einzelkarte. */
 const D3_DAY_CARD_WEEK_TRAY_CLASS = cn(
   D3_ROUNDED,
-  D3_DAY_CARD_BORDER_CLASS,
+  D3_DAY_CARD_WEEK_TRAY_BORDER_CLASS,
   D3_DAY_CARD_IN_WEEK_TRAY_SHADOW_CLASS
 );
 
@@ -705,6 +389,13 @@ const D3_DAY_CARD_WEEK_TRAY_CLASS = cn(
 const D3_DAY_CARD_HEADER_SLOT_CLASS = cn(
   DASHBOARD_AREA_CARD_HEADER_SURFACE_CLASS,
   "border-t border-t-black border-b border-b-[#5c6678]",
+  "flex min-h-[4.5rem] shrink-0 flex-col justify-start px-3.5 pb-2.5 pt-2.5"
+);
+
+/** Tag-Kartenkopf im Wochentray — gleiche Fläche wie Wochentray-Kopf. */
+const D3_DAY_CARD_WEEK_TRAY_HEADER_SLOT_CLASS = cn(
+  D3_WEEK_TRAY_HEADER_SURFACE_CLASS,
+  "border-b border-black/15",
   "flex min-h-[4.5rem] shrink-0 flex-col justify-start px-3.5 pb-2.5 pt-2.5"
 );
 
@@ -723,7 +414,16 @@ const D3_DAY_CARD_BODY_PAST_SURFACE_CLASS = cn(
   D3_DAY_CARD_BODY_HOVER_SURFACE_CLASS
 );
 
-const D3_DAY_CARD_STATUS_DOT_CLASS = "size-2.5 shrink-0 rounded-full";
+/** Wochentray: geschlossene Tage ohne Servicezeiten — zurückhaltend grau. */
+const D3_DAY_CARD_WEEK_TRAY_NO_SERVICE_SURFACE_CLASS = "bg-[#eceff3]";
+
+const D3_DAY_CARD_WEEK_TRAY_NO_SERVICE_HEADER_CLASS = cn(
+  D3_DAY_CARD_WEEK_TRAY_NO_SERVICE_SURFACE_CLASS,
+  "border-b-black/10 text-foreground/80"
+);
+
+const D3_DAY_CARD_WEEK_TRAY_NO_SERVICE_BODY_CLASS =
+  D3_DAY_CARD_WEEK_TRAY_NO_SERVICE_SURFACE_CLASS;
 
 function dayCardShowsStatusDot(
   day: DashboardExtDaySnapshot,
@@ -737,7 +437,7 @@ function dayCardStatusDotClass(day: DashboardExtDaySnapshot): string {
     (area) => area.hasServiceHours && isAreaStaffingUncovered(area.ampelLevel)
   );
 
-  return hasUncoveredArea ? "bg-red-600" : "bg-emerald-600";
+  return statusSphereDotSurfaceClass(hasUncoveredArea ? "danger" : "success");
 }
 
 function dayCardWeekdayTwoLetter(
@@ -765,108 +465,102 @@ function dayCardEditorialDateParts(dateISO: string, intlLocale: string) {
 
 // ── Day card ───────────────────────────────────────────────────────────────
 
-const DAY_CARD_CONFIRMATION_CHIP_BASE_CLASS =
-  "inline-flex shrink-0 items-center gap-0.5 rounded-[4px] border px-1.5 py-0.5 text-[10px] font-semibold leading-none tabular-nums";
+const DAY_CARD_FOOTER_AREAS_CLASS = "flex min-w-0 flex-col gap-1.5";
+const DAY_CARD_FOOTER_AREA_HEADING_BASE_CLASS =
+  "truncate text-[11px] font-bold leading-none text-foreground/80";
+const DAY_CARD_FOOTER_AREA_HEADING_BUTTON_CLASS = cn(
+  DAY_CARD_FOOTER_AREA_HEADING_BASE_CLASS,
+  "block w-full min-w-0 rounded-sm px-0.5 py-px text-left",
+  "cursor-pointer",
+  "hover:bg-black/[0.09] active:bg-black/[0.12]",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+);
+const DAY_CARD_FOOTER_AREA_LINES_CLASS =
+  "mt-0.5 flex min-w-0 flex-col gap-0.5 pl-2 sm:pl-2.5";
 
-function dayCardConfirmationChipClass(status: ShiftConfirmationStatus): string {
-  switch (status) {
-    case "requested":
-      return cn(
-        DAY_CARD_CONFIRMATION_CHIP_BASE_CLASS,
-        "border-amber-200/90 bg-amber-50",
-        STAFFING_OCHER_TEXT_CLASS
-      );
-    case "pending":
-      return cn(
-        DAY_CARD_CONFIRMATION_CHIP_BASE_CLASS,
-        "border-fuchsia-200/90 bg-fuchsia-50 text-[#701a75]"
-      );
-    case "rejected":
-      return cn(
-        DAY_CARD_CONFIRMATION_CHIP_BASE_CLASS,
-        "border-red-200 bg-red-50 text-red-800"
-      );
-    case "canceled":
-      return cn(
-        DAY_CARD_CONFIRMATION_CHIP_BASE_CLASS,
-        "border-orange-200 bg-orange-50 text-orange-800"
-      );
-    case "unresolved":
-      return cn(
-        DAY_CARD_CONFIRMATION_CHIP_BASE_CLASS,
-        "border-neutral-200 bg-neutral-100 text-neutral-600"
-      );
-    default:
-      return DAY_CARD_CONFIRMATION_CHIP_BASE_CLASS;
-  }
+function resolveDayCardAreaFooterLines(
+  area: DashboardExtDaySnapshot["areas"][number],
+  shiftConfirmationEnabled: boolean
+) {
+  return resolveDashboardAreaStatusFooterLines({
+    openSlots: area.openSlots,
+    shiftConfirmationEnabled,
+    shiftCount: area.shiftCount,
+    confirmationCounts: area.confirmationCounts,
+    swapRequestedCount: area.swapRequestedCount,
+  });
 }
 
-function dayCardConfirmationShortLabelKey(
-  status: (typeof DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES)[number]
-):
-  | "dashboard.dayCardConfirmationShort.requested"
-  | "dashboard.dayCardConfirmationShort.pending"
-  | "dashboard.dayCardConfirmationShort.rejected"
-  | "dashboard.dayCardConfirmationShort.canceled"
-  | "dashboard.dayCardConfirmationShort.unresolved" {
-  return `dashboard.dayCardConfirmationShort.${status}` as const;
+type DayCardFooterAreaSection = {
+  areaId: string;
+  areaName: string;
+  lines: ReturnType<typeof resolveDayCardAreaFooterLines>;
+};
+
+function resolveDayCardFooterAreaSections(
+  day: DashboardExtDaySnapshot,
+  shiftConfirmationEnabled: boolean
+): DayCardFooterAreaSection[] {
+  return day.areas
+    .map((area) => ({
+      areaId: area.areaId,
+      areaName: area.areaName,
+      lines: resolveDayCardAreaFooterLines(area, shiftConfirmationEnabled),
+    }))
+    .filter((section) => section.lines.length > 0);
 }
 
-function DayCardConfirmationTooltipContent({
-  counts,
+function DayCardFooterByArea({
+  sections,
+  onAreaClick,
   t,
 }: {
-  counts: DashboardDayConfirmationCounts;
+  sections: readonly DayCardFooterAreaSection[];
+  onAreaClick?: (areaId: string) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
-  const lines = DASHBOARD_DAY_CONFIRMATION_STATUSES.filter(
-    (status) => counts[status] > 0
-  );
-
-  if (lines.length === 0) return null;
+  if (sections.length === 0) return null;
 
   return (
-    <div className="space-y-1">
-      <p className="font-semibold text-foreground">
-        {t("dashboard.dayCardConfirmationTooltipTitle")}
-      </p>
-      {lines.map((status) => (
-        <p key={status}>
-          {counts[status]} {t(shiftConfirmationStatusLabelKey(status))}
-        </p>
+    <div className={DAY_CARD_FOOTER_AREAS_CLASS}>
+      {sections.map((section) => (
+        <div key={section.areaId} className="min-w-0">
+          {onAreaClick ? (
+            <button
+              type="button"
+              className={DAY_CARD_FOOTER_AREA_HEADING_BUTTON_CLASS}
+              aria-label={t("dashboard.dayCardOpenAreaAriaLabel", {
+                area: section.areaName,
+              })}
+              onClick={(event) => {
+                event.stopPropagation();
+                onAreaClick(section.areaId);
+              }}
+            >
+              {section.areaName}
+            </button>
+          ) : (
+            <p className={DAY_CARD_FOOTER_AREA_HEADING_BASE_CLASS}>
+              {section.areaName}
+            </p>
+          )}
+          <div className={DAY_CARD_FOOTER_AREA_LINES_CLASS}>
+            <DayCardFooterStatusLines lines={section.lines} t={t} />
+          </div>
+        </div>
       ))}
     </div>
   );
 }
 
-function DayCardConfirmationChips({
-  counts,
+function DayCardFooterStatusLines({
+  lines,
   t,
 }: {
-  counts: DashboardDayConfirmationCounts;
+  lines: ReturnType<typeof resolveDayCardAreaFooterLines>;
   t: ReturnType<typeof useTranslations>;
 }) {
-  const actionableStatuses = DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES.filter(
-    (status) => counts[status] > 0
-  );
-
-  if (actionableStatuses.length === 0) return null;
-
-  const chips = (
-    <div className="flex flex-wrap gap-1">
-      {actionableStatuses.map((status) => (
-        <span key={status} className={dayCardConfirmationChipClass(status)}>
-          {counts[status]} {t(dayCardConfirmationShortLabelKey(status))}
-        </span>
-      ))}
-    </div>
-  );
-
-  return (
-    <Tooltip content={<DayCardConfirmationTooltipContent counts={counts} t={t} />}>
-      <span className="inline-flex max-w-full">{chips}</span>
-    </Tooltip>
-  );
+  return <DashboardAreaStatusFooterLines lines={lines} t={t} />;
 }
 
 function DayCard({
@@ -875,6 +569,7 @@ function DayCard({
   staffingEnabled,
   shiftConfirmationEnabled,
   embeddedInWeekTray = false,
+  emptyDayReferenceMinHeightRem,
   holidayName = null,
   onClick,
   onAreaClick,
@@ -884,6 +579,8 @@ function DayCard({
   staffingEnabled: boolean;
   shiftConfirmationEnabled: boolean;
   embeddedInWeekTray?: boolean;
+  /** Wochentray: Mindesthöhe für Tage ohne Schichten/Servicezeiten. */
+  emptyDayReferenceMinHeightRem?: number;
   holidayName?: string | null;
   onClick: () => void;
   onAreaClick?: (areaId: string) => void;
@@ -896,17 +593,19 @@ function DayCard({
     intlLocale
   );
   const isPastDay = day.isPast && !day.isToday;
+  const isWeekTrayNoServiceDay = embeddedInWeekTray && !day.hasServiceHours;
   const showStatusDot = dayCardShowsStatusDot(day, staffingEnabled);
   // const weekdaySurfaces = resolveDayCardWeekdaySurfaces(weekdayIndexFromDate(day.dateISO), {
   //   isPast: isPastDay,
   // });
-  const showConfirmationChips =
-    shiftConfirmationEnabled &&
-    day.shiftCount > 0 &&
-    hasActionableConfirmationCounts(day.confirmationCounts);
-  const showOpenSlots = day.openSlots > 0;
-  const showFooterDivider = showConfirmationChips || showOpenSlots;
-  const cardMinHeightRem = dayCardMinHeightRem(areaCount);
+  const footerAreaSections = resolveDayCardFooterAreaSections(
+    day,
+    shiftConfirmationEnabled
+  );
+  const showAreaRows = day.hasServiceHours && day.shiftCount > 0;
+  const cardMinHeightRem = showAreaRows
+    ? dayCardMinHeightRem(day.areas.length)
+    : (emptyDayReferenceMinHeightRem ?? dayCardMinHeightRem(areaCount));
 
   return (
     <div
@@ -921,8 +620,8 @@ function DayCard({
       }}
       style={{ minHeight: `${cardMinHeightRem}rem` }}
       className={cn(
-        "group relative flex w-full cursor-pointer flex-col overflow-hidden text-left transition-colors",
-        embeddedInWeekTray ? "min-w-0 h-auto" : "h-full min-h-0",
+        "group relative flex w-full cursor-pointer flex-col overflow-hidden text-left",
+        embeddedInWeekTray ? "min-w-0 h-auto" : "h-full min-h-0 transition-colors",
         embeddedInWeekTray
           ? D3_DAY_CARD_WEEK_TRAY_CLASS
           : cn(
@@ -935,15 +634,18 @@ function DayCard({
     >
       <div
         className={cn(
-          D3_DAY_CARD_HEADER_SLOT_CLASS,
+          embeddedInWeekTray
+            ? D3_DAY_CARD_WEEK_TRAY_HEADER_SLOT_CLASS
+            : D3_DAY_CARD_HEADER_SLOT_CLASS,
           "relative",
-          embeddedInWeekTray && "px-2.5 py-2 sm:px-3.5 sm:py-2.5"
+          embeddedInWeekTray && "px-2.5 py-2 sm:px-3.5 sm:py-2.5",
+          isWeekTrayNoServiceDay && D3_DAY_CARD_WEEK_TRAY_NO_SERVICE_HEADER_CLASS
         )}
       >
         {showStatusDot ? (
           <span
             className={cn(
-              D3_DAY_CARD_STATUS_DOT_CLASS,
+              STATUS_SPHERE_DOT_FRAME_CLASS,
               dayCardStatusDotClass(day),
               "absolute top-2.5 right-2.5 sm:top-3.5 sm:right-3.5"
             )}
@@ -985,24 +687,33 @@ function DayCard({
 
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col transition-colors",
+          "flex min-h-0 flex-1 flex-col",
           "min-w-0",
           embeddedInWeekTray
             ? "px-2.5 pb-3 pt-3 sm:px-3.5 sm:pb-4 sm:pt-4"
-            : "px-3.5 pb-4 pt-4",
-          isPastDay
-            ? D3_DAY_CARD_BODY_PAST_SURFACE_CLASS
-            : cn("bg-white", D3_DAY_CARD_BODY_HOVER_SURFACE_CLASS)
+            : "px-3.5 pb-4 pt-4 transition-colors",
+          embeddedInWeekTray
+            ? isWeekTrayNoServiceDay
+              ? D3_DAY_CARD_WEEK_TRAY_NO_SERVICE_BODY_CLASS
+              : isPastDay
+                ? "bg-[#e8ebf0]"
+                : "bg-white"
+            : isPastDay
+              ? D3_DAY_CARD_BODY_PAST_SURFACE_CLASS
+              : cn("bg-white", D3_DAY_CARD_BODY_HOVER_SURFACE_CLASS)
         )}
       >
         <div className="min-h-0 flex-1">
-          {!day.hasServiceHours ? (
-            <p className="text-[11px] font-medium leading-snug text-foreground/70">
-              Keine Servicezeiten
-            </p>
-          ) : day.shiftCount === 0 ? (
-            <p className="text-[11px] leading-snug text-muted/80">
-              Keine Schichten
+          {!showAreaRows ? (
+            <p
+              className={cn(
+                "text-[11px] leading-snug",
+                !day.hasServiceHours
+                  ? "font-medium text-foreground/70"
+                  : "text-muted/80"
+              )}
+            >
+              {!day.hasServiceHours ? "Keine Servicezeiten" : "Keine Schichten"}
             </p>
           ) : (
             <div className="flex flex-col items-start gap-y-2">
@@ -1020,27 +731,39 @@ function DayCard({
                       onAreaClick(area.areaId);
                     }}
                   >
-                    <div className="flex h-5 w-6 shrink-0 items-center justify-center">
-                      {area.hasServiceHours ? (
-                        <DayCardAreaAmpelIcon level={area.ampelLevel} muted={false} />
-                      ) : (
-                        <span className={D3_STAFFING_STROKE_ICON_CLASS} aria-hidden />
-                      )}
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center">
+                      <DayCardAreaStaffingIndicator
+                        area={area}
+                        embeddedInWeekTray={embeddedInWeekTray}
+                        staffingEnabled={staffingEnabled}
+                      />
                     </div>
-                    <span className="min-h-5 min-w-0 truncate text-[11px] leading-5 text-foreground/75">
+                    <span
+                      className={
+                        embeddedInWeekTray
+                          ? D3_DAY_CARD_WEEK_TRAY_AREA_NAME_CLASS
+                          : D3_DAY_CARD_AREA_NAME_CLASS
+                      }
+                    >
                       {area.areaName}
                     </span>
                   </button>
                 ) : (
                   <div key={area.areaId} className={D3_DAY_CARD_AREA_ROW_STATIC_CLASS}>
-                    <div className="flex h-5 w-6 shrink-0 items-center justify-center">
-                      {area.hasServiceHours ? (
-                        <DayCardAreaAmpelIcon level={area.ampelLevel} muted={false} />
-                      ) : (
-                        <span className={D3_STAFFING_STROKE_ICON_CLASS} aria-hidden />
-                      )}
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center">
+                      <DayCardAreaStaffingIndicator
+                        area={area}
+                        embeddedInWeekTray={embeddedInWeekTray}
+                        staffingEnabled={staffingEnabled}
+                      />
                     </div>
-                    <span className="min-h-5 min-w-0 truncate text-[11px] leading-5 text-foreground/75">
+                    <span
+                      className={
+                        embeddedInWeekTray
+                          ? D3_DAY_CARD_WEEK_TRAY_AREA_NAME_CLASS
+                          : D3_DAY_CARD_AREA_NAME_CLASS
+                      }
+                    >
                       {area.areaName}
                     </span>
                   </div>
@@ -1049,55 +772,15 @@ function DayCard({
             </div>
           )}
         </div>
-        {showFooterDivider ? (
-          <div className="mt-3 shrink-0 space-y-2 border-t border-black/[0.08] pt-3">
-            {showConfirmationChips ? (
-              <DayCardConfirmationChips counts={day.confirmationCounts} t={t} />
-            ) : null}
-
-            {showOpenSlots ? (
-              <div className="flex items-baseline gap-1">
-                <span className="font-mono text-[13px] font-bold tabular-nums leading-none text-red-600/90">
-                  {day.openSlots}
-                </span>
-                <span className="text-[11px] font-medium leading-snug text-foreground/70">
-                  offen
-                </span>
-              </div>
-            ) : null}
+        {footerAreaSections.length > 0 ? (
+          <div className="mt-3 shrink-0 border-t border-black/[0.08] pt-3">
+            <DayCardFooterByArea
+              sections={footerAreaSections}
+              onAreaClick={onAreaClick}
+              t={t}
+            />
           </div>
         ) : null}
-      </div>
-    </div>
-  );
-}
-
-// ── Ampel legend ───────────────────────────────────────────────────────────
-
-function AmpelLegend() {
-  return (
-    <div
-      className={cn(
-        "sticky bottom-0 z-10 mt-auto -mx-4 shrink-0 border-t border-border bg-background px-4 py-3 md:-mx-6 md:px-6"
-      )}
-    >
-      <div className="flex flex-wrap items-center gap-4">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted">
-          Legende:
-        </span>
-        {(
-          [
-            { level: "met" as DashboardAreaAmpelLevel, label: "Vollbesetzt" },
-            { level: "partial" as DashboardAreaAmpelLevel, label: "Teilweise" },
-            { level: "critical" as DashboardAreaAmpelLevel, label: "Kritisch" },
-            { level: "no_demand" as DashboardAreaAmpelLevel, label: "Kein Bedarf" },
-          ] as const
-        ).map(({ level, label }) => (
-          <div key={level} className="flex items-center gap-1.5">
-            {ampelDot(level)}
-            <span className="text-xs text-muted">{label}</span>
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -1121,6 +804,8 @@ type Props = {
   qualifications: Qualification[];
   profileQualificationIds: Record<string, string[]>;
   showLocationInUi?: boolean;
+  communicationSwapRequests?: CommunicationSwapRequestRow[];
+  onOpenSwapRequests?: () => void;
 };
 
 export function DashboardOverviewView({
@@ -1139,6 +824,8 @@ export function DashboardOverviewView({
   qualifications,
   profileQualificationIds,
   showLocationInUi = true,
+  communicationSwapRequests = [],
+  onOpenSwapRequests,
 }: Props) {
   useClearMainNavPendingWhenReady(true);
   const router = useRouter();
@@ -1149,6 +836,7 @@ export function DashboardOverviewView({
   const intlLocale = toIntlLocale(locale);
   const features = useOrgFeatures();
   const organization = useOrganization();
+  const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const simplePlanning = !features.areas;
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const activeWeekStart = planningWeekStartFromParam(
@@ -1421,6 +1109,11 @@ export function DashboardOverviewView({
     [employees]
   );
 
+  const employeeColorById = useMemo(
+    () => new Map(employees.map((profile) => [profile.id, profile.color] as const)),
+    [employees]
+  );
+
   const formatStaffingTimeLabel = useCallback(
     (weekdayLabel: string, startTime: string, endTime: string) =>
       t("areaCalendar.bulkShiftStaffingPeriodLabel", {
@@ -1497,12 +1190,11 @@ export function DashboardOverviewView({
 
   const { days } = snapshot;
 
-  const coveragePct =
-    rollup.requiredTotal > 0
-      ? Math.round((rollup.assignedTotal / rollup.requiredTotal) * 100)
-      : null;
-
-  const todayDay = days.find((d) => d.isToday);
+  const weekTrayEmptyDayCardMinHeight = weekTrayEmptyDayCardMinHeightRem(
+    days,
+    shiftConfirmationEnabled,
+    planningAreas.length
+  );
 
   const drilldownDayIndex = resolveDashboardDrilldownDayIndex(
     view.level,
@@ -1569,6 +1261,7 @@ export function DashboardOverviewView({
           formatCalendarTimeLabel: formatCalendarStaffingTimeLabel,
           formatCriticalWindowLabel,
           formatWeekdayLabel,
+          swapRequests: communicationSwapRequests,
         });
       })
     );
@@ -1591,6 +1284,7 @@ export function DashboardOverviewView({
     formatCalendarStaffingTimeLabel,
     formatCriticalWindowLabel,
     formatWeekdayLabel,
+    communicationSwapRequests,
   ]);
 
   const visibleDayAreaStats = useMemo(() => {
@@ -1700,6 +1394,7 @@ export function DashboardOverviewView({
         qualifications,
         profileQualificationIds: profileQualificationIdsMap,
         employeeNameById,
+        employeeColorById,
         readOnlyWeek: snapshot.readOnlyWeek,
         formatTimeLabel: formatStaffingTimeLabel,
         weekdayLabel: staffingWeekdayLabel,
@@ -1725,6 +1420,7 @@ export function DashboardOverviewView({
       qualifications,
       profileQualificationIdsMap,
       employeeNameById,
+      employeeColorById,
       formatStaffingTimeLabel,
       staffingWeekdayLabel,
       formatCalendarStaffingTimeLabel,
@@ -1750,7 +1446,9 @@ export function DashboardOverviewView({
         calendarShifts,
         serviceHours,
         employeeNameById,
+        employeeColorById,
         shiftConfirmationEnabled,
+        pendingAfterMinutes,
         readOnlyWeek: snapshot.readOnlyWeek,
         todayISO,
       };
@@ -1758,11 +1456,13 @@ export function DashboardOverviewView({
     [
       selectedLocationId,
       shiftConfirmationEnabled,
+      pendingAfterMinutes,
       drilldownDateISO,
       activeWeekStart,
       calendarShifts,
       serviceHours,
       employeeNameById,
+      employeeColorById,
       snapshot.readOnlyWeek,
       todayISO,
     ]
@@ -1841,6 +1541,7 @@ export function DashboardOverviewView({
         areaCalendarHref,
         dates: statsDates,
         shiftConfirmationEnabled,
+        pendingAfterMinutes,
         todayISO,
       };
     },
@@ -1853,6 +1554,7 @@ export function DashboardOverviewView({
       planningWeekDates,
       buildCandidatesPlanning,
       shiftConfirmationEnabled,
+      pendingAfterMinutes,
       todayISO,
     ]
   );
@@ -1905,19 +1607,10 @@ export function DashboardOverviewView({
   );
 
   const renderDayDrilldownAreaSlot = (stats: DashboardAreaWeekStats) => (
-    <div key={`${stats.areaId}-${activeWeekStart}-${detailDayISO ?? drilldownDateISO ?? ""}`} className="flex min-w-0 max-w-full flex-col gap-2">
-      <div className="flex min-w-0 max-w-full justify-end">
-        <D3AreaScopeToggle
-          scope={getAreaDetailScope(stats.areaId)}
-          dayLabel={areaScopeDayToggleLabel}
-          weekLabel={areaScopeWeekLabel}
-          weekShortLabel={areaScopeWeekShortLabel}
-          onScopeChange={(scope) =>
-            setAreaDetailScopeForArea(stats.areaId, scope)
-          }
-        />
-      </div>
-      <div className="min-w-0 max-w-full">
+    <div
+      key={`${stats.areaId}-${activeWeekStart}-${detailDayISO ?? drilldownDateISO ?? ""}`}
+      className="min-w-0 max-w-full"
+    >
       <DashboardAreaAmpelCard
         stats={stats}
         staffingEnabled={snapshot.staffingEnabled}
@@ -1959,8 +1652,17 @@ export function DashboardOverviewView({
             ? () => setAssignmentOverviewAreaId(stats.areaId)
             : undefined
         }
+        onOpenSwapRequests={onOpenSwapRequests}
+        statusFooterLayout="two-column"
+        areaScopeToggle={{
+          scope: getAreaDetailScope(stats.areaId),
+          dayLabel: areaScopeDayToggleLabel,
+          weekLabel: areaScopeWeekLabel,
+          weekShortLabel: areaScopeWeekShortLabel,
+          onScopeChange: (scope) =>
+            setAreaDetailScopeForArea(stats.areaId, scope),
+        }}
       />
-      </div>
     </div>
   );
 
@@ -1998,28 +1700,39 @@ export function DashboardOverviewView({
       {/* ── WEEK VIEW ────────────────────────────────────────────── */}
       {view.level === "week" && (
         <div className="flex min-w-0 max-w-full flex-col gap-5 pb-0">
+          <DashboardOpsCommandBar
+            snapshot={snapshot}
+            issueCount={snapshot.issues.length}
+          />
+
           {/* Day cards */}
           {days.length === 0 ? (
-            <div className={cn(D3_WEEK_TRAY_CLASS, "px-6 py-10 text-center text-sm text-muted")}>
+            <div
+              className={cn(
+                D3_WEEK_TRAY_CLASS,
+                D3_WEEK_TRAY_CONTENT_SURFACE_CLASS,
+                "px-6 py-10 text-center text-sm text-muted"
+              )}
+            >
               Keine Schichten in dieser Woche
             </div>
           ) : (
             <div className={D3_WEEK_TRAY_CLASS}>
               <div className={D3_WEEK_TRAY_HEADER_CLASS}>
-                <p className="text-sm font-semibold leading-snug text-black sm:text-base">
-                  {t("dashboard.weekTrayHeaderIntro")}
-                </p>
-                <p className="flex items-baseline justify-center gap-x-1.5 whitespace-nowrap">
-                  <span className="text-base font-semibold tabular-nums text-black">
+                <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                  <span className="shrink-0 font-medium text-muted">
+                    {t("dashboard.weekTrayHeaderIntro")}
+                  </span>
+                  <span className="shrink-0 text-base font-semibold tabular-nums text-foreground sm:text-lg">
                     {t("dashboard.headerCalendarWeek", {
                       week: String(weekTrayHeader.calendarWeek),
                     })}
                   </span>
-                  <span className="text-xs font-medium leading-snug text-black">
+                  <span className="min-w-0 truncate text-xs font-semibold text-foreground sm:text-sm">
                     {weekTrayHeader.rangeLabel}
                   </span>
                   {isCurrentWeek ? (
-                    <span className="text-[10px] leading-none text-black">
+                    <span className="shrink-0 text-[10px] font-semibold leading-none text-blue-600 sm:text-xs">
                       {t("common.currentWeekHint")}
                     </span>
                   ) : null}
@@ -2038,6 +1751,7 @@ export function DashboardOverviewView({
                       staffingEnabled={snapshot.staffingEnabled}
                       shiftConfirmationEnabled={shiftConfirmationEnabled}
                       embeddedInWeekTray
+                      emptyDayReferenceMinHeightRem={weekTrayEmptyDayCardMinHeight}
                       holidayName={holidayNames[day.dateISO] ?? null}
                       onClick={() => {
                         openDayDrilldown(i, null);
@@ -2058,16 +1772,6 @@ export function DashboardOverviewView({
             </div>
           )}
 
-          {/* Kennzahlen */}
-          <div className="border-t border-black/15 pt-4">
-            <D3WeekSummaryMetrics
-              todayDay={todayDay}
-              coveragePct={coveragePct}
-              rollup={rollup}
-            />
-          </div>
-
-          <AmpelLegend />
         </div>
       )}
 

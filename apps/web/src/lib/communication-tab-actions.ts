@@ -17,6 +17,7 @@ const CATEGORY_ACTIONS: Record<
   rejected: ["delete"],
   pending: ["cancel", "requestConfirmation"],
   canceled: ["delete"],
+  unresolved: ["delete"],
 };
 
 export function communicationTabActions(

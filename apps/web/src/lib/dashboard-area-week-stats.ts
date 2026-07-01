@@ -24,6 +24,7 @@ import {
   isTagAreaHeaderStaffingEntryOverstaffed,
   isTagAreaHeaderStaffingEntryPlannedCoverage,
   isTagAreaHeaderStaffingEntryUnderstaffed,
+  resolveStaffingFillGaugeVariant,
   type StaffingFillGaugeVariant,
 } from "@/lib/tag-area-header-staffing-display";
 import type {
@@ -35,12 +36,16 @@ import type {
   ShiftConfirmationStatus,
 } from "@schichtwerk/types";
 import {
+  aggregateConfirmationCountsForDates,
   buildStaffingWindowConfirmationCountsByKey,
   collectAreaConfirmationConflictStatuses,
   staffingWindowConfirmationCountsKey,
+  type DashboardDayConfirmationCounts,
   type DashboardStaffingWindowConfirmationCounts,
 } from "@/lib/dashboard-day-confirmation-counts";
 import type { DashboardActionableConfirmationStatus } from "@/lib/dashboard-confirmation-employee-dedupe";
+import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
+import { countSwapRequestsForAreaDates } from "@/lib/dashboard-area-status-footer-lines";
 
 export type DashboardAreaAmpelLevel =
   | "no_demand"
@@ -67,7 +72,10 @@ export type DashboardStaffingWindowRow = {
   timeFrom: string;
   timeTo: string;
   shiftName: string;
+  /** Anzeige-Besetzt (projiziert, wenn geplant noch nicht bestätigt). */
   assigned: number;
+  /** Bestätigte Besetzung — für Farbe bei Teildeckung. */
+  confirmedAssigned?: number;
   required: number;
   status: DashboardStaffingWindowRowStatus;
   /** Personal-Konflikt (falsche Quali, …) — Kandidaten-Button in der Zeile. */
@@ -119,6 +127,8 @@ export type DashboardAreaWeekStats = {
   staffingWindowRows: DashboardStaffingWindowRow[];
   staffingIssues: DashboardStaffingIssue[];
   confirmationConflictStatuses: DashboardActionableConfirmationStatus[];
+  confirmationCounts: DashboardDayConfirmationCounts;
+  swapRequestedCount: number;
   grossHours: number;
   breakHours: number;
   totalHours: number;
@@ -196,6 +206,7 @@ export type ComputeDashboardAreaWeekStatsInput = {
   ) => string;
   formatWeekdayLabel?: (dateISO: string) => string;
   employeeNameById?: ReadonlyMap<string, string>;
+  swapRequests?: readonly CommunicationSwapRequestRow[];
 };
 
 type DashboardStaffingIssueTranslator = (
@@ -484,6 +495,64 @@ export function resolveDashboardAreaAmpelLevelFromWindowRows(
   });
 }
 
+export type DashboardDayAreaStaffingGauge = {
+  assigned: number;
+  required: number;
+  variant: StaffingFillGaugeVariant;
+};
+
+/** Aggregierter Füllstand für eine Tageskarte (Wochentray) — wie im Mitarbeiter-Kalender. */
+export function resolveDashboardDayAreaStaffingGaugeFromWindowRows(
+  rows: readonly DashboardStaffingWindowRow[]
+): DashboardDayAreaStaffingGauge | null {
+  if (rows.length === 0) return null;
+
+  let assignedTotal = 0;
+  let requiredTotal = 0;
+  let hasUnderstaffed = false;
+  let hasOverstaffed = false;
+  let hasPlannedCoverage = false;
+  let hasAssignmentMismatch = false;
+
+  for (const row of rows) {
+    if (row.rowKind === "no_service_hours") {
+      if (row.hasUnplannedShifts) hasPlannedCoverage = true;
+      continue;
+    }
+    if (row.required <= 0) continue;
+
+    requiredTotal += row.required;
+    assignedTotal += row.assigned;
+
+    if (row.status === "understaffed") {
+      hasUnderstaffed = true;
+    }
+    if (row.status === "planned") {
+      hasPlannedCoverage = true;
+    }
+    if (row.status === "overstaffed") {
+      if (row.staffingConflicts?.length) {
+        hasAssignmentMismatch = true;
+      } else {
+        hasOverstaffed = true;
+      }
+    }
+  }
+
+  if (requiredTotal <= 0) return null;
+
+  return {
+    assigned: assignedTotal,
+    required: requiredTotal,
+    variant: resolveStaffingFillGaugeVariant({
+      understaffed: hasUnderstaffed,
+      overstaffed: hasOverstaffed,
+      assignmentMismatch: hasAssignmentMismatch,
+      plannedCoverage: hasPlannedCoverage,
+    }),
+  };
+}
+
 function ampelLevelToGaugeVariant(level: DashboardAreaAmpelLevel): StaffingFillGaugeVariant {
   switch (level) {
     case "met":
@@ -520,7 +589,21 @@ function resolveStaffingWindowRowStatus(input: {
   return "met";
 }
 
-/** Besetzt-Anzeige in Tabellenzeilen — wie Füllstandsanzeiger im Einsatzortkalender. */
+/** Zeile hat geplante, noch nicht bestätigte Schichten (Teil- oder Voldeckung). */
+export function staffingWindowRowHasUnconfirmedPlannedCoverage(
+  row: Pick<
+    DashboardStaffingWindowRow,
+    "rowKind" | "status" | "assigned" | "confirmedAssigned"
+  >
+): boolean {
+  if (row.rowKind !== "staffing_window") return false;
+  if (row.status === "planned") return true;
+  if (row.status !== "understaffed") return false;
+  const confirmed = row.confirmedAssigned ?? 0;
+  return row.assigned > confirmed;
+}
+
+/** Besetzt-Anzeige in Tabellenzeilen — wie Füllstandsanzeiger im Einsatzbereichkalender. */
 export function staffingWindowRowDisplayAssigned(
   entry: TagAreaHeaderStaffingEntry,
   _status?: DashboardStaffingWindowRowStatus
@@ -769,6 +852,7 @@ export function computeDashboardAreaWeekStats(
             timeTo,
             shiftName: entryShiftLabel(entry),
             assigned: staffingWindowRowDisplayAssigned(entry, rowStatus),
+            confirmedAssigned: entry.assigned,
             required: entry.required,
             status: rowStatus,
             hasConflict: rowAssignmentIssues.conflicts.length > 0,
@@ -846,6 +930,17 @@ export function computeDashboardAreaWeekStats(
     dates,
     serviceHours ?? []
   );
+  const confirmationCounts = aggregateConfirmationCountsForDates(
+    areaPlanningShifts,
+    dates,
+    area.id
+  );
+  const swapRequestedCount = countSwapRequestsForAreaDates({
+    swapRequests: input.swapRequests ?? [],
+    shifts: areaPlanningShifts,
+    areaId: area.id,
+    dateISOs: dates,
+  });
 
   return {
     areaId: area.id,
@@ -862,6 +957,8 @@ export function computeDashboardAreaWeekStats(
     staffingWindowRows: sortStaffingWindowRows(staffingWindowRows),
     staffingIssues: sortDashboardStaffingIssues(staffingIssues),
     confirmationConflictStatuses,
+    confirmationCounts,
+    swapRequestedCount,
     totalHours,
     grossHours,
     breakHours,

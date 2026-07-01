@@ -30,6 +30,7 @@ export function resolveCalendarShiftConfirmationStatus(input: {
   requestedAt?: string | null;
   shiftDateISO: string;
   now?: Date;
+  pendingAfterMinutes?: number;
 }): ShiftConfirmationStatus | undefined {
   if (input.status === "unresolved") return "unresolved";
 
@@ -37,7 +38,8 @@ export function resolveCalendarShiftConfirmationStatus(input: {
     resolveEffectiveConfirmationStatus(
       input.status,
       input.requestedAt,
-      input.now
+      input.now,
+      input.pendingAfterMinutes
     ) ?? input.status ?? undefined;
 
   if (!effective) return undefined;

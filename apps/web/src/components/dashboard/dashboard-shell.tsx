@@ -286,6 +286,8 @@ export function DashboardShell({
         qualifications={qualifications}
         profileQualificationIds={profileQualificationIds}
         showLocationInUi={showLocationInUi}
+        communicationSwapRequests={communicationSwapRequests}
+        onOpenSwapRequests={() => openCommunication({ category: "swaps" })}
       />
       {communicationOpen && selectedLocationId ? (
         <CommunicationHubModal

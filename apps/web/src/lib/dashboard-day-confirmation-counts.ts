@@ -47,12 +47,23 @@ export function resolveShiftConfirmationStatusForCount(
 
 export function aggregateConfirmationCountsForDay(
   shifts: readonly PlanningShift[],
-  dateISO: string
+  dateISO: string,
+  areaId?: string
+): DashboardDayConfirmationCounts {
+  return aggregateConfirmationCountsForDates(shifts, [dateISO], areaId);
+}
+
+export function aggregateConfirmationCountsForDates(
+  shifts: readonly PlanningShift[],
+  dateISOs: readonly string[],
+  areaId?: string
 ): DashboardDayConfirmationCounts {
   const counts = emptyDashboardDayConfirmationCounts();
+  const dateSet = new Set(dateISOs);
 
   for (const shift of shifts) {
-    if (shift.shift_date !== dateISO) continue;
+    if (!dateSet.has(shift.shift_date)) continue;
+    if (areaId !== undefined && shift.location_area_id !== areaId) continue;
     const status = resolveShiftConfirmationStatusForCount(shift.confirmationStatus);
     counts[status] += 1;
   }

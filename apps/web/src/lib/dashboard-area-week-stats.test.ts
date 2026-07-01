@@ -4,8 +4,10 @@ import {
   computeDashboardAreaWeekStats,
   computeDashboardLocationWeekRollup,
   resolveDashboardAreaAmpelLevelFromWindowRows,
+  resolveDashboardDayAreaStaffingGaugeFromWindowRows,
   sortDashboardAreaWeekStats,
   staffingWindowRowDisplayAssigned,
+  staffingWindowRowHasUnconfirmedPlannedCoverage,
 } from "./dashboard-area-week-stats";
 
 const testDate = "2026-06-16";
@@ -44,6 +46,18 @@ describe("staffingWindowRowDisplayAssigned", () => {
         assigned: 1,
         projectedAssigned: 1,
         required: 1,
+      })
+    ).toBe(1);
+  });
+
+  it("shows projected count for partial planned understaffed rows", () => {
+    expect(
+      staffingWindowRowDisplayAssigned({
+        serviceHourId: "hour-frueh",
+        label: "Früh",
+        assigned: 0,
+        projectedAssigned: 1,
+        required: 2,
       })
     ).toBe(1);
   });
@@ -217,6 +231,72 @@ describe("computeDashboardAreaWeekStats", () => {
       "planned",
     ]);
     expect(stats.staffingWindowRows.map((row) => row.assigned)).toEqual([2, 1]);
+  });
+
+  it("shows partial planned coverage as 1/2 with unconfirmed planned flag", () => {
+    const tourDate = "2026-07-08";
+    const tourWeekday = weekdayIndexFromDate(tourDate);
+    const hourFrueh = "hour-frueh";
+    const qualPflege = "qual-pflege";
+
+    const stats = computeDashboardAreaWeekStats({
+      area: { ...baseArea, id: "area-tour-1", name: "Tour 1" },
+      dates: [tourDate],
+      shifts: [
+        {
+          id: "s-frueh-1",
+          employee_id: "e1",
+          shift_date: tourDate,
+          shiftName: "Früh",
+          color: "#000",
+          startTime: "08:00",
+          endTime: "17:00",
+          location_area_id: "area-tour-1",
+          area_shift_template_id: null,
+          confirmationStatus: "proposed",
+        },
+      ],
+      staffingRules: [
+        {
+          id: "rule-frueh",
+          location_area_id: "area-tour-1",
+          service_hour_id: hourFrueh,
+          qualification_id: qualPflege,
+          required_count: 2,
+        },
+      ],
+      staffingOverrides: [],
+      serviceHours: [
+        {
+          id: hourFrueh,
+          location_area_id: "area-tour-1",
+          weekday: tourWeekday,
+          start_time: "08:00",
+          end_time: "17:00",
+        },
+      ],
+      areaShiftTemplates: [],
+      qualifications: [{ id: qualPflege, name: "Pflege", sort_order: 0 }],
+      profileQualificationIds: new Map([["e1", new Set([qualPflege])]]),
+      compensationByKey: {},
+      staffingEnabled: true,
+      formatTimeLabel: (weekday, start, end) => `${weekday} ${start}-${end}`,
+      weekdayLabel: () => "Di",
+      formatCalendarTimeLabel: (start, end) => `${start}-${end}`,
+      formatWeekdayLabel: () => "Di.",
+    });
+
+    const row = stats.staffingWindowRows.find(
+      (item) => item.rowKind === "staffing_window"
+    );
+    expect(row).toMatchObject({
+      assigned: 1,
+      confirmedAssigned: 0,
+      required: 2,
+      status: "understaffed",
+    });
+    expect(staffingWindowRowHasUnconfirmedPlannedCoverage(row!)).toBe(true);
+    expect(stats.openSlots).toBe(1);
   });
 
   it("counts shifts only for the requested dates scope", () => {
@@ -906,5 +986,63 @@ describe("resolveDashboardAreaAmpelLevelFromWindowRows", () => {
     expect(resolveDashboardAreaAmpelLevelFromWindowRows(partialDayRows)).toBe(
       "partial"
     );
+  });
+});
+
+describe("resolveDashboardDayAreaStaffingGaugeFromWindowRows", () => {
+  it("aggregates assigned/required and maps planned coverage to gauge variant", () => {
+    const rows = [
+      {
+        rowKind: "staffing_window" as const,
+        dateISO: "2026-06-25",
+        serviceHourId: "hour-1",
+        weekdayLabel: "Do.",
+        timeFrom: "12:00",
+        timeTo: "15:00",
+        shiftName: "Mittel",
+        assigned: 1,
+        required: 2,
+        status: "planned" as const,
+        hasConflict: false,
+      },
+      {
+        rowKind: "staffing_window" as const,
+        dateISO: "2026-06-25",
+        serviceHourId: "hour-2",
+        weekdayLabel: "Do.",
+        timeFrom: "18:00",
+        timeTo: "22:00",
+        shiftName: "Abend",
+        assigned: 2,
+        required: 2,
+        status: "met" as const,
+        hasConflict: false,
+      },
+    ];
+
+    expect(resolveDashboardDayAreaStaffingGaugeFromWindowRows(rows)).toEqual({
+      assigned: 3,
+      required: 4,
+      variant: "planned",
+    });
+  });
+
+  it("returns null when there is no staffing demand", () => {
+    expect(
+      resolveDashboardDayAreaStaffingGaugeFromWindowRows([
+        {
+          rowKind: "no_service_hours",
+          dateISO: "2026-06-25",
+          serviceHourId: "",
+          weekdayLabel: "Do.",
+          timeFrom: "",
+          timeTo: "",
+          shiftName: "",
+          assigned: 0,
+          required: 0,
+          status: "met",
+        },
+      ])
+    ).toBeNull();
   });
 });

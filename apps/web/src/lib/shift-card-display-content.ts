@@ -19,7 +19,7 @@ export type ShiftCardDisplayInput = {
 
 export type ShiftCardTooltipFormatOptions = {
   assignmentPresets?: readonly AreaCalendarAssignmentPreset[];
-  /** Fester Einsatzort (eine Bereichszeile). */
+  /** Fester Einsatzbereich (eine Bereichszeile). */
   areaName?: string;
   /** Lookup für Schichten mit locationAreaId (z. B. einfache Planung). */
   areaNameById?: ReadonlyMap<string, string>;
@@ -53,7 +53,7 @@ export function formatShiftCardTooltipJobLine(names: string): string {
 
 export type ShiftCardTooltipData = {
   employeeName?: string;
-  /** Einsatzort (Mitarbeiter-Kalender). */
+  /** Einsatzbereich (Mitarbeiter-Kalender). */
   areaName?: string;
   shiftTemplateName?: string | null;
   /** Schichtname ohne passende Vorlage (Bereich-Kalender). */

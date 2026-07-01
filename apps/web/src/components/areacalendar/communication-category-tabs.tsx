@@ -25,7 +25,7 @@ export function CommunicationCategoryTabs({
 }: Props) {
   return (
     <div
-      className="flex flex-wrap gap-1.5 border-b border-border"
+      className="flex flex-nowrap gap-1 overflow-x-auto overflow-y-hidden border-b border-border"
       role="tablist"
       aria-label="Schicht-Stati"
     >
@@ -43,7 +43,7 @@ export function CommunicationCategoryTabs({
             disabled={disabled}
             onClick={() => onSelect(category)}
             className={cn(
-              "relative -mb-px flex items-center gap-2 rounded-t-lg border px-3 py-2.5 text-sm font-semibold transition-colors",
+              "relative -mb-px flex shrink-0 items-center gap-1.5 rounded-t-lg border px-2.5 py-2 text-sm font-semibold transition-colors",
               selected
                 ? cn(
                     communicationHubCategoryPanelClass(category),

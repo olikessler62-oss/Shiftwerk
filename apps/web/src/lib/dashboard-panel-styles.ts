@@ -1,11 +1,16 @@
 import { cn } from "@/lib/cn";
 
-/** Dashboard-Flächen — max. 5px Radius, nur angedeutet. */
-export const DASHBOARD_PANEL_ROUNDED_CLASS = "rounded-[5px]";
+/** Einheitlicher Radius für Modals und Dashboard-Flächen (5px). */
+export const MODAL_ROUNDED_CLASS = "rounded-[5px]";
 
-/** Modal-Dialoge im Dashboard (überschreibt Shell-`rounded-2xl`). */
-export const DASHBOARD_MODAL_ROUNDED_CLASS =
-  "rounded-[5px] max-sm:rounded-none";
+/** Dashboard-Flächen — max. 5px Radius, nur angedeutet. */
+export const DASHBOARD_PANEL_ROUNDED_CLASS = MODAL_ROUNDED_CLASS;
+
+/** Modal-Dialoge im Dashboard auf schmalen Viewports ohne Radius. */
+export const DASHBOARD_MODAL_ROUNDED_CLASS = cn(
+  MODAL_ROUNDED_CLASS,
+  "max-sm:rounded-none"
+);
 
 /** Drilldown-Bereichskarten + Wochenübersicht-Tagkarten — einheitlicher Kopf. */
 export const DASHBOARD_AREA_CARD_HEADER_SURFACE_CLASS = "bg-[#c7d4e5]";

@@ -30,7 +30,7 @@ type Props = {
   /** Anzeige, wenn value nicht in days (z. B. aktiver Drilldown-Tag). */
   valueLabel?: string | null;
   onChange: (value: string) => void;
-  /** „Woche“ nur bei genau einer sichtbaren Einsatzort-Karte. */
+  /** „Woche“ nur bei genau einer sichtbaren Einsatzbereich-Karte. */
   showWeekOption?: boolean;
   /** Gemessene Breite des Buttons „Wochenübersicht“ — Standardbreite der Combobox. */
   referenceWidthPx?: number | null;

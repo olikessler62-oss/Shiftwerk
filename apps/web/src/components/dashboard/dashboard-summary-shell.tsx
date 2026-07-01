@@ -161,6 +161,11 @@ export function DashboardSummaryShell({
     [employees]
   );
 
+  const employeeColorById = useMemo(
+    () => new Map(employees.map((employee) => [employee.id, employee.color] as const)),
+    [employees]
+  );
+
   const communicationShiftCards = useMemo(() => {
     const cards: AreaCalendarShiftCard[] = [];
     for (const shift of visibleCommunicationHubLocationShifts) {
@@ -297,6 +302,7 @@ export function DashboardSummaryShell({
         qualifications={qualifications}
         profileQualificationIds={profileQualificationIds}
         employeeNameById={employeeNameById}
+        employeeColorById={employeeColorById}
         staffingEnabled={features.staffing}
         readOnlyWeek={readOnlyWeek}
         settingsModals={settingsModals}

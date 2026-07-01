@@ -34,15 +34,14 @@ type Props = {
 };
 
 const ROW_GRID_CLASS =
-  "grid grid-cols-[10rem_minmax(0,1.25fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_minmax(0,1.3fr)] items-center gap-x-4";
+  "grid grid-cols-[2.75rem_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,0.75fr)_minmax(0,0.85fr)] items-center gap-x-3";
 
 const LIST_MAX_HEIGHT_CLASS = "max-h-40";
 
 const CELL_CLASS = "min-w-0 truncate text-left text-sm";
 const HEADER_CELL_CLASS =
   "min-w-0 truncate text-left text-xs font-semibold uppercase tracking-wide text-muted";
-const CHECKBOX_LABEL_CLASS =
-  "flex shrink-0 items-center gap-2 whitespace-nowrap text-left text-xs text-muted";
+const CHECKBOX_CELL_CLASS = "inline-flex shrink-0 items-center justify-center";
 
 function statusLabelKey(
   row: ConfirmationSendShiftRow
@@ -290,7 +289,7 @@ export function AreaCalendarSendConfirmationModal({
 
                     return (
                       <li key={row.shiftId} className={cn(ROW_GRID_CLASS, "px-3 py-2")}>
-                        <label className={CHECKBOX_LABEL_CLASS}>
+                        <label className={CHECKBOX_CELL_CLASS}>
                           <input
                             type="checkbox"
                             className="h-4 w-4 shrink-0 rounded border-border"
@@ -299,7 +298,6 @@ export function AreaCalendarSendConfirmationModal({
                             onChange={() => toggleShift(row.shiftId)}
                             aria-label={t("shiftConfirmation.send.rowRequestConfirmation")}
                           />
-                          <span>{t("shiftConfirmation.send.rowRequestConfirmation")}</span>
                         </label>
                         <span
                           className={cn(
@@ -348,7 +346,7 @@ export function AreaCalendarSendConfirmationModal({
                     "border-t border-border px-3 py-2"
                   )}
                 >
-                  <label className={CHECKBOX_LABEL_CLASS}>
+                  <label className={CHECKBOX_CELL_CLASS}>
                     <input
                       type="checkbox"
                       className="h-4 w-4 shrink-0 rounded border-border"
@@ -363,7 +361,6 @@ export function AreaCalendarSendConfirmationModal({
                       onChange={(event) => toggleAllSendable(event.target.checked)}
                       aria-label={t("shiftConfirmation.send.selectAll")}
                     />
-                    <span>{t("shiftConfirmation.send.selectAll")}</span>
                   </label>
                   <span aria-hidden className="min-w-0" />
                   <span aria-hidden className="min-w-0" />

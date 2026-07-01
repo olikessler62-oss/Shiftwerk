@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Organization } from "@schichtwerk/types";
+import { resolveOrganizationShiftConfirmationPendingAfterMinutes } from "@schichtwerk/database";
 import { getOrgFeatures, type OrgFeatures } from "@/lib/org-features";
 
 type OrgFeaturesContextValue = {
@@ -57,4 +58,10 @@ export function useOrganization(): Organization {
 export function useShowCompensationInPlanningUi(): boolean {
   const organization = useOrganization();
   return organization.show_compensation_in_planning_ui;
+}
+
+/** Org-Einstellung: Frist requested → pending in Minuten. */
+export function useShiftConfirmationPendingAfterMinutes(): number {
+  const organization = useOrganization();
+  return resolveOrganizationShiftConfirmationPendingAfterMinutes(organization);
 }

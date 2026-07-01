@@ -77,7 +77,7 @@ import { isPastShiftDate } from "@/lib/planning-readonly";
 import { clearDocumentTextSelection } from "@/lib/calendar-interaction-ui";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures, useOrganization, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
+import { useOrgFeatures, useOrganization, useShiftConfirmationPendingAfterMinutes, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
 import { organizationTodayISO } from "@schichtwerk/database";
 import {
   weeklyHoursByEmployeeIdFromEmployees,
@@ -448,6 +448,7 @@ export function DashboardView({
   const features = useOrgFeatures();
   const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const organization = useOrganization();
+  const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
   const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
@@ -1493,6 +1494,7 @@ export function DashboardView({
           shiftConfirmationEnabled,
           hasAbsenceConflict: absenceConflictShiftIds.has(existing.id),
           hasSwapRequest: swapRequestShiftIds.has(existing.id),
+          pendingAfterMinutes,
         }
       );
       const primaryClick = resolveShiftCardPrimaryClick(
@@ -1794,6 +1796,7 @@ export function DashboardView({
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate,
+        pendingAfterMinutes,
       });
     if (picker && isDayReadOnly(picker.date) && !canDelete) {
       return { ok: false, error: t("dashboard.readOnlyDay") };
@@ -2521,6 +2524,7 @@ export function DashboardView({
       confirmationStatus: shift.confirmationStatus,
       requestedAt: shift.requestedAt,
       isPastShiftDate,
+      pendingAfterMinutes,
     });
     if (isDayReadOnly(cellContextMenu.date) && !canDelete) return;
 
@@ -2994,6 +2998,7 @@ export function DashboardView({
                             confirmationStatus: contextMenuShift.confirmationStatus,
                             requestedAt: contextMenuShift.requestedAt,
                             isPastShiftDate,
+                            pendingAfterMinutes,
                           })
                         ))) ||
                     (action === "cancel" && cancelShiftPending) ||

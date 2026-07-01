@@ -76,6 +76,8 @@ export const SHIFT_CONFIRMATION_CANCELED_TOOLTIP_TEXT_CLASS = "text-orange-800";
 
 export const SHIFT_CONFIRMATION_UNRESOLVED_TOOLTIP_TEXT_CLASS = "text-neutral-600";
 
+export const SHIFT_CONFIRMATION_UNRESOLVED_TAB_LABEL_CLASS = "text-neutral-700";
+
 /** Punktfarben in Listen/Header — abgestimmt auf Tab- und Tabellen-Statusfarben. */
 export const SHIFT_CONFIRMATION_REQUESTED_DOT_CLASS = "bg-[#7A5A10]";
 export const SHIFT_CONFIRMATION_PENDING_DOT_CLASS = "bg-[#701a75]";

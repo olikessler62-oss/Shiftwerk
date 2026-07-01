@@ -5,9 +5,8 @@ import { NotificationOutboxView } from "@/components/settings/notification-outbo
 
 export default async function NotificationOutboxPage() {
   const { organizationId, profile } = await requireManager();
-  const isDev = process.env.NODE_ENV === "development";
 
-  if (profile.role !== "admin" && !isDev) {
+  if (profile.role !== "admin") {
     redirect("/dashboard");
   }
 

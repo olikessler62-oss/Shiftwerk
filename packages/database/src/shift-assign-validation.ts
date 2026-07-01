@@ -73,9 +73,20 @@ export function validateShiftAssignEligibility(
     return { ok: true };
   }
 
+  if (
+    ctx.staffingRules === undefined ||
+    ctx.profileQualificationIds === undefined
+  ) {
+    return {
+      ok: false,
+      error:
+        "Personalqualifikationen konnten nicht geprüft werden. Bitte erneut versuchen.",
+    };
+  }
+
   const serviceHours = ctx.serviceHours ?? [];
-  const staffingRules = ctx.staffingRules ?? [];
-  const profileQualificationIds = ctx.profileQualificationIds ?? new Map();
+  const staffingRules = ctx.staffingRules;
+  const profileQualificationIds = ctx.profileQualificationIds;
   const qualificationNameById = ctx.qualificationNameById ?? new Map();
 
   if (orgFeatures.serviceHours && !input.withoutServiceHours) {

@@ -54,6 +54,11 @@ create table public.organizations (
   show_compensation_in_planning_ui boolean not null default true,
   shift_confirmation_enabled boolean not null default false,
   shift_confirmation_disclaimer text,
+  shift_confirmation_pending_after_minutes integer not null default 180
+    check (
+      shift_confirmation_pending_after_minutes > 0
+      and shift_confirmation_pending_after_minutes <= 1440
+    ),
   auto_approve_sick_absence boolean not null default true,
   created_at timestamptz not null default now()
 );

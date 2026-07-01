@@ -61,7 +61,7 @@ export async function loadShiftAssignValidationContext(
       ? db.listProfileQualificationIdsByOrganization(organizationId)
       : Promise.resolve(new Map<string, string[]>()),
     needsAdvancedData
-      ? db.listQualifications(organizationId).catch(() => [] as Qualification[])
+      ? db.listQualifications(organizationId)
       : Promise.resolve([] as Qualification[]),
   ]);
 

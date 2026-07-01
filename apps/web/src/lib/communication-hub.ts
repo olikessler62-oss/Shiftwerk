@@ -9,6 +9,7 @@ import {
   SHIFT_CONFIRMATION_PROPOSED_TAB_LABEL_CLASS,
   SHIFT_CONFIRMATION_REJECTED_TAB_LABEL_CLASS,
   SHIFT_CONFIRMATION_REQUESTED_TAB_LABEL_CLASS,
+  SHIFT_CONFIRMATION_UNRESOLVED_TAB_LABEL_CLASS,
 } from "@/lib/shift-confirmation-display";
 import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
 import {
@@ -37,16 +38,18 @@ export type CommunicationResponseTab =
 export type CommunicationHubCategory =
   | "conflicts"
   | "swaps"
+  | "unresolved"
   | CommunicationResponseTab;
 
 export const COMMUNICATION_HUB_CATEGORY_ORDER = [
   "conflicts",
-  "swaps",
-  "canceled",
-  "rejected",
-  "pending",
   "proposed",
   "requested",
+  "pending",
+  "rejected",
+  "canceled",
+  "swaps",
+  "unresolved",
 ] as const satisfies readonly CommunicationHubCategory[];
 
 /** @deprecated Nutze {@link COMMUNICATION_HUB_CATEGORY_ORDER}. */
@@ -97,6 +100,7 @@ export function communicationHubCategoryLabelClass(
 ): string {
   if (category === "conflicts") return "text-rose-800";
   if (category === "swaps") return "text-violet-800";
+  if (category === "unresolved") return SHIFT_CONFIRMATION_UNRESOLVED_TAB_LABEL_CLASS;
   return communicationResponseTabLabelClass(category);
 }
 
@@ -105,6 +109,9 @@ export function communicationHubCategoryPanelClass(
 ): string {
   if (category === "conflicts") return COMMUNICATION_CONFLICTS_PANEL_CLASS;
   if (category === "swaps") return COMMUNICATION_SWAPS_PANEL_CLASS;
+  if (category === "unresolved") {
+    return "border-neutral-300 bg-neutral-100 text-neutral-800";
+  }
 
   switch (category) {
     case "rejected":
@@ -165,6 +172,7 @@ export type CommunicationGroupedShifts = {
 export type CommunicationHubGroupedData = CommunicationGroupedShifts & {
   conflicts: AreaCalendarShiftCard[];
   conflictDetailsByShiftId: Map<string, ShiftHubConflict[]>;
+  unresolved: AreaCalendarShiftCard[];
   swaps: CommunicationSwapRequestRow[];
 };
 
@@ -370,10 +378,15 @@ export function groupCommunicationHubData(
     .filter((shift) => conflictDetailsByShiftId.has(shift.id))
     .sort(sortCommunicationHubShifts);
 
+  const unresolved = visibleShifts
+    .filter((shift) => shift.confirmationStatus === "unresolved")
+    .sort(sortCommunicationHubShifts);
+
   return {
     ...grouped,
     conflicts,
     conflictDetailsByShiftId,
+    unresolved,
     swaps: swapRequests,
   };
 }
@@ -389,6 +402,7 @@ export function communicationHubCounts(
     pending: grouped.pending.length,
     proposed: grouped.proposed.length,
     requested: grouped.requested.length,
+    unresolved: grouped.unresolved.length,
   };
 }
 
@@ -409,7 +423,8 @@ export function countCommunicationActionItems(
     counts.rejected +
     counts.pending +
     counts.proposed +
-    counts.requested
+    counts.requested +
+    counts.unresolved
   );
 }
 
@@ -454,6 +469,10 @@ export function defaultSelectedResponseShiftIds(
   }
 
   if (category === "swaps") {
+    return new Set();
+  }
+
+  if (category === "unresolved") {
     return new Set();
   }
 

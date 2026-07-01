@@ -8,6 +8,7 @@ import {
   isPlannedCoverageHeaderStatusClickable,
   isStaffingHeaderStatusClickable,
   resolveDashboardStaffingHeaderDisplay,
+  resolveDashboardStaffingHeaderSegmentGaugeVariant,
   shouldShowDashboardStaffingHeaderTooltip,
   shouldShowAreaCardPlannedCoverageStatusLine,
   shouldShowAreaCardStaffingAmpelStatus,
@@ -95,6 +96,45 @@ describe("resolveDashboardStaffingHeaderDisplay", () => {
         { kind: "met", assigned: 2, required: 2 },
       ],
     });
+  });
+
+  it("returns met 0/0 when there is no staffing demand", () => {
+    expect(
+      resolveDashboardStaffingHeaderDisplay({
+        assignedTotal: 0,
+        requiredTotal: 0,
+        headerOpenAssignedTotal: 0,
+        headerOpenRequiredTotal: 0,
+        headerPlannedAssignedTotal: 0,
+        headerPlannedRequiredTotal: 0,
+        headerMismatchAssignedTotal: 0,
+        headerMismatchRequiredTotal: 0,
+        headerOverstaffedAssignedTotal: 0,
+        headerOverstaffedRequiredTotal: 0,
+        headerMetAssignedTotal: 0,
+        headerMetRequiredTotal: 0,
+      })
+    ).toEqual({
+      segments: [{ kind: "met", assigned: 0, required: 0 }],
+    });
+  });
+});
+
+describe("resolveDashboardStaffingHeaderSegmentGaugeVariant", () => {
+  it("maps header segment kinds to gauge variants", () => {
+    expect(resolveDashboardStaffingHeaderSegmentGaugeVariant("understaffed")).toBe(
+      "understaffed"
+    );
+    expect(resolveDashboardStaffingHeaderSegmentGaugeVariant("planned")).toBe(
+      "planned"
+    );
+    expect(resolveDashboardStaffingHeaderSegmentGaugeVariant("mismatch")).toBe(
+      "overstaffed"
+    );
+    expect(resolveDashboardStaffingHeaderSegmentGaugeVariant("overstaffed")).toBe(
+      "overstaffed"
+    );
+    expect(resolveDashboardStaffingHeaderSegmentGaugeVariant("met")).toBe("met");
   });
 });
 
@@ -393,47 +433,21 @@ describe("isPlannedCoverageHeaderStatusClickable", () => {
 });
 
 describe("countAreaHeaderStatusLines", () => {
-  it("counts staffing line, confirmation lines, and assignment notes line", () => {
+  it("counts status footer lines", () => {
     expect(
       countAreaHeaderStatusLines({
-        staffingEnabled: true,
-        shiftConfirmationEnabled: true,
-        confirmationConflictStatuses: ["pending", "rejected"],
-        showStaffingIssuesButton: true,
-      })
-    ).toBe(4);
-  });
-
-  it("counts planned coverage line in week scope", () => {
-    expect(
-      countAreaHeaderStatusLines({
-        staffingEnabled: true,
-        shiftConfirmationEnabled: false,
-        confirmationConflictStatuses: [],
-        showStaffingIssuesButton: false,
-        showPlannedCoverageStatusLine: true,
+        statusFooterLines: [
+          { id: "open", count: 2 },
+          { id: "pending", count: 1 },
+        ],
       })
     ).toBe(2);
   });
 
-  it("counts only staffing line when confirmation is off", () => {
+  it("returns zero for empty footer lines", () => {
     expect(
       countAreaHeaderStatusLines({
-        staffingEnabled: true,
-        shiftConfirmationEnabled: false,
-        confirmationConflictStatuses: [],
-        showStaffingIssuesButton: false,
-      })
-    ).toBe(1);
-  });
-
-  it("returns zero when staffing is disabled and no other lines apply", () => {
-    expect(
-      countAreaHeaderStatusLines({
-        staffingEnabled: false,
-        shiftConfirmationEnabled: false,
-        confirmationConflictStatuses: [],
-        showStaffingIssuesButton: false,
+        statusFooterLines: [],
       })
     ).toBe(0);
   });

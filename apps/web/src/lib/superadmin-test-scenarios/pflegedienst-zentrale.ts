@@ -9,8 +9,8 @@ import {
 } from "@schichtwerk/database";
 import type { Profile } from "@schichtwerk/types";
 
-export const PFLEGEDIENST_SCENARIO_ORG_NAME = "OKE Medicare";
-export const PFLEGEDIENST_SCENARIO_LOCATION_NAME = "Zentrale";
+export const PFLEGEDIENST_SCENARIO_ORG_NAME = "Giovanni's Gastro";
+export const PFLEGEDIENST_SCENARIO_LOCATION_NAME = "Medicare Pflegedienst";
 export const PFLEGEDIENST_QUALIFICATION_NAME = "Pfleger/in";
 
 export const PFLEGEDIENST_TOUR_NAMES = [
@@ -255,17 +255,11 @@ function canAssignEmployee(input: {
   return weekHours <= targetHours;
 }
 
-async function ensureLocation(
+async function createScenarioLocation(
   db: SchichtwerkDatabase,
   organizationId: string,
   name: string
 ): Promise<{ id: string; name: string }> {
-  const locations = await db.listLocations(organizationId);
-  const existing = locations.find(
-    (location) => normalizeName(location.name) === normalizeName(name)
-  );
-  if (existing) return { id: existing.id, name: existing.name };
-
   const sortOrder = await db.getNextLocationSortOrder(organizationId);
   const created = await db.insertLocation({
     organization_id: organizationId,
@@ -293,29 +287,20 @@ async function createTourArea(
     (entry) => normalizeName(entry.name) === normalizeName(areaName)
   );
   if (!area) {
-    throw new Error(`Einsatzort „${areaName}“ konnte nicht angelegt werden`);
+    throw new Error(`Einsatzbereich „${areaName}“ konnte nicht angelegt werden`);
   }
 
   return { id: area.id, name: area.name };
 }
 
-async function ensurePflegerQualification(
+async function createPflegerQualification(
   db: SchichtwerkDatabase,
   organizationId: string
 ): Promise<string> {
-  const qualifications = await db.listQualifications(organizationId);
-  const existing = qualifications.find(
-    (qualification) =>
-      normalizeName(qualification.name) ===
-      normalizeName(PFLEGEDIENST_QUALIFICATION_NAME)
-  );
-  if (existing) return existing.id;
-
-  const sortOrder = await db.getNextQualificationSortOrder(organizationId);
   const created = await db.insertQualification({
     organization_id: organizationId,
     name: PFLEGEDIENST_QUALIFICATION_NAME,
-    sort_order: sortOrder,
+    sort_order: 0,
   });
   return created.id;
 }
@@ -425,7 +410,7 @@ async function configureAreaStaffing(
     const serviceHourIds = [...new Set(matchingHours.map((hour) => hour.id))];
     if (serviceHourIds.length === 0) {
       throw new Error(
-        `Servicezeit ${window.start}–${window.end} fehlt für Einsatzort „${areaName}“`
+        `Servicezeit ${window.start}–${window.end} fehlt für Einsatzbereich „${areaName}“`
       );
     }
 
@@ -558,7 +543,7 @@ export async function runPflegedienstZentraleScenario(
 ): Promise<PflegedienstScenarioResult> {
   await db.preparePflegedienstScenario(input.organizationId);
 
-  const qualificationId = await ensurePflegerQualification(
+  const qualificationId = await createPflegerQualification(
     db,
     input.organizationId
   );
@@ -568,7 +553,7 @@ export async function runPflegedienstZentraleScenario(
     qualificationId
   );
 
-  const location = await ensureLocation(
+  const location = await createScenarioLocation(
     db,
     input.organizationId,
     PFLEGEDIENST_SCENARIO_LOCATION_NAME
@@ -594,6 +579,12 @@ export async function runPflegedienstZentraleScenario(
       qualificationId
     );
     areas.push(area);
+  }
+
+  if (areas.length !== PFLEGEDIENST_TOUR_NAMES.length) {
+    throw new Error(
+      `Erwartet ${PFLEGEDIENST_TOUR_NAMES.length} Einsatzbereiche, angelegt: ${areas.length}`
+    );
   }
 
   const weekStart = isoWeekStartFromShiftDate(input.todayISO);

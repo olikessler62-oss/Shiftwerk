@@ -100,6 +100,7 @@ export type DashboardStaffingCandidatesPlanningContext = {
   qualifications: readonly Qualification[];
   profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
   employeeNameById?: ReadonlyMap<string, string>;
+  employeeColorById?: ReadonlyMap<string, string | null | undefined>;
   areaCalendarHref: string;
   readOnlyWeek: boolean;
   formatTimeLabel: (

@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { validateOrganizationPlanningModeUpgrade } from "@schichtwerk/database";
+import {
+  isValidShiftConfirmationPendingAfterMinutes,
+  validateOrganizationPlanningModeUpgrade,
+} from "@schichtwerk/database";
 import { getDatabase } from "@/lib/db";
 import { requireManager } from "@/lib/manager";
 import { requireSuperadminDeveloper } from "@/lib/superadmin-access";
@@ -11,6 +14,62 @@ import { organizationPlanningModeErrorKey } from "@/lib/translate-action-error";
 export type OrganizationActionResult =
   | { ok: true }
   | { ok: false; errorKey: string };
+
+function revalidateOrganizationDependentPaths() {
+  revalidatePath("/dashboard", "layout");
+  revalidatePath("/bereich-kalender", "layout");
+  revalidatePath("/mitarbeiter-kalender", "layout");
+  revalidatePath("/team", "layout");
+  revalidatePath("/berichte", "layout");
+  revalidatePath("/settings", "layout");
+}
+
+export async function updateOrganizationName(
+  name: string
+): Promise<OrganizationActionResult> {
+  try {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed.length > 30) {
+      return { ok: false, errorKey: "organization.errors.invalidName" };
+    }
+
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    await db.updateOrganizationName(organizationId, trimmed);
+
+    revalidateOrganizationDependentPaths();
+
+    return { ok: true };
+  } catch {
+    return { ok: false, errorKey: "organization.errors.saveFailed" };
+  }
+}
+
+export async function updateOrganizationShiftConfirmationPendingAfterMinutes(
+  minutes: number
+): Promise<OrganizationActionResult> {
+  try {
+    if (!isValidShiftConfirmationPendingAfterMinutes(minutes)) {
+      return {
+        ok: false,
+        errorKey: "organization.errors.invalidShiftConfirmationPendingAfter",
+      };
+    }
+
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    await db.updateOrganizationShiftConfirmationPendingAfterMinutes(
+      organizationId,
+      minutes
+    );
+
+    revalidateOrganizationDependentPaths();
+
+    return { ok: true };
+  } catch {
+    return { ok: false, errorKey: "organization.errors.saveFailed" };
+  }
+}
 
 export async function updateOrganizationAllowRetroactiveCompensationEntries(
   allowed: boolean
@@ -23,11 +82,7 @@ export async function updateOrganizationAllowRetroactiveCompensationEntries(
       allowed
     );
 
-    revalidatePath("/dashboard", "layout");
-    revalidatePath("/bereich-kalender", "layout");
-    revalidatePath("/mitarbeiter-kalender", "layout");
-    revalidatePath("/team", "layout");
-    revalidatePath("/berichte", "layout");
+    revalidateOrganizationDependentPaths();
 
     return { ok: true };
   } catch {

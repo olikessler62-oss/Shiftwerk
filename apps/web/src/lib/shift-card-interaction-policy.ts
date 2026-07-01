@@ -23,12 +23,14 @@ export type ShiftCardInteractionContext = {
   hasAbsenceConflict?: boolean;
   hasSwapRequest?: boolean;
   displayState?: ShiftCardDisplayState;
+  pendingAfterMinutes?: number;
 };
 
 export type ShiftCardInteractionOptions = {
   shiftConfirmationEnabled?: boolean;
   hasAbsenceConflict?: boolean;
   hasSwapRequest?: boolean;
+  pendingAfterMinutes?: number;
 };
 
 export type ShiftCardPrimaryClick =
@@ -51,6 +53,7 @@ export function resolveShiftCardInteractionContext(
     hasAbsenceConflict: options?.hasAbsenceConflict,
     hasSwapRequest: options?.hasSwapRequest,
     displayState: shift.displayState,
+    pendingAfterMinutes: options?.pendingAfterMinutes,
   };
 }
 
@@ -93,7 +96,8 @@ export function resolveShiftCardPrimaryClick(
   const status = resolveShiftCardContextMenuStatus(
     shift.confirmationStatus,
     shift.requestedAt,
-    context.displayState
+    context.displayState,
+    context.pendingAfterMinutes
   );
 
   switch (status) {
@@ -108,6 +112,8 @@ export function resolveShiftCardPrimaryClick(
       return { kind: "communicationHub", category: "rejected" };
     case "canceled":
       return { kind: "communicationHub", category: "canceled" };
+    case "unresolved":
+      return { kind: "communicationHub", category: "unresolved" };
     default:
       return { kind: "edit" };
   }

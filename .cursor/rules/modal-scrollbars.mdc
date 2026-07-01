@@ -1,0 +1,43 @@
+---
+description: Modal-Dialoge ohne weißen rechten Rand (scrollbar-gutter)
+globs: apps/web/src/components/**/*modal*.tsx,apps/web/src/components/settings/settings-modal-shell.tsx,apps/web/src/components/settings/settings-list-ui.tsx
+alwaysApply: false
+---
+
+# Modal-Scrollbars — kein weißer Rand rechts
+
+## Ursache
+
+`.modal-scrollbar` setzt `scrollbar-gutter: stable` und reserviert **immer** Platz für eine Scrollbar — auch wenn der Dialog nicht scrollt. Das wirkt wie ein weißer Streifen am rechten Modalrand.
+
+## Pflicht
+
+1. **Modal-Dialog-Container** (Shell, Bestätigung, Sub-Modal) immer mit `MODAL_SCROLLBAR_CLASS` aus `settings-modal-shell.tsx` — enthält bereits `modal-scrollbar modal-scrollbar-inline`.
+2. **Nicht** nur `modal-scrollbar` auf Dialog-`div`s verwenden.
+3. **Nicht** `scrollbar-gutter: stable` auf Modal-Outer-Containern setzen.
+4. Scrollbare **Innenbereiche** (Tabellen, Listen im Body) dürfen `MODAL_SCROLLBAR_CLASS` oder `modal-scrollbar modal-scrollbar-inline` nutzen — nie `modal-scrollbar` allein auf dem äußeren Dialog.
+
+## Shell-Klassen (bereits korrekt verdrahtet)
+
+- `settingsModalDialogClass`
+- `settingsSubModalDialogClass`
+- `settingsNestedModalDialogClass`
+- `settingsConfirmDialogClass` / `SettingsConfirmDialogShell`
+- `areaCalendarModalDialogClass`
+
+Neue Modals: eine dieser Klassen verwenden, nicht eigene `rounded-*` + `modal-scrollbar`-Kombination.
+
+## Manuell nur bei Ausnahmen
+
+Wenn ein Container nicht über die Shell geht, explizit:
+
+```tsx
+className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0", MODAL_SCROLLBAR_CLASS)}
+```
+
+`MODAL_SCROLLBAR_CLASS` reicht — **nicht** zusätzlich `modal-scrollbar` ohne `-inline`.
+
+## Check vor Abschluss
+
+- [ ] Äußerer Dialog-Container hat `modal-scrollbar-inline` (via `MODAL_SCROLLBAR_CLASS` oder Shell)?
+- [ ] Kein sichtbarer weißer Streifen rechts bei kurzem Inhalt (z. B. Lösch-Bestätigung)?

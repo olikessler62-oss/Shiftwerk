@@ -62,4 +62,25 @@ describe("buildShiftTimestamps", () => {
     );
     expect(shiftTimeFromTimestamp(starts_at, VIENNA)).toBe("09:00");
   });
+
+  it("handles DST spring-forward gap in Europe/Berlin", () => {
+    const { starts_at } = buildShiftTimestamps(
+      "2025-03-30",
+      "03:30",
+      "04:30",
+      BERLIN
+    );
+    expect(shiftTimeFromTimestamp(starts_at, BERLIN)).toBe("03:30");
+  });
+
+  it("round-trips across DST fall-back in Europe/Berlin", () => {
+    const { starts_at, ends_at } = buildShiftTimestamps(
+      "2025-10-26",
+      "02:30",
+      "03:30",
+      BERLIN
+    );
+    expect(shiftTimeFromTimestamp(starts_at, BERLIN)).toBe("02:30");
+    expect(shiftTimeFromTimestamp(ends_at, BERLIN)).toBe("03:30");
+  });
 });

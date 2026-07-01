@@ -34,6 +34,7 @@ export async function loadManagerOrganization(
     shift_confirmation_enabled: false,
     auto_approve_sick_absence: true,
     shift_confirmation_disclaimer: null,
+    shift_confirmation_pending_after_minutes: 180,
     created_at: new Date().toISOString(),
   };
 }

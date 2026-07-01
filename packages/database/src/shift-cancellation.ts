@@ -45,24 +45,31 @@ export function isShiftCancellableConfirmationStatus(
 export function resolveEffectiveShiftConfirmationStatus(
   confirmationStatus: ShiftConfirmationStatus | undefined | null,
   requestedAt: string | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  pendingAfterMinutes?: number
 ): ShiftConfirmationStatus | undefined {
   if (!confirmationStatus) return undefined;
   return (
-    resolveEffectiveConfirmationStatus(confirmationStatus, requestedAt, now) ??
-    confirmationStatus
+    resolveEffectiveConfirmationStatus(
+      confirmationStatus,
+      requestedAt,
+      now,
+      pendingAfterMinutes
+    ) ?? confirmationStatus
   );
 }
 
 export function canCancelShiftByConfirmationStatus(
   confirmationStatus: ShiftConfirmationStatus | undefined | null,
   requestedAt?: string | null,
-  now: Date = new Date()
+  now: Date = new Date(),
+  pendingAfterMinutes?: number
 ): boolean {
   const effective = resolveEffectiveShiftConfirmationStatus(
     confirmationStatus,
     requestedAt,
-    now
+    now,
+    pendingAfterMinutes
   );
   return isShiftCancellableConfirmationStatus(effective);
 }

@@ -116,6 +116,67 @@ describe("validateShiftAssignEligibility", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("advanced mode rejects when qualification context was not loaded", () => {
+    const result = validateShiftAssignEligibility(
+      "advanced",
+      {
+        countryCode: "DE",
+        recurringAvailability: [slot()],
+        absences: [],
+        serviceHours: [
+          {
+            id: serviceHourId,
+            location_area_id: areaId,
+            weekday: 1,
+            start_time: "08:00",
+            end_time: "18:00",
+          },
+        ],
+      },
+      { ...baseInput, locationAreaId: areaId }
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("nicht geprüft");
+    }
+  });
+
+  it("advanced mode rejects missing qualification even without qualification names", () => {
+    const result = validateShiftAssignEligibility(
+      "advanced",
+      {
+        countryCode: "DE",
+        recurringAvailability: [slot()],
+        absences: [],
+        staffingRules: [
+          {
+            id: "rule-1",
+            location_area_id: areaId,
+            service_hour_id: serviceHourId,
+            qualification_id: qualId,
+            required_count: 1,
+          } satisfies LocationAreaStaffing,
+        ],
+        serviceHours: [
+          {
+            id: serviceHourId,
+            location_area_id: areaId,
+            weekday: 1,
+            start_time: "08:00",
+            end_time: "18:00",
+          },
+        ],
+        profileQualificationIds: new Map([[employeeId, new Set<string>()]]),
+        qualificationNameById: new Map(),
+      },
+      { ...baseInput, locationAreaId: areaId }
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("Qualifikation");
+    }
+  });
+
   it("advanced mode rejects missing qualification", () => {
     const result = validateShiftAssignEligibility(
       "advanced",
@@ -193,6 +254,7 @@ describe("validateShiftAssignEligibility", () => {
         recurringAvailability: [slot()],
         absences: [],
         serviceHours: [],
+        staffingRules: [],
         profileQualificationIds: new Map([[employeeId, new Set([qualId])]]),
       },
       { ...baseInput, locationAreaId: areaId }
@@ -211,6 +273,7 @@ describe("validateShiftAssignEligibility", () => {
         recurringAvailability: [slot()],
         absences: [],
         serviceHours: [],
+        staffingRules: [],
         profileQualificationIds: new Map([[employeeId, new Set([qualId])]]),
       },
       { ...baseInput, locationAreaId: areaId, withoutServiceHours: true }

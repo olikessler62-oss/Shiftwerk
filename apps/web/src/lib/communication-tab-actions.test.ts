@@ -23,6 +23,7 @@ describe("communicationTabActions", () => {
       "requestConfirmation",
     ]);
     expect(communicationTabActions("canceled")).toEqual(["delete"]);
+    expect(communicationTabActions("unresolved")).toEqual(["delete"]);
   });
 
   it("shows selection for every actionable tab", () => {
@@ -33,6 +34,7 @@ describe("communicationTabActions", () => {
       "rejected",
       "pending",
       "canceled",
+      "unresolved",
     ] as const) {
       expect(communicationTabShowsSelection(tab)).toBe(true);
     }

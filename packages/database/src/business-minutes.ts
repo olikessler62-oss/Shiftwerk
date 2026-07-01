@@ -1,8 +1,11 @@
-/** Stunden nach requested_at, danach Übergang requested → pending (24/7). */
-export const PENDING_ELAPSED_HOURS_REQUIRED = 3;
+import { DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES } from "./organization-shift-confirmation-settings";
+
+/** Stunden nach requested_at bei Voreinstellung (24/7). */
+export const PENDING_ELAPSED_HOURS_REQUIRED =
+  DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES / 60;
 
 export const PENDING_ELAPSED_MINUTES_REQUIRED =
-  PENDING_ELAPSED_HOURS_REQUIRED * 60;
+  DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES;
 
 /** Alias für bestehende Importe. */
 export const PENDING_BUSINESS_MINUTES_REQUIRED =
@@ -20,12 +23,11 @@ export function elapsedMinutesBetween(
   return Math.floor((toMs - fromMs) / 60_000);
 }
 
-/** True wenn seit requested_at mindestens 3 h vergangen sind (unabhängig von Tageszeit). */
+/** True wenn seit requested_at die konfigurierte Frist vergangen ist. */
 export function isShiftConfirmationPendingDue(
   requestedAt: string,
-  now: string | Date
+  now: string | Date,
+  pendingAfterMinutes: number = DEFAULT_SHIFT_CONFIRMATION_PENDING_AFTER_MINUTES
 ): boolean {
-  return (
-    elapsedMinutesBetween(requestedAt, now) >= PENDING_ELAPSED_MINUTES_REQUIRED
-  );
+  return elapsedMinutesBetween(requestedAt, now) >= pendingAfterMinutes;
 }

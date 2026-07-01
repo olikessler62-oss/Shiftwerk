@@ -7,6 +7,7 @@ import {
 } from "@/app/actions/team";
 import { Alert, Button, Field, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { MODAL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 
 const initial: TeamActionResult | null = null;
 
@@ -26,7 +27,7 @@ export function InviteForm({ employeeCount, embedded = false, onSuccess }: Props
   return (
     <div
       className={cn(
-        embedded ? "p-0" : "rounded-2xl border border-border bg-surface p-6"
+        embedded ? "p-0" : cn(MODAL_ROUNDED_CLASS, "border border-border bg-surface p-6")
       )}
     >
       {!embedded ? (

@@ -1,5 +1,6 @@
 import { shiftTimeFromTimestamp } from "@/lib/dates";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
+import { resolveOrganizationShiftConfirmationPendingAfterMinutes } from "@schichtwerk/database";
 import {
   resolvePlanningAreaId,
   resolvePlanningLocationId,
@@ -86,6 +87,9 @@ export async function loadDashboardCalendarLayerData(input: {
     planningEmployees,
   } = input;
 
+  const pendingAfterMinutes =
+    resolveOrganizationShiftConfirmationPendingAfterMinutes(organization);
+
   const selectedLocationId = resolvePlanningLocationId(
     locations,
     locationParam,
@@ -150,7 +154,10 @@ export async function loadDashboardCalendarLayerData(input: {
           )
         : null;
 
-    const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(s);
+    const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(
+      s,
+      pendingAfterMinutes
+    );
 
     const planningShift: PlanningShift = {
       id: s.id,

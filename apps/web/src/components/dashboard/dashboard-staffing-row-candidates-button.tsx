@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/cn";
 import {
+  DASHBOARD_STAFFING_ROW_ACTION_SLOT_CLASS,
   StaffingConflictIcon,
   StaffingOpenPointsIcon,
   StaffingVacancyIcon,
@@ -46,7 +47,8 @@ export function DashboardStaffingRowCandidatesButton({
     <button
       type="button"
       className={cn(
-        "flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1",
+        DASHBOARD_STAFFING_ROW_ACTION_SLOT_CLASS,
+        "cursor-pointer rounded-md transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1",
         variant === "candidates"
           ? cn(DASHBOARD_STAFFING_VACANCY_SILHOUETTE_CLASS, "hover:opacity-80")
           : "text-foreground/80 hover:text-foreground",

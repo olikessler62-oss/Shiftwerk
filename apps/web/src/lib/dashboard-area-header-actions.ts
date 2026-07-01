@@ -9,8 +9,8 @@ import {
   findFirstStaffingCandidatesRow,
 } from "@/lib/dashboard-staffing-window-issues";
 import { DASHBOARD_DAY_ACTIONABLE_CONFIRMATION_STATUSES } from "@/lib/dashboard-day-confirmation-counts";
-import type { DashboardActionableConfirmationStatus } from "@/lib/dashboard-confirmation-employee-dedupe";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import type { StaffingFillGaugeVariant } from "@/lib/tag-area-header-staffing-display";
 
 export function isAreaStaffingUncovered(
   level: DashboardAreaAmpelLevel
@@ -133,6 +133,22 @@ export function resolveDashboardStaffingHeaderDisplay(
   };
 }
 
+export function resolveDashboardStaffingHeaderSegmentGaugeVariant(
+  kind: DashboardStaffingHeaderSegmentKind
+): StaffingFillGaugeVariant {
+  switch (kind) {
+    case "understaffed":
+      return "understaffed";
+    case "planned":
+      return "planned";
+    case "mismatch":
+    case "overstaffed":
+      return "overstaffed";
+    case "met":
+      return "met";
+  }
+}
+
 export function shouldShowDashboardStaffingHeaderTooltip(
   segments: readonly DashboardStaffingHeaderSegment[]
 ): boolean {
@@ -219,18 +235,7 @@ export function isPlannedCoverageHeaderStatusClickable(input: {
 
 /** Anzahl sichtbarer Header-Zeilen (für Scroll-Verhalten). */
 export function countAreaHeaderStatusLines(input: {
-  staffingEnabled: boolean;
-  shiftConfirmationEnabled: boolean;
-  confirmationConflictStatuses: readonly DashboardActionableConfirmationStatus[];
-  showStaffingIssuesButton: boolean;
-  showPlannedCoverageStatusLine?: boolean;
+  statusFooterLines: readonly { id: string; count: number }[];
 }): number {
-  let count = 0;
-  if (input.staffingEnabled) count += 1;
-  if (input.showPlannedCoverageStatusLine) count += 1;
-  if (input.shiftConfirmationEnabled) {
-    count += input.confirmationConflictStatuses.length;
-  }
-  if (input.showStaffingIssuesButton) count += 1;
-  return count;
+  return input.statusFooterLines.length;
 }

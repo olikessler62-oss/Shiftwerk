@@ -14,6 +14,7 @@ export type PlanningShiftConfirmationSource = {
   requestedAt?: string | null;
   confirmationStatusUpdatedAt?: string | null;
   requests?: readonly ShiftRequestSummary[];
+  pendingAfterMinutes?: number;
 };
 
 export type PlanningShiftConfirmationFields = {
@@ -32,6 +33,7 @@ export function resolvePlanningShiftConfirmationFields(
     confirmationStatus: source.confirmationStatus,
     requestedAt: source.requestedAt,
     requests: source.requests,
+    pendingAfterMinutes: source.pendingAfterMinutes,
   });
 
   let confirmationStatus = displayState.legacyConfirmationStatus;
@@ -41,6 +43,7 @@ export function resolvePlanningShiftConfirmationFields(
         status: confirmationStatus,
         requestedAt: source.requestedAt,
         shiftDateISO: source.shiftDate,
+        pendingAfterMinutes: source.pendingAfterMinutes,
       }) ?? confirmationStatus;
   }
 

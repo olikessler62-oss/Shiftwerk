@@ -13,6 +13,7 @@ import { AreaCalendarShiftDeleteConfirmModal } from "@/components/areacalendar/a
 import { ShiftCancelConfirmModal } from "@/components/shifts/shift-cancel-confirm-modal";
 import { Alert, Button, CloseIcon } from "@/components/ui";
 import {
+  MODAL_SCROLLBAR_CLASS,
   settingsFixedNestedOverlayClass,
   settingsModalBodyPaddingClass,
   settingsModalFooterClass,
@@ -49,10 +50,7 @@ import {
   translateShiftCancelError,
 } from "@/lib/shift-cancellation-policy";
 import { canDeleteShift } from "@/lib/shift-deletion-policy";
-import {
-  shiftConfirmationConflictDotClass,
-  shiftConfirmationStatusLabelKey,
-} from "@/lib/shift-confirmation-display";
+import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
 import {
   useShiftConfirmationSimulation,
   useSimulatedProposedOnAssignRequest,
@@ -76,6 +74,17 @@ type PendingConfirm =
   | { kind: "cancel"; shift: PlanningShift }
   | null;
 
+const EMPLOYEE_COLOR_FALLBACK = "#94a3b8";
+
+function resolveEmployeeDotColor(
+  context: DashboardStaffingWindowIssuesContext,
+  shift: PlanningShift
+): string {
+  const profileColor = context.employeeColorById?.get(shift.employee_id);
+  if (profileColor?.trim()) return profileColor.trim();
+  return shift.color?.trim() || EMPLOYEE_COLOR_FALLBACK;
+}
+
 function isShiftActionDisabled(
   action: ShiftCardContextMenuAction,
   shift: PlanningShift,
@@ -98,6 +107,7 @@ function isShiftActionDisabled(
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate: menuOptions.isPastShiftDate,
+        pendingAfterMinutes: context.pendingAfterMinutes,
       });
     case "cancel":
       return !canCancelShift({
@@ -208,10 +218,8 @@ function ConfirmationIssueRow({
     >
       <div className="flex min-w-0 flex-1 items-start gap-2">
         <span
-          className={cn(
-            "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-            shiftConfirmationConflictDotClass(item.status)
-          )}
+          className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: resolveEmployeeDotColor(context, item.shift) }}
           aria-hidden
         />
         <div className="min-w-0 text-sm leading-snug text-foreground">
@@ -244,6 +252,7 @@ export function DashboardStaffingWindowIssuesModal({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
@@ -315,6 +324,7 @@ export function DashboardStaffingWindowIssuesModal({
   const handleAction = useCallback(
     (action: ShiftCardContextMenuAction, shift: PlanningShift) => {
       setErrorMessage(null);
+      setSuccessMessage(null);
 
       switch (action) {
         case "delete":
@@ -362,7 +372,20 @@ export function DashboardStaffingWindowIssuesModal({
               return;
             }
             router.refresh();
-            onClose();
+            if (result.failedCount > 0) {
+              setSuccessMessage(
+                t("shiftConfirmation.communication.partialResend", {
+                  sent: result.sentCount,
+                  failed: result.failedCount,
+                })
+              );
+              return;
+            }
+            setSuccessMessage(
+              t("shiftConfirmation.communication.resendSuccess", {
+                count: result.sentCount,
+              })
+            );
           });
           return;
         case "setConfirmed":
@@ -414,7 +437,10 @@ export function DashboardStaffingWindowIssuesModal({
           role="dialog"
           aria-modal="true"
           aria-labelledby="dashboard-staffing-window-issues-title"
-          className={settingsNestedModalDialogClass("2xl", DASHBOARD_MODAL_ROUNDED_CLASS)}
+          className={cn(
+            settingsNestedModalDialogClass("2xl", DASHBOARD_MODAL_ROUNDED_CLASS),
+            "modal-scrollbar-inline"
+          )}
           onMouseDown={(event) => event.stopPropagation()}
         >
           <SettingsModalHeader
@@ -430,12 +456,20 @@ export function DashboardStaffingWindowIssuesModal({
           <div
             className={cn(
               "min-h-0 flex-1 overflow-y-auto",
+              MODAL_SCROLLBAR_CLASS,
+              "modal-scrollbar-inline",
               settingsModalBodyPaddingClass()
             )}
           >
             {errorMessage ? (
               <Alert variant="error" className="mb-3">
                 {errorMessage}
+              </Alert>
+            ) : null}
+
+            {successMessage ? (
+              <Alert variant="success" className="mb-3">
+                {successMessage}
               </Alert>
             ) : null}
 
@@ -478,31 +512,41 @@ export function DashboardStaffingWindowIssuesModal({
         </div>
       </div>
 
-      {pendingConfirm?.kind === "delete" ? (
-        <AreaCalendarShiftDeleteConfirmModal
-          onConfirm={() => {
-            const shift = pendingConfirm.shift;
-            setPendingConfirm(null);
-            runDelete(shift);
-          }}
-          onCancel={() => setPendingConfirm(null)}
-        />
-      ) : null}
+      {pendingConfirm?.kind === "delete" && typeof document !== "undefined"
+        ? createPortal(
+            <AreaCalendarShiftDeleteConfirmModal
+              placement="stacked"
+              pending={pending}
+              onConfirm={() => {
+                const shift = pendingConfirm.shift;
+                setPendingConfirm(null);
+                runDelete(shift);
+              }}
+              onCancel={() => setPendingConfirm(null)}
+            />,
+            document.body
+          )
+        : null}
 
-      {pendingConfirm?.kind === "cancel" ? (
-        <ShiftCancelConfirmModal
-          variant="manager"
-          employeeName={
-            context.employeeNameById.get(pendingConfirm.shift.employee_id) ?? "—"
-          }
-          onConfirm={() => {
-            const shift = pendingConfirm.shift;
-            setPendingConfirm(null);
-            runCancel(shift);
-          }}
-          onCancel={() => setPendingConfirm(null)}
-        />
-      ) : null}
+      {pendingConfirm?.kind === "cancel" && typeof document !== "undefined"
+        ? createPortal(
+            <ShiftCancelConfirmModal
+              placement="stacked"
+              variant="manager"
+              pending={pending}
+              employeeName={
+                context.employeeNameById.get(pendingConfirm.shift.employee_id) ?? "—"
+              }
+              onConfirm={() => {
+                const shift = pendingConfirm.shift;
+                setPendingConfirm(null);
+                runCancel(shift);
+              }}
+              onCancel={() => setPendingConfirm(null)}
+            />,
+            document.body
+          )
+        : null}
     </>,
     document.body
   );

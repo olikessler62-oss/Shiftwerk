@@ -7,7 +7,9 @@ const DEV_ORIGINS = [
 
 function allowedOrigins(): string[] {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  return [...DEV_ORIGINS, siteUrl].filter((value): value is string => Boolean(value));
+  const devOrigins =
+    process.env.NODE_ENV === "development" ? DEV_ORIGINS : [];
+  return [...devOrigins, siteUrl].filter((value): value is string => Boolean(value));
 }
 
 export function mobileApiCorsHeaders(request: Request): HeadersInit {

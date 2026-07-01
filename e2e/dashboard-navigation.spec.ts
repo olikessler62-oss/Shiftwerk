@@ -32,13 +32,17 @@ test.describe("Dashboard · Navigation", () => {
 
     await dashboardWeekDayCard(page, manifest.barUnderstaffed.shiftDate).click();
 
-    await expect(page.getByRole("button", { name: "Wochenübersicht" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "zurück zur Wochenansicht" })
+    ).toBeVisible();
 
     await expect(
       dashboardAreaCard(page, manifest.barUnderstaffed.areaName)
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Wochenübersicht" }).click();
+    await page
+      .getByRole("button", { name: "zurück zur Wochenansicht" })
+      .click();
 
     await expect(page.getByRole("article")).toHaveCount(0);
   });

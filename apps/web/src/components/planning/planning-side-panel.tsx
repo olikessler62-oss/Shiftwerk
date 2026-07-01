@@ -306,12 +306,12 @@ export function PlanningSidePanel({
           )}
         >
           {children}
-          {footer ? (
-            <div className="-mx-3 mt-3 border-t border-border sm:-mx-5 sm:mt-4">
-              {footer}
-            </div>
-          ) : null}
         </div>
+        {footer ? (
+          <div className="shrink-0 border-t border-border bg-surface">
+            {footer}
+          </div>
+        ) : null}
       </aside>
     </PlanningSidePanelCloseContext.Provider>,
     document.body

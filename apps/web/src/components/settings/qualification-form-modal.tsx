@@ -8,7 +8,7 @@ import {
 import { validateQualificationUniqueness } from "@schichtwerk/database";
 import type { Qualification } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
-import { MODAL_SCROLLBAR_CLASS, SETTINGS_MODAL_TITLE_CLASS, settingsModalHeaderPaddingClass } from "./settings-list-ui";
+import { SETTINGS_MODAL_TITLE_CLASS, settingsModalHeaderPaddingClass, settingsNestedModalDialogClass, settingsNestedModalOverlayClass } from "./settings-list-ui";
 import { cn } from "@/lib/cn";
 import {
   Alert,
@@ -73,7 +73,7 @@ export function QualificationFormModal({
 
   return (
     <div
-      className="absolute inset-0 z-[70] flex items-center justify-center rounded-2xl bg-black/30 p-4"
+      className={settingsNestedModalOverlayClass()}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !pending) onClose();
@@ -83,10 +83,7 @@ export function QualificationFormModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="qualification-form-title"
-        className={cn(
-          "relative z-[71] flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl",
-          MODAL_SCROLLBAR_CLASS
-        )}
+        className={settingsNestedModalDialogClass("lg")}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div

@@ -236,7 +236,7 @@ export function resolveDashboardExpandedDayDates(
 }
 
 /**
- * Mitarbeiter- + Einsatzort-Kalender: Tage ohne Servicezeiten initial zugeklappt;
+ * Mitarbeiter- + Einsatzbereich-Kalender: Tage ohne Servicezeiten initial zugeklappt;
  * explizit aufgeklappte Wochentage und Wochenzustand beim Scrollen merken.
  */
 export function resolveEmployeeCalendarLayoutDayDates(
@@ -312,7 +312,7 @@ export function dayHasServiceHoursFlagsForAreas(
   );
 }
 
-/** Einsatzort-Kalender: Tag-Ein-/Ausklapp nur nach sichtbaren (aktiven) Einsatzorten. */
+/** Einsatzbereich-Kalender: Tag-Ein-/Ausklapp nur nach sichtbaren (aktiven) Einsatzbereichen. */
 export function resolveAreaCalendarLayoutDayDates(
   dates: readonly string[],
   serviceHours: readonly AreaServiceHourRef[],

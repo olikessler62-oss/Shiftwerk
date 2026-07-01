@@ -13,7 +13,7 @@ import {
   type CommunicationSwapRequestRow,
 } from "@/lib/communication-hub";
 import type { ShiftForWeeklyHoursConflict } from "@schichtwerk/database";
-import { PlanningRightSidePanel } from "@/components/planning/planning-side-panel";
+import { PlanningRightSidePanel, PLANNING_SIDE_PANEL_FOOTER_CLASS } from "@/components/planning/planning-side-panel";
 import { PLANNING_SIDE_PANEL_SUBTITLE_CLASS } from "@/components/settings/settings-list-ui";
 import { CommunicationResponsesTab } from "./communication-responses-tab";
 
@@ -113,6 +113,15 @@ export function CommunicationHubModal({
       dismissOnBackdrop={!busy}
       panelClassName={cn(busy && "cursor-wait [&_*]:cursor-wait")}
       bodyClassName="flex min-h-0 flex-col gap-4 overflow-hidden"
+      footer={
+        shiftConfirmationEnabled ? (
+          <div className={cn(PLANNING_SIDE_PANEL_FOOTER_CLASS, "justify-end")}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+              {t("common.close")}
+            </Button>
+          </div>
+        ) : undefined
+      }
     >
       {!shiftConfirmationEnabled ? (
         <div className="space-y-3 py-4">

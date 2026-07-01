@@ -4,6 +4,7 @@ import {
   isShiftConfirmationPendingDue,
   PENDING_ELAPSED_MINUTES_REQUIRED,
 } from "./business-minutes";
+import { resolveOrganizationShiftConfirmationPendingAfterMinutes } from "./organization-shift-confirmation-settings";
 
 export type RequestedShiftForPendingJob = {
   id: string;
@@ -23,10 +24,17 @@ export type ShiftConfirmationPendingJobResult = {
 };
 
 export function isRequestedShiftDueForPendingTransition(
-  shift: Pick<RequestedShiftForPendingJob, "requested_at">,
+  shift: Pick<RequestedShiftForPendingJob, "requested_at" | "organization">,
   now: Date
 ): boolean {
-  return isShiftConfirmationPendingDue(shift.requested_at, now);
+  const pendingAfterMinutes = resolveOrganizationShiftConfirmationPendingAfterMinutes(
+    shift.organization
+  );
+  return isShiftConfirmationPendingDue(
+    shift.requested_at,
+    now,
+    pendingAfterMinutes
+  );
 }
 
 export function filterRequestedShiftsDueForPendingTransition(
@@ -40,13 +48,14 @@ export function filterRequestedShiftsDueForPendingTransition(
 export function resolveEffectiveConfirmationStatus(
   status: ShiftConfirmationStatus | null | undefined,
   requestedAt: string | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  pendingAfterMinutes: number = PENDING_ELAPSED_MINUTES_REQUIRED
 ): ShiftConfirmationStatus | undefined {
   if (!status) return undefined;
   if (
     status === "requested" &&
     requestedAt &&
-    isShiftConfirmationPendingDue(requestedAt, now)
+    isShiftConfirmationPendingDue(requestedAt, now, pendingAfterMinutes)
   ) {
     return "pending";
   }

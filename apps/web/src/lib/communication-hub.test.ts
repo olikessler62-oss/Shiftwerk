@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-shift-card-view";
 import type { AbsenceRequest } from "@schichtwerk/types";
 import {
+  COMMUNICATION_HUB_CATEGORY_ORDER,
   groupCommunicationHubData,
   groupCommunicationResponseShifts,
   groupCommunicationShiftsByArea,
@@ -292,5 +293,30 @@ describe("groupCommunicationHubData", () => {
     expect(grouped.requested.map((row) => row.id)).toEqual(["future-requested"]);
     expect(grouped.conflicts.map((row) => row.id)).toEqual([]);
     expect(grouped.swaps.map((row) => row.id)).toEqual([]);
+  });
+
+  it("groups unresolved shifts into the unresolved tab", () => {
+    const grouped = groupCommunicationHubData([
+      shift({ id: "unresolved-shift", confirmationStatus: "unresolved" }),
+      shift({ id: "pending-shift", confirmationStatus: "pending" }),
+    ]);
+
+    expect(grouped.unresolved.map((row) => row.id)).toEqual(["unresolved-shift"]);
+    expect(grouped.pending.map((row) => row.id)).toEqual(["pending-shift"]);
+  });
+});
+
+describe("COMMUNICATION_HUB_CATEGORY_ORDER", () => {
+  it("lists tabs in the product order", () => {
+    expect([...COMMUNICATION_HUB_CATEGORY_ORDER]).toEqual([
+      "conflicts",
+      "proposed",
+      "requested",
+      "pending",
+      "rejected",
+      "canceled",
+      "swaps",
+      "unresolved",
+    ]);
   });
 });

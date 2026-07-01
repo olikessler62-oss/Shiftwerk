@@ -287,7 +287,7 @@ async function createFriseurSalonArea(
   );
   if (!area) {
     throw new Error(
-      `Einsatzort „${FRISEUR_SALON_SCENARIO_AREA_NAME}“ konnte nicht angelegt werden`
+      `Einsatzbereich „${FRISEUR_SALON_SCENARIO_AREA_NAME}“ konnte nicht angelegt werden`
     );
   }
 
@@ -418,7 +418,7 @@ async function configureAreaStaffing(
     const serviceHourIds = [...new Set(matchingHours.map((hour) => hour.id))];
     if (serviceHourIds.length === 0) {
       throw new Error(
-        `Servicezeit ${window.start}–${window.end} fehlt für Einsatzort „${FRISEUR_SALON_SCENARIO_AREA_NAME}“`
+        `Servicezeit ${window.start}–${window.end} fehlt für Einsatzbereich „${FRISEUR_SALON_SCENARIO_AREA_NAME}“`
       );
     }
 

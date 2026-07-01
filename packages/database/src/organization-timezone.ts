@@ -14,6 +14,7 @@ export const COUNTRY_DEFAULT_TIME_ZONES: Readonly<Record<string, string>> = {
 export type OrganizationTimeZoneInput = {
   timezone?: string | null;
   country_code?: string | null;
+  shift_confirmation_pending_after_minutes?: number | null;
 };
 
 /** Ortszeitzone der Organisation für Schicht-Uhrzeiten (Speichern & Anzeige). */

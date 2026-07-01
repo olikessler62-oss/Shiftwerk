@@ -3,7 +3,6 @@
 import { useEffect } from "react";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { settingsModalHeaderPaddingClass } from "@/components/settings/settings-modal-shell";
 import { Button, CheckIcon, CloseIcon, IconButton } from "@/components/ui";
 import {
   settingsConfirmDialogClass,
@@ -77,8 +76,8 @@ export function SettingsMessageModal({
       >
         <div
           className={cn(
-            "-mx-4 -mt-4 mb-3 flex items-start justify-end border-b border-border sm:-mx-5 sm:-mt-5",
-            settingsModalHeaderPaddingClass()
+            "-mx-4 -mt-4 mb-3 flex items-start justify-end sm:-mx-5 sm:-mt-5",
+            "px-4 pt-3 sm:px-5 sm:pt-4"
           )}
         >
           <IconButton

@@ -48,6 +48,10 @@ const context = {
     ["emp-1", "Anna"],
     ["emp-2", "Ben"],
   ]),
+  employeeColorById: new Map([
+    ["emp-1", "#3b82f6"],
+    ["emp-2", "#f97316"],
+  ]),
   shiftConfirmationEnabled: true,
   readOnlyWeek: false,
   todayISO: "2026-06-25",
@@ -137,6 +141,21 @@ describe("staffingRowShowsIssuesButton", () => {
       )
     ).toBe(true);
   });
+
+  it("shows for understaffed rows with unconfirmed planned coverage", () => {
+    expect(
+      staffingRowShowsIssuesButton(
+        {
+          ...baseRow,
+          status: "understaffed",
+          assigned: 1,
+          confirmedAssigned: 0,
+          required: 2,
+        },
+        true
+      )
+    ).toBe(true);
+  });
 });
 
 describe("listConfirmationShiftsForStaffingWindow", () => {
@@ -165,6 +184,27 @@ describe("listConfirmationShiftsForStaffingWindow", () => {
   it("includes proposed shifts on planned rows", () => {
     const shifts = listConfirmationShiftsForStaffingWindow(
       { ...baseRow, status: "planned" },
+      {
+        ...context,
+        calendarShifts: [
+          shift({ id: "s-proposed", employee_id: "emp-1", confirmationStatus: "proposed" }),
+          shift({ id: "s-confirmed", employee_id: "emp-2", confirmationStatus: "confirmed" }),
+        ],
+      }
+    );
+
+    expect(shifts.map((item) => item.id)).toEqual(["s-proposed"]);
+  });
+
+  it("includes proposed shifts on understaffed rows with partial planned coverage", () => {
+    const shifts = listConfirmationShiftsForStaffingWindow(
+      {
+        ...baseRow,
+        status: "understaffed",
+        assigned: 1,
+        confirmedAssigned: 0,
+        required: 2,
+      },
       {
         ...context,
         calendarShifts: [

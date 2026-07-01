@@ -18,6 +18,7 @@ import {
   getOrgFeaturesFromPlanningMode,
   resolveConfirmationAssignPatch,
   resolveEffectiveConfirmationStatus,
+  resolveOrganizationShiftConfirmationPendingAfterMinutes,
   resolveOrganizationTimeZone,
   validateEmployeeNotAbsentOnDate,
   validateProfileForShiftConfirmationAssign,
@@ -1151,7 +1152,10 @@ export async function assignShiftBatch(input: {
     for (const shiftId of deleteShiftIds) {
       const snapshot = await db.getShiftRecordById(shiftId, organizationId);
       if (!snapshot) continue;
-      const blockReason = resolveShiftDeletionBlockReason(snapshot);
+      const blockReason = resolveShiftDeletionBlockReason(
+        snapshot,
+        resolveOrganizationShiftConfirmationPendingAfterMinutes(organization)
+      );
       if (blockReason) {
         results.push({
           rowIndex: -1,
@@ -1300,17 +1304,21 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
   }
 }
 
-function resolveShiftDeletionBlockReason(shift: {
+function resolveShiftDeletionBlockReason(
+  shift: {
   shift_date: string;
   confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
   requested_at?: string | null;
-}): string | null {
+},
+  pendingAfterMinutes?: number
+): string | null {
   if (
     canDeleteShift({
       shiftDate: shift.shift_date,
       confirmationStatus: shift.confirmation_status,
       requestedAt: shift.requested_at ?? null,
       isPastShiftDate,
+      pendingAfterMinutes,
     })
   ) {
     return null;
@@ -1322,21 +1330,28 @@ function resolveShiftDeletionBlockReason(shift: {
 
   const status = resolveEffectiveConfirmationStatus(
     shift.confirmation_status,
-    shift.requested_at ?? null
+    shift.requested_at ?? null,
+    new Date(),
+    pendingAfterMinutes
   );
   return shiftDeleteBlockedActionError(status ?? "confirmed");
 }
 
 export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
   try {
-    const { organizationId, userId } = await requireManager();
+    const { organizationId, userId, organization } = await requireManager();
     const db = await getDatabase();
+    const pendingAfterMinutes =
+      resolveOrganizationShiftConfirmationPendingAfterMinutes(organization);
 
     const shift = await db.getShiftRecordById(shiftId, organizationId);
     if (!shift) {
       return { ok: false, error: "Schicht nicht gefunden" };
     }
-    const blockReason = resolveShiftDeletionBlockReason(shift);
+    const blockReason = resolveShiftDeletionBlockReason(
+      shift,
+      pendingAfterMinutes
+    );
     if (blockReason) {
       return { ok: false, error: blockReason };
     }
@@ -1377,8 +1392,10 @@ export async function removeShiftsAsManager(shiftIds: string[]): Promise<
       return { ok: false, error: "Keine Schichten ausgewählt." };
     }
 
-    const { organizationId, userId } = await requireManager();
+    const { organizationId, userId, organization } = await requireManager();
     const db = await getDatabase();
+    const pendingAfterMinutes =
+      resolveOrganizationShiftConfirmationPendingAfterMinutes(organization);
     let deletedCount = 0;
     const errors: string[] = [];
     const revalidateByLocation = new Map<string | null, Set<string>>();
@@ -1389,7 +1406,10 @@ export async function removeShiftsAsManager(shiftIds: string[]): Promise<
         errors.push("Schicht nicht gefunden");
         continue;
       }
-      const blockReason = resolveShiftDeletionBlockReason(shift);
+      const blockReason = resolveShiftDeletionBlockReason(
+        shift,
+        pendingAfterMinutes
+      );
       if (blockReason) {
         errors.push(blockReason);
         continue;

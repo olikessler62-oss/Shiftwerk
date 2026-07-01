@@ -19,14 +19,50 @@ function normalizeTime(time: string): string {
 
 function parseISODate(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d);
+  return new Date(Date.UTC(y, m - 1, d));
 }
 
 function toISODate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function wallClockPartsInZone(
+  utcDate: Date,
+  timeZone: string
+): {
+  y: number;
+  m: number;
+  d: number;
+  hh: number;
+  mm: number;
+  ss: number;
+} {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = dtf.formatToParts(utcDate);
+  const map: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") map[part.type] = part.value;
+  }
+  return {
+    y: Number(map.year),
+    m: Number(map.month),
+    d: Number(map.day),
+    hh: Number(map.hour),
+    mm: Number(map.minute),
+    ss: Number(map.second),
+  };
 }
 
 function getTimeZoneOffsetMs(timeZone: string, utcDate: Date): number {
@@ -64,10 +100,45 @@ export function zonedWallClockToUtc(
 ): Date {
   const normalized = normalizeTime(time);
   const [y, m, d] = dateISO.split("-").map(Number);
-  const [hh, mm, ss = "0"] = normalized.split(":").map(Number);
-  const utcGuess = Date.UTC(y, m - 1, d, hh, mm, Number(ss));
-  const offsetMs = getTimeZoneOffsetMs(timeZone, new Date(utcGuess));
-  return new Date(utcGuess - offsetMs);
+  const [hh, mm, ssRaw = "0"] = normalized.split(":").map(Number);
+  const ss = Number(ssRaw);
+  const wallUtc = Date.UTC(y, m - 1, d, hh, mm, ss);
+
+  let utcMs = wallUtc;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const offsetMs = getTimeZoneOffsetMs(timeZone, new Date(utcMs));
+    const nextMs = wallUtc - offsetMs;
+    if (nextMs === utcMs) break;
+    utcMs = nextMs;
+  }
+
+  const matchesWallClock = (candidateMs: number): boolean => {
+    const parts = wallClockPartsInZone(new Date(candidateMs), timeZone);
+    return (
+      parts.y === y &&
+      parts.m === m &&
+      parts.d === d &&
+      parts.hh === hh &&
+      parts.mm === mm &&
+      parts.ss === ss
+    );
+  };
+
+  if (matchesWallClock(utcMs)) {
+    return new Date(utcMs);
+  }
+
+  // Herbst-Umstellung: mehrdeutige Ortszeit — ±1h testen.
+  const hourMs = 60 * 60 * 1000;
+  for (const delta of [-hourMs, hourMs]) {
+    const candidate = utcMs + delta;
+    if (matchesWallClock(candidate)) {
+      return new Date(candidate);
+    }
+  }
+
+  // Frühjahrs-Umstellung: angeforderte Zeit existiert nicht — nächste gültige Ortszeit.
+  return new Date(utcMs);
 }
 
 /** Ortszeit aus gespeichertem timestamptz — nicht UTC-Substring. */
@@ -98,7 +169,7 @@ export function buildShiftTimestamps(
   let endDate = shiftDate;
   if (endH < startH || (endH === startH && endNorm < startNorm)) {
     const d = parseISODate(shiftDate);
-    d.setDate(d.getDate() + 1);
+    d.setUTCDate(d.getUTCDate() + 1);
     endDate = toISODate(d);
   }
 

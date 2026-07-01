@@ -103,7 +103,9 @@ export async function openDashboardDayDrilldown(
 
   await dashboardWeekDayCard(page, nav.shiftDate).click();
 
-  await expect(page.getByRole("button", { name: "Wochenübersicht" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "zurück zur Wochenansicht" })
+  ).toBeVisible();
 }
 
 export function dashboardAreaCard(page: Page, areaName: string) {

@@ -5,7 +5,7 @@ import { loadDashboardLocationScopedData } from "@/lib/dashboard-location-data";
 import { shouldDisplayShiftOnPlanningCalendar } from "@/lib/shift-cancellation-policy";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
 import { loadCommunicationHubScopeData } from "@/lib/communication-hub-scope-data";
-import { organizationTodayISO } from "@schichtwerk/database";
+import { organizationTodayISO, resolveOrganizationShiftConfirmationPendingAfterMinutes } from "@schichtwerk/database";
 import { resolveDashboardEmployeesForShifts } from "@/lib/dashboard-page-employees";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
@@ -104,6 +104,9 @@ export async function loadDashboardSummaryPageBundle(input: {
     planningEmployees,
   } = input;
 
+  const pendingAfterMinutes =
+    resolveOrganizationShiftConfirmationPendingAfterMinutes(organization);
+
   const { areas, areaShiftTemplates, shiftRows, serviceHours, staffingRules, staffingOverrides } =
     await loadDashboardLocationScopedData(
       db,
@@ -143,7 +146,8 @@ export async function loadDashboardSummaryPageBundle(input: {
         : null;
 
     const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(
-      shiftRow
+      shiftRow,
+      pendingAfterMinutes
     );
 
     const planningShift: PlanningShift = {

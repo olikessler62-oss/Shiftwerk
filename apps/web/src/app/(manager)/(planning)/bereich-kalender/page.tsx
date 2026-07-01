@@ -10,7 +10,7 @@ import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/areacalendar-assignment-presets";
 import { AreaCalendarView } from "@/components/areacalendar/areacalendar-view";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-calendar";
-import { organizationTodayISO, resolveOrganizationTimeZone } from "@schichtwerk/database";
+import { organizationTodayISO, resolveOrganizationTimeZone, resolveOrganizationShiftConfirmationPendingAfterMinutes } from "@schichtwerk/database";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
 import { getCachedAreaCalendarShifts } from "@/lib/cached-areacalendar-shifts";
@@ -52,6 +52,8 @@ export default async function BereichKalenderPage({
 
   const { user, organization, organizationId: orgId } = session;
   const timeZone = resolveOrganizationTimeZone(organization);
+  const pendingAfterMinutes =
+    resolveOrganizationShiftConfirmationPendingAfterMinutes(organization);
 
   const weekStart = redirectIfPlanningWeekClamped("/bereich-kalender", week, {
     week,
@@ -147,7 +149,10 @@ export default async function BereichKalenderPage({
           )
         : null;
 
-    const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(s);
+    const confirmationFields = mapAreaCalendarShiftRowConfirmationFields(
+      s,
+      pendingAfterMinutes
+    );
 
     cards.push({
       id: s.id,

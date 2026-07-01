@@ -14,7 +14,7 @@ import {
   TrashIcon,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { settingsModalHeaderPaddingClass } from "@/components/settings/settings-modal-shell";
+import { settingsModalHeaderPaddingClass, settingsConfirmDialogClass, settingsModalBodyPaddingClass, settingsModalFooterClass } from "@/components/settings/settings-modal-shell";
 export {
   SETTINGS_LIST_ITEM_ID_ATTR,
   applyCreatedListSelection,
@@ -88,23 +88,34 @@ export function SettingsModalHeader({
   );
 }
 
-/** Nur Schließen-Button für kleine Bestätigungsdialoge. */
+/** Nur Schließen-Button für kleine Bestätigungsdialoge (ohne farbige Kopfleiste). */
 export function SettingsConfirmDialogCloseHeader({
   onClose,
   closeDisabled = false,
   closeAriaLabel,
+  title,
+  titleId,
 }: {
   onClose: () => void;
   closeDisabled?: boolean;
   closeAriaLabel: string;
+  title?: ReactNode;
+  titleId?: string;
 }) {
+  if (title != null && titleId != null) {
+    return (
+      <SettingsModalHeader
+        title={title}
+        titleId={titleId}
+        onClose={onClose}
+        closeDisabled={closeDisabled}
+        closeAriaLabel={closeAriaLabel}
+      />
+    );
+  }
+
   return (
-    <div
-      className={cn(
-        "flex items-start justify-end border-b border-border",
-        settingsModalHeaderPaddingClass()
-      )}
-    >
+    <div className="flex justify-end px-4 pt-3 sm:px-5 sm:pt-4">
       <IconButton
         size="sm"
         onClick={onClose}
@@ -114,6 +125,43 @@ export function SettingsConfirmDialogCloseHeader({
       >
         <CloseIcon className="h-[18px] w-[18px]" />
       </IconButton>
+    </div>
+  );
+}
+
+type SettingsConfirmDialogShellProps = {
+  title: ReactNode;
+  titleId: string;
+  onClose: () => void;
+  closeDisabled?: boolean;
+  closeAriaLabel: string;
+  children: ReactNode;
+  footer: ReactNode;
+  className?: string;
+};
+
+/** Einheitliches Layout für kleine Bestätigungsdialoge. */
+export function SettingsConfirmDialogShell({
+  title,
+  titleId,
+  onClose,
+  closeDisabled = false,
+  closeAriaLabel,
+  children,
+  footer,
+  className,
+}: SettingsConfirmDialogShellProps) {
+  return (
+    <div className={cn(settingsConfirmDialogClass(), "overflow-hidden p-0", className)}>
+      <SettingsModalHeader
+        title={title}
+        titleId={titleId}
+        onClose={onClose}
+        closeDisabled={closeDisabled}
+        closeAriaLabel={closeAriaLabel}
+      />
+      <div className={settingsModalBodyPaddingClass()}>{children}</div>
+      <div className={settingsModalFooterClass()}>{footer}</div>
     </div>
   );
 }

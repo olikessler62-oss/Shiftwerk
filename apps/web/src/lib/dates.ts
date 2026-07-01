@@ -1,30 +1,33 @@
-/** Montag der Woche (lokal) */
+/** Kalenderdatum-Helfer — UTC, unabhängig von der Server-Zeitzone. */
+
+/** Montag der Woche (UTC-Kalenderdatum). */
 export function startOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
+  const d = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  );
+  const day = d.getUTCDay();
   const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + diff);
   return d;
 }
 
 export function toISODate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
 export function parseISODate(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d);
+  return new Date(Date.UTC(y, m - 1, d));
 }
 
 export function weekDates(weekStartISO: string): string[] {
   const start = parseISODate(weekStartISO);
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(start);
-    d.setDate(start.getDate() + i);
+    d.setUTCDate(start.getUTCDate() + i);
     return toISODate(d);
   });
 }
@@ -50,14 +53,18 @@ export {
 export function formatWeekLabel(weekStartISO: string): string {
   const start = parseISODate(weekStartISO);
   const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  const fmt = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "short" });
+  end.setUTCDate(start.getUTCDate() + 6);
+  const fmt = new Intl.DateTimeFormat("de-DE", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
   const kw = getISOWeek(start);
   return `KW ${kw} · ${fmt.format(start)} – ${fmt.format(end)}`;
 }
 
 export function getISOWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
