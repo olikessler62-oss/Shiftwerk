@@ -59,8 +59,10 @@ type WeekShiftCardProps = {
   draft?: ConfirmationDecision;
   compact?: boolean;
   height?: number;
+  minHeight?: number;
   shiftsOnDay?: number;
   shiftsLayout?: WeekDayShiftsLayout;
+  allowTextWrap?: boolean;
   isPastDay?: boolean;
   onPress: (context: WeekShiftActionContext) => void;
   onDismiss?: (shiftId: string) => void;
@@ -91,6 +93,7 @@ function scaleShiftCardForHeight(
   shiftsLayout: WeekDayShiftsLayout
 ): ShiftCardSizing {
   const multiColumn = shiftsLayout !== "single";
+  const isTriple = shiftsLayout === "triple";
   const bodyHeight = height;
 
   const titleFontSize = fontSizeFromCardHeight(bodyHeight, TITLE_HEIGHT_RATIO);
@@ -104,12 +107,15 @@ function scaleShiftCardForHeight(
     SHIFT_META_FONT_PX_OFFSET;
 
   if (multiColumn) {
-    const widthCap = width > 0 ? Math.max(9, Math.round(width / 11)) : 11;
+    const metaDivisor = isTriple ? 13 : 11;
+    const primaryDivisor = isTriple ? 12 : 10;
+    const widthCap = width > 0 ? Math.max(8, Math.round(width / metaDivisor)) : 9;
     metaFontSize = Math.min(metaFontSize, widthCap);
-    const primaryCap = width > 0 ? Math.max(9, Math.round(width / 10)) : 12;
+    const primaryCap =
+      width > 0 ? Math.max(8, Math.round(width / primaryDivisor)) : 11;
     return {
       paddingVertical: Math.max(2, Math.round(height * 0.04)),
-      paddingHorizontal: Math.max(4, Math.round(height * 0.06)),
+      paddingHorizontal: Math.max(4, Math.round(height * (isTriple ? 0.05 : 0.06))),
       timeFontSize: Math.min(timeFontSize, primaryCap),
       timeSecondaryFontSize: Math.min(timeSecondaryFontSize, primaryCap),
       titleFontSize: Math.min(titleFontSize, primaryCap),
@@ -119,7 +125,10 @@ function scaleShiftCardForHeight(
       showNotes: false,
       notesFontSize: 11,
       notesMarginTop: 2,
-      overlayBadgeReserveWidth: Math.max(28, Math.round(height * 0.32)),
+      overlayBadgeReserveWidth: Math.max(
+        isTriple ? 24 : 28,
+        Math.round(height * (isTriple ? 0.28 : 0.32))
+      ),
     };
   }
 
@@ -204,8 +213,10 @@ export function WeekShiftCard({
   draft,
   compact = false,
   height,
+  minHeight,
   shiftsOnDay = 1,
   shiftsLayout: shiftsLayoutProp,
+  allowTextWrap = false,
   isPastDay = false,
   onPress,
   onDismiss,
@@ -215,7 +226,8 @@ export function WeekShiftCard({
   const [cardWidth, setCardWidth] = useState(0);
   const shiftsLayout = shiftsLayoutProp ?? getWeekDayShiftsLayout(shiftsOnDay);
   const multiColumn = shiftsLayout !== "single";
-  const useCompactDetail = shiftsLayout !== "single";
+  const useCompactDetail = multiColumn;
+  const sizingHeight = height ?? minHeight;
   const cardTextColor = resolveShiftCardContentTextColor(
     shift.confirmation_status,
     isPastDay
@@ -240,9 +252,11 @@ export function WeekShiftCard({
   const canDismiss = isEmployeeDismissableShift(shift, display) && onDismiss != null;
   const cardDisabled = isPastDay && !canDismiss;
   const sizing =
-    height != null
-      ? scaleShiftCardForHeight(height, cardWidth, shiftsLayout)
+    sizingHeight != null
+      ? scaleShiftCardForHeight(sizingHeight, cardWidth, shiftsLayout)
       : null;
+  const wrapText = allowTextWrap || multiColumn;
+  const lineLimit = wrapText ? undefined : 1;
   const shiftGradient = useMemo(
     () =>
       buildShiftCardLinearGradient(
@@ -269,11 +283,17 @@ export function WeekShiftCard({
         styles.cardShell,
         compact && styles.cardShellCompact,
         shiftsLayout === "single" && styles.cardShellSingle,
-        shiftsLayout === "pair" && styles.cardShellColumn,
+        (shiftsLayout === "pair" || shiftsLayout === "triple") &&
+          styles.cardShellColumn,
         shiftsLayout === "grid" && styles.cardShellGrid,
         height != null && {
           height,
           marginBottom: 0,
+        },
+        minHeight != null && {
+          minHeight,
+          marginBottom: 0,
+          flex: 1,
         },
       ]}
       disabled={cardDisabled}
@@ -295,7 +315,7 @@ export function WeekShiftCard({
           draft === "confirm" && styles.cardDraftConfirm,
           draft === "reject" && styles.cardDraftReject,
           canDismiss && styles.cardWithDismissAction,
-          height != null && {
+          sizingHeight != null && {
             flex: 1,
             paddingVertical: sizing!.paddingVertical,
             paddingHorizontal: sizing!.paddingHorizontal,
@@ -333,7 +353,7 @@ export function WeekShiftCard({
         <View
           style={[
             styles.cardBody,
-            height != null && {
+            sizingHeight != null && {
               flex: 1,
               justifyContent: multiColumn ? "flex-start" : "center",
             },
@@ -371,7 +391,7 @@ export function WeekShiftCard({
                               SHIFT_CARD_FONT_PX_OFFSET,
                         },
                       ]}
-                      numberOfLines={1}
+                      numberOfLines={lineLimit}
                     >
                       {templateLabel}
                     </Text>
@@ -387,7 +407,7 @@ export function WeekShiftCard({
                               SHIFT_CARD_FONT_PX_OFFSET,
                         },
                       ]}
-                      numberOfLines={1}
+                      numberOfLines={lineLimit}
                     >
                       {shiftTimeLabel}
                     </Text>
@@ -405,9 +425,9 @@ export function WeekShiftCard({
                             SHIFT_CARD_FONT_PX_OFFSET,
                       },
                     ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit={height == null}
-                    minimumFontScale={height == null ? 0.75 : 1}
+                    numberOfLines={lineLimit}
+                    adjustsFontSizeToFit={sizingHeight == null && !wrapText}
+                    minimumFontScale={sizingHeight == null && !wrapText ? 0.75 : 1}
                   >
                     {shiftTimeLabel}
                   </Text>
@@ -428,7 +448,7 @@ export function WeekShiftCard({
                           SHIFT_META_BASE_SIZE + SHIFT_META_FONT_PX_OFFSET,
                       },
                     ]}
-                    numberOfLines={1}
+                    numberOfLines={lineLimit}
                   >
                     {locationLabel}
                   </Text>
@@ -444,7 +464,7 @@ export function WeekShiftCard({
                           SHIFT_META_BASE_SIZE + SHIFT_META_FONT_PX_OFFSET,
                       },
                     ]}
-                    numberOfLines={1}
+                    numberOfLines={lineLimit}
                   >
                     {areaJobLabel}
                   </Text>
@@ -461,7 +481,7 @@ export function WeekShiftCard({
                       SHIFT_META_BASE_SIZE + SHIFT_META_FONT_PX_OFFSET,
                   },
                 ]}
-                numberOfLines={1}
+                numberOfLines={lineLimit}
               >
                 {metaLabel}
               </Text>
@@ -479,7 +499,7 @@ export function WeekShiftCard({
                 marginTop: sizing.notesMarginTop,
               },
             ]}
-            numberOfLines={1}
+            numberOfLines={wrapText ? undefined : 1}
           >
             {shift.notes}
           </Text>

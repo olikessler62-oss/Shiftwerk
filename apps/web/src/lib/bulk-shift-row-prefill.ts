@@ -1,6 +1,8 @@
 import type { AreaCalendarShiftAssignEmployee } from "@/app/actions/areacalendar-shift-assign";
 import {
   areAreaCalendarShiftTimesComplete,
+  areaAssignmentsExcludingReplacedShift,
+  excludeEmployeeFromReassignSuggestions,
   filterBulkShiftAssignEmployeesForRow,
   filterBulkShiftAssignEmployeesWithoutTimeWindow,
 } from "@/lib/available-employees-for-shift";
@@ -44,6 +46,7 @@ export type ProfileShiftPreferenceEntry = ProfileShiftPreferenceMatchEntry;
 
 export type BulkPrefillRow = {
   id: string;
+  existingShiftId?: string;
   employeeId: string;
   qualificationId: string;
   shiftTypeId: string;
@@ -163,6 +166,7 @@ function matchingEmployeesForPrefillRow(
     BulkPrefillRow,
     | "id"
     | "employeeId"
+    | "existingShiftId"
     | "startTime"
     | "endTime"
     | "requestedStartTime"
@@ -208,8 +212,13 @@ function matchingEmployeesForPrefillRow(
   const areaQualificationIds = new Set(
     options.areaQualifications.map((option) => option.id)
   );
-  const areaAssignmentsForRow = buildAreaAssignmentsForRow(
+  const assignmentsForRow = areaAssignmentsExcludingReplacedShift(
     options.areaExistingAssignments,
+    row,
+    options.emptyEmployeeId
+  );
+  const areaAssignmentsForRow = buildAreaAssignmentsForRow(
+    assignmentsForRow,
     options.allRows,
     row.id,
     options.emptyEmployeeId
@@ -244,8 +253,16 @@ function matchingEmployeesForPrefillRow(
     timeZone: options.timeZone,
     assignContextForEmployee,
   });
+  const reassignExcludedEmployeeId =
+    row.existingShiftId && row.employeeId !== options.emptyEmployeeId
+      ? row.employeeId
+      : null;
+
   if (options.withoutServiceHours) {
-    return withinWeeklyHours;
+    return excludeEmployeeFromReassignSuggestions(
+      withinWeeklyHours,
+      reassignExcludedEmployeeId
+    );
   }
   const demandQualificationIds = staffingQualificationIdsForServiceHour(
     options.staffingRules,
@@ -253,16 +270,22 @@ function matchingEmployeesForPrefillRow(
     row.demandServiceHourId
   );
   if (demandQualificationIds.size > 0) {
-    return filterEmployeesWithAnyQualificationInSet(
-      withinWeeklyHours,
-      demandQualificationIds,
-      options.profileQualificationIds
+    return excludeEmployeeFromReassignSuggestions(
+      filterEmployeesWithAnyQualificationInSet(
+        withinWeeklyHours,
+        demandQualificationIds,
+        options.profileQualificationIds
+      ),
+      reassignExcludedEmployeeId
     );
   }
-  return filterEmployeesWithAnyAreaQualification(
-    withinWeeklyHours,
-    areaQualificationIds,
-    options.profileQualificationIds
+  return excludeEmployeeFromReassignSuggestions(
+    filterEmployeesWithAnyAreaQualification(
+      withinWeeklyHours,
+      areaQualificationIds,
+      options.profileQualificationIds
+    ),
+    reassignExcludedEmployeeId
   );
 }
 

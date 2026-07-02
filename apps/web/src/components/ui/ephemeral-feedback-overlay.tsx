@@ -2,11 +2,12 @@
 
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { usePlanningSidePanelOverlayHost } from "@/components/planning/planning-side-panel";
+import { MODAL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 import { cn } from "@/lib/cn";
-import { Alert } from "./alert";
 
-/** Über Planungs-Slide-ins (z-110) und verschachtelte Overlays. */
-export const EPHEMERAL_FEEDBACK_Z_INDEX_CLASS = "z-[120]";
+/** Über verschachtelte Modals (z. B. Personalengpass z-125). */
+export const EPHEMERAL_FEEDBACK_Z_INDEX_CLASS = "z-[130]";
 
 const DEFAULT_DURATION_MS = 2600;
 
@@ -19,13 +20,30 @@ type Props = {
   durationMs?: number;
 };
 
-/** Kurzes Feedback über dem UI — ohne Layout der darunterliegenden Controls zu verschieben. */
+const VARIANT_TEXT_CLASS: Record<Variant, string> = {
+  success: "text-foreground",
+  error: "text-destructive",
+  info: "text-foreground",
+};
+
+function ephemeralFeedbackDialogClass(variant: Variant, className?: string) {
+  return cn(
+    "pointer-events-auto w-full max-w-md border border-border bg-surface px-4 py-4 text-sm shadow-2xl sm:px-5",
+    MODAL_ROUNDED_CLASS,
+    VARIANT_TEXT_CLASS[variant],
+    className
+  );
+}
+
+/** Kurzes Feedback als weißes Modal — zentriert im Slide-in oder im Viewport. */
 export function EphemeralFeedbackOverlay({
   message,
   variant = "success",
   onDismiss,
   durationMs = DEFAULT_DURATION_MS,
 }: Props) {
+  const panelOverlayHost = usePlanningSidePanelOverlayHost();
+
   useEffect(() => {
     if (!message) return;
     const timer = window.setTimeout(onDismiss, durationMs);
@@ -36,23 +54,28 @@ export function EphemeralFeedbackOverlay({
     return null;
   }
 
+  const portalTarget = panelOverlayHost ?? document.body;
+  const scopedToPanel = panelOverlayHost != null;
+
   return createPortal(
     <div
       className={cn(
-        "pointer-events-none fixed inset-0 flex items-start justify-center px-4 pt-6 sm:pt-10",
-        EPHEMERAL_FEEDBACK_Z_INDEX_CLASS,
-        "md:left-[var(--app-shell-sidebar-width)]"
+        "pointer-events-none flex items-center justify-center bg-black/25 p-4 sm:p-6",
+        scopedToPanel
+          ? "absolute inset-0"
+          : cn(
+              "fixed inset-0",
+              EPHEMERAL_FEEDBACK_Z_INDEX_CLASS,
+              "md:left-[var(--app-shell-sidebar-width)]"
+            )
       )}
       role="presentation"
       aria-live="polite"
     >
-      <Alert
-        variant={variant}
-        className="pointer-events-auto w-full max-w-md shadow-lg"
-      >
+      <div role="status" className={ephemeralFeedbackDialogClass(variant)}>
         {message}
-      </Alert>
+      </div>
     </div>,
-    document.body
+    portalTarget
   );
 }

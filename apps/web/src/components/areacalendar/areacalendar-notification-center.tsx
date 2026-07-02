@@ -8,6 +8,7 @@ import {
   listManagerNotifications,
 } from "@/app/actions/manager-notifications";
 import { fetchEmployeeCancellationReasonsForShifts } from "@/app/actions/shift-cancellation-reasons";
+import { fetchEmployeeRejectionReasonsForShifts } from "@/app/actions/shift-rejection-reasons";
 import { readCancellationReasonShiftContextFromPayload } from "@/lib/cancellation-reason-shift-context";
 import type { CancellationReasonShiftContext } from "@/lib/cancellation-reason-shift-context";
 import { BellIcon, CloseIcon, IconButton } from "@/components/ui";
@@ -77,6 +78,31 @@ function weekStartFromShiftDate(shiftDate: string): string {
   return `${year}-${month}-${dayOfMonth}`;
 }
 
+function readNotificationShiftIds(payload: Record<string, unknown>): string[] {
+  const shiftIds = payload.shift_ids;
+  if (!Array.isArray(shiftIds)) return [];
+  return shiftIds.filter((id): id is string => typeof id === "string" && Boolean(id));
+}
+
+function rejectionReasonEntriesForNotification(
+  notification: ManagerNotification,
+  rejectionReasonsByShiftId: Readonly<Record<string, string>>
+): { shiftId: string; reason: string }[] {
+  if (notification.type !== "employee_response_summary") return [];
+  if (notification.payload.has_rejections !== true) return [];
+
+  return readNotificationShiftIds(notification.payload).flatMap((shiftId) => {
+    const reason = rejectionReasonsByShiftId[shiftId]?.trim();
+    return reason ? [{ shiftId, reason }] : [];
+  });
+}
+
+const EMPTY_REASON_ENRICHMENT = {
+  ok: true as const,
+  reasons: {} as Record<string, string>,
+  shiftContexts: {} as Record<string, CancellationReasonShiftContext>,
+};
+
 export function AreaCalendarNotificationCenter({
   enabled,
   initialNotifications,
@@ -89,6 +115,9 @@ export function AreaCalendarNotificationCenter({
   const [notifications, setNotifications] = useState(initialNotifications);
   const [shiftContextsByShiftId, setShiftContextsByShiftId] = useState<
     Record<string, CancellationReasonShiftContext>
+  >({});
+  const [rejectionReasonsByShiftId, setRejectionReasonsByShiftId] = useState<
+    Record<string, string>
   >({});
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -145,58 +174,81 @@ export function AreaCalendarNotificationCenter({
         .map((notification) => notification.payload.shift_id)
         .filter((shiftId): shiftId is string => typeof shiftId === "string" && Boolean(shiftId));
 
-      if (!canceledShiftIds.length) {
-        setShiftContextsByShiftId({});
+      const responseSummaryShiftIds = [
+        ...new Set(
+          result.notifications
+            .filter(
+              (notification) =>
+                notification.type === "employee_response_summary" &&
+                notification.payload.has_rejections === true
+            )
+            .flatMap((notification) =>
+              readNotificationShiftIds(notification.payload)
+            )
+        ),
+      ];
+
+      const [cancelEnrichResult, rejectEnrichResult] = await Promise.all([
+        canceledShiftIds.length
+          ? fetchEmployeeCancellationReasonsForShifts(canceledShiftIds)
+          : Promise.resolve(EMPTY_REASON_ENRICHMENT),
+        responseSummaryShiftIds.length
+          ? fetchEmployeeRejectionReasonsForShifts(responseSummaryShiftIds)
+          : Promise.resolve(EMPTY_REASON_ENRICHMENT),
+      ]);
+
+      if (!cancelEnrichResult.ok || !rejectEnrichResult.ok) {
         setNotifications(result.notifications);
         return;
       }
 
-      const enrichResult = await fetchEmployeeCancellationReasonsForShifts(canceledShiftIds);
-      if (!enrichResult.ok) {
-        setNotifications(result.notifications);
-        return;
-      }
+      setShiftContextsByShiftId({
+        ...cancelEnrichResult.shiftContexts,
+        ...rejectEnrichResult.shiftContexts,
+      });
+      setRejectionReasonsByShiftId(rejectEnrichResult.reasons);
 
-      setShiftContextsByShiftId(enrichResult.shiftContexts);
       setNotifications(
         result.notifications.map((notification) => {
-          if (notification.type !== "employee_shift_canceled") return notification;
+          if (notification.type === "employee_shift_canceled") {
+            const shiftId = notification.payload.shift_id;
+            if (typeof shiftId !== "string") return notification;
 
-          const shiftId = notification.payload.shift_id;
-          if (typeof shiftId !== "string") return notification;
+            const shiftContext = cancelEnrichResult.shiftContexts[shiftId];
+            const reason =
+              readCancellationReasonFromManagerNotification({
+                payload: notification.payload,
+                body: notification.body,
+              }) ?? cancelEnrichResult.reasons[shiftId];
 
-          const shiftContext = enrichResult.shiftContexts[shiftId];
-          const reason =
-            readCancellationReasonFromManagerNotification({
-              payload: notification.payload,
-              body: notification.body,
-            }) ?? enrichResult.reasons[shiftId];
+            const payload = {
+              ...notification.payload,
+              ...(reason ? { cancellation_reason: reason } : {}),
+              ...(shiftContext?.startTime && !notification.payload.start_time
+                ? { start_time: shiftContext.startTime }
+                : {}),
+              ...(shiftContext?.endTime && !notification.payload.end_time
+                ? { end_time: shiftContext.endTime }
+                : {}),
+              ...(shiftContext?.shiftTemplateName &&
+              !notification.payload.shift_template_name
+                ? { shift_template_name: shiftContext.shiftTemplateName }
+                : {}),
+            };
 
-          const payload = {
-            ...notification.payload,
-            ...(reason ? { cancellation_reason: reason } : {}),
-            ...(shiftContext?.startTime && !notification.payload.start_time
-              ? { start_time: shiftContext.startTime }
-              : {}),
-            ...(shiftContext?.endTime && !notification.payload.end_time
-              ? { end_time: shiftContext.endTime }
-              : {}),
-            ...(shiftContext?.shiftTemplateName &&
-            !notification.payload.shift_template_name
-              ? { shift_template_name: shiftContext.shiftTemplateName }
-              : {}),
-          };
+            const body =
+              reason && !notification.body.includes("\nGrund:")
+                ? `${notification.body}\nGrund: ${truncateCancellationReasonPreview(reason)}`
+                : notification.body;
 
-          const body =
-            reason && !notification.body.includes("\nGrund:")
-              ? `${notification.body}\nGrund: ${truncateCancellationReasonPreview(reason)}`
-              : notification.body;
+            return {
+              ...notification,
+              body,
+              payload,
+            };
+          }
 
-          return {
-            ...notification,
-            body,
-            payload,
-          };
+          return notification;
         })
       );
     });
@@ -292,6 +344,10 @@ export function AreaCalendarNotificationCenter({
                     notification.payload,
                     shiftId ? shiftContextsByShiftId[shiftId] : undefined
                   );
+                  const rejectionReasonEntries = rejectionReasonEntriesForNotification(
+                    notification,
+                    rejectionReasonsByShiftId
+                  );
 
                   return (
                   <li key={notification.id}>
@@ -309,14 +365,27 @@ export function AreaCalendarNotificationCenter({
                           {notification.body}
                         </p>
                       </button>
-                      {cancellationReason ? (
-                        <CancellationReasonViewButton
-                          reason={cancellationReason}
-                          employeeName={employeeName}
-                          shiftContext={shiftContext}
-                          className="mt-1"
-                        />
-                      ) : null}
+                      <div className="mt-1 flex shrink-0 flex-col gap-0.5">
+                        {cancellationReason ? (
+                          <CancellationReasonViewButton
+                            reason={cancellationReason}
+                            employeeName={employeeName}
+                            shiftContext={shiftContext}
+                          />
+                        ) : null}
+                        {rejectionReasonEntries.map((entry) => (
+                          <CancellationReasonViewButton
+                            key={entry.shiftId}
+                            reason={entry.reason}
+                            employeeName={employeeName}
+                            messageKind="rejection"
+                            shiftContext={readCancellationReasonShiftContextFromPayload(
+                              {},
+                              shiftContextsByShiftId[entry.shiftId]
+                            )}
+                          />
+                        ))}
+                      </div>
                       <IconButton
                         type="button"
                         size="sm"

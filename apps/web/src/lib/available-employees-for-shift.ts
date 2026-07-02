@@ -304,6 +304,52 @@ export function filterAreaCalendarShiftAssignEmployeesByWindowWithoutOverlap<
   );
 }
 
+export type ReassignShiftReplacementRef = {
+  existingShiftId?: string | null;
+  employeeId: string;
+  startTime: string;
+  endTime: string;
+};
+
+export function resolveEmployeeIdForReassignShift(
+  existingShiftId: string | null | undefined,
+  shifts: readonly { id: string; employee_id: string }[]
+): string | null {
+  if (!existingShiftId) return null;
+  return shifts.find((shift) => shift.id === existingShiftId)?.employee_id ?? null;
+}
+
+/** MA, der abgelehnt/abgesagt hat, nicht in Ersatz-Vorschlägen. */
+export function excludeEmployeeFromReassignSuggestions<
+  T extends { id: string },
+>(employees: readonly T[], employeeId: string | null | undefined): T[] {
+  if (!employeeId) return [...employees];
+  return employees.filter((employee) => employee.id !== employeeId);
+}
+
+export function areaAssignmentsExcludingReplacedShift<
+  T extends AreaCalendarAreaAssignmentWindow,
+>(
+  assignments: readonly T[],
+  replacement: ReassignShiftReplacementRef,
+  emptyEmployeeId?: string
+): T[] {
+  if (!replacement.existingShiftId) return [...assignments];
+  if (!replacement.employeeId || replacement.employeeId === emptyEmployeeId) {
+    return [...assignments];
+  }
+  const start = replacement.startTime.slice(0, 5);
+  const end = replacement.endTime.slice(0, 5);
+  return assignments.filter(
+    (assignment) =>
+      !(
+        assignment.employeeId === replacement.employeeId &&
+        assignment.startTime.slice(0, 5) === start &&
+        assignment.endTime.slice(0, 5) === end
+      )
+  );
+}
+
 export type BulkShiftEmployeeAssignmentContext = {
   shiftDate: string;
   countryCode: string;

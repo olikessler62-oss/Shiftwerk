@@ -22,6 +22,7 @@ import { buildShiftCardStripGradientCss } from "@/lib/shift-card-time-gradient";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
 import { useTranslations } from "@/i18n/locale-provider";
+import { cn } from "@/lib/cn";
 import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
   canOpenShiftCardContextMenu,

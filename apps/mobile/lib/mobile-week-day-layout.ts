@@ -1,14 +1,20 @@
-export type WeekDayShiftsLayout = "single" | "pair" | "grid";
+export type WeekDayShiftsLayout = "single" | "pair" | "triple" | "grid";
 
 export function getWeekDayShiftsLayout(shiftCount: number): WeekDayShiftsLayout {
   if (shiftCount <= 1) return "single";
   if (shiftCount === 2) return "pair";
+  if (shiftCount === 3) return "triple";
   return "grid";
+}
+
+export function isWeekDayRowLayout(layout: WeekDayShiftsLayout): boolean {
+  return layout === "pair" || layout === "triple";
 }
 
 /** Zeilenhöhe in Basiseinheiten (1 = normale Tagzeile). */
 export function getWeekDayHeightUnits(shiftCount: number): number {
   if (shiftCount <= 2) return 1;
+  if (shiftCount === 3) return 1.35;
   return Math.ceil(shiftCount / 2);
 }
 
@@ -16,7 +22,13 @@ export function getWeekDayGridRowCount(shiftCount: number): number {
   return Math.ceil(shiftCount / 2);
 }
 
+export const WEEK_DAY_SHIFT_CARD_AREA_HEIGHT_RATIO = 0.95;
+
 export const WEEK_DAY_GRID_CARD_WIDTH_PERCENT = "49.5%";
+
+export function resolveWeekDaySlotHeightForContent(contentHeight: number): number {
+  return Math.ceil(contentHeight / WEEK_DAY_SHIFT_CARD_AREA_HEIGHT_RATIO);
+}
 
 export function resolveWeekDaySlotHeights(
   shiftCounts: readonly number[],

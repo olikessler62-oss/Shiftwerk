@@ -33,7 +33,10 @@ import {
 import { MobileApiError } from "@/lib/mobile-api-client";
 import { useAppDialog } from "@/lib/use-app-dialog";
 import { buildWeekPlanDays, weekRangeForOffset } from "@/lib/mobile-week-plan";
-import { resolveWeekDaySlotHeights } from "@/lib/mobile-week-day-layout";
+import {
+  resolveWeekDaySlotHeights,
+  resolveWeekDaySlotHeightForContent,
+} from "@/lib/mobile-week-day-layout";
 import { usePendingConfirmations } from "@/lib/pending-confirmations-context";
 import { useWeekPlanLayout } from "@/lib/responsive-layout";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
@@ -55,6 +58,7 @@ export default function WeekScreen() {
   const [actionSheetContext, setActionSheetContext] =
     useState<WeekShiftActionContext | null>(null);
   const [weekGridHeight, setWeekGridHeight] = useState(0);
+  const [dayHeightExtras, setDayHeightExtras] = useState<Record<string, number>>({});
   const initialFocusRef = useRef(true);
 
   const weekMeta = useMemo(() => weekRangeForOffset(weekOffset), [weekOffset]);
@@ -124,6 +128,28 @@ export default function WeekScreen() {
     setLoading(true);
     void load();
   }, [weekOffset, load]);
+
+  useEffect(() => {
+    setDayHeightExtras({});
+  }, [weekMeta.from]);
+
+  const handleDayContentHeightChange = useCallback(
+    (dateISO: string, contentHeight: number, baseCardsAreaHeight: number) => {
+      const baseSlotHeight = resolveWeekDaySlotHeightForContent(baseCardsAreaHeight);
+      const requiredSlotHeight = resolveWeekDaySlotHeightForContent(contentHeight);
+      const extra = Math.max(0, requiredSlotHeight - baseSlotHeight);
+      setDayHeightExtras((prev) => {
+        if ((prev[dateISO] ?? 0) === extra) return prev;
+        if (extra === 0) {
+          if (!(dateISO in prev)) return prev;
+          const { [dateISO]: _removed, ...rest } = prev;
+          return rest;
+        }
+        return { ...prev, [dateISO]: extra };
+      });
+    },
+    []
+  );
 
   const weekDays = useMemo(
     () =>
@@ -262,8 +288,21 @@ export default function WeekScreen() {
     );
   }, [weekDays, weekGridHeight]);
 
-  const weekGridScrollable = daySlotLayout.scrollable;
-  const weekDayHeights = daySlotLayout.heights;
+  const effectiveWeekDayHeights = useMemo(
+    () =>
+      daySlotLayout.heights.map(
+        (height, index) => height + (dayHeightExtras[weekDays[index]?.dateISO ?? ""] ?? 0)
+      ),
+    [dayHeightExtras, daySlotLayout.heights, weekDays]
+  );
+
+  const totalWeekDayHeight = useMemo(
+    () => effectiveWeekDayHeights.reduce((sum, height) => sum + height, 0),
+    [effectiveWeekDayHeights]
+  );
+
+  const weekGridScrollable =
+    daySlotLayout.scrollable || totalWeekDayHeight > weekGridHeight;
 
   const weekNav = (
     <WeekNavHeader
@@ -337,7 +376,7 @@ export default function WeekScreen() {
           style={styles.weekGridHost}
           onLayout={(event) => setWeekGridHeight(event.nativeEvent.layout.height)}
         >
-          {weekDayHeights.some((height) => height > 0) ? (
+          {effectiveWeekDayHeights.some((height) => height > 0) ? (
             <ScrollView
               style={styles.weekGridScroll}
               contentContainerStyle={[
@@ -351,14 +390,15 @@ export default function WeekScreen() {
               {weekDays.map((day, index) => (
                 <View
                   key={day.dateISO}
-                  style={{ height: weekDayHeights[index] ?? 0 }}
+                  style={{ height: effectiveWeekDayHeights[index] ?? 0 }}
                 >
                   <WeekDaySlot
                     day={day}
-                    slotHeight={weekDayHeights[index] ?? 0}
+                    slotHeight={effectiveWeekDayHeights[index] ?? 0}
                     onShiftPress={setActionSheetContext}
                     onDismissShift={(shiftId) => void handleDismissShift(shiftId)}
                     dismissingShiftId={dismissingShiftId}
+                    onContentHeightChange={handleDayContentHeightChange}
                   />
                 </View>
               ))}

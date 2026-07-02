@@ -2,8 +2,10 @@ import type { ProfileShiftPreferenceEntry } from "@/app/actions/areacalendar-shi
 import type { AreaCalendarShiftAssignEmployee } from "@/app/actions/areacalendar-shift-assign";
 import {
   areAreaCalendarShiftTimesComplete,
+  excludeEmployeeFromReassignSuggestions,
   filterBulkShiftAssignEmployeesForRow,
   profileAvailabilityWeekdayFromAreaCalendarDate,
+  resolveEmployeeIdForReassignShift,
   type BulkShiftEmployeeAssignmentContext,
 } from "@/lib/available-employees-for-shift";
 import {
@@ -90,6 +92,8 @@ export type FilterDashboardStaffingCandidatesInput = {
   weekDates: readonly string[];
   timeZone: string;
   countryCode: string;
+  /** Bestehende Schicht ersetzen — MA dieser Schicht von Vorschlägen ausschließen. */
+  reassignShiftId?: string | null;
 };
 
 function shiftDurationMinutes(startTime: string, endTime: string): number {
@@ -275,8 +279,12 @@ function buildBulkAssignContext(input: {
   locationShifts: readonly PlanningShift[];
   countryCode: string;
   timeZone: string;
+  excludeShiftId?: string | null;
 }): BulkShiftEmployeeAssignmentContext {
-  const areaAssignments = input.locationShifts
+  const locationShifts = input.excludeShiftId
+    ? input.locationShifts.filter((shift) => shift.id !== input.excludeShiftId)
+    : input.locationShifts;
+  const areaAssignments = locationShifts
     .filter(
       (shift) =>
         shift.shift_date === input.dateISO &&
@@ -288,7 +296,7 @@ function buildBulkAssignContext(input: {
       endTime: shift.endTime,
     }));
 
-  const otherAreaAssignments = input.locationShifts
+  const otherAreaAssignments = locationShifts
     .filter(
       (shift) =>
         shift.shift_date === input.dateISO &&
@@ -331,12 +339,17 @@ export function filterDashboardStaffingCandidates(
   }
 
   const weekday = profileAvailabilityWeekdayFromAreaCalendarDate(row.dateISO);
+  const reassignExcludedEmployeeId = resolveEmployeeIdForReassignShift(
+    input.reassignShiftId,
+    input.locationShifts
+  );
   const assignContext = buildBulkAssignContext({
     dateISO: row.dateISO,
     areaId: input.areaId,
     locationShifts: input.locationShifts,
     countryCode: input.countryCode,
     timeZone: input.timeZone,
+    excludeShiftId: input.reassignShiftId,
   });
 
   let   eligible = filterBulkShiftAssignEmployeesForRow(
@@ -372,10 +385,13 @@ export function filterDashboardStaffingCandidates(
     row.timeTo
   );
 
-  return eligible.map((employee) => ({
-    id: employee.id,
-    full_name: employee.full_name,
-  }));
+  return excludeEmployeeFromReassignSuggestions(
+    eligible.map((employee) => ({
+      id: employee.id,
+      full_name: employee.full_name,
+    })),
+    reassignExcludedEmployeeId
+  );
 }
 
 export function sortDashboardStaffingCandidates(

@@ -102,6 +102,15 @@ type PanelMotionPhase = "entering" | "open" | "closing";
 
 const PlanningSidePanelCloseContext = createContext<(() => void) | null>(null);
 
+/** Portal-Ziel für kurzes Feedback innerhalb des Slide-ins (zentriert über Panel-Inhalt). */
+export const PlanningSidePanelOverlayContext = createContext<HTMLElement | null>(
+  null
+);
+
+export function usePlanningSidePanelOverlayHost(): HTMLElement | null {
+  return useContext(PlanningSidePanelOverlayContext);
+}
+
 /** Animiertes Schließen — für Footer-Buttons innerhalb von PlanningSidePanel. */
 export function usePlanningSidePanelRequestClose(): () => void {
   const requestClose = useContext(PlanningSidePanelCloseContext);
@@ -160,6 +169,12 @@ export function PlanningSidePanel({
   }, []);
 
   const panelRef = useRef<HTMLElement>(null);
+  const overlayHostRef = useRef<HTMLDivElement>(null);
+  const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setOverlayHost(overlayHostRef.current);
+  }, []);
 
   const finishClose = useCallback(() => {
     if (closeFinishedRef.current) return;
@@ -222,6 +237,7 @@ export function PlanningSidePanel({
 
   return createPortal(
     <PlanningSidePanelCloseContext.Provider value={requestClose}>
+      <PlanningSidePanelOverlayContext.Provider value={overlayHost}>
       <div
         className={cn(
           "fixed inset-0 z-[108] bg-black/25 transition-opacity",
@@ -321,7 +337,12 @@ export function PlanningSidePanel({
             </div>
           ) : null}
         </div>
+        <div
+          ref={overlayHostRef}
+          className="pointer-events-none absolute inset-0 z-[15] overflow-hidden"
+        />
       </aside>
+      </PlanningSidePanelOverlayContext.Provider>
     </PlanningSidePanelCloseContext.Provider>,
     document.body
   );

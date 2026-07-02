@@ -50,7 +50,7 @@ export function CancellationReasonViewButton({
   messageKind = "cancellation",
 }: Props) {
   const t = useTranslations();
-  const locale = useLocale();
+  const { locale } = useLocale();
   const intlLocale = toIntlLocale(locale);
   const [open, setOpen] = useState(false);
   const trimmed = reason.trim();

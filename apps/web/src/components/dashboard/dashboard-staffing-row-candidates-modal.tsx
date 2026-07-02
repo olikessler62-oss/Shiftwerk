@@ -339,6 +339,7 @@ export function DashboardStaffingRowCandidatesModal({
         weekDates: weeklyHoursWeekDates,
         timeZone: loadedContext.timeZone,
         countryCode: loadedContext.countryCode,
+        reassignShiftId: existingShiftId,
       });
 
       const sorted = sortDashboardStaffingCandidates(
@@ -368,6 +369,7 @@ export function DashboardStaffingRowCandidatesModal({
     weeklyAssignedMinutes,
     shiftsForWeeklyHoursValidation,
     weeklyHoursWeekDates,
+    existingShiftId,
   ]);
 
   useEffect(() => {
