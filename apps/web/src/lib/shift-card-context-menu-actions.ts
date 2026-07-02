@@ -259,6 +259,7 @@ export function canOpenShiftCardContextMenu(
       },
       options.isPastShiftDate,
       options.cellDate,
+      options.shiftStartTime,
       options.pendingAfterMinutes
     )
   ) {

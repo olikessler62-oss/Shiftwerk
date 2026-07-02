@@ -104,43 +104,21 @@ export function projectedAssignmentWeeklyHours(
   return roundTooltipHours(weeklyHoursTotal + durationHours);
 }
 
-export function formatAssignmentTimeWeeklyHoursSuffix(
-  durationHours: number,
-  weeklyHoursTotal: number | null | undefined,
-  weeklyHoursTarget: number | null | undefined
-): string | null {
-  if (
-    durationHours <= 0 ||
-    weeklyHoursTotal == null ||
-    weeklyHoursTarget == null
-  ) {
-    return null;
-  }
-
-  const projected = projectedAssignmentWeeklyHours(weeklyHoursTotal, durationHours);
-  return `(${formatTooltipHoursValue(projected)}/${formatTooltipHoursValue(weeklyHoursTarget)})`;
-}
-
-export function appendAssignmentTimeWeeklyHoursSuffix(
+export function appendAssignmentTimeDurationSuffix(
   timeLine: string,
   durationHours: number,
-  weeklyHoursTotal: number | null | undefined,
-  weeklyHoursTarget: number | null | undefined
+  locale: "de" | "en"
 ): string {
-  const suffix = formatAssignmentTimeWeeklyHoursSuffix(
-    durationHours,
-    weeklyHoursTotal,
-    weeklyHoursTarget
-  );
-  return suffix ? `${timeLine} ${suffix}` : timeLine;
+  if (durationHours <= 0) return timeLine;
+  return `${timeLine} (${formatAssignmentDurationTooltipLine(durationHours, locale)})`;
 }
 
-export function formatAssignmentDurationProjectedWeeklyHoursSuffix(
+export function formatAssignmentProjectedWeeklyHoursLine(
   durationHours: number,
   weeklyHoursTotal: number | null | undefined,
   weeklyHoursTarget: number | null | undefined,
   options?: {
-    projectedLabel?: (projected: number, target: number) => string;
+    lineLabel?: (projected: number, target: number) => string;
   }
 ): string | null {
   if (
@@ -152,11 +130,11 @@ export function formatAssignmentDurationProjectedWeeklyHoursSuffix(
   }
 
   const projected = projectedAssignmentWeeklyHours(weeklyHoursTotal, durationHours);
-  if (options?.projectedLabel) {
-    return options.projectedLabel(projected, weeklyHoursTarget);
+  if (options?.lineLabel) {
+    return options.lineLabel(projected, weeklyHoursTarget);
   }
 
-  return `(anschl. ${formatTooltipHoursValue(projected)}/${formatTooltipHoursValue(weeklyHoursTarget)})`;
+  return `Wochen-Std: (inkl.) ${formatTooltipHoursValue(projected)}/${formatTooltipHoursValue(weeklyHoursTarget)}`;
 }
 
 function assignmentSectionFromRow(

@@ -1278,6 +1278,8 @@ export const en = {
     staffingCandidatesTooltipNextAssignmentInDays: "in {days} days",
     staffingCandidatesTooltipAssignmentProjectedWeeklyHours:
       "(after {projected}/{target})",
+    staffingCandidatesTooltipAssignmentWeeklyHoursInclusive:
+      "Weekly hrs: (incl.) {projected}/{target}",
     staffingCandidatesTooltipNoAssignmentYet: "No assignment yet",
     staffingCandidatesTooltipWishTime: "Preferred time",
     staffingCandidatesTooltipWishLocation: "Preferred location",

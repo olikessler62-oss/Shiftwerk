@@ -1453,7 +1453,7 @@ function resolveShiftDeletionBlockReason(
     isPlanningShiftMomentBlockedForOrg(
       {
         shiftDateISO: shiftDate,
-        startTime: startTime ?? wallClock?.startTime,
+        startTime: startTime ?? wallClock ?? undefined,
         startsAt: shift.starts_at,
       },
       organization

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assignmentDurationHoursFromTimestamps,
-  appendAssignmentTimeWeeklyHoursSuffix,
-  formatAssignmentDurationProjectedWeeklyHoursSuffix,
+  appendAssignmentTimeDurationSuffix,
+  formatAssignmentProjectedWeeklyHoursLine,
   formatAssignmentDurationTooltipLine,
   formatDashboardStaffingCandidateEmployeeTooltipSections,
 } from "./dashboard-staffing-candidate-employee-tooltip";
@@ -48,22 +48,22 @@ describe("dashboard-staffing-candidate-employee-tooltip", () => {
     expect(formatAssignmentDurationTooltipLine(4.5, "en")).toBe("4.5 h");
   });
 
-  it("appends weekly hours ratio behind assignment time", () => {
-    expect(
-      appendAssignmentTimeWeeklyHoursSuffix("09:00–17:00", 4, 28, 40)
-    ).toBe("09:00–17:00 (32/40)");
-    expect(appendAssignmentTimeWeeklyHoursSuffix("09:00–17:00", 4, null, 40)).toBe(
+  it("appends duration behind assignment time", () => {
+    expect(appendAssignmentTimeDurationSuffix("09:00–17:00", 4, "de")).toBe(
+      "09:00–17:00 (4 Std)"
+    );
+    expect(appendAssignmentTimeDurationSuffix("09:00–17:00", 0, "de")).toBe(
       "09:00–17:00"
     );
   });
 
-  it("formats projected weekly hours suffix for next assignment duration line", () => {
+  it("formats projected weekly hours line for next assignment", () => {
     expect(
-      formatAssignmentDurationProjectedWeeklyHoursSuffix(4, 28, 40, {
-        projectedLabel: (projected, target) =>
-          `(anschl. ${projected}/${target})`,
+      formatAssignmentProjectedWeeklyHoursLine(4, 28, 40, {
+        lineLabel: (projected, target) =>
+          `Wochen-Std: (inkl.) ${projected}/${target}`,
       })
-    ).toBe("(anschl. 32/40)");
+    ).toBe("Wochen-Std: (inkl.) 32/40");
   });
 
   it("includes duration metadata on assignment sections", () => {
