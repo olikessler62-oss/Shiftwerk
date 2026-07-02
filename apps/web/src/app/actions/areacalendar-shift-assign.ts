@@ -349,7 +349,7 @@ export async function fetchDashboardStaffingCandidateEmployeeTooltip(
         db.getEmployeeAdjacentShiftAssignments(
           organizationId,
           employeeId,
-          todayISO
+          new Date().toISOString()
         ),
       ]);
 

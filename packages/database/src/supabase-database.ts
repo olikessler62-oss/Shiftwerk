@@ -1454,34 +1454,17 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async getEmployeeAdjacentShiftAssignments(
     organizationId: string,
     employeeId: string,
-    todayISO: string
+    nowISO: string
   ): Promise<import("./interface").EmployeeAdjacentShiftAssignments> {
     const select =
       "shift_date, confirmation_status, starts_at, ends_at, locations(name), location_areas(name), area_shift_templates(name)";
 
-    const [lastPastResult, nextFutureResult] = await Promise.all([
-      this.client
-        .from(T.shifts)
-        .select(select)
-        .eq("organization_id", organizationId)
-        .eq("employee_id", employeeId)
-        .lt("shift_date", todayISO)
-        .order("shift_date", { ascending: false })
-        .order("starts_at", { ascending: false })
-        .limit(15),
-      this.client
-        .from(T.shifts)
-        .select(select)
-        .eq("organization_id", organizationId)
-        .eq("employee_id", employeeId)
-        .gt("shift_date", todayISO)
-        .order("shift_date", { ascending: true })
-        .order("starts_at", { ascending: true })
-        .limit(15),
-    ]);
-
-    if (lastPastResult.error) throw new Error(lastPastResult.error.message);
-    if (nextFutureResult.error) throw new Error(nextFutureResult.error.message);
+    const isActiveShift = (row: Record<string, unknown>) => {
+      const status = row.confirmation_status as
+        | import("@schichtwerk/types").ShiftConfirmationStatus
+        | null;
+      return status !== "canceled" && status !== "rejected";
+    };
 
     const mapRow = (
       row: Record<string, unknown>
@@ -1506,19 +1489,45 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       };
     };
 
-    const isActiveShift = (row: Record<string, unknown>) => {
-      const status = row.confirmation_status as
-        | import("@schichtwerk/types").ShiftConfirmationStatus
-        | null;
-      return status !== "canceled" && status !== "rejected";
-    };
+    const nextFutureResult = await this.client
+      .from(T.shifts)
+      .select(select)
+      .eq("organization_id", organizationId)
+      .eq("employee_id", employeeId)
+      .gt("ends_at", nowISO)
+      .order("starts_at", { ascending: true })
+      .limit(15);
+
+    if (nextFutureResult.error) {
+      throw new Error(nextFutureResult.error.message);
+    }
+
+    const nextFutureRow = (nextFutureResult.data ?? []).find(isActiveShift);
+    if (nextFutureRow) {
+      return {
+        lastPast: null,
+        nextFuture: mapRow(nextFutureRow),
+      };
+    }
+
+    const lastPastResult = await this.client
+      .from(T.shifts)
+      .select(select)
+      .eq("organization_id", organizationId)
+      .eq("employee_id", employeeId)
+      .lte("ends_at", nowISO)
+      .order("ends_at", { ascending: false })
+      .limit(15);
+
+    if (lastPastResult.error) {
+      throw new Error(lastPastResult.error.message);
+    }
 
     const lastPastRow = (lastPastResult.data ?? []).find(isActiveShift);
-    const nextFutureRow = (nextFutureResult.data ?? []).find(isActiveShift);
 
     return {
       lastPast: lastPastRow ? mapRow(lastPastRow) : null,
-      nextFuture: nextFutureRow ? mapRow(nextFutureRow) : null,
+      nextFuture: null,
     };
   }
 

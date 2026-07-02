@@ -453,7 +453,7 @@ export interface SchichtwerkDatabase {
   getEmployeeAdjacentShiftAssignments(
     organizationId: string,
     employeeId: string,
-    todayISO: string
+    nowISO: string
   ): Promise<EmployeeAdjacentShiftAssignments>;
   insertProfileRecurringAvailability(
     organizationId: string,

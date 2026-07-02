@@ -181,7 +181,6 @@ function TooltipBody({
   nextAssignmentLabel,
   nextAssignmentOffsetLabel,
   nextAssignmentWeeklyHoursLine,
-  noAssignmentYetLabel,
   wishesLabel,
   intlLocale,
 }: {
@@ -196,7 +195,6 @@ function TooltipBody({
   nextAssignmentLabel: string;
   nextAssignmentOffsetLabel: string | null;
   nextAssignmentWeeklyHoursLine: string | null;
-  noAssignmentYetLabel: string;
   wishesLabel: string;
   intlLocale: "de" | "en";
 }) {
@@ -226,19 +224,19 @@ function TooltipBody({
         )}
       </TooltipSection>
       <TooltipSection label={sections.jobsLabel}>{sections.jobs}</TooltipSection>
-      <AssignmentSection
-        label={lastAssignmentLabel}
-        offsetLabel={lastAssignmentOffsetLabel}
-        section={sections.lastPastAssignment}
-        emptyLabel={noAssignmentYetLabel}
-        intlLocale={intlLocale}
-      />
       {sections.nextFutureAssignment ? (
         <AssignmentSection
           label={nextAssignmentLabel}
           offsetLabel={nextAssignmentOffsetLabel}
           section={sections.nextFutureAssignment}
           weeklyHoursLine={nextAssignmentWeeklyHoursLine}
+          intlLocale={intlLocale}
+        />
+      ) : sections.lastPastAssignment ? (
+        <AssignmentSection
+          label={lastAssignmentLabel}
+          offsetLabel={lastAssignmentOffsetLabel}
+          section={sections.lastPastAssignment}
           intlLocale={intlLocale}
         />
       ) : null}
@@ -360,7 +358,6 @@ export function PlanningEmployeeTooltipContent({
         nextAssignmentLabel={t("dashboard.staffingCandidatesTooltipNextAssignment")}
         nextAssignmentOffsetLabel={nextAssignmentOffsetLabel}
         nextAssignmentWeeklyHoursLine={nextAssignmentWeeklyHoursLine}
-        noAssignmentYetLabel={t("dashboard.staffingCandidatesTooltipNoAssignmentYet")}
         wishesLabel={t("dashboard.staffingCandidatesTooltipWishes")}
         intlLocale={intlLocale}
       />

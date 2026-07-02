@@ -17,8 +17,11 @@ export const TOOLTIP_Z_INDEX = 200;
 /** Standard-Verzögerung für Hover-Tooltips (Fokus öffnet weiterhin sofort). */
 export const HOVER_TOOLTIP_OPEN_DELAY_MS = 700;
 
-/** Tooltip bleibt nach Mausverlassen noch sichtbar (ms). */
-export const HOVER_TOOLTIP_CLOSE_DELAY_MS = 3000;
+/** Standard: Tooltip schließt beim Verlassen (kein Offenhalten). */
+export const HOVER_TOOLTIP_CLOSE_DELAY_MS = 0;
+
+/** Kurze Gnadenfrist beim Wechsel Trigger ↔ Tooltip (nur interactive). */
+const INTERACTIVE_TOOLTIP_HOVER_BRIDGE_MS = 100;
 
 /** Verfügbarkeits-Tooltips in Mitarbeiterlisten (Bereich- und Mitarbeiter-Kalender). */
 export const EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS = 1200;
@@ -135,6 +138,7 @@ export function Tooltip({
   const tooltipRef = useRef<HTMLDivElement>(null);
   const openDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverRef = useRef({ trigger: false, tooltip: false });
   const id = useId();
   const show = !disabled && hasTooltipContent(content);
   const allowOpen = show && !suppressOpen;
@@ -155,17 +159,64 @@ export function Tooltip({
 
   const scheduleClose = useCallback(() => {
     clearCloseDelay();
-    if (closeDelayMs <= 0) {
-      setOpen(false);
+    const attemptClose = () => {
+      if (!hoverRef.current.trigger && !hoverRef.current.tooltip) {
+        setOpen(false);
+      }
+    };
+
+    if (interactive) {
+      closeDelayTimeoutRef.current = setTimeout(
+        attemptClose,
+        INTERACTIVE_TOOLTIP_HOVER_BRIDGE_MS
+      );
       return;
     }
-    closeDelayTimeoutRef.current = setTimeout(() => setOpen(false), closeDelayMs);
-  }, [clearCloseDelay, closeDelayMs]);
+
+    if (closeDelayMs <= 0) {
+      attemptClose();
+      return;
+    }
+
+    closeDelayTimeoutRef.current = setTimeout(attemptClose, closeDelayMs);
+  }, [clearCloseDelay, closeDelayMs, interactive]);
+
+  const handleTriggerMouseEnter = useCallback(() => {
+    if (!allowOpen) return;
+    hoverRef.current.trigger = true;
+    clearOpenDelay();
+    clearCloseDelay();
+    if (openDelayMs <= 0) {
+      setOpen(true);
+      return;
+    }
+    openDelayTimeoutRef.current = setTimeout(() => setOpen(true), openDelayMs);
+  }, [allowOpen, clearCloseDelay, clearOpenDelay, openDelayMs]);
+
+  const handleTriggerMouseLeave = useCallback(() => {
+    hoverRef.current.trigger = false;
+    clearOpenDelay();
+    scheduleClose();
+  }, [clearOpenDelay, scheduleClose]);
+
+  const handleTooltipMouseEnter = useCallback(() => {
+    if (!interactive || !allowOpen) return;
+    hoverRef.current.tooltip = true;
+    clearCloseDelay();
+  }, [allowOpen, clearCloseDelay, interactive]);
+
+  const handleTooltipMouseLeave = useCallback(() => {
+    if (!interactive) return;
+    hoverRef.current.tooltip = false;
+    scheduleClose();
+  }, [interactive, scheduleClose]);
 
   useEffect(() => {
     if (suppressOpen) {
       clearOpenDelay();
       clearCloseDelay();
+      hoverRef.current.trigger = false;
+      hoverRef.current.tooltip = false;
       setOpen(false);
     }
   }, [suppressOpen, clearOpenDelay, clearCloseDelay]);
@@ -177,22 +228,6 @@ export function Tooltip({
     },
     [clearOpenDelay, clearCloseDelay]
   );
-
-  const handleMouseEnter = useCallback(() => {
-    if (!allowOpen) return;
-    clearOpenDelay();
-    clearCloseDelay();
-    if (openDelayMs <= 0) {
-      setOpen(true);
-      return;
-    }
-    openDelayTimeoutRef.current = setTimeout(() => setOpen(true), openDelayMs);
-  }, [allowOpen, clearCloseDelay, clearOpenDelay, openDelayMs]);
-
-  const handleMouseLeave = useCallback(() => {
-    clearOpenDelay();
-    scheduleClose();
-  }, [clearOpenDelay, scheduleClose]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -268,14 +303,15 @@ export function Tooltip({
       <span
         ref={triggerRef}
         className={cn("inline-flex max-w-full min-w-0", className)}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+        onMouseEnter={handleTriggerMouseEnter}
+        onMouseLeave={handleTriggerMouseLeave}
         onFocus={() => {
           if (!allowOpen) return;
+          hoverRef.current.trigger = true;
           clearCloseDelay();
           setOpen(true);
         }}
-        onBlur={handleMouseLeave}
+        onBlur={handleTriggerMouseLeave}
         onContextMenu={() => {
           clearCloseDelay();
           setOpen(false);
@@ -301,8 +337,8 @@ export function Tooltip({
                 left: position.left,
                 zIndex: TOOLTIP_Z_INDEX,
               }}
-              onMouseEnter={interactive ? handleMouseEnter : undefined}
-              onMouseLeave={interactive ? handleMouseLeave : undefined}
+              onMouseEnter={interactive ? handleTooltipMouseEnter : undefined}
+              onMouseLeave={interactive ? handleTooltipMouseLeave : undefined}
             >
               {typeof content === "string" && content.includes("\n") ? (
                 <span className="block whitespace-pre-line">{content}</span>

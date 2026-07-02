@@ -286,18 +286,26 @@ function formatAdjacentAssignmentSections(
   lastPastAssignment: PlanningEmployeeAssignmentTooltipSection | null;
   nextFutureAssignment: PlanningEmployeeAssignmentTooltipSection | null;
 } {
+  const nextFutureAssignment = formatFutureAssignmentSection(
+    adjacentAssignments.nextFuture,
+    todayISO,
+    locale,
+    weeklyHoursWeekDates
+  );
+  if (nextFutureAssignment) {
+    return {
+      lastPastAssignment: null,
+      nextFutureAssignment,
+    };
+  }
+
   return {
     lastPastAssignment: formatPastAssignmentSection(
       adjacentAssignments.lastPast,
       todayISO,
       locale
     ),
-    nextFutureAssignment: formatFutureAssignmentSection(
-      adjacentAssignments.nextFuture,
-      todayISO,
-      locale,
-      weeklyHoursWeekDates
-    ),
+    nextFutureAssignment: null,
   };
 }
 

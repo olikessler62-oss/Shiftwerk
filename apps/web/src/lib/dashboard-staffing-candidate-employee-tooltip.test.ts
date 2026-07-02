@@ -100,10 +100,56 @@ describe("dashboard-staffing-candidate-employee-tooltip", () => {
       }
     );
 
-    expect(sections.lastPastAssignment?.durationHours).toBe(4);
-    expect(sections.lastPastAssignment?.showProjectedWeeklyHours).toBe(false);
+    expect(sections.lastPastAssignment).toBeNull();
     expect(sections.nextFutureAssignment?.durationHours).toBe(4);
     expect(sections.nextFutureAssignment?.showProjectedWeeklyHours).toBe(true);
+  });
+
+  it("shows only last assignment when no future shift exists", () => {
+    const sections = formatDashboardStaffingCandidateEmployeeTooltipSections(
+      {
+        ...basePayload,
+        adjacentAssignments: {
+          lastPast: {
+            shiftDate: "2026-06-28",
+            locationName: "Restaurant",
+            areaName: null,
+            templateName: "Früh",
+            startsAt: "2026-06-28T06:00:00.000Z",
+            endsAt: "2026-06-28T10:00:00.000Z",
+          },
+          nextFuture: null,
+        },
+      },
+      {
+        locale: "de",
+        qualifications: [],
+        locations: [],
+        areas: [],
+        todayISO: "2026-06-30",
+        labels,
+      }
+    );
+
+    expect(sections.lastPastAssignment?.durationHours).toBe(4);
+    expect(sections.nextFutureAssignment).toBeNull();
+  });
+
+  it("shows no assignment section when employee has no shifts", () => {
+    const sections = formatDashboardStaffingCandidateEmployeeTooltipSections(
+      basePayload,
+      {
+        locale: "de",
+        qualifications: [],
+        locations: [],
+        areas: [],
+        todayISO: "2026-06-30",
+        labels,
+      }
+    );
+
+    expect(sections.lastPastAssignment).toBeNull();
+    expect(sections.nextFutureAssignment).toBeNull();
   });
 
   it("skips weekly projection when next assignment is outside planning week", () => {
