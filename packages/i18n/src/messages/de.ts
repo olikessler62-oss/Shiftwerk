@@ -336,6 +336,8 @@ export const de = {
     tagAreaFooterCompensationLabel: "Entgelt:",
     tagAreaFooterSurchargesLabel: "Zuschläge:",
     weekEmployeeLegendEmpty: "Keine Schichten in dieser Woche.",
+    calendarInteractionHint:
+      "Links-/Rechts-Klick auf Zellen oder Schichtkarten ermöglicht Eingaben und/oder Bearbeitungen.",
     noServiceHoursShiftConfirm:
       "An diesem Tag hat dieser Bereich \"{area}\" keine Servicezeit! Sollen dennoch Einsatzzeiten hinzugefügt werden?",
     staffingCount: "{assigned}/{required}",

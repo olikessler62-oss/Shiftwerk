@@ -61,6 +61,7 @@ import { useDelayedEmployeeHighlight } from "@/lib/use-delayed-employee-highligh
 import { filterAreaCalendarShiftsForEmployeeLegend } from "@/lib/areacalendar-week-employee-legend";
 import { shouldShowLocationInPlanningUi } from "@/lib/planning-location-ui";
 import { resolveSingleActiveAreaIds } from "@/lib/resolve-areacalendar-location";
+import { PlanningCalendarInteractionHint } from "@/components/planning/planning-calendar-interaction-hint";
 import {
   planningShiftToAreaCalendarCard,
   type PlanningShift,
@@ -374,7 +375,7 @@ export function AreaCalendarView({
               onEmployeeContextMenu={openEmployeeListContextMenu}
               className="max-md:!mt-0 max-md:!w-full max-md:shrink-0"
             />
-            <div className={PLANNING_PAGE_CALENDAR_SURFACE_CLASS}>
+            <div className={cn(PLANNING_PAGE_CALENDAR_SURFACE_CLASS, "relative")}>
               <AreaCalendar
               weekStart={weekStart}
               dates={dates}
@@ -406,6 +407,7 @@ export function AreaCalendarView({
               onActiveAreaIdsChange={handleActiveAreaIdsChange}
               onActiveDayDatesChange={handleActiveDayDatesChange}
             />
+              <PlanningCalendarInteractionHint />
             </div>
           </div>
         </div>

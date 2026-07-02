@@ -1643,6 +1643,8 @@ export function DashboardOverviewView({
         )}
         candidatesPlanning={buildCandidatesPlanning(stats.areaId)}
         showCalendarFooterLinks={false}
+        locationName={showLocationInUi ? selectedLocationName : null}
+        locationCount={locations.length}
         isPastScope={resolveAreaCardPastScope(
           getAreaDetailScope(stats.areaId),
           resolveAreaCardScopeDateISO(getAreaDetailScope(stats.areaId)),
@@ -1745,6 +1747,14 @@ export function DashboardOverviewView({
                   <span className="shrink-0 font-medium text-muted">
                     {t("dashboard.weekTrayHeaderIntro")}
                   </span>
+                  {showLocationInUi && selectedLocationName ? (
+                    <span
+                      className="min-w-0 max-w-[40%] truncate text-xs font-semibold text-foreground sm:max-w-none sm:text-sm"
+                      title={selectedLocationName}
+                    >
+                      {selectedLocationName}
+                    </span>
+                  ) : null}
                   <span className="shrink-0 text-base font-semibold tabular-nums text-foreground sm:text-lg">
                     {t("dashboard.headerCalendarWeek", {
                       week: String(weekTrayHeader.calendarWeek),

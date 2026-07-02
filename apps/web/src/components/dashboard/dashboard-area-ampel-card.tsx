@@ -89,6 +89,7 @@ import { useDashboardAreaStaffingViewPrefs } from "@/lib/use-dashboard-area-staf
 import {
   STAFFING_OCHER_ACCENT_BG_CLASS,
 } from "@/lib/staffing-ocher-styles";
+import { PlanningLocationAreaTruncatedLabel } from "@/components/planning/planning-location-area-label";
 
 type Props = {
   stats: DashboardAreaWeekStats;
@@ -127,6 +128,9 @@ type Props = {
     weekShortLabel?: string;
     onScopeChange: (scope: DashboardAreaDetailScope) => void;
   };
+  /** Mehrere Standorte: im Tages-Scope „Standort/Bereich“ im Header. */
+  locationName?: string | null;
+  locationCount?: number;
 };
 
 function ampelAccentStripeClass(
@@ -1080,6 +1084,36 @@ const CARD_HEADER_SCOPE_TOGGLE_SPACER_CLASS = cn(
 const CARD_HEADER_SCOPE_TOGGLE_ANCHOR_CLASS =
   "absolute top-1 right-2 z-10 md:top-1.5 md:right-3";
 
+function AreaCardHeaderTitle({
+  areaName,
+  locationName,
+  locationCount,
+  showLocationAreaLabel,
+}: {
+  areaName: string;
+  locationName?: string | null;
+  locationCount: number;
+  showLocationAreaLabel: boolean;
+}) {
+  const titleClass =
+    "min-w-0 max-w-full text-lg font-semibold leading-tight tracking-tight text-foreground";
+
+  return (
+    <h2 className={titleClass} title={showLocationAreaLabel ? undefined : areaName}>
+      {showLocationAreaLabel ? (
+        <PlanningLocationAreaTruncatedLabel
+          locationName={locationName}
+          areaName={areaName}
+          locationCount={locationCount}
+          className="text-lg font-semibold leading-tight tracking-tight"
+        />
+      ) : (
+        <span className="block truncate">{areaName}</span>
+      )}
+    </h2>
+  );
+}
+
 function AreaCardHeader({
   areaName,
   staffingEnabled,
@@ -1096,6 +1130,8 @@ function AreaCardHeader({
   onOpenSwapRequests,
   statusFooterLayout = "stack",
   areaScopeToggle,
+  locationName = null,
+  locationCount = 1,
   t,
 }: {
   areaName: string;
@@ -1113,6 +1149,8 @@ function AreaCardHeader({
   onOpenSwapRequests?: () => void;
   statusFooterLayout?: "stack" | "two-column";
   areaScopeToggle?: Props["areaScopeToggle"];
+  locationName?: string | null;
+  locationCount?: number;
   t: ReturnType<typeof useTranslations>;
 }) {
   const statusFooterLines = resolveDashboardAreaStatusFooterLines({
@@ -1160,6 +1198,7 @@ function AreaCardHeader({
   };
 
   const showStaffingHeaderMetrics = staffingEnabled;
+  const showLocationAreaLabel = staffingScopeMode === "day";
 
   return (
     <div className={headerShellClass}>
@@ -1173,14 +1212,20 @@ function AreaCardHeader({
       ) : null}
       <div className={CARD_HEADER_MAIN_CLASS}>
         {hasScopeColumn ? (
-          <h2 className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-foreground">
-            {areaName}
-          </h2>
+          <AreaCardHeaderTitle
+            areaName={areaName}
+            locationName={locationName}
+            locationCount={locationCount}
+            showLocationAreaLabel={showLocationAreaLabel}
+          />
         ) : (
           <div className="flex items-start justify-between gap-2 md:contents">
-            <h2 className="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight text-foreground md:min-w-0">
-              {areaName}
-            </h2>
+            <AreaCardHeaderTitle
+              areaName={areaName}
+              locationName={locationName}
+              locationCount={locationCount}
+              showLocationAreaLabel={showLocationAreaLabel}
+            />
             {showStatusList ? (
               <div
                 className={cn(
@@ -1299,6 +1344,8 @@ export function DashboardAreaAmpelCard({
   onOpenSwapRequests,
   statusFooterLayout = "stack",
   areaScopeToggle,
+  locationName = null,
+  locationCount = 1,
 }: Props) {
   const t = useTranslations();
   const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
@@ -1566,6 +1613,8 @@ export function DashboardAreaAmpelCard({
           showStaffingWeekCaption={showStaffingWeekCaption}
           shiftConfirmationEnabled={shiftConfirmationEnabled}
           staffingStatusClickable={staffingStatusClickable}
+          locationName={locationName}
+          locationCount={locationCount}
           onOpenStaffingCandidates={
             staffingStatusClickable ? openStaffingCandidatesFromHeader : undefined
           }

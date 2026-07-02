@@ -21,6 +21,7 @@ import { useDashboardCalendarLayer } from "@/components/dashboard/dashboard-cale
 import { CalendarStaffingEditModal } from "@/components/planning/calendar-staffing-edit-modal";
 import { buildCalendarStaffingEditorData } from "@/lib/calendar-staffing-editor-data";
 import { PlanningEmployeeListContextMenu } from "@/components/planning/planning-employee-list-context-menu";
+import { PlanningCalendarInteractionHint } from "@/components/planning/planning-calendar-interaction-hint";
 import { useRegisterPlanningToolbarPageBridge } from "@/lib/planning-toolbar-page-bridge";
 import { shouldShowLocationInPlanningUi } from "@/lib/planning-location-ui";
 import {
@@ -2986,7 +2987,7 @@ export function DashboardView({
             APP_SHELL_CONTENT_OFFSET_CLASS
           )}
         >
-          <div className={PLANNING_PAGE_CALENDAR_BODY_CLASS}>
+          <div className={cn(PLANNING_PAGE_CALENDAR_BODY_CLASS, "relative")}>
             <DashboardCalendarGrid
             staffColumnHeaderLabel={t("nav.employeeCalendar")}
             dates={dates}
@@ -3056,6 +3057,7 @@ export function DashboardView({
             shiftConfirmationEnabled={shiftConfirmationEnabled}
             isPastShiftDate={planningIsPastShiftDate}
           />
+            <PlanningCalendarInteractionHint />
           </div>
         </div>
 

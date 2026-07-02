@@ -955,3 +955,35 @@ body {
 .modal-scrollbar.modal-scrollbar-inline {
   scrollbar-gutter: auto;
 }
+
+/** Indeterminater Ladebalken für Planungsseiten (Dashboard, Kalender). */
+@keyframes planning-content-loading-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.planning-content-loading-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 3px;
+  flex-shrink: 0;
+  background: var(--color-border);
+}
+
+.planning-content-loading-progress-bar {
+  position: absolute;
+  inset-block: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-primary-light),
+    var(--color-primary)
+  );
+  animation: planning-content-loading-progress 1.15s ease-in-out infinite;
+}

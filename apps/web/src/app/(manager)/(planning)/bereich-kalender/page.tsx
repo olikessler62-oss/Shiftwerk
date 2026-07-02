@@ -9,6 +9,7 @@ import { getManagerSession } from "@/lib/server-manager-session";
 import { resolveSelectedLocationId } from "@/lib/resolve-areacalendar-location";
 import { findAreaShiftTemplateByTimes } from "@/lib/areacalendar-assignment-presets";
 import { AreaCalendarView } from "@/components/areacalendar/areacalendar-view";
+import { PlanningPageContentLoading } from "@/components/planning/planning-page-content-loading";
 import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalendar-calendar";
 import { organizationTodayISO, resolveOrganizationTimeZone, resolveOrganizationShiftConfirmationPendingAfterMinutes } from "@schichtwerk/database";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
@@ -228,7 +229,7 @@ export default async function BereichKalenderPage({
   }));
 
   return (
-    <Suspense fallback={<div className="-m-6 p-6 text-sm text-muted">Laden…</div>}>
+    <Suspense fallback={<PlanningPageContentLoading />}>
       <AreaCalendarView
         weekStart={weekStart}
         dates={dates}

@@ -336,6 +336,8 @@ export const en = {
     tagAreaFooterCompensationLabel: "Compensation:",
     tagAreaFooterSurchargesLabel: "Surcharges:",
     weekEmployeeLegendEmpty: "No shifts this week.",
+    calendarInteractionHint:
+      "Left/right-click on cells or shift cards allows entries and/or edits.",
     noServiceHoursShiftConfirm:
       "This area \"({area})\" has no service hours on this day. Add duty times anyway?",
     staffingCount: "{assigned}/{required}",

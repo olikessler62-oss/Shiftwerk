@@ -1,24 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { signIn } from "@/app/actions/auth";
 import { Button, Field, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
-
-function useBodyWaitCursor(active: boolean) {
-  useEffect(() => {
-    if (!active) return;
-    const previousBody = document.body.style.cursor;
-    const previousHtml = document.documentElement.style.cursor;
-    document.body.style.cursor = "wait";
-    document.documentElement.style.cursor = "wait";
-    return () => {
-      document.body.style.cursor = previousBody;
-      document.documentElement.style.cursor = previousHtml;
-    };
-  }, [active]);
-}
+import { markPlanningPostLoginPending } from "@/lib/planning-post-login-pending";
+import { useBodyWaitCursor } from "@/lib/use-body-wait-cursor";
 
 function LoginFormFields({ submitting }: { submitting: boolean }) {
   const { pending } = useFormStatus();
@@ -63,7 +51,10 @@ export function LoginForm() {
   return (
     <form
       action={signIn}
-      onSubmit={() => setSubmitting(true)}
+      onSubmit={() => {
+        setSubmitting(true);
+        markPlanningPostLoginPending();
+      }}
     >
       <LoginFormFields submitting={submitting} />
     </form>
