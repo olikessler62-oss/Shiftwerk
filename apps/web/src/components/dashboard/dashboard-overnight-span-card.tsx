@@ -39,6 +39,7 @@ import {
 } from "@/lib/shift-confirmation-display";
 import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
 import {
+  buildShiftCardStripGradientCss,
   buildShiftCardTimeGradientCss,
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
 } from "@/lib/shift-card-time-gradient";
@@ -224,7 +225,10 @@ export function DashboardOvernightSpanCard({
             width:
               collapsedMarkerWidthPx ?? PLANNING_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX,
             height: markerHeightPx,
-            backgroundColor: markerColor,
+            backgroundImage: isPastDay
+              ? undefined
+              : buildShiftCardStripGradientCss(markerColor, "to bottom"),
+            backgroundColor: isPastDay ? markerColor : undefined,
           }}
           aria-label={cardContent.tooltipBody}
         />
@@ -296,7 +300,7 @@ export function DashboardOvernightSpanCard({
           className="shrink-0 self-stretch rounded-l"
           style={{
             width: stripWidthPx,
-            backgroundColor: employeeColor,
+            backgroundImage: buildShiftCardStripGradientCss(employeeColor),
           }}
           aria-hidden
         />
@@ -304,7 +308,9 @@ export function DashboardOvernightSpanCard({
           contentRef={textContentRef}
           backgroundImage={buildShiftCardTimeGradientCss(
             shift.startTime,
-            shift.endTime
+            shift.endTime,
+            undefined,
+            employeeColor
           )}
         >
           {employeeHighlighted ? (

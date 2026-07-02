@@ -160,9 +160,10 @@ import {
 import { canOpenAssignShiftContextMenu, canPromptNoServiceHoursShiftAssignForDay, canPromptNoServiceHoursShiftAssign, canShowAreaDayAssignContextMenu, canShowEmployeeDayCellAssignContextMenu, isAreaCalendarAssignDayActive } from "@/lib/areacalendar-area-day-assign";
 import {
   employeeMatchesShiftAvailability,
+  hasPendingEmployeeCancellation,
   isEmployeeAbsentOnDate,
 } from "@schichtwerk/database";
-import { sortProfilesByShiftCountDesc } from "@/lib/profile-display-sort";
+import { sortProfilesByFirstName } from "@/lib/profile-display-sort";
 import {
   buildPlanningShiftsByCellDisplay,
   type PlanningShiftDisplaySegment,
@@ -1124,8 +1125,8 @@ export function DashboardView({
   }, [showStaffingHeaderRow]);
 
   const calendarEmployees = useMemo(
-    () => sortProfilesByShiftCountDesc(employees, calendarPlanningShifts),
-    [employees, calendarPlanningShifts]
+    () => sortProfilesByFirstName(employees),
+    [employees]
   );
 
   const planningBodyRowTemplate = useMemo(() => {
@@ -1856,10 +1857,12 @@ export function DashboardView({
       shift &&
       canDeleteShift({
         shiftDate: shift.shift_date,
+        shiftStartTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate: planningIsPastShiftDate,
         pendingAfterMinutes,
+        displayState: shift.displayState,
       });
     if (picker && isDayReadOnly(picker.date) && !canDelete) {
       return { ok: false, error: t("dashboard.readOnlyDay") };
@@ -2631,6 +2634,7 @@ export function DashboardView({
           requestedAt: shift.requestedAt,
           isPastShiftDate: planningIsPastShiftDate,
           pendingAfterMinutes,
+          displayState: shift.displayState,
         });
         if (isCellAssignHardBlocked(cellContextMenu.date) && !canDelete) return;
 
@@ -3127,10 +3131,12 @@ export function DashboardView({
                           contextMenuShift &&
                           canDeleteShift({
                             shiftDate: contextMenuShift.shift_date,
+                            shiftStartTime: contextMenuShift.startTime,
                             confirmationStatus: contextMenuShift.confirmationStatus,
                             requestedAt: contextMenuShift.requestedAt,
                             isPastShiftDate: planningIsPastShiftDate,
                             pendingAfterMinutes,
+                            displayState: contextMenuShift.displayState,
                           })
                         ))) ||
                     (action === "cancel" &&
@@ -3511,6 +3517,7 @@ export function DashboardView({
       {deleteShiftError ? (
         <SettingsMessageModal
           placement="fixed"
+          title={t("shiftConfirmation.deleteBlockedTitle")}
           message={deleteShiftError}
           onClose={() => setDeleteShiftError(null)}
         />

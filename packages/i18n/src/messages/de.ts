@@ -19,6 +19,7 @@ export const de = {
     discard: "Verwerfen",
     signOut: "Abmelden",
     ok: "OK",
+    notice: "Hinweis",
     yes: "Ja",
     no: "Nein",
     delete: "Löschen",
@@ -1355,6 +1356,7 @@ export const de = {
       confirmed: "Bestätigt",
       canceled: "Abgesagt",
       cancellationPending: "Absage angefragt",
+      cancellationSent: "Absage gesendet",
       unresolved: "Ungeklärt",
     },
     tooltipStatus: {
@@ -1379,10 +1381,15 @@ export const de = {
       confirmManagerNamed:
         "Soll die Schicht für {name} wirklich storniert werden?",
       confirmEmployee: "Möchtest du diese Schicht wirklich absagen?",
+      reasonLabel: "Grund (optional)",
+      reasonPlaceholder: "Kurz angeben …",
       pastShift: "Vergangene Schichten können nicht abgesagt werden.",
       blockedByStatus:
         "Die Schicht kann nicht abgesagt werden, weil sie den Status „{status}“ hat.",
       failed: "Absage fehlgeschlagen.",
+      successTitle: "Absage gesendet",
+      successBody:
+        "Deine Absage wurde übermittelt. Das Team kümmert sich um die weiteren Schritte.",
     },
     pastConfirm: {
       notPast: "Nur vergangene Schichten können manuell bestätigt werden.",
@@ -1391,6 +1398,7 @@ export const de = {
     },
     deleteBlockedByStatus:
       "Die Schicht kann nicht gelöscht werden, weil sie den Status „{status}“ hat.",
+    deleteBlockedTitle: "Löschen nicht möglich",
     send: {
       modalTitle: "Bestätigung anfragen",
       modalHint:
@@ -1425,12 +1433,13 @@ export const de = {
       centerTitle: "Benachrichtigungen",
       empty: "Keine offenen Benachrichtigungen.",
       dismiss: "Schließen",
+      cancellationReason: "Grund: {reason}",
     },
     panel: {
       title: "Offene Rückmeldungen",
       hint: "Schichten dieser Woche und dieses Standorts.",
       empty: "Keine Einträge in diesem Tab.",
-      reassign: "Neu zuweisen",
+      reassign: "Ersatz zuweisen",
       tabs: {
         pending: "Ausstehend",
         rejected: "Abgelehnt",
@@ -1439,6 +1448,14 @@ export const de = {
         confirmed: "Bestätigt",
         canceled: "Abgesagt",
       },
+    },
+    hub: {
+      badgeCancellationOpen: "Absage offen",
+      cancellationReason: "Grund: {reason}",
+      cancellationReasonIconLabel: "Absagegrund anzeigen",
+      cancellationReasonModalTitle: "Absagegrund",
+      rejectionReasonIconLabel: "Ablehnungsgrund anzeigen",
+      rejectionReasonModalTitle: "Ablehnungsgrund",
     },
     communication: {
       title: "Schicht-Stati",
@@ -1466,7 +1483,7 @@ export const de = {
       areaUnknown: "Ohne Bereich",
       rowRequest: "Anfragen",
       rowResend: "Erneut anfragen",
-      rowReassign: "Neu zuweisen",
+      rowReassign: "Ersatz zuweisen",
       rowSelect: "Auswählen",
       actionDelete: "Löschen",
       actionConfirmCancellation: "Absage bestätigen",
@@ -1492,7 +1509,7 @@ export const de = {
       resendSuccess: "{count} Anfragen gesendet.",
       partialResend: "{sent} gesendet, {failed} fehlgeschlagen.",
       tabActionSend: "Versenden",
-      reassignRequiresOne: "Bitte genau eine Schicht zum Neu zuweisen auswählen.",
+      reassignRequiresOne: "Bitte genau eine Schicht für Ersatz zuweisen auswählen.",
       statusRequested: "Bestätigung angefragt",
       swapColRequester: "Anfragender",
       swapColTarget: "Ziel-Mitarbeiter",

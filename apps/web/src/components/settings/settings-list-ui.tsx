@@ -132,6 +132,7 @@ export function SettingsConfirmDialogCloseHeader({
 type SettingsConfirmDialogShellProps = {
   title: ReactNode;
   titleId: string;
+  subtitle?: ReactNode;
   onClose: () => void;
   closeDisabled?: boolean;
   closeAriaLabel: string;
@@ -144,6 +145,7 @@ type SettingsConfirmDialogShellProps = {
 export function SettingsConfirmDialogShell({
   title,
   titleId,
+  subtitle,
   onClose,
   closeDisabled = false,
   closeAriaLabel,
@@ -156,6 +158,7 @@ export function SettingsConfirmDialogShell({
       <SettingsModalHeader
         title={title}
         titleId={titleId}
+        subtitle={subtitle}
         onClose={onClose}
         closeDisabled={closeDisabled}
         closeAriaLabel={closeAriaLabel}

@@ -64,7 +64,7 @@ test.describe("Dashboard · Schichtbestätigung (Header)", () => {
       dialog.getByRole("heading", { name: "Offene Punkte" })
     ).toBeVisible();
     await expect(
-      dialog.getByRole("button", { name: "Neu zuweisen" })
+      dialog.getByRole("button", { name: "Ersatz zuweisen" })
     ).toBeVisible();
   });
 

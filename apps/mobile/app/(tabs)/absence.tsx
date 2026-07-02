@@ -22,7 +22,7 @@ import {
   reportAbsence,
 } from "@/lib/absences-api";
 import { MobileApiError } from "@/lib/mobile-api-client";
-import { showAppAlert } from "@/lib/app-alert";
+import { useAppDialog } from "@/lib/use-app-dialog";
 import { ResponsiveContentFrame } from "@/components/responsive-content-frame";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 
@@ -195,6 +195,7 @@ function AbsenceRow({
 }
 
 export default function AbsenceScreen() {
+  const { alert, dialog } = useAppDialog();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -215,19 +216,20 @@ export default function AbsenceScreen() {
       const response = await fetchMobileAbsences();
       setAbsences(response.absences);
     } catch (error) {
-      showAppAlert(
-        "Laden fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : error instanceof Error
+      void alert({
+        title: "Laden fehlgeschlagen",
+        message:
+          error instanceof MobileApiError
             ? error.message
-            : "Unbekannter Fehler"
-      );
+            : error instanceof Error
+              ? error.message
+              : "Unbekannter Fehler",
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [alert]);
 
   useFocusEffect(
     useCallback(() => {
@@ -263,12 +265,18 @@ export default function AbsenceScreen() {
 
   async function handleSubmitAbsence() {
     if (!startDate.trim()) {
-      showAppAlert("Eingabe prüfen", "Bitte ein Startdatum angeben.");
+      void alert({
+        title: "Eingabe prüfen",
+        message: "Bitte ein Startdatum angeben.",
+      });
       return;
     }
     const openEnded = absenceType === "sick" && isOpenEnded;
     if (!openEnded && !endDate.trim()) {
-      showAppAlert("Eingabe prüfen", "Bitte ein Enddatum angeben.");
+      void alert({
+        title: "Eingabe prüfen",
+        message: "Bitte ein Enddatum angeben.",
+      });
       return;
     }
 
@@ -294,22 +302,26 @@ export default function AbsenceScreen() {
           : "Deine Meldung wurde übermittelt.";
 
       if (result.shiftConflictCount > 0) {
-        showAppAlert(
-          "Abwesenheit gespeichert",
-          `${savedLabel} Hinweis: ${result.shiftConflictCount} geplante Schicht(en) liegen in diesem Zeitraum.`
-        );
+        await alert({
+          title: "Abwesenheit gespeichert",
+          message: `${savedLabel} Hinweis: ${result.shiftConflictCount} geplante Schicht(en) liegen in diesem Zeitraum.`,
+        });
       } else {
-        showAppAlert("Abwesenheit gespeichert", savedLabel);
+        await alert({
+          title: "Abwesenheit gespeichert",
+          message: savedLabel,
+        });
       }
     } catch (error) {
-      showAppAlert(
-        "Speichern fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : error instanceof Error
+      await alert({
+        title: "Speichern fehlgeschlagen",
+        message:
+          error instanceof MobileApiError
             ? error.message
-            : "Unbekannter Fehler"
-      );
+            : error instanceof Error
+              ? error.message
+              : "Unbekannter Fehler",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -321,14 +333,15 @@ export default function AbsenceScreen() {
       await cancelPendingAbsence(id);
       await loadAbsences();
     } catch (error) {
-      showAppAlert(
-        "Aktion fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : error instanceof Error
+      await alert({
+        title: "Aktion fehlgeschlagen",
+        message:
+          error instanceof MobileApiError
             ? error.message
-            : "Unbekannter Fehler"
-      );
+            : error instanceof Error
+              ? error.message
+              : "Unbekannter Fehler",
+      });
     } finally {
       setBusyId(null);
     }
@@ -339,16 +352,20 @@ export default function AbsenceScreen() {
     try {
       await closeOpenSickAbsence(id, todayISO());
       await loadAbsences();
-      showAppAlert("Erledigt", "Krankmeldung wurde geschlossen.");
+      await alert({
+        title: "Erledigt",
+        message: "Krankmeldung wurde geschlossen.",
+      });
     } catch (error) {
-      showAppAlert(
-        "Aktion fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : error instanceof Error
+      await alert({
+        title: "Aktion fehlgeschlagen",
+        message:
+          error instanceof MobileApiError
             ? error.message
-            : "Unbekannter Fehler"
-      );
+            : error instanceof Error
+              ? error.message
+              : "Unbekannter Fehler",
+      });
     } finally {
       setBusyId(null);
     }
@@ -493,6 +510,7 @@ export default function AbsenceScreen() {
           />
         )}
       </ScrollView>
+      {dialog}
       </ResponsiveContentFrame>
     </View>
   );

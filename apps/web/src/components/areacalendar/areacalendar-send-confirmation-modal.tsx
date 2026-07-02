@@ -7,7 +7,7 @@ import {
   sendConfirmationRequestForSelectedShifts,
   type ConfirmationSendShiftRow,
 } from "@/app/actions/shift-confirmations";
-import { Alert, Button, CloseIcon, IconButton } from "@/components/ui";
+import { Alert, Button, CloseIcon, EphemeralFeedbackOverlay, IconButton } from "@/components/ui";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
@@ -193,6 +193,11 @@ export function AreaCalendarSendConfirmationModal({
   }
 
   return (
+    <>
+      <EphemeralFeedbackOverlay
+        message={successMessage}
+        onDismiss={() => setSuccessMessage(null)}
+      />
     <div
       className={cn(
         settingsModalBackdropClass(),
@@ -233,9 +238,6 @@ export function AreaCalendarSendConfirmationModal({
 
           <div className={cn(settingsModalBodyPaddingClass(), "space-y-3")}>
             {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
-            {successMessage ? (
-              <Alert variant="success">{successMessage}</Alert>
-            ) : null}
 
             {shifts.length === 0 ? (
               <p className="text-sm text-muted">{t("shiftConfirmation.send.noCandidates")}</p>
@@ -387,5 +389,6 @@ export function AreaCalendarSendConfirmationModal({
         </div>
       ) : null}
     </div>
+    </>
   );
 }

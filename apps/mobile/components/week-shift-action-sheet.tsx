@@ -1,20 +1,23 @@
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
+import { useState, useRef } from "react";
 import type {
-  ConfirmationDecision,
-  ConfirmationWeekItem,
   EmployeeWeekShiftDisplayItem,
+  ConfirmationWeekItem,
   Shift,
 } from "@schichtwerk/types";
-import { shiftConfirmationStatusLabel } from "@/lib/shift-confirmation-labels";
-import { isEmployeeDismissableShift } from "@/lib/employee-shift-dismiss";
+import { shiftConfirmationStatusLabel, employeeCancellationSentShortLabel } from "@/lib/shift-confirmation-labels";
+import { isEmployeeCancellationPending, isEmployeeDismissableShift } from "@/lib/employee-shift-dismiss";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
+import { MODAL_Z_INDEX_ACTION_SHEET } from "@/lib/modal-z-index";
 
 export type WeekShiftActionContext = {
   shift: Shift;
@@ -28,12 +31,11 @@ type WeekShiftActionSheetProps = {
   needsResponse: boolean;
   canCancel: boolean;
   canDismiss: boolean;
-  draft?: ConfirmationDecision;
   canceling: boolean;
   dismissing: boolean;
   onClose: () => void;
-  onToggleDraft: (shiftId: string, decision: ConfirmationDecision) => void;
-  onCancel: (shiftId: string) => void;
+  onGoToRequests?: () => void;
+  onCancel: (shiftId: string, reason?: string) => void;
   onDismiss: (shiftId: string) => void;
 };
 
@@ -65,14 +67,16 @@ export function WeekShiftActionSheet({
   needsResponse,
   canCancel,
   canDismiss,
-  draft,
   canceling,
   dismissing,
   onClose,
-  onToggleDraft,
+  onGoToRequests,
   onCancel,
   onDismiss,
 }: WeekShiftActionSheetProps) {
+  const [cancelReason, setCancelReason] = useState("");
+  const cancelReasonRef = useRef("");
+
   if (!context) {
     return null;
   }
@@ -81,10 +85,9 @@ export function WeekShiftActionSheet({
   const templateLabel = display?.templateName ?? null;
   const timeLabel = `${formatShiftTime(shift.starts_at)} – ${formatShiftTime(shift.ends_at)}`;
   const metaLabel = buildMetaLabel(display, confirmation);
-  const statusLabel = shiftConfirmationStatusLabel(
-    shift.confirmation_status,
-    display?.cancelledBy
-  );
+  const statusLabel = isEmployeeCancellationPending(shift, display)
+    ? employeeCancellationSentShortLabel()
+    : shiftConfirmationStatusLabel(shift.confirmation_status, display?.cancelledBy);
   const showDismiss = isEmployeeDismissableShift(shift, display);
 
   return (
@@ -92,7 +95,12 @@ export function WeekShiftActionSheet({
       visible={visible}
       transparent
       animationType="slide"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
       onRequestClose={onClose}
+      {...(Platform.OS === "web"
+        ? { style: { zIndex: MODAL_Z_INDEX_ACTION_SHEET } }
+        : {})}
     >
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => undefined}>
@@ -127,55 +135,50 @@ export function WeekShiftActionSheet({
               </Pressable>
             ) : null}
 
-            {needsResponse ? (
-              <>
-                <Pressable
-                  style={[
-                    styles.actionButton,
-                    draft === "confirm" && styles.actionButtonConfirmActive,
-                  ]}
-                  onPress={() => onToggleDraft(shift.id, "confirm")}
-                >
-                  <Text
-                    style={[
-                      styles.actionButtonText,
-                      draft === "confirm" && styles.actionButtonTextActive,
-                    ]}
-                  >
-                    Bestätigen
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.actionButton,
-                    draft === "reject" && styles.actionButtonRejectActive,
-                  ]}
-                  onPress={() => onToggleDraft(shift.id, "reject")}
-                >
-                  <Text
-                    style={[
-                      styles.actionButtonText,
-                      draft === "reject" && styles.actionButtonTextActive,
-                    ]}
-                  >
-                    Ablehnen
-                  </Text>
-                </Pressable>
-              </>
+            {needsResponse && onGoToRequests ? (
+              <Pressable
+                style={styles.requestsButton}
+                onPress={() => {
+                  onClose();
+                  onGoToRequests();
+                }}
+              >
+                <Text style={styles.requestsButtonText}>
+                  In Benachrichtigungen bearbeiten
+                </Text>
+              </Pressable>
             ) : null}
 
             {canCancel && !needsResponse ? (
-              <Pressable
-                style={styles.cancelButton}
-                disabled={canceling}
-                onPress={() => onCancel(shift.id)}
-              >
+              <>
+                <Text style={styles.reasonLabel}>Grund (optional)</Text>
+                <TextInput
+                  style={styles.reasonInput}
+                  value={cancelReason}
+                  onChangeText={(text) => {
+                    cancelReasonRef.current = text;
+                    setCancelReason(text);
+                  }}
+                  placeholder="Kurz angeben …"
+                  placeholderTextColor={colors.muted}
+                  maxLength={200}
+                  multiline
+                />
+                <Pressable
+                  style={styles.cancelButton}
+                  disabled={canceling}
+                  onPress={() => {
+                    const reason = cancelReasonRef.current.trim();
+                    onCancel(shift.id, reason ? reason : undefined);
+                  }}
+                >
                 {canceling ? (
                   <ActivityIndicator color={colors.destructive} />
                 ) : (
                   <Text style={styles.cancelButtonText}>Schicht absagen</Text>
                 )}
               </Pressable>
+              </>
             ) : null}
 
             <Pressable style={styles.secondaryButton} disabled>
@@ -199,6 +202,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
     backgroundColor: "rgba(15, 23, 42, 0.45)",
+    ...Platform.select({
+      web: { zIndex: MODAL_Z_INDEX_ACTION_SHEET },
+      android: { elevation: MODAL_Z_INDEX_ACTION_SHEET },
+      default: {},
+    }),
   },
   sheet: {
     backgroundColor: colors.surface,
@@ -244,30 +252,37 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     gap: spacing.sm,
   },
-  actionButton: {
+  requestsButton: {
     minHeight: 44,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background,
+    backgroundColor: "#EFF6FF",
   },
-  actionButtonConfirmActive: {
-    borderColor: colors.success,
-    backgroundColor: "#DCFCE7",
-  },
-  actionButtonRejectActive: {
-    borderColor: colors.destructive,
-    backgroundColor: "#FEE2E2",
-  },
-  actionButtonText: {
+  requestsButtonText: {
     fontSize: 15,
     fontWeight: "600",
-    color: colors.foreground,
+    color: colors.primary,
   },
-  actionButtonTextActive: {
+  reasonLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.muted,
+    marginBottom: spacing.xs,
+  },
+  reasonInput: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    fontSize: 15,
     color: colors.foreground,
+    backgroundColor: colors.background,
+    textAlignVertical: "top",
   },
   cancelButton: {
     minHeight: 44,

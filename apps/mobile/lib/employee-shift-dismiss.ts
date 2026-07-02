@@ -22,3 +22,8 @@ export function isEmployeeCancellationPending(
   if (isShiftCanceled(shift)) return false;
   return display?.cancellationPending === true;
 }
+
+/** Abgelehnte Schichten nicht im Mitarbeiter-Wochenplan anzeigen. */
+export function isHiddenFromEmployeeWeekPlan(shift: Shift): boolean {
+  return shift.confirmation_status === "rejected";
+}

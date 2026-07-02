@@ -1,52 +1,40 @@
-import { describe, expect, it } from "vitest";
-import {
-  enrichShiftRowWithLifecycle,
-  lifecycleStatusForConfirmationStatus,
-} from "./shift-request-writes";
+import { describe, expect, it, vi } from "vitest";
+import { updateOpenEmployeeCancellationRequestReason } from "./shift-request-writes";
 
-describe("lifecycleStatusForConfirmationStatus", () => {
-  it("maps legacy confirmation statuses to lifecycle", () => {
-    expect(lifecycleStatusForConfirmationStatus("proposed")).toBe("planned");
-    expect(lifecycleStatusForConfirmationStatus("requested")).toBe("planned");
-    expect(lifecycleStatusForConfirmationStatus("pending")).toBe("planned");
-    expect(lifecycleStatusForConfirmationStatus("rejected")).toBe("planned");
-    expect(lifecycleStatusForConfirmationStatus("confirmed")).toBe("confirmed");
-    expect(lifecycleStatusForConfirmationStatus("canceled")).toBe("cancelled");
-  });
+describe("updateOpenEmployeeCancellationRequestReason", () => {
+  it("merges reason into pending employee cancellation payload", async () => {
+    const update = vi.fn().mockResolvedValue({ error: null });
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: {
+              id: "req-1",
+              payload: { cancelled_by: "employee", source: "mobile_cancel" },
+            },
+            error: null,
+          }),
+        })),
+        update: vi.fn(() => ({
+          eq: vi.fn().mockImplementation(() => {
+            update();
+            return Promise.resolve({ error: null });
+          }),
+        })),
+      })),
+    };
 
-  it("defaults missing status to confirmed", () => {
-    expect(lifecycleStatusForConfirmationStatus(undefined)).toBe("confirmed");
-    expect(lifecycleStatusForConfirmationStatus(null)).toBe("confirmed");
-  });
-});
-
-describe("enrichShiftRowWithLifecycle", () => {
-  it("adds lifecycle_status when confirmation_status is set", () => {
-    expect(
-      enrichShiftRowWithLifecycle({
-        confirmation_status: "requested",
-        confirmation_status_updated_at: "2026-06-17T12:00:00.000Z",
-      })
-    ).toMatchObject({
-      confirmation_status: "requested",
-      lifecycle_status: "planned",
+    const updated = await updateOpenEmployeeCancellationRequestReason({
+      client: client as never,
+      organizationId: "org-1",
+      shiftId: "shift-1",
+      reason: "Kurzfristig krank",
+      now: "2026-07-02T14:00:00.000Z",
     });
-  });
 
-  it("does not override an explicit lifecycle_status", () => {
-    expect(
-      enrichShiftRowWithLifecycle({
-        confirmation_status: "confirmed",
-        lifecycle_status: "planned",
-      })
-    ).toMatchObject({
-      lifecycle_status: "planned",
-    });
-  });
-
-  it("leaves rows without confirmation_status unchanged", () => {
-    const row: { confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus } =
-      {};
-    expect(enrichShiftRowWithLifecycle(row)).toBe(row);
+    expect(updated).toBe(true);
+    expect(update).toHaveBeenCalled();
+    expect(client.from).toHaveBeenCalled();
   });
 });

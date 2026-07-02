@@ -93,6 +93,116 @@ function readCancelledBy(
   return undefined;
 }
 
+export function normalizeRecordPayload(payload: unknown): Record<string, unknown> {
+  if (!payload) return {};
+  if (typeof payload === "string") {
+    try {
+      const parsed = JSON.parse(payload) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+    return {};
+  }
+  if (typeof payload === "object" && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+  return {};
+}
+
+export function readCancellationReasonFromPayload(
+  payload: Record<string, unknown> | undefined | null
+): string | undefined {
+  const normalized = payload ? normalizeRecordPayload(payload) : {};
+  const value =
+    normalized.reason ??
+    normalized.cancellation_reason ??
+    normalized.cancellationReason ??
+    normalized.message;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export function readEmployeeCancellationReasonFromRequestPayload(
+  payload: unknown
+): string | undefined {
+  const normalized = normalizeRecordPayload(payload);
+  if (readCancelledBy(normalized) !== "employee") return undefined;
+  return readCancellationReasonFromPayload(normalized);
+}
+
+export function readRejectionReasonFromPayload(
+  payload: Record<string, unknown> | undefined | null
+): string | undefined {
+  const normalized = payload ? normalizeRecordPayload(payload) : {};
+  const value =
+    normalized.reason ??
+    normalized.rejection_reason ??
+    normalized.rejectionReason ??
+    normalized.message;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export function readEmployeeRejectionReasonFromRequestPayload(
+  payload: unknown
+): string | undefined {
+  return readRejectionReasonFromPayload(normalizeRecordPayload(payload));
+}
+
+export function mapLatestEmployeeRejectionReasonsByShiftId(
+  rows: readonly {
+    shift_id: string;
+    payload: unknown;
+    created_at: string;
+  }[]
+): Map<string, string> {
+  const sorted = [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const map = new Map<string, string>();
+  for (const row of sorted) {
+    if (map.has(row.shift_id)) continue;
+    const reason = readEmployeeRejectionReasonFromRequestPayload(row.payload);
+    if (reason) map.set(row.shift_id, reason);
+  }
+  return map;
+}
+
+export function mapLatestEmployeeCancellationReasonsByShiftId(
+  rows: readonly {
+    shift_id: string;
+    payload: unknown;
+    created_at: string;
+  }[]
+): Map<string, string> {
+  const sorted = [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const map = new Map<string, string>();
+  for (const row of sorted) {
+    if (map.has(row.shift_id)) continue;
+    const reason = readEmployeeCancellationReasonFromRequestPayload(row.payload);
+    if (reason) map.set(row.shift_id, reason);
+  }
+  return map;
+}
+
+export function withCancellationReasonOnDisplayState(
+  displayState: ShiftCardDisplayState | undefined,
+  reason: string | undefined
+): ShiftCardDisplayState | undefined {
+  if (!reason || !displayState?.openCancellation) return displayState;
+  if (displayState.openCancellation.reason === reason) return displayState;
+  return {
+    ...displayState,
+    openCancellation: {
+      ...displayState.openCancellation,
+      reason,
+    },
+  };
+}
+
 export function resolveLegacyConfirmationStatusFromModel(input: {
   lifecycle: ShiftLifecycleStatus;
   latestConfirmation?: ShiftRequestSummary;
@@ -245,6 +355,10 @@ export function resolveShiftCardDisplayState(
     };
   }
 
+  const cancellationReason = latestCancellation
+    ? readCancellationReasonFromPayload(latestCancellation.payload)
+    : undefined;
+
   if (
     lifecycle === "cancelled" &&
     latestCancellation?.status === "approved"
@@ -253,6 +367,7 @@ export function resolveShiftCardDisplayState(
       requestId: latestCancellation.id,
       status: "approved",
       cancelledBy: readCancelledBy(latestCancellation.payload),
+      ...(cancellationReason ? { reason: cancellationReason } : {}),
     };
   } else if (
     latestCancellation?.status === "pending" &&
@@ -262,6 +377,7 @@ export function resolveShiftCardDisplayState(
       requestId: latestCancellation.id,
       status: "pending",
       cancelledBy: "employee",
+      ...(cancellationReason ? { reason: cancellationReason } : {}),
     };
   }
 
@@ -275,6 +391,20 @@ export function hasPendingEmployeeCancellation(
     displayState?.openCancellation?.status === "pending" &&
     displayState.openCancellation.cancelledBy === "employee"
   );
+}
+
+export function readPendingEmployeeCancellationReasonFromRequests(
+  requests: readonly ShiftRequestSummary[] | undefined
+): string | undefined {
+  if (!requests?.length) return undefined;
+  const latestCancellation = latestCancellationRequest(requests);
+  if (
+    latestCancellation?.status !== "pending" ||
+    readCancelledBy(latestCancellation.payload) !== "employee"
+  ) {
+    return undefined;
+  }
+  return readCancellationReasonFromPayload(latestCancellation.payload);
 }
 
 /** Spiegel der SQL-View shifts_with_legacy_confirmation (für Tests/Adapter). */

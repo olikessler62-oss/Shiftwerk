@@ -14,15 +14,29 @@ import type { AreaCalendarShiftCard } from "@/components/areacalendar/areacalend
 import { organizationTodayISO, resolveOrganizationTimeZone, resolveOrganizationShiftConfirmationPendingAfterMinutes } from "@schichtwerk/database";
 import { mapAreaCalendarShiftRowConfirmationFields } from "@/lib/area-calendar-shift-row-mapper";
 import { redirectIfPlanningWeekClamped } from "@/lib/planning-week";
-import { getCachedAreaCalendarShifts } from "@/lib/cached-areacalendar-shifts";
+import { loadDashboardLocationScopedData } from "@/lib/dashboard-location-data";
 import { loadCommunicationHubScopeData } from "@/lib/communication-hub-scope-data";
 import { resolvePlanningShiftJobLabels } from "@/lib/planning-shift-job-label";
+import { hasSettingsModalSearchParam } from "@/lib/settings-modal-navigation";
+import type { CompensationSurchargeType, Profile, Role } from "@schichtwerk/types";
 
 export const dynamic = "force-dynamic";
 
 function relation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null;
   return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+async function loadSettingsRoles(
+  db: Awaited<ReturnType<typeof getDatabase>>,
+  orgId: string
+): Promise<Role[]> {
+  let roles = await db.listRoles(orgId);
+  if (!roles.length) {
+    await db.seedDefaultRoles(orgId);
+    roles = await db.listRoles(orgId);
+  }
+  return roles;
 }
 
 export default async function BereichKalenderPage({
@@ -69,13 +83,21 @@ export default async function BereichKalenderPage({
   const from = dates[0];
   const to = dates[6];
 
+  const loadSettingsModalsData = hasSettingsModalSearchParam({
+    qualifikationen,
+    standorte,
+    profiles: profilesParam,
+    rollen,
+  });
+
   const db = await getDatabase();
 
   let [
     qualifications,
     compensationSurchargeTypes,
     roles,
-    profiles,
+    settingsProfiles,
+    planningEmployees,
     locations,
     profileQualificationIdsMap,
     absences,
@@ -83,9 +105,16 @@ export default async function BereichKalenderPage({
     managerNotifications,
   ] = await Promise.all([
     db.listQualifications(orgId),
-    db.listCompensationSurchargeTypes(orgId),
-    db.listRoles(orgId),
-    db.listOrganizationProfiles(orgId),
+    loadSettingsModalsData
+      ? db.listCompensationSurchargeTypes(orgId)
+      : Promise.resolve([] as CompensationSurchargeType[]),
+    loadSettingsModalsData
+      ? loadSettingsRoles(db, orgId)
+      : Promise.resolve([] as Role[]),
+    loadSettingsModalsData
+      ? db.listOrganizationProfiles(orgId)
+      : Promise.resolve([] as Profile[]),
+    db.listPlanningEmployees(orgId),
     db.listLocationsForAreaCalendar(orgId, from, to),
     db.listProfileQualificationIdsByOrganization(orgId),
     db.listOrganizationAbsences(orgId, {
@@ -99,36 +128,27 @@ export default async function BereichKalenderPage({
       : Promise.resolve([]),
   ]);
 
-  if (!roles.length) {
-    await db.seedDefaultRoles(orgId);
-    roles = await db.listRoles(orgId);
-  }
-
   const selectedLocationId = resolveSelectedLocationId(locations, locationParam);
   const selectedLocation =
     locations.find((l) => l.id === selectedLocationId) ?? null;
 
-  const [areas, staffingRules, serviceHours, shiftRows, areaShiftTemplates, staffingOverrides] =
-    selectedLocationId
-    ? await Promise.all([
-        db.listLocationAreasForAreaCalendar(selectedLocationId, from, to),
-        db.listLocationAreaStaffing(selectedLocationId),
-        db.listLocationAreaServiceHours(selectedLocationId).catch(() => []),
-        getCachedAreaCalendarShifts(
-          orgId,
-          selectedLocationId,
-          weekStart,
-          from,
-          to
-        ),
-        db.listAreaShiftTemplatesWithBreaksForLocation(selectedLocationId).catch(
-          () => []
-        ),
-        db
-          .listLocationAreaStaffingOverrides(selectedLocationId, from, to)
-          .catch(() => []),
-      ])
-    : [[], [], [], [], [], []];
+  const locationScopedData = selectedLocationId
+    ? await loadDashboardLocationScopedData(
+        db,
+        orgId,
+        selectedLocationId,
+        weekStart,
+        from,
+        to
+      )
+    : null;
+
+  const areas = locationScopedData?.areas ?? [];
+  const staffingRules = locationScopedData?.staffingRules ?? [];
+  const serviceHours = locationScopedData?.serviceHours ?? [];
+  const shiftRows = locationScopedData?.shiftRows ?? [];
+  const areaShiftTemplates = locationScopedData?.areaShiftTemplates ?? [];
+  const staffingOverrides = locationScopedData?.staffingOverrides ?? [];
 
   const cards: AreaCalendarShiftCard[] = [];
   for (const s of shiftRows) {
@@ -200,6 +220,10 @@ export default async function BereichKalenderPage({
   }
 
   const profileQualificationIds = Object.fromEntries(profileQualificationIdsMap);
+  const planningEmployeeIds = planningEmployees.map((employee) => employee.id);
+  const settingsModalsProfiles = loadSettingsModalsData
+    ? settingsProfiles
+    : planningEmployees;
 
   const todayISO = organizationTodayISO(timeZone);
   const [communicationHubScope, organizationShiftRows] = await Promise.all([
@@ -212,7 +236,7 @@ export default async function BereichKalenderPage({
       todayISO,
       areaShiftTemplates,
     }),
-    db.listOrganizationShiftsInDateRange(orgId, from, to),
+    db.listOrganizationShiftsInDateRange(orgId, from, to, planningEmployeeIds),
   ]);
 
   const organizationWeekShifts = organizationShiftRows.map((shiftRow) => ({
@@ -245,7 +269,7 @@ export default async function BereichKalenderPage({
         qualifications={qualifications}
         compensationSurchargeTypes={compensationSurchargeTypes}
         roles={roles}
-        profiles={profiles}
+        profiles={planningEmployees}
         profileQualificationIds={profileQualificationIds}
         locations={locations}
         absences={absences}
@@ -256,6 +280,7 @@ export default async function BereichKalenderPage({
         organizationWeekShifts={organizationWeekShifts}
         communicationHubAbsences={communicationHubScope.absences}
         managerNotifications={managerNotifications}
+        settingsModalsProfiles={settingsModalsProfiles}
       />
     </Suspense>
   );

@@ -172,6 +172,7 @@ function isShiftActionDisabled(
         requestedAt: shift.requestedAt,
         isPastShiftDate: menuOptions.isPastShiftDate,
         pendingAfterMinutes: context.pendingAfterMinutes,
+        displayState: shift.displayState,
       });
     case "cancel":
       return !canCancelShift({

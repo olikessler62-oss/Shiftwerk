@@ -1,8 +1,11 @@
 import type { Translator } from "@schichtwerk/i18n/translate";
 
-import { resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
+import {
+  hasPendingEmployeeCancellation,
+  resolveEffectiveConfirmationStatus,
+} from "@schichtwerk/database";
 
-import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import type { ShiftCardDisplayState, ShiftConfirmationStatus } from "@schichtwerk/types";
 
 import { shiftConfirmationStatusLabelKey } from "@/lib/shift-confirmation-display";
 
@@ -38,7 +41,13 @@ export function canDeleteShift(input: {
 
   pendingAfterMinutes?: number;
 
+  displayState?: ShiftCardDisplayState | null;
+
 }): boolean {
+
+  if (hasPendingEmployeeCancellation(input.displayState)) {
+    return true;
+  }
 
   const effectiveStatus = resolveEffectiveConfirmationStatus(
     input.confirmationStatus,

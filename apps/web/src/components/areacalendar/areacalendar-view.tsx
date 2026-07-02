@@ -93,6 +93,8 @@ type Props = {
   organizationWeekShifts?: PlanningShift[];
   communicationHubAbsences?: AbsenceRequest[];
   managerNotifications?: ManagerNotification[];
+  /** Vollständige Profilliste nur bei geöffnetem Einstellungs-Modal (sonst = profiles). */
+  settingsModalsProfiles?: Profile[];
 };
 
 export function AreaCalendarView({
@@ -121,6 +123,7 @@ export function AreaCalendarView({
   organizationWeekShifts = [],
   communicationHubAbsences = [],
   managerNotifications = [],
+  settingsModalsProfiles,
 }: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -423,7 +426,7 @@ export function AreaCalendarView({
             qualifications,
             compensationSurchargeTypes,
             roles,
-            profiles,
+            profiles: settingsModalsProfiles ?? profiles,
           }}
         />
         {communicationOpen ? (

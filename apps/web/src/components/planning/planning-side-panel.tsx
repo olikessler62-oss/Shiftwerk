@@ -48,6 +48,9 @@ type PlanningSidePanelProps = {
 export const PLANNING_SIDE_PANEL_FOOTER_CLASS =
   "flex flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-5 sm:py-4";
 
+/** Footer volle Panelbreite — gleicht Body-Innenabstand aus. */
+const PLANNING_SIDE_PANEL_FOOTER_BLEED_CLASS = "-mx-3 sm:-mx-5";
+
 const PANEL_BODY_PADDING_CLASS = "px-3 py-3 sm:px-5 sm:py-4";
 
 const PANEL_MOTION_MS = 280;
@@ -306,12 +309,18 @@ export function PlanningSidePanel({
           )}
         >
           {children}
+          {footer ? (
+            <div
+              className={cn(
+                "mt-3 border-t border-border bg-surface sm:mt-4",
+                PLANNING_SIDE_PANEL_FOOTER_BLEED_CLASS,
+                bodyClassName?.includes("px-0") && "mx-0"
+              )}
+            >
+              {footer}
+            </div>
+          ) : null}
         </div>
-        {footer ? (
-          <div className="shrink-0 border-t border-border bg-surface">
-            {footer}
-          </div>
-        ) : null}
       </aside>
     </PlanningSidePanelCloseContext.Provider>,
     document.body

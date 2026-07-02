@@ -6,6 +6,7 @@ import type {
 } from "@schichtwerk/types";
 
 import { Schema } from "./schema";
+import { normalizeRecordPayload } from "./shift-display-state";
 import { resolveShiftLifecycleFromLegacy } from "./shift-display-state";
 
 const T = Schema.tables;
@@ -92,9 +93,42 @@ async function updateOpenConfirmationRequest(
     status: "approved" | "rejected" | "expired" | "cancelled";
     responded_at?: string | null;
     reminder_sent_at?: string | null;
+    payloadMerge?: Record<string, unknown>;
   },
   now: string
 ): Promise<boolean> {
+  if (patch.payloadMerge) {
+    const { data: existing, error: selectError } = await client
+      .from(T.shiftRequests)
+      .select("id, payload")
+      .eq("organization_id", organizationId)
+      .eq("shift_id", shiftId)
+      .eq("type", "confirmation")
+      .in("status", [...OPEN_CONFIRMATION_STATUSES])
+      .maybeSingle();
+
+    if (selectError) throw new Error(selectError.message);
+    if (!existing) return false;
+
+    const { payloadMerge, ...statusPatch } = patch;
+    const { data, error } = await client
+      .from(T.shiftRequests)
+      .update({
+        ...statusPatch,
+        payload: {
+          ...normalizeRecordPayload(existing.payload),
+          ...payloadMerge,
+        },
+        updated_at: now,
+      })
+      .eq("id", existing.id as string)
+      .select("id")
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return Boolean(data);
+  }
+
   const { data, error } = await client
     .from(T.shiftRequests)
     .update({ ...patch, updated_at: now })
@@ -187,8 +221,15 @@ export async function syncShiftRequestsAfterEmployeeResponse(input: {
   employeeId: string;
   decision: "confirm" | "reject";
   now: string;
+  reason?: string;
 }): Promise<void> {
   const requestStatus = input.decision === "confirm" ? "approved" : "rejected";
+  const trimmedReason = input.reason?.trim().slice(0, 200);
+  const rejectionPayload =
+    input.decision === "reject" && trimmedReason
+      ? { reason: trimmedReason, rejection_reason: trimmedReason }
+      : undefined;
+
   const updated = await updateOpenConfirmationRequest(
     input.client,
     input.organizationId,
@@ -196,6 +237,7 @@ export async function syncShiftRequestsAfterEmployeeResponse(input: {
     {
       status: requestStatus,
       responded_at: input.now,
+      ...(rejectionPayload ? { payloadMerge: rejectionPayload } : {}),
     },
     input.now
   );
@@ -208,7 +250,10 @@ export async function syncShiftRequestsAfterEmployeeResponse(input: {
       status: requestStatus,
       actor_id: input.employeeId,
       responded_at: input.now,
-      payload: { source: "mobile_respond_backfill" },
+      payload: {
+        source: "mobile_respond_backfill",
+        ...(rejectionPayload ?? {}),
+      },
     });
   }
 }
@@ -292,6 +337,54 @@ export async function hasOpenEmployeeCancellationRequest(input: {
 
   if (error) throw new Error(error.message);
   return Boolean(data);
+}
+
+function readCancelledByFromPayload(
+  payload: Record<string, unknown>
+): "employee" | "manager" | undefined {
+  const value = payload.cancelled_by ?? payload.cancelledBy;
+  return value === "employee" || value === "manager" ? value : undefined;
+}
+
+export async function updateOpenEmployeeCancellationRequestReason(input: {
+  client: SupabaseClient;
+  organizationId: string;
+  shiftId: string;
+  reason: string;
+  now: string;
+}): Promise<boolean> {
+  const reason = input.reason.trim().slice(0, 200);
+  if (!reason) return false;
+
+  const { data, error } = await input.client
+    .from(T.shiftRequests)
+    .select("id, payload")
+    .eq("organization_id", input.organizationId)
+    .eq("shift_id", input.shiftId)
+    .eq("type", "cancellation")
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return false;
+
+  const payload = normalizeRecordPayload(data.payload);
+  if (readCancelledByFromPayload(payload) !== "employee") return false;
+
+  const { error: updateError } = await input.client
+    .from(T.shiftRequests)
+    .update({
+      payload: {
+        ...payload,
+        reason,
+        cancellation_reason: reason,
+      },
+      updated_at: input.now,
+    })
+    .eq("id", data.id as string);
+
+  if (updateError) throw new Error(updateError.message);
+  return true;
 }
 
 export async function syncShiftRequestsAfterManagerPastConfirm(input: {

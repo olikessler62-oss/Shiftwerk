@@ -2,7 +2,10 @@
 
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { shiftConfirmationCardStatusTextClass } from "@/lib/shift-confirmation-display";
+import {
+  shiftConfirmationCardStatusTextClass,
+  SHIFT_CONFIRMATION_EMPLOYEE_CANCELLATION_PENDING_TOOLTIP_TEXT_CLASS,
+} from "@/lib/shift-confirmation-display";
 import {
   shiftCardTooltipShowsDeploymentTimeLabel,
   type ShiftCardTooltipData,
@@ -65,14 +68,23 @@ export function ShiftCardTooltipContent({ data }: Props) {
           <span
             className={cn(
               "font-bold",
-              shiftConfirmationCardStatusTextClass(
-                data.confirmationStatus,
-                data.isPastShift ?? false
-              )
+              data.employeeCancellationPending
+                ? SHIFT_CONFIRMATION_EMPLOYEE_CANCELLATION_PENDING_TOOLTIP_TEXT_CLASS
+                : shiftConfirmationCardStatusTextClass(
+                    data.confirmationStatus,
+                    data.isPastShift ?? false
+                  )
             )}
           >
             {confirmationStatusLine}
           </span>
+        </div>
+      ) : null}
+      {data.employeeCancellationReason?.trim() ? (
+        <div className="text-orange-800">
+          {t("shiftConfirmation.hub.cancellationReason", {
+            reason: data.employeeCancellationReason.trim(),
+          })}
         </div>
       ) : null}
     </div>

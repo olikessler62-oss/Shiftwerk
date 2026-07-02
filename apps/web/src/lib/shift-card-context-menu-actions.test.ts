@@ -88,15 +88,26 @@ describe("shiftCardContextMenuActions", () => {
       shiftDate: "2026-06-20",
       isPastShiftDate,
     })).toEqual(["cancel"]);
-    expect(shiftCardContextMenuActions("rejected")).toEqual(["delete"]);
+    expect(shiftCardContextMenuActions("confirmed", null, {
+      shiftDate: "2026-06-20",
+      isPastShiftDate,
+      displayState: {
+        shiftId: "s1",
+        lifecycle: "confirmed",
+        legacyConfirmationStatus: "confirmed",
+        openCancellation: {
+          requestId: "r1",
+          status: "pending",
+          cancelledBy: "employee",
+        },
+      },
+    })).toEqual(["reassign", "delete"]);
+    expect(shiftCardContextMenuActions("rejected")).toEqual(["reassign", "delete"]);
     expect(shiftCardContextMenuActions("pending")).toEqual([
       "cancel",
       "requestConfirmation",
     ]);
-    expect(shiftCardContextMenuActions("canceled")).toEqual([
-      "confirmCancellation",
-      "delete",
-    ]);
+    expect(shiftCardContextMenuActions("canceled")).toEqual(["reassign", "delete"]);
   });
 
   it("offers delete and setConfirmed for past unconfirmed shifts", () => {

@@ -16,6 +16,8 @@ export type PlanningShift = {
   requestedAt?: string | null;
   confirmationStatusUpdatedAt?: string | null;
   displayState?: ShiftCardDisplayState;
+  /** Optionaler Absagegrund aus shift_requests (MA-Absage offen). */
+  employeeCancellationReason?: string | null;
   /** Tätigkeit in dieser Schicht (aus Personalbedarf-Zuordnung). */
   jobName?: string | null;
 };
@@ -40,6 +42,7 @@ export function planningShiftToAreaCalendarCard(
     requestedAt: shift.requestedAt,
     confirmationStatusUpdatedAt: shift.confirmationStatusUpdatedAt,
     displayState: shift.displayState,
+    employeeCancellationReason: shift.employeeCancellationReason,
   };
 }
 

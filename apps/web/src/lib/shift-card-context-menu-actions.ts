@@ -1,4 +1,4 @@
-import { resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
+import { hasPendingEmployeeCancellation, resolveEffectiveConfirmationStatus } from "@schichtwerk/database";
 
 import type { ShiftCardDisplayState, ShiftConfirmationStatus } from "@schichtwerk/types";
 
@@ -391,6 +391,16 @@ export function shiftCardContextMenuActions(
 
 
   if (status === "confirmed") {
+    if (
+      options?.displayState &&
+      hasPendingEmployeeCancellation(options.displayState)
+    ) {
+      return withoutEmployeeOutboundConfirmationActions(
+        ["reassign", "delete"],
+        options
+      );
+    }
+
     if (options && isShiftMomentInPastForMenuOptions(options)) {
       return [];
     }

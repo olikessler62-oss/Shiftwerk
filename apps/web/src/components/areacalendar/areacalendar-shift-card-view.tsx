@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  buildShiftCardStripGradientCss,
   buildShiftCardTimeGradientCss,
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
 } from "@/lib/shift-card-time-gradient";
@@ -64,6 +65,8 @@ export type AreaCalendarShiftCard = {
   confirmationStatusUpdatedAt?: string | null;
   /** Abgeleiteter Anzeige-Status aus lifecycle + shift_requests. */
   displayState?: ShiftCardDisplayState;
+  /** Optionaler Absagegrund bei offener MA-Absage. */
+  employeeCancellationReason?: string | null;
   /** Tätigkeit in dieser Schicht (aus Personalbedarf-Zuordnung). */
   jobName?: string | null;
 };
@@ -228,7 +231,19 @@ export function AreaCalendarShiftCardView({
     shift.startTime
   );
 
-  const tooltipData = confirmationStatus
+  const tooltipData = pendingEmployeeCancellation
+    ? {
+        ...display.tooltip,
+        confirmationStatusLine: t("shiftConfirmation.status.cancellationPending"),
+        confirmationStatus: "confirmed" as const,
+        employeeCancellationPending: true,
+        employeeCancellationReason:
+          shift.employeeCancellationReason ??
+          shift.displayState?.openCancellation?.reason ??
+          null,
+        isPastShift,
+      }
+    : confirmationStatus
     ? {
         ...display.tooltip,
         confirmationStatusLine: t(
@@ -373,7 +388,7 @@ export function AreaCalendarShiftCardView({
           className="shrink-0 self-stretch"
           style={{
             width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
-            backgroundColor: employeeColor,
+            backgroundImage: buildShiftCardStripGradientCss(employeeColor),
           }}
           aria-hidden
         />
@@ -386,7 +401,9 @@ export function AreaCalendarShiftCardView({
             style={{
               backgroundImage: buildShiftCardTimeGradientCss(
                 shift.startTime,
-                shift.endTime
+                shift.endTime,
+                undefined,
+                employeeColor
               ),
             }}
           >
@@ -405,7 +422,9 @@ export function AreaCalendarShiftCardView({
             style={{
               backgroundImage: buildShiftCardTimeGradientCss(
                 shift.startTime,
-                shift.endTime
+                shift.endTime,
+                undefined,
+                employeeColor
               ),
             }}
           >

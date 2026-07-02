@@ -1,18 +1,21 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
-import { Button, CheckIcon, CloseIcon, IconButton } from "@/components/ui";
+import { Button } from "@/components/ui";
 import {
-  settingsConfirmDialogClass,
-  settingsModalFooterClass,
+  SettingsConfirmDialogShell,
   settingsNestedModalOverlayClass,
 } from "./settings-list-ui";
+
+const TITLE_ID = "settings-message-modal-title";
+const DESC_ID = "settings-message-modal-desc";
 
 type Props = {
   message: string;
   title?: string;
+  subtitle?: ReactNode;
   onClose: () => void;
   /** Seiten-Overlay (Kalender) oder verschachtelt in Einstellungs-Modals. */
   placement?: "fixed" | "nested";
@@ -24,6 +27,7 @@ type Props = {
 export function SettingsMessageModal({
   message,
   title,
+  subtitle,
   onClose,
   placement = "nested",
   overlayClassName,
@@ -31,6 +35,7 @@ export function SettingsMessageModal({
   messageClassName,
 }: Props) {
   const t = useTranslations();
+  const resolvedTitle = title ?? t("common.notice");
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -50,65 +55,48 @@ export function SettingsMessageModal({
       : cn(settingsNestedModalOverlayClass(), "z-[75]", overlayClassName);
 
   const dialogClass =
-    placement === "fixed"
-      ? cn(
-          settingsConfirmDialogClass(),
-          "relative z-[121] flex max-h-[min(85dvh,36rem)] w-full flex-col",
-          dialogClassName
-        )
-      : cn(settingsConfirmDialogClass(), "z-[76]", dialogClassName);
+    placement === "fixed" ? cn("relative z-[121]", dialogClassName) : cn("z-[76]", dialogClassName);
 
   return (
     <div
       className={overlayClass}
       role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="settings-message-modal-text"
-        aria-describedby={title ? "settings-message-modal-text" : undefined}
-        className={dialogClass}
-        onMouseDown={(e) => e.stopPropagation()}
+        aria-labelledby={TITLE_ID}
+        aria-describedby={DESC_ID}
+        onMouseDown={(event) => event.stopPropagation()}
       >
-        <div
-          className={cn(
-            "-mx-4 -mt-4 mb-3 flex items-start justify-end sm:-mx-5 sm:-mt-5",
-            "px-4 pt-3 sm:px-5 sm:pt-4"
-          )}
+        <SettingsConfirmDialogShell
+          className={dialogClass}
+          titleId={TITLE_ID}
+          title={resolvedTitle}
+          subtitle={subtitle}
+          onClose={onClose}
+          closeAriaLabel={t("common.close")}
+          footer={
+            <Button
+              type="button"
+              variant="primary"
+              onClick={onClose}
+              className="w-full sm:ml-auto sm:w-auto"
+            >
+              {t("common.ok")}
+            </Button>
+          }
         >
-          <IconButton
-            size="sm"
-            onClick={onClose}
-            aria-label={t("common.close")}
-            className="border-transparent bg-transparent hover:bg-subtle"
+          <p
+            id={DESC_ID}
+            className={cn("text-sm leading-relaxed text-foreground", messageClassName)}
           >
-            <CloseIcon className="h-[18px] w-[18px]" />
-          </IconButton>
-        </div>
-        {title ? (
-          <p className="mb-2 text-sm font-semibold text-foreground">{title}</p>
-        ) : null}
-        <p
-          id="settings-message-modal-text"
-          className={cn("text-sm text-foreground", messageClassName)}
-        >
-          {message}
-        </p>
-        <div className={settingsModalFooterClass("mt-5 border-0 px-0 pb-0 pt-0 sm:justify-end")}>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={onClose}
-            className="w-full sm:ml-auto sm:w-auto"
-          >
-            <CheckIcon />
-            {t("common.ok")}
-          </Button>
-        </div>
+            {message}
+          </p>
+        </SettingsConfirmDialogShell>
       </div>
     </div>
   );

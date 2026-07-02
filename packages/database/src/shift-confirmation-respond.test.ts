@@ -35,6 +35,36 @@ describe("validateConfirmationRespondItems", () => {
       error: "Doppelte Schicht-ID im Request.",
     });
   });
+
+  it("accepts optional rejection reason up to 200 characters", () => {
+    expect(
+      validateConfirmationRespondItems([
+        { shiftId: "shift-1", decision: "reject", reason: "Passt zeitlich nicht" },
+      ])
+    ).toEqual({ ok: true });
+  });
+
+  it("rejects rejection reason on confirm items", () => {
+    expect(
+      validateConfirmationRespondItems([
+        { shiftId: "shift-1", decision: "confirm", reason: "Nope" },
+      ])
+    ).toEqual({
+      ok: false,
+      error: "Grund nur bei Ablehnung erlaubt.",
+    });
+  });
+
+  it("rejects overly long rejection reasons", () => {
+    expect(
+      validateConfirmationRespondItems([
+        { shiftId: "shift-1", decision: "reject", reason: "a".repeat(201) },
+      ])
+    ).toEqual({
+      ok: false,
+      error: "Ablehnungsgrund ist zu lang (max. 200 Zeichen).",
+    });
+  });
 });
 
 describe("assertRespondItemsAllowed", () => {

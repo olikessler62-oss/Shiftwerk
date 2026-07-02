@@ -7,13 +7,22 @@ import {
   dismissManagerNotification,
   listManagerNotifications,
 } from "@/app/actions/manager-notifications";
+import { fetchEmployeeCancellationReasonsForShifts } from "@/app/actions/shift-cancellation-reasons";
+import { readCancellationReasonShiftContextFromPayload } from "@/lib/cancellation-reason-shift-context";
+import type { CancellationReasonShiftContext } from "@/lib/cancellation-reason-shift-context";
 import { BellIcon, CloseIcon, IconButton } from "@/components/ui";
+import { CancellationReasonViewButton } from "@/components/shift-confirmation/cancellation-reason-view-button";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
+import {
+  readCancellationReasonFromManagerNotification,
+  truncateCancellationReasonPreview,
+} from "@schichtwerk/database";
 import { headerToolbarCountBadgeClass } from "@/lib/header-toolbar-styles";
 import { useHeaderToolbarDropdownPosition } from "@/lib/use-header-toolbar-dropdown-position";
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import type { CommunicationOpenOptions } from "@/lib/communication-hub";
+import type { CommunicationResponseTab } from "@/lib/communication-hub";
 
 type Props = {
   enabled: boolean;
@@ -25,8 +34,10 @@ type Props = {
 
 function notificationPanelTabForType(
   type: string
-): "pending" | "rejected" | "proposed" | undefined {
+): CommunicationResponseTab | undefined {
   switch (type) {
+    case "employee_shift_canceled":
+      return "canceled";
     case "employee_pending_escalation":
       return "pending";
     case "employee_response_summary":
@@ -34,6 +45,24 @@ function notificationPanelTabForType(
     default:
       return undefined;
   }
+}
+
+function notificationOpenOptions(
+  notification: ManagerNotification
+): CommunicationOpenOptions | undefined {
+  if (notification.type === "employee_shift_canceled") {
+    const shiftId =
+      typeof notification.payload.shift_id === "string"
+        ? notification.payload.shift_id
+        : undefined;
+    return {
+      category: "canceled",
+      preselectedShiftIds: shiftId ? [shiftId] : undefined,
+    };
+  }
+
+  const tab = notificationPanelTabForType(notification.type);
+  return tab ? { category: tab, responseTab: tab } : undefined;
 }
 
 function weekStartFromShiftDate(shiftDate: string): string {
@@ -58,6 +87,9 @@ export function AreaCalendarNotificationCenter({
   const t = useTranslations();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState(initialNotifications);
+  const [shiftContextsByShiftId, setShiftContextsByShiftId] = useState<
+    Record<string, CancellationReasonShiftContext>
+  >({});
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -106,7 +138,67 @@ export function AreaCalendarNotificationCenter({
   const refreshNotifications = useCallback(() => {
     startTransition(async () => {
       const result = await listManagerNotifications();
-      if (result.ok) setNotifications(result.notifications);
+      if (!result.ok) return;
+
+      const canceledShiftIds = result.notifications
+        .filter((notification) => notification.type === "employee_shift_canceled")
+        .map((notification) => notification.payload.shift_id)
+        .filter((shiftId): shiftId is string => typeof shiftId === "string" && Boolean(shiftId));
+
+      if (!canceledShiftIds.length) {
+        setShiftContextsByShiftId({});
+        setNotifications(result.notifications);
+        return;
+      }
+
+      const enrichResult = await fetchEmployeeCancellationReasonsForShifts(canceledShiftIds);
+      if (!enrichResult.ok) {
+        setNotifications(result.notifications);
+        return;
+      }
+
+      setShiftContextsByShiftId(enrichResult.shiftContexts);
+      setNotifications(
+        result.notifications.map((notification) => {
+          if (notification.type !== "employee_shift_canceled") return notification;
+
+          const shiftId = notification.payload.shift_id;
+          if (typeof shiftId !== "string") return notification;
+
+          const shiftContext = enrichResult.shiftContexts[shiftId];
+          const reason =
+            readCancellationReasonFromManagerNotification({
+              payload: notification.payload,
+              body: notification.body,
+            }) ?? enrichResult.reasons[shiftId];
+
+          const payload = {
+            ...notification.payload,
+            ...(reason ? { cancellation_reason: reason } : {}),
+            ...(shiftContext?.startTime && !notification.payload.start_time
+              ? { start_time: shiftContext.startTime }
+              : {}),
+            ...(shiftContext?.endTime && !notification.payload.end_time
+              ? { end_time: shiftContext.endTime }
+              : {}),
+            ...(shiftContext?.shiftTemplateName &&
+            !notification.payload.shift_template_name
+              ? { shift_template_name: shiftContext.shiftTemplateName }
+              : {}),
+          };
+
+          const body =
+            reason && !notification.body.includes("\nGrund:")
+              ? `${notification.body}\nGrund: ${truncateCancellationReasonPreview(reason)}`
+              : notification.body;
+
+          return {
+            ...notification,
+            body,
+            payload,
+          };
+        })
+      );
     });
   }, []);
 
@@ -116,10 +208,12 @@ export function AreaCalendarNotificationCenter({
 
   function handleDismiss(notificationId: string, event: React.MouseEvent) {
     event.stopPropagation();
+    const closesPanel = notifications.length <= 1;
     startTransition(async () => {
       const result = await dismissManagerNotification(notificationId);
       if (!result.ok) return;
       setNotifications((prev) => prev.filter((row) => row.id !== notificationId));
+      if (closesPanel) setOpen(false);
     });
   }
 
@@ -132,10 +226,7 @@ export function AreaCalendarNotificationCenter({
       onNavigateToWeek(weekStartFromShiftDate(shiftDate));
     }
 
-    const tab = notificationPanelTabForType(notification.type);
-    onOpenCommunication(
-      tab ? { responseTab: tab } : undefined
-    );
+    onOpenCommunication(notificationOpenOptions(notification));
     setOpen(false);
 
     startTransition(async () => {
@@ -182,7 +273,27 @@ export function AreaCalendarNotificationCenter({
               </p>
             ) : (
               <ul>
-                {notifications.map((notification) => (
+                {notifications.map((notification) => {
+                  const cancellationReason = readCancellationReasonFromManagerNotification(
+                    {
+                      payload: notification.payload,
+                      body: notification.body,
+                    }
+                  );
+                  const employeeName =
+                    typeof notification.payload.employee_name === "string"
+                      ? notification.payload.employee_name
+                      : undefined;
+                  const shiftId =
+                    typeof notification.payload.shift_id === "string"
+                      ? notification.payload.shift_id
+                      : undefined;
+                  const shiftContext = readCancellationReasonShiftContextFromPayload(
+                    notification.payload,
+                    shiftId ? shiftContextsByShiftId[shiftId] : undefined
+                  );
+
+                  return (
                   <li key={notification.id}>
                     <div className="flex items-start gap-1 border-b border-border last:border-b-0">
                       <button
@@ -194,10 +305,18 @@ export function AreaCalendarNotificationCenter({
                         <p className="text-sm font-medium text-foreground">
                           {notification.title}
                         </p>
-                        <p className="mt-0.5 line-clamp-2 text-xs text-muted">
+                        <p className="mt-0.5 line-clamp-2 whitespace-pre-line text-xs text-muted">
                           {notification.body}
                         </p>
                       </button>
+                      {cancellationReason ? (
+                        <CancellationReasonViewButton
+                          reason={cancellationReason}
+                          employeeName={employeeName}
+                          shiftContext={shiftContext}
+                          className="mt-1"
+                        />
+                      ) : null}
                       <IconButton
                         type="button"
                         size="sm"
@@ -210,7 +329,8 @@ export function AreaCalendarNotificationCenter({
                       </IconButton>
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </div>

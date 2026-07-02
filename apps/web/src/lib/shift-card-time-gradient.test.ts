@@ -36,6 +36,19 @@ describe("shift-card-time-gradient", () => {
     }
   });
 
+  it("uses employee tint when time gradient is disabled", () => {
+    if (SHIFT_CARD_TIME_GRADIENT_ENABLED) return;
+
+    const gradientCss = buildShiftCardTimeGradientCss(
+      "08:00",
+      "17:00",
+      undefined,
+      "#3B82F6"
+    );
+    expect(gradientCss).toContain("linear-gradient(to bottom");
+    expect(gradientCss).not.toContain("#ffffff");
+  });
+
   it("handles overnight shifts", () => {
     const stops = buildShiftCardGradientStops("22:00", "06:00");
     expect(stops.length).toBeGreaterThan(2);

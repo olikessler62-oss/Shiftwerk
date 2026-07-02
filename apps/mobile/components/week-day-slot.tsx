@@ -1,5 +1,4 @@
 import { StyleSheet, View } from "react-native";
-import type { ConfirmationDecision } from "@schichtwerk/types";
 import { WeekDayHeader } from "@/components/week-day-header";
 import { WeekShiftCard } from "@/components/week-shift-card";
 import type { WeekShiftActionContext } from "@/components/week-shift-action-sheet";
@@ -14,12 +13,10 @@ import { spacing } from "@schichtwerk/ui-tokens";
 
 const SHIFT_CARD_AREA_HEIGHT_RATIO = 0.95;
 const SHIFT_CARD_GAP = 4;
-const GRID_CARD_WIDTH_PERCENT = "49.5%";
 
 type WeekDaySlotProps = {
   day: WeekPlanDay;
   slotHeight: number;
-  drafts: Record<string, ConfirmationDecision>;
   onShiftPress: (context: WeekShiftActionContext) => void;
   onDismissShift: (shiftId: string) => void;
   dismissingShiftId?: string | null;
@@ -42,7 +39,6 @@ function resolveCardHeight(
 export function WeekDaySlot({
   day,
   slotHeight,
-  drafts,
   onShiftPress,
   onDismissShift,
   dismissingShiftId = null,
@@ -106,7 +102,6 @@ export function WeekDaySlot({
                 shift={shift}
                 display={display}
                 confirmation={confirmation}
-                draft={drafts[shift.id]}
                 isPastDay={isPastDay}
                 onPress={onShiftPress}
                 onDismiss={onDismissShift}

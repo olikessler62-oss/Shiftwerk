@@ -216,7 +216,12 @@ export async function loadDashboardSummaryPageBundle(input: {
       todayISO,
       areaShiftTemplates,
     }),
-    db.listOrganizationShiftsInDateRange(orgId, from, to),
+    db.listOrganizationShiftsInDateRange(
+      orgId,
+      from,
+      to,
+      planningEmployees.map((employee) => employee.id)
+    ),
   ]);
 
   const organizationWeekShifts: PlanningShift[] = organizationShiftRows.map(

@@ -1,4 +1,5 @@
 export { Alert } from "./alert";
+export { EphemeralFeedbackOverlay } from "./ephemeral-feedback-overlay";
 export { Button, type ButtonVariant, type ButtonSize } from "./button";
 export { Checkbox, AREA_CHECKBOX_SIZE_PX } from "./checkbox";
 export { ControlDisplay, Input, Select, Textarea, TimeInput } from "./input";
@@ -24,5 +25,6 @@ export {
   PlusIcon,
   TrashIcon,
   BellIcon,
+  ChatBubbleIcon,
 } from "./icons";
 export { Label, LabelMuted } from "./label";

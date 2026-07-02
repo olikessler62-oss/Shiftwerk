@@ -10,4 +10,7 @@ export {
   buildShiftCardTimeGradientCss,
   buildShiftCardLinearGradient,
   buildPlanningShiftSegmentGradientCss,
+  buildShiftCardStripGradientCss,
+  buildShiftCardSurfaceGradientCss,
+  isCssGradientColor,
 } from "@schichtwerk/ui-tokens";

@@ -7,13 +7,14 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { getDatabase } from "@/lib/db";
+import { useAppDialog } from "@/lib/use-app-dialog";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 
 export default function LoginScreen() {
+  const { alert, dialog } = useAppDialog();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,17 +26,20 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (error) {
-      Alert.alert("Anmeldung fehlgeschlagen", error);
+      await alert({
+        title: "Anmeldung fehlgeschlagen",
+        message: error,
+      });
       return;
     }
 
     const profile = await db.getCurrentUserProfile();
     if (!profile || profile.role !== "basic") {
       await db.authSignOut();
-      Alert.alert(
-        "Nur für Mitarbeiter",
-        "Manager nutzen bitte die Schichtwerk-Webseite."
-      );
+      await alert({
+        title: "Nur für Mitarbeiter",
+        message: "Manager nutzen bitte die Schichtwerk-Webseite.",
+      });
       return;
     }
 
@@ -89,6 +93,7 @@ export default function LoginScreen() {
           Zugangsdaten erhältst du von deinem Arbeitgeber per Einladung.
         </Text>
       </View>
+      {dialog}
     </KeyboardAvoidingView>
   );
 }

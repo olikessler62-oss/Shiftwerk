@@ -5,11 +5,31 @@ import {
   mobileApiOptionsResponse,
 } from "@/lib/mobile-api-cors";
 
-function parseCancelBody(value: unknown): { shiftId: string } | null {
+function parseOptionalCancellationReason(
+  body: Record<string, unknown>
+): string | undefined {
+  const candidates = [
+    body.reason,
+    body.cancellation_reason,
+    body.cancellationReason,
+    body.message,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim().slice(0, 200);
+    }
+  }
+  return undefined;
+}
+
+function parseCancelBody(value: unknown): { shiftId: string; reason?: string } | null {
   if (!value || typeof value !== "object") return null;
   const body = value as Record<string, unknown>;
   if (typeof body.shiftId !== "string" || !body.shiftId.trim()) return null;
-  return { shiftId: body.shiftId.trim() };
+  return {
+    shiftId: body.shiftId.trim(),
+    reason: parseOptionalCancellationReason(body),
+  };
 }
 
 export async function OPTIONS(request: Request) {
@@ -36,6 +56,7 @@ export async function POST(request: Request) {
       actorId: userId,
       actorRole: "employee",
       employeeName: profile.full_name,
+      reason: parsed.reason,
     });
 
     revalidateAreaCalendarShiftsAfterChange({

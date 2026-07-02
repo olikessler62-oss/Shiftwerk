@@ -1,30 +1,38 @@
 "use client";
 
 import { cn } from "@/lib/cn";
+import {
+  shiftConfirmationBadgeSymbol,
+  shiftConfirmationBadgeSymbolClass,
+  SHIFT_CONFIRMATION_BADGE_PANEL_CLASS,
+  SHIFT_CONFIRMATION_OVERLAY_COLOR_CLASS,
+} from "@/lib/shift-confirmation-display";
 
-/** Rotes X über der Schichtkarte — MA-Absage wartet auf Admin-Bestätigung. */
+/** Overlay für offene MA-Absage — gleiches Muster wie Bestätigungs-Overlays (Badge rechts oben). */
 export function ShiftPendingCancellationOverlay() {
+  const symbolClass = shiftConfirmationBadgeSymbolClass("canceled");
+
   return (
     <>
       <div
-        className="pointer-events-none absolute inset-0 bg-red-500/15"
+        className={cn(
+          "pointer-events-none absolute inset-0",
+          SHIFT_CONFIRMATION_OVERLAY_COLOR_CLASS
+        )}
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
+        className={cn(
+          "pointer-events-none absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center px-0.5",
+          SHIFT_CONFIRMATION_BADGE_PANEL_CLASS
+        )}
         aria-hidden
       >
-        <svg
-          viewBox="0 0 24 24"
-          className={cn("h-[72%] w-[72%] max-h-10 max-w-10 text-red-600")}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3.25"
-          strokeLinecap="round"
-          aria-hidden
+        <span
+          className={cn("text-[12px] font-bold leading-none", symbolClass)}
         >
-          <path d="M6 6l12 12M18 6L6 18" />
-        </svg>
+          {shiftConfirmationBadgeSymbol("canceled")}
+        </span>
       </div>
     </>
   );

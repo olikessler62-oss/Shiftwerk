@@ -33,6 +33,7 @@ import {
   type ShiftCardDisplayContent,
 } from "@/lib/shift-card-display-content";
 import {
+  buildShiftCardStripGradientCss,
   buildShiftCardTimeGradientCss,
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
 } from "@/lib/shift-card-time-gradient";
@@ -248,7 +249,10 @@ export function AreaCalendarOvernightSpanCard({
           style={{
             width: AREA_CALENDAR_OVERNIGHT_COLLAPSED_SPAN_WIDTH_PX,
             height: markerHeightPx,
-            backgroundColor: markerColor,
+            backgroundImage: isPastDay
+              ? undefined
+              : buildShiftCardStripGradientCss(markerColor, "to bottom"),
+            backgroundColor: isPastDay ? markerColor : undefined,
           }}
           aria-label={tooltipPlainText}
         />
@@ -329,7 +333,7 @@ export function AreaCalendarOvernightSpanCard({
               className="shrink-0 self-stretch"
               style={{
                 width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
-                backgroundColor: employeeColor,
+                backgroundImage: buildShiftCardStripGradientCss(employeeColor),
               }}
               aria-hidden
             />
@@ -339,7 +343,9 @@ export function AreaCalendarOvernightSpanCard({
               style={{
                 backgroundImage: buildShiftCardTimeGradientCss(
                   shift.startTime,
-                  shift.endTime
+                  shift.endTime,
+                  undefined,
+                  employeeColor
                 ),
               }}
             >

@@ -36,6 +36,14 @@ export const radius = {
 } as const;
 
 export {
+  SHIFT_CARD_SURFACE_TINT_RATIO,
+  SHIFT_CARD_SURFACE_END_EXTRA_DARKEN,
+  SHIFT_CARD_STRIP_DARKEN_RATIO,
+  isCssGradientColor,
+  buildShiftCardStripGradientCss,
+  buildShiftCardSurfaceGradientCss,
+} from "./shift-card-color-gradient";
+export {
   SHIFT_CARD_TIME_BANDS,
   SHIFT_CARD_TIME_GRADIENT_ENABLED,
   SHIFT_CARD_TIME_GRADIENT_OPACITY,

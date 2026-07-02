@@ -21,6 +21,7 @@ export const en = {
     discard: "Discard",
     signOut: "Sign out",
     ok: "OK",
+    notice: "Notice",
     yes: "Yes",
     no: "No",
     delete: "Delete",
@@ -1351,6 +1352,7 @@ export const en = {
       confirmed: "Confirmed",
       canceled: "Canceled",
       cancellationPending: "Cancellation requested",
+      cancellationSent: "Cancellation sent",
       unresolved: "Unresolved",
     },
     tooltipStatus: {
@@ -1374,10 +1376,15 @@ export const en = {
       confirmManager: "Cancel this shift assignment?",
       confirmManagerNamed: "Cancel the shift for {name}?",
       confirmEmployee: "Do you really want to decline this shift?",
+      reasonLabel: "Reason (optional)",
+      reasonPlaceholder: "Brief reason …",
       pastShift: "Past shifts can no longer be canceled.",
       blockedByStatus:
         "This shift cannot be canceled because its status is \"{status}\".",
       failed: "Cancel failed.",
+      successTitle: "Cancellation sent",
+      successBody:
+        "Your cancellation was submitted. The team will handle next steps.",
     },
     pastConfirm: {
       notPast: "Only past shifts can be confirmed manually.",
@@ -1386,6 +1393,7 @@ export const en = {
     },
     deleteBlockedByStatus:
       "This shift cannot be deleted because its status is \"{status}\".",
+    deleteBlockedTitle: "Cannot delete shift",
     send: {
       modalTitle: "Request confirmation",
       modalHint:
@@ -1419,12 +1427,13 @@ export const en = {
       centerTitle: "Notifications",
       empty: "No open notifications.",
       dismiss: "Dismiss",
+      cancellationReason: "Reason: {reason}",
     },
     panel: {
       title: "Open responses",
       hint: "Shifts for this week and location.",
       empty: "No entries in this tab.",
-      reassign: "Reassign",
+      reassign: "Assign replacement",
       tabs: {
         pending: "Pending",
         rejected: "Rejected",
@@ -1433,6 +1442,14 @@ export const en = {
         confirmed: "Confirmed",
         canceled: "Canceled",
       },
+    },
+    hub: {
+      badgeCancellationOpen: "Cancellation open",
+      cancellationReason: "Reason: {reason}",
+      cancellationReasonIconLabel: "Show cancellation reason",
+      cancellationReasonModalTitle: "Cancellation reason",
+      rejectionReasonIconLabel: "Show rejection reason",
+      rejectionReasonModalTitle: "Rejection reason",
     },
     communication: {
       title: "Shift statuses",
@@ -1460,7 +1477,7 @@ export const en = {
       areaUnknown: "No area",
       rowRequest: "Request",
       rowResend: "Request again",
-      rowReassign: "Reassign",
+      rowReassign: "Assign replacement",
       rowSelect: "Select",
       actionDelete: "Delete",
       actionConfirmCancellation: "Confirm cancellation",
@@ -1486,7 +1503,7 @@ export const en = {
       resendSuccess: "{count} requests sent.",
       partialResend: "{sent} sent, {failed} failed.",
       tabActionSend: "Send",
-      reassignRequiresOne: "Select exactly one shift to reassign.",
+      reassignRequiresOne: "Select exactly one shift to assign a replacement.",
       statusRequested: "Confirmation requested",
       swapColRequester: "Requester",
       swapColTarget: "Target employee",

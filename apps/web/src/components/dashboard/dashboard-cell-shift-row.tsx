@@ -20,6 +20,7 @@ import {
 } from "@/lib/planning-calendar-layout";
 import {
   buildPlanningShiftSegmentGradientCss,
+  buildShiftCardStripGradientCss,
   SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
 } from "@/lib/shift-card-time-gradient";
 import { PLANNING_EXPANDED_SHIFT_CELL_GAP_PX } from "@/lib/planning-expanded-shift-layout";
@@ -49,6 +50,7 @@ import {
 import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
 import { hasPendingEmployeeCancellation } from "@schichtwerk/database";
 import { ShiftPendingCancellationOverlay } from "@/components/dashboard/shift-pending-cancellation-overlay";
+import { applyPendingEmployeeCancellationToShiftTooltip } from "@/lib/shift-card-tooltip-confirmation";
 import { SHIFT_ABSENCE_CONFLICT_RING_CLASS } from "@/lib/shift-absence-conflict";
 import {
   canOpenShiftCardContextMenu,
@@ -264,11 +266,17 @@ export function DashboardCellShiftRow({
         const pendingEmployeeCancellation = hasPendingEmployeeCancellation(
           shift.displayState
         );
+        const tooltipData = applyPendingEmployeeCancellationToShiftTooltip(
+          cardContent.tooltip,
+          shift.displayState,
+          t("shiftConfirmation.status.cancellationPending"),
+          shift.employeeCancellationReason
+        );
 
         return (
           <Tooltip
             key={segmentKey}
-            content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
+            content={<ShiftCardTooltipContent data={tooltipData} />}
             contentClassName={shiftCardTooltipContentClassName}
             interactive
             className={cn(
@@ -347,7 +355,7 @@ export function DashboardCellShiftRow({
                   )}
                   style={{
                     width: stripWidthPx,
-                    backgroundColor: employeeColor,
+                    backgroundImage: buildShiftCardStripGradientCss(employeeColor),
                   }}
                   aria-hidden
                 />
@@ -356,7 +364,9 @@ export function DashboardCellShiftRow({
                 backgroundImage={buildPlanningShiftSegmentGradientCss(
                   part,
                   shift.startTime,
-                  shift.endTime
+                  shift.endTime,
+                  undefined,
+                  employeeColor
                 )}
               >
                 {employeeHighlighted ? (

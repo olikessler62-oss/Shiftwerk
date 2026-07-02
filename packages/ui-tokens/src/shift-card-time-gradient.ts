@@ -1,4 +1,9 @@
 /** Tageszeit-Bänder für Schichtkarten-Hintergrund (Minuten 0–1440). */
+import {
+  buildShiftCardSurfaceGradientCss,
+  isCssGradientColor,
+} from "./shift-card-color-gradient";
+
 export const SHIFT_CARD_TIME_BANDS = [
   { start: 0, end: 4 * 60, rgb: [192, 192, 192] as const }, // 00:00–04:00 Silber
   { start: 4 * 60, end: 10 * 60, rgb: [125, 211, 252] as const }, // 04:00–10:00 Hellblau
@@ -17,7 +22,7 @@ export const SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX = 6;
 export const SHIFT_CARD_TIME_GRADIENT_ENABLED = false;
 
 const SHIFT_CARD_PLAIN_WHITE_GRADIENT_CSS =
-  "linear-gradient(to right, #ffffff 0%, #ffffff 100%)";
+  "linear-gradient(to bottom, #ffffff 0%, #ffffff 100%)";
 
 const MINUTES_PER_DAY = 24 * 60;
 
@@ -149,9 +154,14 @@ export function buildShiftCardGradientStops(
 export function buildShiftCardTimeGradientCss(
   startTime: string,
   endTime: string,
-  opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY
+  opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY,
+  employeeColor?: string
 ): string {
   if (!SHIFT_CARD_TIME_GRADIENT_ENABLED) {
+    const color = employeeColor?.trim();
+    if (color) {
+      return buildShiftCardSurfaceGradientCss(color);
+    }
     return SHIFT_CARD_PLAIN_WHITE_GRADIENT_CSS;
   }
 
@@ -176,9 +186,15 @@ export type ShiftCardLinearGradient = {
 export function buildShiftCardLinearGradient(
   startTime: string,
   endTime: string,
-  opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY
+  opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY,
+  employeeColor?: string
 ): ShiftCardLinearGradient {
   if (!SHIFT_CARD_TIME_GRADIENT_ENABLED) {
+    const color = employeeColor?.trim();
+    if (color && !isCssGradientColor(color)) {
+      const css = buildShiftCardSurfaceGradientCss(color);
+      return { colors: [css, css], locations: [0, 1] };
+    }
     return { colors: ["#ffffff", "#ffffff"], locations: [0, 1] };
   }
 
@@ -199,13 +215,14 @@ export function buildPlanningShiftSegmentGradientCss(
   part: "full" | "overnight-start" | "overnight-end",
   startTime: string,
   endTime: string,
-  opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY
+  opacity = SHIFT_CARD_TIME_GRADIENT_OPACITY,
+  employeeColor?: string
 ): string {
   if (part === "full") {
-    return buildShiftCardTimeGradientCss(startTime, endTime, opacity);
+    return buildShiftCardTimeGradientCss(startTime, endTime, opacity, employeeColor);
   }
   if (part === "overnight-start") {
-    return buildShiftCardTimeGradientCss(startTime, "23:59", opacity);
+    return buildShiftCardTimeGradientCss(startTime, "23:59", opacity, employeeColor);
   }
-  return buildShiftCardTimeGradientCss("00:00", endTime, opacity);
+  return buildShiftCardTimeGradientCss("00:00", endTime, opacity, employeeColor);
 }

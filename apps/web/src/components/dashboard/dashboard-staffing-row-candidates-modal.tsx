@@ -144,7 +144,7 @@ type Props = {
   planning: DashboardStaffingCandidatesPlanningContext;
   onClose: () => void;
   onAssigned?: () => void | Promise<void>;
-  /** Bestehende Schicht ersetzen (Neu zuweisen). */
+  /** Bestehende Schicht ersetzen (Ersatz zuweisen). */
   existingShiftId?: string | null;
   /** Nach Bestätigung für vergangene Tage — Zuweisung trotz read-only-Woche erlauben. */
   allowPastDayChange?: boolean;

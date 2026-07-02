@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   hasPendingEmployeeCancellation,
+  mapLatestEmployeeCancellationReasonsByShiftId,
+  mapLatestEmployeeRejectionReasonsByShiftId,
   mapLegacyConfirmationStatusToLifecycleAndRequestStatus,
+  readCancellationReasonFromPayload,
+  readRejectionReasonFromPayload,
   resolveLegacyConfirmationStatusForViewRow,
   resolveLegacyConfirmationStatusFromLegacyFields,
   resolveShiftCardDisplayState,
@@ -193,7 +197,10 @@ describe("resolveShiftCardDisplayState", () => {
           status: "pending",
           sent_at: "2025-06-09T12:00:00.000Z",
           responded_at: null,
-          payload: { cancelled_by: "employee" },
+          payload: {
+            cancelled_by: "employee",
+            reason: "Kurzfristig krank",
+          },
           created_at: "2025-06-09T12:00:00.000Z",
         },
       ],
@@ -204,8 +211,40 @@ describe("resolveShiftCardDisplayState", () => {
       requestId: "cancel-pending",
       status: "pending",
       cancelledBy: "employee",
+      reason: "Kurzfristig krank",
     });
     expect(hasPendingEmployeeCancellation(state)).toBe(true);
+  });
+
+  it("reads cancellation reasons from stringified json payloads", () => {
+    expect(
+      readCancellationReasonFromPayload(
+        JSON.stringify({ reason: "Kind krank", cancelled_by: "employee" })
+      )
+    ).toBe("Kind krank");
+  });
+
+  it("maps latest employee cancellation reason per shift", () => {
+    const map = mapLatestEmployeeCancellationReasonsByShiftId([
+      {
+        shift_id: "shift-1",
+        payload: { cancelled_by: "employee", reason: "alt" },
+        created_at: "2025-06-09T10:00:00.000Z",
+      },
+      {
+        shift_id: "shift-1",
+        payload: { cancelled_by: "employee", reason: "neu" },
+        created_at: "2025-06-09T12:00:00.000Z",
+      },
+      {
+        shift_id: "shift-2",
+        payload: { cancelled_by: "manager", reason: "ignorieren" },
+        created_at: "2025-06-09T12:00:00.000Z",
+      },
+    ]);
+
+    expect(map.get("shift-1")).toBe("neu");
+    expect(map.has("shift-2")).toBe(false);
   });
 
   it("prefers confirmed shift row over stale pending shift_requests", () => {
@@ -279,5 +318,32 @@ describe("resolveShiftCardDisplayState", () => {
     expect(state.legacyConfirmationStatus).toBe("confirmed");
     expect(state.openConfirmation).toBeUndefined();
     expect(state.lastConfirmation?.status).toBe("approved");
+  });
+});
+
+describe("employee rejection reasons", () => {
+  it("reads rejection reason aliases from request payload", () => {
+    expect(
+      readRejectionReasonFromPayload({
+        rejection_reason: "Keine Zeit",
+      })
+    ).toBe("Keine Zeit");
+  });
+
+  it("maps latest rejection reason per shift", () => {
+    const map = mapLatestEmployeeRejectionReasonsByShiftId([
+      {
+        shift_id: "shift-1",
+        payload: { reason: "Alt" },
+        created_at: "2025-06-09T10:00:00.000Z",
+      },
+      {
+        shift_id: "shift-1",
+        payload: { rejection_reason: "Neu" },
+        created_at: "2025-06-09T12:00:00.000Z",
+      },
+    ]);
+
+    expect(map.get("shift-1")).toBe("Neu");
   });
 });

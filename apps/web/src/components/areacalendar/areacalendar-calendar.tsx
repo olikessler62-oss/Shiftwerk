@@ -73,7 +73,7 @@ import {
   canDeleteShift,
   shiftDeleteBlockedMessage,
 } from "@/lib/shift-deletion-policy";
-import { SHIFT_CANCEL_PAST_ERROR } from "@schichtwerk/database";
+import { SHIFT_CANCEL_PAST_ERROR, hasPendingEmployeeCancellation } from "@schichtwerk/database";
 import {
   canCancelShift,
   translatePastConfirmError,
@@ -1125,6 +1125,7 @@ export function AreaCalendar({
             requestedAt: shift.requestedAt,
             isPastShiftDate: planningIsPastShiftDate,
             pendingAfterMinutes,
+            displayState: shift.displayState,
           })
         ) {
           setDeleteShiftError(
@@ -3210,6 +3211,7 @@ export function AreaCalendar({
                   shiftDate: shiftContextMenu.shift.shift_date,
                   cellDate: shiftContextMenu.date,
                   shiftStartTime: shiftContextMenu.shift.startTime,
+                  displayState: shiftContextMenu.shift.displayState,
                   isPastShiftDate: planningIsPastShiftDate,
                   isShiftMomentInPast: planningIsShiftMomentInPast,
                 }
@@ -3224,11 +3226,13 @@ export function AreaCalendar({
                       (deleteShiftPending ||
                         !canDeleteShift({
                           shiftDate: shiftContextMenu.shift.shift_date,
+                          shiftStartTime: shiftContextMenu.shift.startTime,
                           confirmationStatus:
                             shiftContextMenu.shift.confirmationStatus,
                           requestedAt: shiftContextMenu.shift.requestedAt,
                           isPastShiftDate: planningIsPastShiftDate,
                           pendingAfterMinutes,
+                          displayState: shiftContextMenu.shift.displayState,
                         }))) ||
                     (action === "cancel" &&
                       (cancelShiftPending ||
@@ -3258,10 +3262,12 @@ export function AreaCalendar({
                   deleteShiftPending ||
                   !canDeleteShift({
                     shiftDate: shiftContextMenu.shift.shift_date,
+                    shiftStartTime: shiftContextMenu.shift.startTime,
                     confirmationStatus: shiftContextMenu.shift.confirmationStatus,
                     requestedAt: shiftContextMenu.shift.requestedAt,
                     isPastShiftDate: planningIsPastShiftDate,
                     pendingAfterMinutes,
+                    displayState: shiftContextMenu.shift.displayState,
                   })
                 }
               >
@@ -3382,6 +3388,7 @@ export function AreaCalendar({
       {deleteShiftError ? (
         <SettingsMessageModal
           placement="fixed"
+          title={t("shiftConfirmation.deleteBlockedTitle")}
           message={deleteShiftError}
           onClose={() => setDeleteShiftError(null)}
         />

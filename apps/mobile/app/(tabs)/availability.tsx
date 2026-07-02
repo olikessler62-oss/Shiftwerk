@@ -5,11 +5,11 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   ScrollView,
 } from "react-native";
 import { getDatabase } from "@/lib/db";
+import { useAppDialog } from "@/lib/use-app-dialog";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 import type { ProfileShiftPreference } from "@schichtwerk/types";
 
@@ -30,6 +30,7 @@ function formatPreferenceTimeRange(
 }
 
 export default function AvailabilityScreen() {
+  const { alert, confirm, dialog } = useAppDialog();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preferences, setPreferences] = useState<ProfileShiftPreference[]>([]);
@@ -75,30 +76,30 @@ export default function AvailabilityScreen() {
         end_time: endTime,
       });
       await loadPreferences();
-      Alert.alert("Gespeichert", "Wunsch-Einsatzzeit wurde hinzugefügt.");
+      await alert({
+        title: "Gespeichert",
+        message: "Wunsch-Einsatzzeit wurde hinzugefügt.",
+      });
     } catch (error) {
-      Alert.alert(
-        "Speichern fehlgeschlagen",
-        error instanceof Error ? error.message : "Unbekannter Fehler"
-      );
+      await alert({
+        title: "Speichern fehlgeschlagen",
+        message: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
     } finally {
       setSaving(false);
     }
   }
 
-  function confirmDelete(entry: ProfileShiftPreference) {
-    Alert.alert(
-      "Wunsch löschen",
-      `${weekdayLabel(entry.weekday)} ${formatPreferenceTimeRange(entry.start_time, entry.end_time)}`,
-      [
-        { text: "Abbrechen", style: "cancel" },
-        {
-          text: "Löschen",
-          style: "destructive",
-          onPress: () => void deletePreference(entry.id),
-        },
-      ]
-    );
+  async function confirmDelete(entry: ProfileShiftPreference) {
+    const confirmed = await confirm({
+      title: "Wunsch löschen",
+      message: `${weekdayLabel(entry.weekday)} ${formatPreferenceTimeRange(entry.start_time, entry.end_time)}`,
+      confirmLabel: "Löschen",
+      confirmDestructive: true,
+    });
+    if (confirmed) {
+      await deletePreference(entry.id);
+    }
   }
 
   async function deletePreference(preferenceId: string) {
@@ -112,17 +113,18 @@ export default function AvailabilityScreen() {
       );
       await loadPreferences();
     } catch (error) {
-      Alert.alert(
-        "Löschen fehlgeschlagen",
-        error instanceof Error ? error.message : "Unbekannter Fehler"
-      );
+      await alert({
+        title: "Löschen fehlgeschlagen",
+        message: error instanceof Error ? error.message : "Unbekannter Fehler",
+      });
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Verfügbarkeit</Text>
       <Text style={styles.intro}>
         Wunsch-Einsatzzeiten helfen der Planung, dich bevorzugt in passende
@@ -190,7 +192,7 @@ export default function AvailabilityScreen() {
               ) : null}
             </View>
             <Pressable
-              onPress={() => confirmDelete(entry)}
+              onPress={() => void confirmDelete(entry)}
               disabled={saving}
               style={styles.deleteButton}
             >
@@ -199,7 +201,9 @@ export default function AvailabilityScreen() {
           </View>
         ))
       )}
-    </ScrollView>
+      </ScrollView>
+      {dialog}
+    </>
   );
 }
 

@@ -757,7 +757,28 @@ export interface SchichtwerkDatabase {
     fromDate: string,
     toDate: string
   ): Promise<import("@schichtwerk/types").EmployeeWeekShiftDisplayItem[]>;
+  /** Wie listMyShiftWeekDisplay, mit explizitem MA-Scope (Mobile-API / Service-Role). */
+  listEmployeeShiftWeekDisplay(
+    employeeId: string,
+    organizationId: string,
+    fromDate: string,
+    toDate: string
+  ): Promise<import("@schichtwerk/types").EmployeeWeekShiftDisplayItem[]>;
   listAreaCalendarShifts(
+    organizationId: string,
+    from: string,
+    to: string,
+    locationId: string
+  ): Promise<AreaCalendarShiftRow[]>;
+  /** Nur nicht-bestätigte Schichten für Schicht-Stati / Kommunikations-Hub. */
+  listCommunicationHubLocationShifts(
+    organizationId: string,
+    from: string,
+    to: string,
+    locationId: string
+  ): Promise<AreaCalendarShiftRow[]>;
+  /** Bestätigte Schichten mit offener Mitarbeiter-Absage (Schicht-Stati Tab „MA abgesagt“). */
+  listCommunicationHubPendingEmployeeCancellationShifts(
     organizationId: string,
     from: string,
     to: string,
@@ -787,7 +808,8 @@ export interface SchichtwerkDatabase {
   listOrganizationShiftsInDateRange(
     organizationId: string,
     fromDate: string,
-    toDate: string
+    toDate: string,
+    employeeIds?: readonly string[]
   ): Promise<EmployeeShiftRecord[]>;
   /** Schichten mit End-/Startfenster vor/nach der neuen Schicht (für Ruhezeitprüfung). */
   listShiftsForEmployeeRestCheck(
@@ -971,11 +993,29 @@ export interface SchichtwerkDatabase {
     actorRole: "manager" | "employee";
     employeeName?: string;
     allowPastShiftChanges?: boolean;
+    reason?: string;
   }): Promise<{
     locationId: string | null;
     shiftDate: string;
     employeeId: string;
   }>;
+
+  shiftHasOpenEmployeeCancellation(
+    organizationId: string,
+    shiftId: string
+  ): Promise<boolean>;
+
+  resolveEmployeeCancellationOnReassign(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+    previousEmployeeId: string;
+    nextEmployeeId: string;
+    fromConfirmationStatus: import("@schichtwerk/types").ShiftConfirmationStatus;
+    shiftDate: string;
+    startsAt: string;
+    endsAt: string;
+  }): Promise<void>;
 
   approveEmployeeShiftCancellation(input: {
     organizationId: string;
@@ -1101,6 +1141,31 @@ export interface SchichtwerkDatabase {
     }
   ): Promise<
     import("@schichtwerk/types").SwapRequestWithShiftContext[]
+  >;
+
+  listEmployeeCancellationReasonsByShiftIds(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<Map<string, string>>;
+
+  listEmployeeRejectionReasonsByShiftIds(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<Map<string, string>>;
+
+  listShiftCancellationContextByShiftIds(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<
+    Map<
+      string,
+      {
+        shiftDate: string;
+        startTime: string;
+        endTime: string;
+        shiftTemplateName?: string;
+      }
+    >
   >;
 
   listShiftCancelActors(

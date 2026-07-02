@@ -55,16 +55,13 @@ export function shouldMutePastShiftCardStatusBadge(
   );
 }
 
-/** Status-Badge: nur „Geplant“ (proposed) anpassen; sonst unveränderte Statusfarben. */
+/** Status-Badge auf schwarzem Panel — Token-Farben wie Web (proposed: weiß). */
 export function resolveShiftCardStatusBadgeTextColor(
   status: ShiftConfirmationStatus,
   isPastDay: boolean
 ): string {
   if (shouldMutePastShiftCardStatusBadge(status, isPastDay)) {
     return SHIFT_CARD_PAST_OTHER_STATUS_BADGE_TEXT;
-  }
-  if (status === "proposed") {
-    return resolveShiftCardContentTextColor(status, isPastDay);
   }
   return shiftConfirmationBadgeTextColor(status);
 }

@@ -62,6 +62,9 @@ export type ShiftCardTooltipData = {
   jobsLabel?: string;
   confirmationStatusLine?: string;
   confirmationStatus?: ShiftConfirmationStatus;
+  /** Offene MA-Absage — Tooltip-Text und -Farbe unabhängig von confirmation_status. */
+  employeeCancellationPending?: boolean;
+  employeeCancellationReason?: string | null;
   isPastShift?: boolean;
 };
 
@@ -108,6 +111,9 @@ export function formatShiftCardTooltipPlainText(
       options?.formatStatusLine?.(data.confirmationStatusLine.trim()) ??
         `Status: ${data.confirmationStatusLine.trim()}`
     );
+  }
+  if (data.employeeCancellationReason?.trim()) {
+    lines.push(`Grund: ${data.employeeCancellationReason.trim()}`);
   }
   return lines.join("\n");
 }

@@ -1,4 +1,5 @@
 import type { ConfirmationWeekItem, EmployeeWeekShiftDisplayItem, Shift } from "@schichtwerk/types";
+import { isHiddenFromEmployeeWeekPlan } from "@/lib/employee-shift-dismiss";
 
 export type WeekPlanDay = {
   dateISO: string;
@@ -205,6 +206,7 @@ export function buildWeekPlanDays(
   const shiftsByDate = new Map<string, Shift[]>();
 
   for (const shift of shifts) {
+    if (isHiddenFromEmployeeWeekPlan(shift)) continue;
     const bucket = shiftsByDate.get(shift.shift_date) ?? [];
     bucket.push(shift);
     shiftsByDate.set(shift.shift_date, bucket);
@@ -240,6 +242,7 @@ export function buildWeekPlanRows(
   const shiftsByDate = new Map<string, Shift[]>();
 
   for (const shift of shifts) {
+    if (isHiddenFromEmployeeWeekPlan(shift)) continue;
     const bucket = shiftsByDate.get(shift.shift_date) ?? [];
     bucket.push(shift);
     shiftsByDate.set(shift.shift_date, bucket);

@@ -15,7 +15,7 @@ import {
   isEmployeeCancellationPending,
 } from "@/lib/employee-shift-dismiss";
 import { isOpenEmployeeConfirmationShift } from "@/lib/open-confirmation-shift";
-import type { ConfirmationDecision, ConfirmationWeekItem, EmployeeWeekShiftDisplayItem, Shift } from "@schichtwerk/types";
+import type { EmployeeWeekShiftDisplayItem, Shift } from "@schichtwerk/types";
 import { WeekNavHeader } from "@/components/week-nav-header";
 import { WeekDaySlot } from "@/components/week-day-slot";
 import {
@@ -26,12 +26,12 @@ import { ResponsiveContentFrame } from "@/components/responsive-content-frame";
 import { getDatabase } from "@/lib/db";
 import {
   fetchConfirmationWeek,
-  submitConfirmationResponses,
+  fetchMyShiftWeekDisplay,
   cancelConfirmationShift,
   dismissCanceledShift,
 } from "@/lib/confirmations-api";
 import { MobileApiError } from "@/lib/mobile-api-client";
-import { confirmAlert, showAppAlert } from "@/lib/app-alert";
+import { useAppDialog } from "@/lib/use-app-dialog";
 import { buildWeekPlanDays, weekRangeForOffset } from "@/lib/mobile-week-plan";
 import { resolveWeekDaySlotHeights } from "@/lib/mobile-week-day-layout";
 import { usePendingConfirmations } from "@/lib/pending-confirmations-context";
@@ -39,21 +39,17 @@ import { useWeekPlanLayout } from "@/lib/responsive-layout";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 
 export default function WeekScreen() {
+  const { alert, confirm, dialog } = useAppDialog();
   const [weekOffset, setWeekOffset] = useState(0);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [displayByShiftId, setDisplayByShiftId] = useState<
     Record<string, EmployeeWeekShiftDisplayItem>
   >({});
   const [confirmationByShiftId, setConfirmationByShiftId] = useState<
-    Record<string, ConfirmationWeekItem>
+    Record<string, import("@schichtwerk/types").ConfirmationWeekItem>
   >({});
-  const [organizationDisclaimer, setOrganizationDisclaimer] = useState<string | null>(
-    null
-  );
-  const [drafts, setDrafts] = useState<Record<string, ConfirmationDecision>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [cancelingShiftId, setCancelingShiftId] = useState<string | null>(null);
   const [dismissingShiftId, setDismissingShiftId] = useState<string | null>(null);
   const [actionSheetContext, setActionSheetContext] =
@@ -70,10 +66,13 @@ export default function WeekScreen() {
   const load = useCallback(async () => {
     const { from, to } = weekMeta;
     try {
-      const [data, displayItems] = await Promise.all([
-        getDatabase().listMyShifts(from, to),
-        getDatabase().listMyShiftWeekDisplay(from, to),
-      ]);
+      const data = await getDatabase().listMyShifts(from, to);
+      let displayItems: EmployeeWeekShiftDisplayItem[];
+      try {
+        displayItems = await fetchMyShiftWeekDisplay(from, to);
+      } catch {
+        displayItems = await getDatabase().listMyShiftWeekDisplay(from, to);
+      }
       setShifts(data);
       setDisplayByShiftId(
         Object.fromEntries(displayItems.map((item) => [item.shiftId, item]))
@@ -81,7 +80,6 @@ export default function WeekScreen() {
 
       try {
         const confirmation = await fetchConfirmationWeek(from, to);
-        setOrganizationDisclaimer(confirmation.organizationDisclaimer);
         setConfirmationByShiftId(
           Object.fromEntries(
             confirmation.items.map((item) => [item.shiftId, item])
@@ -89,16 +87,18 @@ export default function WeekScreen() {
         );
       } catch (error) {
         setConfirmationByShiftId({});
-        setOrganizationDisclaimer(null);
         if (error instanceof MobileApiError && error.status === 403) {
           // Schichtbestätigung für die Organisation deaktiviert.
         } else if (error instanceof MobileApiError && error.status !== 401) {
-          showAppAlert(
-            "Bestätigungen",
-            error.message || "Offene Bestätigungen konnten nicht geladen werden."
-          );
+          void alert({
+            title: "Bestätigungen",
+            message:
+              error.message || "Offene Bestätigungen konnten nicht geladen werden.",
+          });
         }
       }
+
+      await refreshPendingConfirmations();
     } catch {
       setShifts([]);
       setDisplayByShiftId({});
@@ -107,7 +107,7 @@ export default function WeekScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [weekMeta]);
+  }, [weekMeta, alert, refreshPendingConfirmations]);
 
   useFocusEffect(
     useCallback(() => {
@@ -146,15 +146,6 @@ export default function WeekScreen() {
     pendingConfirmationCount - openConfirmationCount
   );
 
-  const draftEntries = useMemo(
-    () =>
-      Object.entries(drafts).filter(([shiftId]) => {
-        const shift = shifts.find((entry) => entry.id === shiftId);
-        return shift != null && isOpenEmployeeConfirmationShift(shift);
-      }),
-    [drafts, shifts]
-  );
-
   const shiftNeedsResponse = useCallback(
     (shift: Shift) => isOpenEmployeeConfirmationShift(shift),
     []
@@ -174,83 +165,69 @@ export default function WeekScreen() {
     []
   );
 
-  function toggleDraft(shiftId: string, decision: ConfirmationDecision) {
-    setDrafts((prev) => {
-      if (prev[shiftId] === decision) {
-        const next = { ...prev };
-        delete next[shiftId];
-        return next;
-      }
-      return { ...prev, [shiftId]: decision };
-    });
-  }
+  async function handleCancelShift(shiftId: string, reason?: string) {
+    const returnContext =
+      actionSheetContext?.shift.id === shiftId ? actionSheetContext : null;
+    setActionSheetContext(null);
 
-  async function handleSubmitResponses() {
-    if (draftEntries.length === 0 || submitting) return;
-
-    setSubmitting(true);
-    try {
-      const result = await submitConfirmationResponses(
-        draftEntries.map(([shiftId, decision]) => ({ shiftId, decision }))
-      );
-      setDrafts({});
-      showAppAlert(
-        "Gesendet",
-        `${result.updatedCount} Antwort${result.updatedCount === 1 ? "" : "en"} übermittelt.`
-      );
-      setRefreshing(true);
-      await load();
-      await refreshPendingConfirmations();
-    } catch (error) {
-      showAppAlert(
-        "Senden fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : "Antworten konnten nicht gespeichert werden."
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleCancelShift(shiftId: string) {
-    const confirmed = await confirmAlert({
+    const confirmed = await confirm({
       title: "Schicht absagen",
       message: "Möchtest du diese Schicht wirklich absagen?",
       confirmLabel: "Ja, absagen",
+      confirmDestructive: true,
     });
-    if (!confirmed) return;
+    if (!confirmed) {
+      if (returnContext) setActionSheetContext(returnContext);
+      return;
+    }
 
     setCancelingShiftId(shiftId);
     try {
-      await cancelConfirmationShift(shiftId);
+      await cancelConfirmationShift(shiftId, reason);
       setActionSheetContext(null);
-      showAppAlert(
-        "Absage angefragt",
-        "Deine Absage wurde übermittelt und muss vom Team bestätigt werden."
-      );
+      setDisplayByShiftId((prev) => {
+        const existing = prev[shiftId];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [shiftId]: { ...existing, cancellationPending: true },
+        };
+      });
       setRefreshing(true);
       await load();
+      await alert({
+        title: "Absage gesendet",
+        message:
+          "Deine Absage wurde übermittelt. Das Team kümmert sich um die weiteren Schritte.",
+      });
     } catch (error) {
-      showAppAlert(
-        "Absage fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : "Die Schicht konnte nicht abgesagt werden."
-      );
+      await alert({
+        title: "Absage fehlgeschlagen",
+        message:
+          error instanceof MobileApiError
+            ? error.message
+            : "Die Schicht konnte nicht abgesagt werden.",
+      });
     } finally {
       setCancelingShiftId(null);
     }
   }
 
   async function handleDismissShift(shiftId: string) {
-    const confirmed = await confirmAlert({
+    const returnContext =
+      actionSheetContext?.shift.id === shiftId ? actionSheetContext : null;
+    setActionSheetContext(null);
+
+    const confirmed = await confirm({
       title: "Aus Plan entfernen",
       message:
         "Die stornierte Schicht wird aus deinem Wochenplan entfernt. Du kannst sie danach nicht mehr einsehen.",
       confirmLabel: "Entfernen",
     });
-    if (!confirmed) return;
+    if (!confirmed) {
+      if (returnContext) setActionSheetContext(returnContext);
+      return;
+    }
 
     setDismissingShiftId(shiftId);
     try {
@@ -260,12 +237,13 @@ export default function WeekScreen() {
       await load();
       await refreshPendingConfirmations();
     } catch (error) {
-      showAppAlert(
-        "Entfernen fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : "Die Schicht konnte nicht entfernt werden."
-      );
+      await alert({
+        title: "Entfernen fehlgeschlagen",
+        message:
+          error instanceof MobileApiError
+            ? error.message
+            : "Die Schicht konnte nicht entfernt werden.",
+      });
     } finally {
       setDismissingShiftId(null);
     }
@@ -316,7 +294,9 @@ export default function WeekScreen() {
         {weekNav}
 
         {openConfirmationCount > 0 ? (
-          <View
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/(tabs)/requests")}
             style={[
               styles.banner,
               {
@@ -328,9 +308,9 @@ export default function WeekScreen() {
             <Text style={[styles.bannerText, { fontSize: layout.bannerFontSize }]}>
               {openConfirmationCount} Schicht
               {openConfirmationCount === 1 ? "" : "en"} warten auf deine
-              Bestätigung.
+              Bestätigung — jetzt bearbeiten.
             </Text>
-          </View>
+          </Pressable>
         ) : null}
 
         {pendingInOtherWeeks > 0 ? (
@@ -376,7 +356,6 @@ export default function WeekScreen() {
                   <WeekDaySlot
                     day={day}
                     slotHeight={weekDayHeights[index] ?? 0}
-                    drafts={drafts}
                     onShiftPress={setActionSheetContext}
                     onDismissShift={(shiftId) => void handleDismissShift(shiftId)}
                     dismissingShiftId={dismissingShiftId}
@@ -386,32 +365,6 @@ export default function WeekScreen() {
             </ScrollView>
           ) : null}
         </View>
-
-        {draftEntries.length > 0 ? (
-          <View style={styles.footer}>
-            {organizationDisclaimer ? (
-              <Text style={styles.disclaimer}>{organizationDisclaimer}</Text>
-            ) : (
-              <Text style={styles.disclaimer}>
-                Mit dem Senden bestätigst du deine Auswahl für die markierten
-                Schichten.
-              </Text>
-            )}
-            <Pressable
-              style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-              onPress={() => void handleSubmitResponses()}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color={colors.primaryForeground} />
-              ) : (
-                <Text style={styles.submitButtonText}>
-                  Antworten senden ({draftEntries.length})
-                </Text>
-              )}
-            </Pressable>
-          </View>
-        ) : null}
 
         <WeekShiftActionSheet
           visible={actionSheetContext != null}
@@ -437,11 +390,6 @@ export default function WeekScreen() {
                 )
               : false
           }
-          draft={
-            actionSheetContext
-              ? drafts[actionSheetContext.shift.id]
-              : undefined
-          }
           canceling={
             actionSheetContext != null &&
             cancelingShiftId === actionSheetContext.shift.id
@@ -451,11 +399,12 @@ export default function WeekScreen() {
             dismissingShiftId === actionSheetContext.shift.id
           }
           onClose={() => setActionSheetContext(null)}
-          onToggleDraft={toggleDraft}
-          onCancel={(shiftId) => void handleCancelShift(shiftId)}
+          onGoToRequests={() => router.push("/(tabs)/requests")}
+          onCancel={(shiftId, reason) => void handleCancelShift(shiftId, reason)}
           onDismiss={(shiftId) => void handleDismissShift(shiftId)}
         />
       </ResponsiveContentFrame>
+      {dialog}
     </View>
   );
 }
@@ -489,7 +438,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   bannerText: {
-    color: colors.foreground,
+    color: colors.primary,
+    fontWeight: "600",
     lineHeight: 18,
   },
   otherWeekBanner: {
@@ -503,30 +453,5 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "600",
     lineHeight: 18,
-  },
-  footer: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  disclaimer: {
-    fontSize: 12,
-    lineHeight: 17,
-    color: colors.muted,
-  },
-  submitButton: {
-    minHeight: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  submitButtonDisabled: { opacity: 0.7 },
-  submitButtonText: {
-    color: colors.primaryForeground,
-    fontWeight: "600",
-    fontSize: 15,
   },
 });

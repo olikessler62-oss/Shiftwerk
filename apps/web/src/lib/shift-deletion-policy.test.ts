@@ -62,6 +62,27 @@ describe("canDeleteShift", () => {
     ).toBe(false);
   });
 
+  it("allows deleting confirmed future shifts with open employee cancellation", () => {
+    expect(
+      canDeleteShift({
+        shiftDate: "2026-07-05",
+        confirmationStatus: "confirmed",
+        requestedAt: null,
+        isPastShiftDate,
+        displayState: {
+          shiftId: "shift-1",
+          lifecycle: "confirmed",
+          legacyConfirmationStatus: "confirmed",
+          openCancellation: {
+            requestId: "req-1",
+            status: "pending",
+            cancelledBy: "employee",
+          },
+        },
+      })
+    ).toBe(true);
+  });
+
   it("keeps future deletion rules unchanged", () => {
     expect(
       canDeleteShift({

@@ -223,10 +223,12 @@ export function shiftOverviewActionsForShift(
   if (
     canDeleteShift({
       shiftDate: shift.shift_date,
+      shiftStartTime: shift.startTime,
       confirmationStatus: shift.confirmationStatus,
       requestedAt: shift.requestedAt,
       isPastShiftDate: menuOptions.isPastShiftDate,
       pendingAfterMinutes: context.pendingAfterMinutes,
+      displayState: shift.displayState,
     })
   ) {
     return ["delete"];

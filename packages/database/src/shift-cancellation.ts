@@ -1,4 +1,5 @@
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
+import { readCancellationReasonFromPayload } from "./shift-display-state";
 import { resolveEffectiveConfirmationStatus } from "./shift-confirmation-pending";
 
 export const SHIFT_CANCELLABLE_CONFIRMATION_STATUSES = [
@@ -141,12 +142,47 @@ export function buildEmployeeShiftCanceledByManagerNotification(input: {
   };
 }
 
+export const MANAGER_CANCELLATION_REASON_BODY_PREVIEW_MAX = 80;
+
+export function truncateCancellationReasonPreview(
+  reason: string,
+  maxLength = MANAGER_CANCELLATION_REASON_BODY_PREVIEW_MAX
+): string {
+  if (reason.length <= maxLength) return reason;
+  return `${reason.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+const CANCELLATION_REASON_BODY_MARKER = "\nGrund: ";
+
+export function parseCancellationReasonFromNotificationBody(
+  body: string
+): string | undefined {
+  const index = body.indexOf(CANCELLATION_REASON_BODY_MARKER);
+  if (index === -1) return undefined;
+  const reason = body.slice(index + CANCELLATION_REASON_BODY_MARKER.length).trim();
+  return reason || undefined;
+}
+
+export function readCancellationReasonFromManagerNotification(input: {
+  payload?: Record<string, unknown> | null;
+  body?: string;
+}): string | undefined {
+  return (
+    readCancellationReasonFromPayload(input.payload) ??
+    (input.body ? parseCancellationReasonFromNotificationBody(input.body) : undefined)
+  );
+}
+
 export function buildManagerShiftCanceledNotification(input: {
   employeeName: string;
   canceledBy: "employee" | "manager";
   shiftDate: string;
   shiftId: string;
   employeeId: string;
+  reason?: string;
+  startTime?: string;
+  endTime?: string;
+  shiftTemplateName?: string | null;
 }): {
   type: "employee_shift_canceled";
   title: string;
@@ -157,10 +193,15 @@ export function buildManagerShiftCanceledNotification(input: {
     input.canceledBy === "employee"
       ? `Schicht abgesagt: ${input.employeeName}`
       : `Schicht storniert: ${input.employeeName}`;
-  const body =
+  const baseBody =
     input.canceledBy === "employee"
       ? `${input.employeeName} hat eine geplante Schicht abgesagt.`
       : `Eine Schicht für ${input.employeeName} wurde storniert.`;
+  const reason = input.reason?.trim().slice(0, 200);
+  const body = reason
+    ? `${baseBody}\nGrund: ${truncateCancellationReasonPreview(reason)}`
+    : baseBody;
+  const shiftTemplateName = input.shiftTemplateName?.trim();
 
   return {
     type: "employee_shift_canceled",
@@ -172,6 +213,10 @@ export function buildManagerShiftCanceledNotification(input: {
       employee_name: input.employeeName,
       shift_date: input.shiftDate,
       canceled_by: input.canceledBy,
+      ...(input.startTime ? { start_time: input.startTime } : {}),
+      ...(input.endTime ? { end_time: input.endTime } : {}),
+      ...(shiftTemplateName ? { shift_template_name: shiftTemplateName } : {}),
+      ...(reason ? { cancellation_reason: reason } : {}),
     },
   };
 }

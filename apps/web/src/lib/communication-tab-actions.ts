@@ -4,8 +4,7 @@ export type CommunicationTabAction =
   | "delete"
   | "cancel"
   | "reassign"
-  | "requestConfirmation"
-  | "confirmCancellation";
+  | "requestConfirmation";
 
 const CATEGORY_ACTIONS: Record<
   CommunicationHubCategory,
@@ -15,9 +14,9 @@ const CATEGORY_ACTIONS: Record<
   swaps: [],
   proposed: ["requestConfirmation", "delete"],
   requested: ["cancel"],
-  rejected: ["delete"],
+  rejected: ["reassign", "delete"],
   pending: ["cancel", "requestConfirmation"],
-  canceled: ["confirmCancellation", "delete"],
+  canceled: ["reassign", "delete"],
   unresolved: ["delete"],
 };
 

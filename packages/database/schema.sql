@@ -2262,6 +2262,17 @@ create policy "shift_requests_select_manager"
     )
   );
 
+create policy "shift_requests_select_own_shifts"
+  on public.shift_requests for select
+  using (
+    exists (
+      select 1
+      from public.shifts s
+      where s.id = shift_id
+        and s.employee_id = auth.uid()
+    )
+  );
+
 create policy "shift_requests_insert_manager"
   on public.shift_requests for insert
   with check (

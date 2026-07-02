@@ -7,7 +7,7 @@ import {
   sendConfirmationRequestForSelectedShifts,
   type ConfirmationSendShiftRow,
 } from "@/app/actions/shift-confirmations";
-import { Alert, Button } from "@/components/ui";
+import { Alert, Button, EphemeralFeedbackOverlay } from "@/components/ui";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
@@ -213,16 +213,20 @@ export function CommunicationSendTab({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <>
+      <EphemeralFeedbackOverlay
+        message={successMessage}
+        onDismiss={() => setSuccessMessage(null)}
+      />
+      <div className="flex flex-col gap-3">
       {errorMessage ? <Alert variant="error">{errorMessage}</Alert> : null}
-      {successMessage ? <Alert variant="success">{successMessage}</Alert> : null}
 
       <p className="text-xs text-muted">{t("shiftConfirmation.send.modalHint")}</p>
 
       {shifts.length === 0 ? (
         <p className="py-6 text-sm text-muted">{t("shiftConfirmation.send.noCandidates")}</p>
       ) : (
-        <div className="min-h-0 flex-1 rounded border border-border">
+        <div className="rounded border border-border">
           <div
             className={cn(
               ROW_GRID_CLASS,
@@ -364,5 +368,6 @@ export function CommunicationSendTab({
         </Button>
       </div>
     </div>
+    </>
   );
 }

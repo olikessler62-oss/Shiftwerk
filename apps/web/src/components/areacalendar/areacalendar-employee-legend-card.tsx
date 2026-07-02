@@ -10,7 +10,11 @@ import {
   AREA_CALENDAR_EMPLOYEE_LEGEND_SECONDARY_FONT_PX,
 } from "@/lib/areacalendar-week-employee-legend";
 import { splitEmployeeDisplayName } from "@/lib/shift-card-display-content";
-import { SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX } from "@/lib/shift-card-time-gradient";
+import {
+  buildShiftCardStripGradientCss,
+  buildShiftCardSurfaceGradientCss,
+  SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
+} from "@/lib/shift-card-time-gradient";
 import { SHIFT_CARD_SHADOW_BLEED_PX } from "@/lib/shift-card-row-layout";
 
 const EMPLOYEE_LEGEND_CARD_FRAME_CLASS =
@@ -89,11 +93,16 @@ export function AreaCalendarEmployeeLegendCard({
             className="shrink-0 self-stretch"
             style={{
               width: SHIFT_CARD_EMPLOYEE_STRIP_WIDTH_PX,
-              backgroundColor: employeeColor,
+              backgroundImage: buildShiftCardStripGradientCss(employeeColor),
             }}
             aria-hidden
           />
-          <div className="relative flex min-w-0 flex-1 items-center bg-white px-2 py-1 text-black">
+          <div
+            className="relative flex min-w-0 flex-1 items-center px-2 py-1 text-black"
+            style={{
+              backgroundImage: buildShiftCardSurfaceGradientCss(employeeColor),
+            }}
+          >
             <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
               <div
                 className="flex min-w-0 items-baseline gap-1.5 leading-tight"

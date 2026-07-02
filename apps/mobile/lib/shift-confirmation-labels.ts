@@ -49,6 +49,16 @@ export function shiftConfirmationStatusShortLabel(
   return SHORT_STATUS_LABELS[status] ?? status;
 }
 
+export const EMPLOYEE_CANCELLATION_SENT_SHORT_LABEL = "Absage gesendet";
+
+export function employeeCancellationSentShortLabel(): string {
+  return EMPLOYEE_CANCELLATION_SENT_SHORT_LABEL;
+}
+
+export function employeeCancellationSentBadgeBackground(): string {
+  return "#FFEDD5";
+}
+
 export function shiftConfirmationStatusBadgeBackground(
   status: ShiftConfirmationStatus
 ): string {

@@ -5,7 +5,11 @@ import { mapSwapRequestsToCommunicationRows } from "@/lib/communication-hub-data
 import type { CommunicationSwapRequestRow } from "@/lib/communication-hub";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { SchichtwerkDatabase } from "@/lib/db";
-import { resolveOrganizationShiftConfirmationPendingAfterMinutes } from "@schichtwerk/database";
+import {
+  readPendingEmployeeCancellationReasonFromRequests,
+  resolveOrganizationShiftConfirmationPendingAfterMinutes,
+  withCancellationReasonOnDisplayState,
+} from "@schichtwerk/database";
 import type {
   AbsenceRequest,
   AreaShiftTemplateWithBreaks,
@@ -74,6 +78,9 @@ export function mapAreaCalendarShiftRowsToPlanningShifts(
       requestedAt: confirmationFields.requestedAt,
       confirmationStatusUpdatedAt: confirmationFields.confirmationStatusUpdatedAt,
       displayState: confirmationFields.displayState,
+      employeeCancellationReason:
+        confirmationFields.displayState.openCancellation?.reason ??
+        readPendingEmployeeCancellationReasonFromRequests(row.shift_requests),
     });
   }
 
@@ -119,18 +126,51 @@ export async function loadCommunicationHubScopeData(input: {
 
   const to = communicationHubShiftHorizonEnd(todayISO);
 
-  const [shiftRows, swapRequestRows, absences] = await Promise.all([
-    db.listAreaCalendarShifts(orgId, todayISO, to, locationId),
-    db.listOrganizationSwapRequests(orgId, {
-      statuses: ["pending"],
-      locationId,
-      from: todayISO,
-    }),
-    db.listOrganizationAbsences(orgId, {
-      statuses: ["approved"],
-      overlappingFrom: todayISO,
-    }),
-  ]);
+  const [actionShiftRows, pendingCancellationShiftRows, swapRequestRows, absences] =
+    await Promise.all([
+      db.listCommunicationHubLocationShifts(orgId, todayISO, to, locationId),
+      db.listCommunicationHubPendingEmployeeCancellationShifts(
+        orgId,
+        todayISO,
+        to,
+        locationId
+      ),
+      db.listOrganizationSwapRequests(orgId, {
+        statuses: ["pending"],
+        locationId,
+        from: todayISO,
+      }),
+      db.listOrganizationAbsences(orgId, {
+        statuses: ["approved"],
+        overlappingFrom: todayISO,
+      }),
+    ]);
+
+  const shiftRowsById = new Map<
+    string,
+    (typeof actionShiftRows)[number]
+  >();
+  for (const row of [...actionShiftRows, ...pendingCancellationShiftRows]) {
+    const existing = shiftRowsById.get(row.id);
+    if (!existing) {
+      shiftRowsById.set(row.id, row);
+      continue;
+    }
+    shiftRowsById.set(row.id, {
+      ...existing,
+      ...row,
+      shift_requests: row.shift_requests?.length
+        ? row.shift_requests
+        : existing.shift_requests,
+    });
+  }
+  const shiftRows = [...shiftRowsById.values()];
+
+  const cancellationReasonsByShiftId =
+    await db.listEmployeeCancellationReasonsByShiftIds(
+      orgId,
+      shiftRows.map((row) => row.id)
+    );
 
   const locationShifts = mapAreaCalendarShiftRowsToPlanningShifts(
     shiftRows,
@@ -138,7 +178,17 @@ export async function loadCommunicationHubScopeData(input: {
     areaShiftTemplates,
     locationId,
     resolveOrganizationShiftConfirmationPendingAfterMinutes(organization)
-  );
+  ).map((shift) => {
+    const reason =
+      shift.employeeCancellationReason ??
+      cancellationReasonsByShiftId.get(shift.id);
+    if (!reason) return shift;
+    return {
+      ...shift,
+      employeeCancellationReason: reason,
+      displayState: withCancellationReasonOnDisplayState(shift.displayState, reason),
+    };
+  });
 
   const canceledShiftIds = locationShifts
     .filter((shift) => shift.confirmationStatus === "canceled")

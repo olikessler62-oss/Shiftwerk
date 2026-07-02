@@ -38,6 +38,17 @@ export function validateConfirmationRespondItems(
     if (item.decision !== "confirm" && item.decision !== "reject") {
       return { ok: false, error: "Ungültige Entscheidung." };
     }
+    if (item.reason != null) {
+      if (typeof item.reason !== "string") {
+        return { ok: false, error: "Ungültiger Ablehnungsgrund." };
+      }
+      if (item.reason.trim().length > 200) {
+        return { ok: false, error: "Ablehnungsgrund ist zu lang (max. 200 Zeichen)." };
+      }
+      if (item.decision !== "reject") {
+        return { ok: false, error: "Grund nur bei Ablehnung erlaubt." };
+      }
+    }
   }
 
   return { ok: true };

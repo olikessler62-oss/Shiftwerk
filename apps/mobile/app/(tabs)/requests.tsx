@@ -6,6 +6,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -20,7 +21,7 @@ import {
   submitConfirmationResponses,
 } from "@/lib/confirmations-api";
 import { MobileApiError } from "@/lib/mobile-api-client";
-import { confirmAlert, showAppAlert } from "@/lib/app-alert";
+import { useAppDialog } from "@/lib/use-app-dialog";
 import { usePendingConfirmations } from "@/lib/pending-confirmations-context";
 import {
   shiftConfirmationStatusShortLabel,
@@ -117,11 +118,15 @@ function CanceledNotificationRow({
 function RequestRow({
   item,
   draft,
+  rejectionReason,
   onToggleDraft,
+  onChangeRejectionReason,
 }: {
   item: ConfirmationWeekItem;
   draft?: ConfirmationDecision;
+  rejectionReason?: string;
   onToggleDraft: (shiftId: string, decision: ConfirmationDecision) => void;
+  onChangeRejectionReason: (shiftId: string, reason: string) => void;
 }) {
   const timeLabel = `${formatShiftTime(item.startsAt)} – ${formatShiftTime(item.endsAt)}`;
   const meta = [item.locationName, item.areaName, item.templateName]
@@ -186,14 +191,30 @@ function RequestRow({
           </Text>
         </Pressable>
       </View>
+      {draft === "reject" ? (
+        <View style={styles.reasonField}>
+          <Text style={styles.reasonLabel}>Grund (optional)</Text>
+          <TextInput
+            style={styles.reasonInput}
+            value={rejectionReason ?? ""}
+            onChangeText={(text) => onChangeRejectionReason(item.shiftId, text)}
+            placeholder="Kurz angeben …"
+            placeholderTextColor={colors.muted}
+            maxLength={200}
+            multiline
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
 
 export default function RequestsScreen() {
+  const { alert, confirm, dialog } = useAppDialog();
   const { items, canceledByManagerItems, loading, refresh } =
     usePendingConfirmations();
   const [drafts, setDrafts] = useState<Record<string, ConfirmationDecision>>({});
+  const [rejectionReasons, setRejectionReasons] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dismissingShiftId, setDismissingShiftId] = useState<string | null>(null);
@@ -222,6 +243,12 @@ export default function RequestsScreen() {
     [drafts, items]
   );
 
+  function setAllDrafts(decision: ConfirmationDecision) {
+    setDrafts(
+      Object.fromEntries(items.map((item) => [item.shiftId, decision]))
+    );
+  }
+
   function toggleDraft(shiftId: string, decision: ConfirmationDecision) {
     setDrafts((prev) => {
       if (prev[shiftId] === decision) {
@@ -231,6 +258,18 @@ export default function RequestsScreen() {
       }
       return { ...prev, [shiftId]: decision };
     });
+    if (decision === "confirm") {
+      setRejectionReasons((prev) => {
+        if (!prev[shiftId]) return prev;
+        const next = { ...prev };
+        delete next[shiftId];
+        return next;
+      });
+    }
+  }
+
+  function changeRejectionReason(shiftId: string, reason: string) {
+    setRejectionReasons((prev) => ({ ...prev, [shiftId]: reason }));
   }
 
   async function handleRefresh() {
@@ -240,7 +279,7 @@ export default function RequestsScreen() {
   }
 
   async function handleDismiss(shiftId: string) {
-    const confirmed = await confirmAlert({
+    const confirmed = await confirm({
       title: "Aus Liste entfernen",
       message:
         "Die stornierte Schicht wird aus deinem Wochenplan und aus dieser Liste entfernt.",
@@ -253,12 +292,13 @@ export default function RequestsScreen() {
       await dismissCanceledShift(shiftId);
       await refresh();
     } catch (error) {
-      showAppAlert(
-        "Entfernen fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : "Die Mitteilung konnte nicht entfernt werden."
-      );
+      await alert({
+        title: "Entfernen fehlgeschlagen",
+        message:
+          error instanceof MobileApiError
+            ? error.message
+            : "Die Mitteilung konnte nicht entfernt werden.",
+      });
     } finally {
       setDismissingShiftId(null);
     }
@@ -270,21 +310,29 @@ export default function RequestsScreen() {
     setSubmitting(true);
     try {
       const result = await submitConfirmationResponses(
-        draftEntries.map(([shiftId, decision]) => ({ shiftId, decision }))
+        draftEntries.map(([shiftId, decision]) => ({
+          shiftId,
+          decision,
+          ...(decision === "reject" && rejectionReasons[shiftId]?.trim()
+            ? { reason: rejectionReasons[shiftId].trim() }
+            : {}),
+        }))
       );
       setDrafts({});
-      showAppAlert(
-        "Gesendet",
-        `${result.updatedCount} Antwort${result.updatedCount === 1 ? "" : "en"} übermittelt.`
-      );
+      setRejectionReasons({});
+      await alert({
+        title: "Gesendet",
+        message: `${result.updatedCount} Antwort${result.updatedCount === 1 ? "" : "en"} übermittelt.`,
+      });
       await refresh();
     } catch (error) {
-      showAppAlert(
-        "Senden fehlgeschlagen",
-        error instanceof MobileApiError
-          ? error.message
-          : "Antworten konnten nicht gespeichert werden."
-      );
+      await alert({
+        title: "Senden fehlgeschlagen",
+        message:
+          error instanceof MobileApiError
+            ? error.message
+            : "Antworten konnten nicht gespeichert werden.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -306,6 +354,24 @@ export default function RequestsScreen() {
           <Text style={styles.subtitle}>
             {buildSubtitle(items.length, canceledByManagerItems.length)}
           </Text>
+          {items.length > 0 ? (
+            <View style={styles.bulkActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setAllDrafts("confirm")}
+                style={styles.bulkActionButton}
+              >
+                <Text style={styles.bulkActionConfirmText}>Alle bestätigen</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setAllDrafts("reject")}
+                style={styles.bulkActionButton}
+              >
+                <Text style={styles.bulkActionRejectText}>Alle ablehnen</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
 
         <FlatList
@@ -338,7 +404,9 @@ export default function RequestsScreen() {
               <RequestRow
                 item={entry.item}
                 draft={drafts[entry.item.shiftId]}
+                rejectionReason={rejectionReasons[entry.item.shiftId]}
                 onToggleDraft={toggleDraft}
+                onChangeRejectionReason={changeRejectionReason}
               />
             )
           }
@@ -349,24 +417,33 @@ export default function RequestsScreen() {
           ]}
         />
 
-        {draftEntries.length > 0 ? (
+        {items.length > 0 ? (
           <View style={styles.footer}>
+            <Text style={styles.footerHint}>
+              Wähle Ja/Nein pro Schicht oder nutze „Alle bestätigen“ / „Alle
+              ablehnen“, dann sende deine Antworten gesammelt.
+            </Text>
             <Pressable
               accessibilityRole="button"
-              disabled={submitting}
+              disabled={submitting || draftEntries.length === 0}
               onPress={() => void handleSubmit()}
-              style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+              style={[
+                styles.submitButton,
+                (submitting || draftEntries.length === 0) && styles.submitButtonDisabled,
+              ]}
             >
               {submitting ? (
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.submitButtonText}>
-                  Antworten senden ({draftEntries.length})
+                  Antworten senden
+                  {draftEntries.length > 0 ? ` (${draftEntries.length})` : ""}
                 </Text>
               )}
             </Pressable>
           </View>
         ) : null}
+        {dialog}
       </ResponsiveContentFrame>
     </View>
   );
@@ -398,6 +475,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: colors.muted,
+  },
+  bulkActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  bulkActionButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 36,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  bulkActionConfirmText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#16A34A",
+  },
+  bulkActionRejectText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#DC2626",
   },
   listContent: {
     paddingHorizontal: spacing.lg,
@@ -519,6 +621,27 @@ const styles = StyleSheet.create({
   actionButtonTextSelected: {
     color: "#fff",
   },
+  reasonField: {
+    gap: spacing.xs,
+  },
+  reasonLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.muted,
+  },
+  reasonInput: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.foreground,
+    textAlignVertical: "top",
+  },
   emptyState: {
     alignItems: "center",
     paddingHorizontal: spacing.lg,
@@ -541,6 +664,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  footerHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.muted,
   },
   submitButton: {
     alignItems: "center",

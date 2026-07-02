@@ -11,7 +11,11 @@ import {
   shiftConfirmationShowsOverlay,
 } from "@schichtwerk/ui-tokens";
 import { resolveShiftCardStatusBadgeTextColor } from "@/lib/week-plan-theme";
-import { shiftConfirmationStatusShortLabel } from "@/lib/shift-confirmation-labels";
+import {
+  employeeCancellationSentBadgeBackground,
+  employeeCancellationSentShortLabel,
+  shiftConfirmationStatusShortLabel,
+} from "@/lib/shift-confirmation-labels";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 
 type WeekShiftCardConfirmationOverlayProps = {
@@ -48,8 +52,26 @@ export function WeekShiftCardConfirmationOverlay({
     return (
       <>
         <View style={styles.pendingOverlay} pointerEvents="none" />
-        <View style={styles.pendingXWrap} pointerEvents="none">
-          <Text style={styles.pendingX}>✕</Text>
+        <View
+          style={[
+            styles.badge,
+            { backgroundColor: employeeCancellationSentBadgeBackground() },
+          ]}
+          pointerEvents="none"
+        >
+          <Text
+            style={[
+              styles.badgeText,
+              {
+                color: "#9A3412",
+                fontSize: badgeFontSize,
+                lineHeight: badgeLineHeight,
+              },
+            ]}
+            numberOfLines={2}
+          >
+            {employeeCancellationSentShortLabel()}
+          </Text>
         </View>
       </>
     );
@@ -103,7 +125,7 @@ const styles = StyleSheet.create({
   },
   pendingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(220, 38, 38, 0.14)",
+    backgroundColor: "rgba(234, 88, 12, 0.2)",
     zIndex: 1,
   },
   pendingXWrap: {

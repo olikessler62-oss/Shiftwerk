@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildEmployeeShiftCanceledByManagerNotification,
+  buildManagerShiftCanceledNotification,
+  parseCancellationReasonFromNotificationBody,
+  readCancellationReasonFromManagerNotification,
   canCancelShiftByConfirmationStatus,
   isShiftDateInPast,
   parseShiftCancelBlockedStatus,
@@ -58,6 +61,97 @@ describe("buildEmployeeShiftCanceledByManagerNotification", () => {
     expect(notification.body).toContain("20.06.2026");
     expect(notification.payload.canceled_by).toBe("manager");
     expect(notification.payload.shift_id).toBe("shift-1");
+  });
+});
+
+describe("buildManagerShiftCanceledNotification", () => {
+  it("includes optional employee cancellation reason in body and payload", () => {
+    const notification = buildManagerShiftCanceledNotification({
+      employeeName: "Klaus Mustermann",
+      canceledBy: "employee",
+      shiftDate: "2026-07-02",
+      shiftId: "shift-1",
+      employeeId: "emp-1",
+      reason: "Kurzfristig krank",
+    });
+
+    expect(notification.body).toContain("Klaus Mustermann");
+    expect(notification.body).toContain("Grund: Kurzfristig krank");
+    expect(notification.payload.cancellation_reason).toBe("Kurzfristig krank");
+  });
+
+  it("includes shift times in payload when provided", () => {
+    const notification = buildManagerShiftCanceledNotification({
+      employeeName: "Klaus Mustermann",
+      canceledBy: "employee",
+      shiftDate: "2026-07-02",
+      shiftId: "shift-1",
+      employeeId: "emp-1",
+      startTime: "08:00",
+      endTime: "16:00",
+      shiftTemplateName: " Frühschicht ",
+    });
+
+    expect(notification.payload.start_time).toBe("08:00");
+    expect(notification.payload.end_time).toBe("16:00");
+    expect(notification.payload.shift_template_name).toBe("Frühschicht");
+  });
+
+  it("truncates long cancellation reasons in the notification body", () => {
+    const longReason = "a".repeat(120);
+    const notification = buildManagerShiftCanceledNotification({
+      employeeName: "Klaus Mustermann",
+      canceledBy: "employee",
+      shiftDate: "2026-07-02",
+      shiftId: "shift-1",
+      employeeId: "emp-1",
+      reason: longReason,
+    });
+
+    expect(notification.body).toContain("Grund:");
+    expect(notification.body).not.toContain(longReason);
+    expect(notification.payload.cancellation_reason).toBe(longReason);
+  });
+});
+
+describe("readCancellationReasonFromManagerNotification", () => {
+  it("prefers full payload reason over truncated body preview", () => {
+    const reason = "a".repeat(120);
+    const notification = buildManagerShiftCanceledNotification({
+      employeeName: "Klaus Mustermann",
+      canceledBy: "employee",
+      shiftDate: "2026-07-02",
+      shiftId: "shift-1",
+      employeeId: "emp-1",
+      reason,
+    });
+
+    expect(
+      readCancellationReasonFromManagerNotification({
+        payload: notification.payload,
+        body: notification.body,
+      })
+    ).toBe(reason);
+  });
+
+  it("falls back to notification body when payload has no reason", () => {
+    const body =
+      "Klaus Mustermann hat eine geplante Schicht abgesagt.\nGrund: Kurzfristig krank";
+
+    expect(
+      readCancellationReasonFromManagerNotification({
+        payload: { shift_id: "shift-1" },
+        body,
+      })
+    ).toBe("Kurzfristig krank");
+  });
+
+  it("parses cancellation reason lines from notification bodies", () => {
+    expect(
+      parseCancellationReasonFromNotificationBody(
+        "Max hat eine geplante Schicht abgesagt.\nGrund: Kind krank"
+      )
+    ).toBe("Kind krank");
   });
 });
 

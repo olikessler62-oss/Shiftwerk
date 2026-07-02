@@ -108,12 +108,24 @@ import {
   buildEmployeeShiftCanceledByManagerNotification,
   buildManagerShiftCanceledNotification,
   canCancelShiftByConfirmationStatus,
+  readCancellationReasonFromManagerNotification,
+  truncateCancellationReasonPreview,
   isShiftDateInPast,
   SHIFT_CANCEL_NOT_OWNER_ERROR,
   SHIFT_CANCEL_PAST_ERROR,
   SHIFT_DISMISS_NOT_CANCELED_ERROR,
   shiftCancelBlockedActionError,
 } from "./shift-cancellation";
+import {
+  mapLatestEmployeeCancellationReasonsByShiftId,
+  mapLatestEmployeeRejectionReasonsByShiftId,
+  normalizeRecordPayload,
+} from "./shift-display-state";
+import {
+  approveOpenEmployeeCancellationRequest,
+  buildEmployeeShiftRemovedAfterOwnCancellationNotification,
+  shiftHasOpenEmployeeCancellationRequest,
+} from "./shift-employee-cancellation-resolve";
 import { shouldSuppressEmployeeShiftNotificationNow, isPlanningShiftMomentInPast } from "./past-shift-planning-policy";
 import { resolveOrganizationTimeZone } from "./organization-timezone";
 import { assertCanConfirmPastShiftAsManager } from "./shift-past-cleanup";
@@ -126,6 +138,7 @@ import {
   syncShiftRequestsAfterCancellation,
   syncShiftRequestsAfterEmployeeCancellationRequest,
   hasOpenEmployeeCancellationRequest,
+  updateOpenEmployeeCancellationRequestReason,
   syncShiftRequestsAfterConfirmationExpired,
   syncShiftRequestsAfterConfirmationResent,
   syncShiftRequestsAfterConfirmationSent,
@@ -3899,6 +3912,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       .select("*")
       .gte("shift_date", from)
       .lte("shift_date", toDate)
+      .neq("confirmation_status", "proposed")
       .is("employee_dismissed_at", null)
       .order("shift_date", { ascending: true });
 
@@ -3907,16 +3921,47 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   }
 
   async listMyShiftWeekDisplay(fromDate: string, toDate: string) {
-    const from = clampShiftQueryFromDate(fromDate);
-    const { data, error } = await this.client
+    return this.queryEmployeeShiftWeekDisplay({ fromDate, toDate });
+  }
+
+  async listEmployeeShiftWeekDisplay(
+    employeeId: string,
+    organizationId: string,
+    fromDate: string,
+    toDate: string
+  ) {
+    return this.queryEmployeeShiftWeekDisplay({
+      fromDate,
+      toDate,
+      employeeId,
+      organizationId,
+    });
+  }
+
+  private async queryEmployeeShiftWeekDisplay(input: {
+    fromDate: string;
+    toDate: string;
+    employeeId?: string;
+    organizationId?: string;
+  }) {
+    const from = clampShiftQueryFromDate(input.fromDate);
+    let query = this.client
       .from(T.shifts)
       .select(
         "id, employee_id, organization_id, confirmation_status, location_id, location_area_id, shift_date, starts_at, ends_at, locations(name), location_areas(name), area_shift_templates(name, color)"
       )
       .gte("shift_date", from)
-      .lte("shift_date", toDate)
-      .is("employee_dismissed_at", null)
-      .order("shift_date", { ascending: true });
+      .lte("shift_date", input.toDate)
+      .neq("confirmation_status", "proposed")
+      .is("employee_dismissed_at", null);
+
+    if (input.employeeId && input.organizationId) {
+      query = query
+        .eq("employee_id", input.employeeId)
+        .eq("organization_id", input.organizationId);
+    }
+
+    const { data, error } = await query.order("shift_date", { ascending: true });
 
     if (error) throw new Error(error.message);
     if (!data?.length) return [];
@@ -4147,6 +4192,97 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }));
   }
 
+  async listCommunicationHubLocationShifts(
+    organizationId: string,
+    from: string,
+    to: string,
+    locationId: string
+  ) {
+    const clampedFrom = clampShiftQueryFromDate(from);
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, confirmation_status, confirmation_status_updated_at, requested_at, pending_since, lifecycle_status, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
+      )
+      .eq("organization_id", organizationId)
+      .eq("location_id", locationId)
+      .gte("shift_date", clampedFrom)
+      .lte("shift_date", to)
+      .neq("confirmation_status", "confirmed")
+      .order("shift_date");
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as unknown as AreaCalendarShiftRow[];
+    if (!rows.length) return rows;
+
+    const shiftIds = rows.map((row) => row.id);
+    const requestsByShiftId = await this.listShiftRequestsForShifts(
+      organizationId,
+      shiftIds
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      shift_requests: requestsByShiftId.get(row.id),
+    }));
+  }
+
+  async listCommunicationHubPendingEmployeeCancellationShifts(
+    organizationId: string,
+    from: string,
+    to: string,
+    locationId: string
+  ) {
+    const clampedFrom = clampShiftQueryFromDate(from);
+    const { data: requestRows, error: requestError } = await this.client
+      .from(T.shiftRequests)
+      .select("shift_id, payload")
+      .eq("organization_id", organizationId)
+      .eq("type", "cancellation")
+      .eq("status", "pending");
+
+    if (requestError) throw new Error(requestError.message);
+
+    const shiftIds = [
+      ...new Set(
+        (requestRows ?? [])
+          .filter((row) => {
+            const payload = normalizeRecordPayload(row.payload);
+            const cancelledBy = payload.cancelled_by ?? payload.cancelledBy;
+            return cancelledBy === "employee";
+          })
+          .map((row) => row.shift_id as string)
+      ),
+    ];
+
+    if (!shiftIds.length) return [] as AreaCalendarShiftRow[];
+
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        `id, employee_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, confirmation_status, confirmation_status_updated_at, requested_at, pending_since, lifecycle_status, area_shift_templates(name, color, start_time, end_time), profiles!employee_id(full_name, color)`
+      )
+      .eq("organization_id", organizationId)
+      .eq("location_id", locationId)
+      .in("id", shiftIds)
+      .gte("shift_date", clampedFrom)
+      .lte("shift_date", to)
+      .order("shift_date");
+
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as unknown as AreaCalendarShiftRow[];
+    if (!rows.length) return rows;
+
+    const requestsByShiftId = await this.listShiftRequestsForShifts(
+      organizationId,
+      rows.map((row) => row.id)
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      shift_requests: requestsByShiftId.get(row.id),
+    }));
+  }
+
   private async listShiftRequestsForShifts(
     organizationId: string,
     shiftIds: string[]
@@ -4178,7 +4314,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         status: row.status as import("@schichtwerk/types").ShiftRequestStatus,
         sent_at: (row.sent_at as string | null) ?? null,
         responded_at: (row.responded_at as string | null) ?? null,
-        payload: (row.payload as Record<string, unknown>) ?? {},
+        payload: normalizeRecordPayload(row.payload),
         created_at: row.created_at as string,
       });
       grouped.set(shiftId, list);
@@ -4264,16 +4400,27 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
   async listOrganizationShiftsInDateRange(
     organizationId: string,
     fromDate: string,
-    toDate: string
+    toDate: string,
+    employeeIds?: readonly string[]
   ) {
-    const { data, error } = await this.client
+    if (employeeIds !== undefined && employeeIds.length === 0) {
+      return [];
+    }
+
+    let query = this.client
       .from(T.shifts)
       .select(
         "id, employee_id, location_id, location_area_id, area_shift_template_id, shift_date, starts_at, ends_at, notes, created_by, confirmation_status, requested_at, pending_since, pending_reminder_sent_at"
       )
       .eq("organization_id", organizationId)
       .gte("shift_date", fromDate)
-      .lte("shift_date", toDate)
+      .lte("shift_date", toDate);
+
+    if (employeeIds !== undefined) {
+      query = query.in("employee_id", [...employeeIds]);
+    }
+
+    const { data, error } = await query
       .order("shift_date")
       .order("starts_at");
     if (error) throw new Error(error.message);
@@ -4450,10 +4597,225 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }
   }
 
+  private async dismissManagerNotificationsForShift(
+    organizationId: string,
+    shiftId: string
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const { data, error } = await this.client
+      .from(T.managerNotifications)
+      .select("id, payload")
+      .eq("organization_id", organizationId)
+      .eq("type", "employee_shift_canceled")
+      .is("dismissed_at", null);
+
+    if (error) throw new Error(error.message);
+
+    const notificationIds = (data ?? [])
+      .filter((row) => (row.payload as { shift_id?: string } | null)?.shift_id === shiftId)
+      .map((row) => row.id as string);
+
+    if (!notificationIds.length) return;
+
+    const { error: updateError } = await this.client
+      .from(T.managerNotifications)
+      .update({
+        dismissed_at: now,
+        read_at: now,
+      })
+      .in("id", notificationIds);
+
+    if (updateError) throw new Error(updateError.message);
+  }
+
+  private async syncManagerEmployeeCancellationNotifications(input: {
+    organizationId: string;
+    shiftId: string;
+    employeeId: string;
+    employeeName: string;
+    shiftDate: string;
+    reason?: string;
+    startTime?: string;
+    endTime?: string;
+    shiftTemplateName?: string | null;
+  }): Promise<void> {
+    const notification = buildManagerShiftCanceledNotification({
+      employeeName: input.employeeName,
+      canceledBy: "employee",
+      shiftDate: input.shiftDate,
+      shiftId: input.shiftId,
+      employeeId: input.employeeId,
+      reason: input.reason,
+      startTime: input.startTime,
+      endTime: input.endTime,
+      shiftTemplateName: input.shiftTemplateName,
+    });
+
+    const { data, error } = await this.client
+      .from(T.managerNotifications)
+      .select("id, payload")
+      .eq("organization_id", input.organizationId)
+      .eq("type", "employee_shift_canceled")
+      .is("dismissed_at", null);
+
+    if (error) throw new Error(error.message);
+
+    const matchingIds = (data ?? [])
+      .filter(
+        (row) =>
+          (row.payload as { shift_id?: string } | null)?.shift_id === input.shiftId
+      )
+      .map((row) => row.id as string);
+
+    if (matchingIds.length > 0) {
+      const { error: updateError } = await this.client
+        .from(T.managerNotifications)
+        .update({
+          title: notification.title,
+          body: notification.body,
+          payload: notification.payload,
+        })
+        .in("id", matchingIds);
+
+      if (updateError) throw new Error(updateError.message);
+      return;
+    }
+
+    const managers = await this.listOrganizationProfiles(input.organizationId);
+    const managerRecipientIds = managers
+      .filter((profile) => profile.role === "admin" || profile.role === "manager")
+      .map((profile) => profile.id);
+
+    if (!managerRecipientIds.length) return;
+
+    const { error: insertError } = await this.client.from(T.managerNotifications).insert(
+      managerRecipientIds.map((recipientId) => ({
+        organization_id: input.organizationId,
+        recipient_profile_id: recipientId,
+        type: notification.type,
+        title: notification.title,
+        body: notification.body,
+        payload: notification.payload,
+      }))
+    );
+    if (insertError) throw new Error(insertError.message);
+  }
+
+  private async notifyEmployeeShiftRemovedAfterCancellation(input: {
+    organizationId: string;
+    employeeId: string;
+    shiftId: string;
+    shiftDate: string;
+    startsAt: string;
+    endsAt: string;
+  }): Promise<void> {
+    const employeeProfile = await this.getProfileById(input.employeeId);
+    const organization = await this.getOrganization(input.organizationId);
+    const timeZone = resolveOrganizationTimeZone(organization);
+    if (
+      shouldSuppressEmployeeShiftNotificationNow(
+        {
+          shiftDateISO: input.shiftDate,
+          startsAt: input.startsAt,
+        },
+        timeZone
+      )
+    ) {
+      return;
+    }
+
+    const notification = buildEmployeeShiftRemovedAfterOwnCancellationNotification({
+      shiftId: input.shiftId,
+      shiftDate: input.shiftDate,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+    });
+    const channel = resolveConfirmationNotificationChannel(
+      employeeProfile ?? { email_fallback_mode: false }
+    );
+
+    const { error } = await this.client.from(T.notificationOutbox).insert({
+      organization_id: input.organizationId,
+      recipient_profile_id: input.employeeId,
+      channel,
+      template_key: notification.templateKey,
+      payload: notification.payload,
+      simulated: true,
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async resolveEmployeeCancellationOnReassign(input: {
+    organizationId: string;
+    shiftId: string;
+    actorId: string;
+    previousEmployeeId: string;
+    nextEmployeeId: string;
+    fromConfirmationStatus: import("@schichtwerk/types").ShiftConfirmationStatus;
+    shiftDate: string;
+    startsAt: string;
+    endsAt: string;
+  }): Promise<void> {
+    if (input.previousEmployeeId === input.nextEmployeeId) return;
+
+    const approved = await approveOpenEmployeeCancellationRequest({
+      client: this.client,
+      organizationId: input.organizationId,
+      shiftId: input.shiftId,
+      actorId: input.actorId,
+      fromConfirmationStatus: input.fromConfirmationStatus,
+      source: "manager_resolve_reassign",
+    });
+    if (!approved) return;
+
+    await this.dismissManagerNotificationsForShift(input.organizationId, input.shiftId);
+    await this.notifyEmployeeShiftRemovedAfterCancellation({
+      organizationId: input.organizationId,
+      employeeId: input.previousEmployeeId,
+      shiftId: input.shiftId,
+      shiftDate: input.shiftDate,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+    });
+  }
+
+  async shiftHasOpenEmployeeCancellation(
+    organizationId: string,
+    shiftId: string
+  ): Promise<boolean> {
+    return shiftHasOpenEmployeeCancellationRequest({
+      client: this.client,
+      organizationId,
+      shiftId,
+    });
+  }
+
   async deleteShift(id: string, organizationId: string, deletedBy: string) {
     const shift = await this.getShiftRecordById(id, organizationId);
     if (!shift) {
       throw new Error("Schicht nicht gefunden");
+    }
+
+    const storedStatus = shift.confirmation_status ?? "confirmed";
+    const approvedCancellation = await approveOpenEmployeeCancellationRequest({
+      client: this.client,
+      organizationId,
+      shiftId: id,
+      actorId: deletedBy,
+      fromConfirmationStatus: storedStatus,
+      source: "manager_resolve_delete",
+    });
+
+    if (approvedCancellation) {
+      await this.dismissManagerNotificationsForShift(organizationId, id);
+      await this.notifyEmployeeShiftRemovedAfterCancellation({
+        organizationId,
+        employeeId: shift.employee_id,
+        shiftId: id,
+        shiftDate: shift.shift_date,
+        startsAt: shift.starts_at,
+        endsAt: shift.ends_at,
+      });
     }
 
     const deletedAt = new Date().toISOString();
@@ -4957,6 +5319,113 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         shift_template_name: template?.name ?? null,
       };
     });
+  }
+
+  async listEmployeeCancellationReasonsByShiftIds(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<Map<string, string>> {
+    const uniqueShiftIds = [...new Set(shiftIds.filter(Boolean))];
+    if (!uniqueShiftIds.length) return new Map();
+
+    const { data, error } = await this.client
+      .from(T.shiftRequests)
+      .select("shift_id, payload, created_at")
+      .eq("organization_id", organizationId)
+      .eq("type", "cancellation")
+      .in("shift_id", uniqueShiftIds)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    return mapLatestEmployeeCancellationReasonsByShiftId(
+      (data ?? []).map((row) => ({
+        shift_id: row.shift_id as string,
+        payload: row.payload,
+        created_at: row.created_at as string,
+      }))
+    );
+  }
+
+  async listEmployeeRejectionReasonsByShiftIds(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<Map<string, string>> {
+    const uniqueShiftIds = [...new Set(shiftIds.filter(Boolean))];
+    if (!uniqueShiftIds.length) return new Map();
+
+    const { data, error } = await this.client
+      .from(T.shiftRequests)
+      .select("shift_id, payload, created_at")
+      .eq("organization_id", organizationId)
+      .eq("type", "confirmation")
+      .eq("status", "rejected")
+      .in("shift_id", uniqueShiftIds)
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(error.message);
+
+    return mapLatestEmployeeRejectionReasonsByShiftId(
+      (data ?? []).map((row) => ({
+        shift_id: row.shift_id as string,
+        payload: row.payload,
+        created_at: row.created_at as string,
+      }))
+    );
+  }
+
+  async listShiftCancellationContextByShiftIds(
+    organizationId: string,
+    shiftIds: string[]
+  ): Promise<
+    Map<
+      string,
+      {
+        shiftDate: string;
+        startTime: string;
+        endTime: string;
+        shiftTemplateName?: string;
+      }
+    >
+  > {
+    const uniqueShiftIds = [...new Set(shiftIds.filter(Boolean))];
+    const result = new Map<
+      string,
+      {
+        shiftDate: string;
+        startTime: string;
+        endTime: string;
+        shiftTemplateName?: string;
+      }
+    >();
+    if (!uniqueShiftIds.length) return result;
+
+    const organization = await this.getOrganization(organizationId);
+    const timeZone = resolveOrganizationTimeZone(organization);
+
+    const { data, error } = await this.client
+      .from(T.shifts)
+      .select(
+        "id, shift_date, starts_at, ends_at, area_shift_templates(name)"
+      )
+      .eq("organization_id", organizationId)
+      .in("id", uniqueShiftIds);
+
+    if (error) throw new Error(error.message);
+
+    for (const row of data ?? []) {
+      const shiftId = row.id as string;
+      const template = row.area_shift_templates as { name?: string } | null;
+      const shiftTemplateName = template?.name?.trim();
+      result.set(shiftId, {
+        shiftDate: row.shift_date as string,
+        startTime: shiftTimeFromTimestamp(row.starts_at as string, timeZone),
+        endTime: shiftTimeFromTimestamp(row.ends_at as string, timeZone),
+        ...(shiftTemplateName ? { shiftTemplateName } : {}),
+      });
+    }
+
+    return result;
   }
 
   async listShiftCancelActors(
@@ -5761,18 +6230,83 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const { data, error } = await query;
     if (error) throw new Error(error.message);
 
-    return (data ?? []).map((row) => ({
+    const notifications = (data ?? []).map((row) => ({
       id: row.id as string,
       organization_id: row.organization_id as string,
       recipient_profile_id: row.recipient_profile_id as string,
       type: row.type as string,
       title: row.title as string,
       body: row.body as string,
-      payload: (row.payload as Record<string, unknown>) ?? {},
+      payload: normalizeRecordPayload(row.payload),
       read_at: (row.read_at as string | null) ?? null,
       dismissed_at: (row.dismissed_at as string | null) ?? null,
       created_at: row.created_at as string,
     }));
+
+    const shiftIdsByOrganization = new Map<string, Set<string>>();
+    for (const notification of notifications) {
+      if (notification.type !== "employee_shift_canceled") continue;
+      if (
+        readCancellationReasonFromManagerNotification({
+          payload: notification.payload,
+          body: notification.body,
+        })
+      ) {
+        continue;
+      }
+      const shiftId = notification.payload.shift_id;
+      if (typeof shiftId !== "string" || !shiftId) continue;
+      const orgShiftIds =
+        shiftIdsByOrganization.get(notification.organization_id) ?? new Set<string>();
+      orgShiftIds.add(shiftId);
+      shiftIdsByOrganization.set(notification.organization_id, orgShiftIds);
+    }
+
+    const reasonsByOrganizationShift = new Map<string, string>();
+    await Promise.all(
+      [...shiftIdsByOrganization.entries()].map(async ([organizationId, shiftIds]) => {
+        const reasons = await this.listEmployeeCancellationReasonsByShiftIds(
+          organizationId,
+          [...shiftIds]
+        );
+        for (const [shiftId, reason] of reasons) {
+          reasonsByOrganizationShift.set(`${organizationId}:${shiftId}`, reason);
+        }
+      })
+    );
+
+    if (!reasonsByOrganizationShift.size) {
+      return notifications;
+    }
+
+    return notifications.map((notification) => {
+      if (notification.type !== "employee_shift_canceled") return notification;
+      if (
+        readCancellationReasonFromManagerNotification({
+          payload: notification.payload,
+          body: notification.body,
+        })
+      ) {
+        return notification;
+      }
+      const shiftId = notification.payload.shift_id;
+      if (typeof shiftId !== "string" || !shiftId) return notification;
+      const reason = reasonsByOrganizationShift.get(
+        `${notification.organization_id}:${shiftId}`
+      );
+      if (!reason) return notification;
+      const body = notification.body.includes("\nGrund:")
+        ? notification.body
+        : `${notification.body}\nGrund: ${truncateCancellationReasonPreview(reason)}`;
+      return {
+        ...notification,
+        body,
+        payload: {
+          ...notification.payload,
+          cancellation_reason: reason,
+        },
+      };
+    });
   }
 
   async dismissManagerNotification(
@@ -6149,6 +6683,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       const current = openShiftsById.get(item.shiftId)!;
       const toStatus = decisionToConfirmationStatus(item.decision);
       const lifecycleStatus = lifecycleStatusForConfirmationStatus(toStatus);
+      const trimmedReason =
+        item.decision === "reject" ? item.reason?.trim().slice(0, 200) : undefined;
 
       const { data: updated, error: updateError } = await this.client
         .from(T.shifts)
@@ -6179,6 +6715,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         employeeId: input.employeeId,
         decision: item.decision,
         now,
+        reason: trimmedReason,
       });
 
       updatedShiftIds.push(item.shiftId);
@@ -6198,6 +6735,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
           payload: {
             decision: item.decision,
             source: "mobile_respond",
+            ...(trimmedReason
+              ? { reason: trimmedReason, rejection_reason: trimmedReason }
+              : {}),
           },
         });
       if (eventError) throw new Error(eventError.message);
@@ -6323,6 +6863,7 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     actorId: string;
     actorRole: "manager" | "employee";
     employeeName?: string;
+    reason?: string;
   }): Promise<{
     locationId: string | null;
     shiftDate: string;
@@ -6345,7 +6886,13 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     }
 
     const storedStatus = shift.confirmation_status ?? "confirmed";
-    if (!canCancelShiftByConfirmationStatus(storedStatus, shift.requested_at)) {
+    if (input.actorRole === "employee" && storedStatus !== "confirmed") {
+      throw new Error(shiftCancelBlockedActionError(storedStatus));
+    }
+    if (
+      input.actorRole === "manager" &&
+      !canCancelShiftByConfirmationStatus(storedStatus, shift.requested_at)
+    ) {
       throw new Error(shiftCancelBlockedActionError(storedStatus));
     }
 
@@ -6464,6 +7011,9 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       "Mitarbeiter";
 
     const now = new Date().toISOString();
+    const trimmedReason = input.reason?.trim().slice(0, 200);
+    const cancellationStartTime = shiftTimeFromTimestamp(shift.starts_at, timeZone);
+    const cancellationEndTime = shiftTimeFromTimestamp(shift.ends_at, timeZone);
 
     if (
       await hasOpenEmployeeCancellationRequest({
@@ -6472,6 +7022,32 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         shiftId: input.shiftId,
       })
     ) {
+      if (trimmedReason) {
+        const updated = await updateOpenEmployeeCancellationRequestReason({
+          client: this.client,
+          organizationId: input.organizationId,
+          shiftId: input.shiftId,
+          reason: trimmedReason,
+          now,
+        });
+        if (updated) {
+          await this.syncManagerEmployeeCancellationNotifications({
+            organizationId: input.organizationId,
+            shiftId: input.shiftId,
+            employeeId: shift.employee_id,
+            employeeName,
+            shiftDate: shift.shift_date,
+            reason: trimmedReason,
+            startTime: cancellationStartTime,
+            endTime: cancellationEndTime,
+          });
+          return {
+            locationId: shift.location_id,
+            shiftDate: shift.shift_date,
+            employeeId: shift.employee_id,
+          };
+        }
+      }
       throw new Error("Absage wurde bereits angefragt.");
     }
 
@@ -6481,37 +7057,24 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       shiftId: input.shiftId,
       actorId: input.actorId,
       now,
-      payload: { source: "mobile_cancel" },
+      payload: {
+        source: "mobile_cancel",
+        ...(trimmedReason
+          ? { reason: trimmedReason, cancellation_reason: trimmedReason }
+          : {}),
+      },
     });
 
-    const notification = buildManagerShiftCanceledNotification({
-      employeeName,
-      canceledBy: "employee",
-      shiftDate: shift.shift_date,
+    await this.syncManagerEmployeeCancellationNotifications({
+      organizationId: input.organizationId,
       shiftId: input.shiftId,
       employeeId: shift.employee_id,
+      employeeName,
+      shiftDate: shift.shift_date,
+      reason: trimmedReason,
+      startTime: cancellationStartTime,
+      endTime: cancellationEndTime,
     });
-
-    const managers = await this.listOrganizationProfiles(input.organizationId);
-    const managerRecipientIds = managers
-      .filter((profile) => profile.role === "admin" || profile.role === "manager")
-      .map((profile) => profile.id);
-
-    if (managerRecipientIds.length > 0) {
-      const { error: managerError } = await this.client
-        .from(T.managerNotifications)
-        .insert(
-          managerRecipientIds.map((recipientId) => ({
-            organization_id: input.organizationId,
-            recipient_profile_id: recipientId,
-            type: notification.type,
-            title: notification.title,
-            body: notification.body,
-            payload: notification.payload,
-          }))
-        );
-      if (managerError) throw new Error(managerError.message);
-    }
 
     return {
       locationId: shift.location_id,
@@ -6545,81 +7108,19 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error(SHIFT_CANCEL_PAST_ERROR);
     }
 
-    const { data: openRequest, error: requestError } = await this.client
-      .from(T.shiftRequests)
-      .select("id, payload")
-      .eq("organization_id", input.organizationId)
-      .eq("shift_id", input.shiftId)
-      .eq("type", "cancellation")
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const storedStatus = shift.confirmation_status ?? "confirmed";
+    const approved = await approveOpenEmployeeCancellationRequest({
+      client: this.client,
+      organizationId: input.organizationId,
+      shiftId: input.shiftId,
+      actorId: input.actorId,
+      fromConfirmationStatus: storedStatus,
+      source: "manager_resolve_reassign",
+    });
 
-    if (requestError) throw new Error(requestError.message);
-    if (!openRequest) {
+    if (!approved) {
       throw new Error("Keine offene Absage-Anfrage für diese Schicht.");
     }
-
-    const payload = openRequest.payload as { cancelled_by?: string } | null;
-    if (payload?.cancelled_by !== "employee") {
-      throw new Error("Keine offene Mitarbeiter-Absage für diese Schicht.");
-    }
-
-    const storedStatus = shift.confirmation_status ?? "confirmed";
-    const now = new Date().toISOString();
-
-    const { data: approvedRequest, error: approveRequestError } = await this.client
-      .from(T.shiftRequests)
-      .update({
-        status: "approved",
-        responded_at: now,
-        updated_at: now,
-      })
-      .eq("id", openRequest.id)
-      .eq("status", "pending")
-      .select("id")
-      .maybeSingle();
-
-    if (approveRequestError) throw new Error(approveRequestError.message);
-    if (!approvedRequest) {
-      throw new Error("Absage-Anfrage konnte nicht bestätigt werden.");
-    }
-
-    const { data: updated, error: updateError } = await this.client
-      .from(T.shifts)
-      .update({
-        confirmation_status: "canceled",
-        lifecycle_status: "cancelled",
-        confirmation_status_updated_at: now,
-        requested_at: null,
-        pending_since: null,
-        pending_reminder_sent_at: null,
-      })
-      .eq("id", input.shiftId)
-      .eq("organization_id", input.organizationId)
-      .select("id")
-      .maybeSingle();
-
-    if (updateError) throw new Error(updateError.message);
-    if (!updated) {
-      throw new Error("Schicht konnte nicht abgesagt werden.");
-    }
-
-    const { error: eventError } = await this.client
-      .from(T.shiftConfirmationEvents)
-      .insert({
-        organization_id: input.organizationId,
-        shift_id: input.shiftId,
-        actor_id: input.actorId,
-        from_status: storedStatus,
-        to_status: "canceled",
-        payload: {
-          canceled_by: "employee",
-          source: "manager_approve_cancellation",
-        },
-      });
-    if (eventError) throw new Error(eventError.message);
 
     return {
       locationId: shift.location_id,

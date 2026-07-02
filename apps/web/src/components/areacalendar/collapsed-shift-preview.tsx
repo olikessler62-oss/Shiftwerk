@@ -18,7 +18,7 @@ import {
   areaCalendarShiftCardListItemHeightPx,
 } from "@/lib/shift-card-row-layout";
 import { Tooltip, shiftCardTooltipContentClassName } from "@/components/ui/tooltip";
-import { cn } from "@/lib/cn";
+import { buildShiftCardStripGradientCss } from "@/lib/shift-card-time-gradient";
 import type { AreaCalendarAssignmentPreset } from "@/lib/areacalendar-assignment-presets";
 import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
 import { useTranslations } from "@/i18n/locale-provider";
@@ -380,6 +380,9 @@ export function CollapsedShiftPreview({
         }
 
         const color = resolvePreviewColor(shift, isPastDay, areaCollapsed);
+        const markerBackgroundStyle = isPastDay
+          ? { backgroundColor: color }
+          : { backgroundImage: buildShiftCardStripGradientCss(color, "to right") };
         const isSelected = selectedShiftId === shift.id;
         const onContextMenu = resolveShiftContextMenuHandler(shift);
         const shiftInteractive =
@@ -399,7 +402,7 @@ export function CollapsedShiftPreview({
           const marker = (
             <div
               className="h-full w-full"
-              style={{ backgroundColor: color }}
+              style={markerBackgroundStyle}
               aria-hidden
             />
           );
@@ -440,7 +443,7 @@ export function CollapsedShiftPreview({
                 left: marginLeftPx,
                 width: widthPx,
                 height: heightPx,
-                backgroundColor: color,
+                ...markerBackgroundStyle,
               }}
               aria-hidden
             />
@@ -452,7 +455,7 @@ export function CollapsedShiftPreview({
           width: widthPx > 0 ? widthPx : undefined,
           height: heightPx,
           minHeight: heightPx,
-          backgroundColor: color,
+          ...markerBackgroundStyle,
         };
 
         const markerClass = cn(

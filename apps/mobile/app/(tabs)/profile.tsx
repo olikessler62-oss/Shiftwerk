@@ -5,16 +5,16 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  Alert,
   ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
 import { getDatabase } from "@/lib/db";
-import { confirmAlert } from "@/lib/app-alert";
+import { useAppDialog } from "@/lib/use-app-dialog";
 import { colors, radius, spacing } from "@schichtwerk/ui-tokens";
 import type { Profile } from "@schichtwerk/types";
 
 export default function ProfileScreen() {
+  const { alert, confirm, dialog } = useAppDialog();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [email, setEmail] = useState("");
   const [savingEmail, setSavingEmail] = useState(false);
@@ -40,10 +40,11 @@ export default function ProfileScreen() {
   }
 
   async function confirmSignOut() {
-    const confirmed = await confirmAlert({
+    const confirmed = await confirm({
       title: "Abmelden",
       message: "Möchtest du dich abmelden?",
       confirmLabel: "Abmelden",
+      confirmDestructive: true,
     });
     if (confirmed) {
       await handleSignOut();
@@ -56,7 +57,10 @@ export default function ProfileScreen() {
     try {
       const result = await getDatabase().updateCurrentUserProfileEmail(email);
       if (!result.ok) {
-        Alert.alert("E-Mail konnte nicht geändert werden", result.error);
+        await alert({
+          title: "E-Mail konnte nicht geändert werden",
+          message: result.error,
+        });
         return;
       }
 
@@ -64,14 +68,18 @@ export default function ProfileScreen() {
       setEmail(result.profile.email);
 
       if (result.confirmationRequired) {
-        Alert.alert(
-          "Bestätigung erforderlich",
-          "Wir haben dir einen Link zur Bestätigung der neuen E-Mail-Adresse gesendet. Bis zur Bestätigung meldest du dich weiter mit der bisherigen Adresse an."
-        );
+        await alert({
+          title: "Bestätigung erforderlich",
+          message:
+            "Wir haben dir einen Link zur Bestätigung der neuen E-Mail-Adresse gesendet. Bis zur Bestätigung meldest du dich weiter mit der bisherigen Adresse an.",
+        });
         return;
       }
 
-      Alert.alert("Gespeichert", "Deine E-Mail-Adresse wurde aktualisiert.");
+      await alert({
+        title: "Gespeichert",
+        message: "Deine E-Mail-Adresse wurde aktualisiert.",
+      });
     } finally {
       setSavingEmail(false);
     }
@@ -132,6 +140,7 @@ export default function ProfileScreen() {
           <Text style={styles.buttonText}>Abmelden</Text>
         )}
       </Pressable>
+      {dialog}
     </View>
   );
 }

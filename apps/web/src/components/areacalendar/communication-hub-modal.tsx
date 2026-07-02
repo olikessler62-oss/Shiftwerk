@@ -111,7 +111,7 @@ export function CommunicationHubModal({
       closeDisabled={busy}
       closeAriaLabel={t("common.close")}
       panelClassName={cn(busy && "cursor-wait [&_*]:cursor-wait")}
-      bodyClassName="flex min-h-0 flex-col gap-4 overflow-hidden"
+      bodyClassName="gap-4"
       footer={
         shiftConfirmationEnabled ? (
           <div className={cn(PLANNING_SIDE_PANEL_FOOTER_CLASS, "justify-end")}>

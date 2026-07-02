@@ -474,6 +474,15 @@ export {
   resolveShiftCardDisplayState,
   resolveShiftLifecycleFromLegacy,
   hasPendingEmployeeCancellation,
+  readCancellationReasonFromPayload,
+  readRejectionReasonFromPayload,
+  readPendingEmployeeCancellationReasonFromRequests,
+  normalizeRecordPayload,
+  readEmployeeCancellationReasonFromRequestPayload,
+  readEmployeeRejectionReasonFromRequestPayload,
+  mapLatestEmployeeCancellationReasonsByShiftId,
+  mapLatestEmployeeRejectionReasonsByShiftId,
+  withCancellationReasonOnDisplayState,
   type ShiftDisplayInput,
   type ShiftRequestSummary,
 } from "./shift-display-state";
@@ -496,6 +505,7 @@ export {
   type EmployeeRespondableConfirmationStatus,
   type ShiftOpenForEmployeeResponse,
 } from "./shift-confirmation-respond";
+export { isEmployeeVisibleConfirmationStatus } from "./employee-shift-visibility";
 export {
   listShiftIdsSupersededByReject,
   shouldSupersedeOpenConfirmationShiftOnReject,
@@ -518,6 +528,10 @@ export { shiftsOverlapIso } from "./shift-overlap";
 export {
   buildEmployeeShiftCanceledByManagerNotification,
   buildManagerShiftCanceledNotification,
+  MANAGER_CANCELLATION_REASON_BODY_PREVIEW_MAX,
+  truncateCancellationReasonPreview,
+  parseCancellationReasonFromNotificationBody,
+  readCancellationReasonFromManagerNotification,
   canCancelShiftByConfirmationStatus,
   isShiftCancellableConfirmationStatus,
   isShiftDateInPast,
@@ -531,6 +545,12 @@ export {
   SHIFT_CANCELLABLE_CONFIRMATION_STATUSES,
   type ShiftCancellableConfirmationStatus,
 } from "./shift-cancellation";
+export {
+  approveOpenEmployeeCancellationRequest,
+  buildEmployeeShiftRemovedAfterOwnCancellationNotification,
+  shiftHasOpenEmployeeCancellationRequest,
+  type EmployeeCancellationResolutionSource,
+} from "./shift-employee-cancellation-resolve";
 export {
   assertCanConfirmPastShiftAsManager,
   canConfirmPastShiftAsManager,
@@ -558,6 +578,7 @@ export {
   syncShiftRequestsAfterCancellation,
   syncShiftRequestsAfterEmployeeCancellationRequest,
   hasOpenEmployeeCancellationRequest,
+  updateOpenEmployeeCancellationRequestReason,
   syncShiftRequestsAfterConfirmationExpired,
   syncShiftRequestsAfterConfirmationResent,
   syncShiftRequestsAfterConfirmationSent,

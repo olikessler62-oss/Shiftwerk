@@ -74,6 +74,10 @@ export const SHIFT_CONFIRMATION_CANCELED_TAB_LABEL_CLASS = "text-orange-700";
 
 export const SHIFT_CONFIRMATION_CANCELED_TOOLTIP_TEXT_CLASS = "text-orange-800";
 
+/** Tooltip-Status bei offener MA-Absage (Schicht faktisch noch bestätigt). */
+export const SHIFT_CONFIRMATION_EMPLOYEE_CANCELLATION_PENDING_TOOLTIP_TEXT_CLASS =
+  "text-orange-800";
+
 export const SHIFT_CONFIRMATION_UNRESOLVED_TOOLTIP_TEXT_CLASS = "text-neutral-600";
 
 export const SHIFT_CONFIRMATION_UNRESOLVED_TAB_LABEL_CLASS = "text-neutral-700";

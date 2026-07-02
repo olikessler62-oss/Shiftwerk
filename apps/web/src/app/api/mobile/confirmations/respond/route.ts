@@ -6,6 +6,23 @@ import {
   mobileApiOptionsResponse,
 } from "@/lib/mobile-api-cors";
 
+function parseOptionalRejectionReason(
+  row: Record<string, unknown>
+): string | undefined {
+  const candidates = [
+    row.reason,
+    row.rejection_reason,
+    row.rejectionReason,
+    row.message,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim().slice(0, 200);
+    }
+  }
+  return undefined;
+}
+
 function parseRespondBody(value: unknown): ConfirmationRespondBody | null {
   if (!value || typeof value !== "object") return null;
   const body = value as Record<string, unknown>;
@@ -16,10 +33,13 @@ function parseRespondBody(value: unknown): ConfirmationRespondBody | null {
     const row = entry as Record<string, unknown>;
     if (typeof row.shiftId !== "string") return [];
     if (row.decision !== "confirm" && row.decision !== "reject") return [];
+    const reason =
+      row.decision === "reject" ? parseOptionalRejectionReason(row) : undefined;
     return [
       {
         shiftId: row.shiftId,
         decision: row.decision as ConfirmationDecision,
+        ...(reason ? { reason } : {}),
       },
     ];
   });

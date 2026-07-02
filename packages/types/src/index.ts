@@ -83,6 +83,8 @@ export type ShiftCardDisplayState = {
     requestId: string;
     status: "pending" | "approved";
     cancelledBy?: ShiftRequestActorRole;
+    /** Optionaler Freitext aus shift_requests.payload.reason */
+    reason?: string;
   };
 };
 
@@ -460,6 +462,8 @@ export interface EmployeeWeekShiftDisplayItem {
 export interface ConfirmationRespondItem {
   shiftId: string;
   decision: ConfirmationDecision;
+  /** Optional bei Ablehnung (max. 200 Zeichen). */
+  reason?: string;
 }
 
 export interface ConfirmationRespondBody {

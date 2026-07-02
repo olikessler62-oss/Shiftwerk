@@ -11,7 +11,7 @@ import {
 import { removeShift } from "@/app/actions/shifts";
 import { AreaCalendarShiftDeleteConfirmModal } from "@/components/areacalendar/areacalendar-shift-delete-confirm-modal";
 import { ShiftCancelConfirmModal } from "@/components/shifts/shift-cancel-confirm-modal";
-import { Alert, Button, CloseIcon } from "@/components/ui";
+import { Alert, Button, CloseIcon, EphemeralFeedbackOverlay } from "@/components/ui";
 import {
   MODAL_SCROLLBAR_CLASS,
   settingsFixedNestedOverlayClass,
@@ -130,6 +130,7 @@ function isShiftActionDisabled(
         requestedAt: shift.requestedAt,
         isPastShiftDate: menuOptions.isPastShiftDate,
         pendingAfterMinutes: context.pendingAfterMinutes,
+        displayState: shift.displayState,
       });
     case "cancel":
       return !canCancelShift({
@@ -523,6 +524,10 @@ export function DashboardStaffingWindowIssuesModal({
 
   return createPortal(
     <>
+      <EphemeralFeedbackOverlay
+        message={successMessage}
+        onDismiss={() => setSuccessMessage(null)}
+      />
       <div
         className={settingsFixedNestedOverlayClass()}
         role="presentation"
@@ -563,12 +568,6 @@ export function DashboardStaffingWindowIssuesModal({
             {errorMessage ? (
               <Alert variant="error" className="mb-3">
                 {errorMessage}
-              </Alert>
-            ) : null}
-
-            {successMessage ? (
-              <Alert variant="success" className="mb-3">
-                {successMessage}
               </Alert>
             ) : null}
 
