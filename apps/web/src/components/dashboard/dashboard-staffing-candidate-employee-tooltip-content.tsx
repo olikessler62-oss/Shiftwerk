@@ -9,7 +9,11 @@ import type {
 } from "@/lib/dashboard-staffing-candidate-employee-tooltip";
 import {
   formatDashboardStaffingCandidateEmployeeTooltipSections,
+  formatAssignmentDurationTooltipLine,
+  formatAssignmentDurationProjectedWeeklyHoursSuffix,
+  appendAssignmentTimeWeeklyHoursSuffix,
   type DashboardStaffingCandidateEmployeeTooltipSections,
+  type PlanningEmployeeAssignmentTooltipSection,
 } from "@/lib/dashboard-staffing-candidate-employee-tooltip";
 import { absenceTypeLabelKey } from "@/lib/shift-absence-conflict";
 import { useTranslations, useLocale } from "@/i18n/locale-provider";
@@ -24,6 +28,7 @@ type Props = {
   error: boolean;
   qualifications: readonly Qualification[];
   weeklyHoursDisplay?: EmployeeWeeklyHoursDisplay | null;
+  weeklyHoursWeekDates?: readonly string[];
   className?: string;
 };
 
@@ -49,17 +54,50 @@ function TooltipSection({
   );
 }
 
+function assignmentSectionLinesWithWeeklyHoursOnTime(
+  section: PlanningEmployeeAssignmentTooltipSection,
+  weeklyHoursTotal: number | null | undefined,
+  weeklyHoursTarget: number | null | undefined
+): string[] {
+  if (section.lines.length === 0) return section.lines;
+
+  const lines = [...section.lines];
+  const timeLineIndex = lines.length - 1;
+  lines[timeLineIndex] = appendAssignmentTimeWeeklyHoursSuffix(
+    lines[timeLineIndex],
+    section.durationHours,
+    weeklyHoursTotal,
+    weeklyHoursTarget
+  );
+  return lines;
+}
+
 function AssignmentSection({
   label,
   offsetLabel,
   section,
   emptyLabel,
+  durationLine,
+  weeklyHoursTotal,
+  weeklyHoursTarget,
 }: {
   label: string;
   offsetLabel: string | null;
   section: PlanningEmployeeAssignmentTooltipSection | null;
   emptyLabel?: string;
+  durationLine?: string | null;
+  weeklyHoursTotal?: number | null;
+  weeklyHoursTarget?: number | null;
 }) {
+  const lines =
+    section && weeklyHoursTotal != null && weeklyHoursTarget != null
+      ? assignmentSectionLinesWithWeeklyHoursOnTime(
+          section,
+          weeklyHoursTotal,
+          weeklyHoursTarget
+        )
+      : section?.lines;
+
   return (
     <div>
       <p className="font-medium text-foreground">{label}</p>
@@ -67,8 +105,13 @@ function AssignmentSection({
         <p className="mt-0.5 text-muted-foreground">{offsetLabel}</p>
       ) : null}
       <div className="mt-0.5 text-muted-foreground">
-        {section ? (
-          <LineList lines={section.lines} />
+        {section && lines ? (
+          <>
+            <LineList lines={lines} />
+            {durationLine ? (
+              <p className="mt-0.5 tabular-nums">{durationLine}</p>
+            ) : null}
+          </>
         ) : emptyLabel ? (
           <span>{emptyLabel}</span>
         ) : null}
@@ -146,8 +189,10 @@ function TooltipBody({
   emptyAvailabilityLabel,
   lastAssignmentLabel,
   lastAssignmentOffsetLabel,
+  lastAssignmentDurationLine,
   nextAssignmentLabel,
   nextAssignmentOffsetLabel,
+  nextAssignmentDurationLine,
   noAssignmentYetLabel,
   wishesLabel,
 }: {
@@ -159,8 +204,10 @@ function TooltipBody({
   emptyAvailabilityLabel: string;
   lastAssignmentLabel: string;
   lastAssignmentOffsetLabel: string | null;
+  lastAssignmentDurationLine: string | null;
   nextAssignmentLabel: string;
   nextAssignmentOffsetLabel: string | null;
+  nextAssignmentDurationLine: string | null;
   noAssignmentYetLabel: string;
   wishesLabel: string;
 }) {
@@ -195,12 +242,18 @@ function TooltipBody({
         offsetLabel={lastAssignmentOffsetLabel}
         section={sections.lastPastAssignment}
         emptyLabel={noAssignmentYetLabel}
+        durationLine={lastAssignmentDurationLine}
+        weeklyHoursTotal={weeklyHoursDisplay?.totalHours}
+        weeklyHoursTarget={weeklyHoursDisplay?.targetHours}
       />
       {sections.nextFutureAssignment ? (
         <AssignmentSection
           label={nextAssignmentLabel}
           offsetLabel={nextAssignmentOffsetLabel}
           section={sections.nextFutureAssignment}
+          durationLine={nextAssignmentDurationLine}
+          weeklyHoursTotal={weeklyHoursDisplay?.totalHours}
+          weeklyHoursTarget={weeklyHoursDisplay?.targetHours}
         />
       ) : null}
       <TooltipSection label={wishesLabel}>
@@ -218,6 +271,7 @@ export function PlanningEmployeeTooltipContent({
   error,
   qualifications,
   weeklyHoursDisplay,
+  weeklyHoursWeekDates,
   className,
 }: Props) {
   const t = useTranslations();
@@ -232,6 +286,7 @@ export function PlanningEmployeeTooltipContent({
       locations: payload.locations,
       areas: payload.areas,
       todayISO,
+      weeklyHoursWeekDates,
       labels: {
         anyDay: t("profiles.shiftPreferenceAnyDay"),
         noTime: t("profiles.shiftPreferenceNoTime"),
@@ -242,7 +297,45 @@ export function PlanningEmployeeTooltipContent({
         absenceType: (type) => t(absenceTypeLabelKey(type)),
       },
     });
-  }, [payload, qualifications, intlLocale, todayISO, t]);
+  }, [payload, qualifications, intlLocale, todayISO, weeklyHoursWeekDates, t]);
+
+  const lastAssignmentDurationLine =
+    sections?.lastPastAssignment && sections.lastPastAssignment.durationHours > 0
+      ? formatAssignmentDurationTooltipLine(
+          sections.lastPastAssignment.durationHours,
+          intlLocale
+        )
+      : null;
+
+  const nextAssignmentProjectedWeeklyHoursSuffix =
+    sections?.nextFutureAssignment?.showProjectedWeeklyHours
+      ? formatAssignmentDurationProjectedWeeklyHoursSuffix(
+          sections.nextFutureAssignment.durationHours,
+          weeklyHoursDisplay?.totalHours,
+          weeklyHoursDisplay?.targetHours,
+          {
+            projectedLabel: (projected, target) =>
+              t("dashboard.staffingCandidatesTooltipAssignmentProjectedWeeklyHours", {
+                projected: String(projected),
+                target: String(target),
+              }),
+          }
+        )
+      : null;
+
+  const nextAssignmentDurationLine =
+    sections?.nextFutureAssignment &&
+    sections.nextFutureAssignment.durationHours > 0
+      ? [
+          formatAssignmentDurationTooltipLine(
+            sections.nextFutureAssignment.durationHours,
+            intlLocale
+          ),
+          nextAssignmentProjectedWeeklyHoursSuffix,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : null;
 
   const emptyAvailabilityLabel = t("profiles.emptyAvailability");
   const lastAssignmentOffsetLabel =
@@ -300,8 +393,10 @@ export function PlanningEmployeeTooltipContent({
         emptyAvailabilityLabel={emptyAvailabilityLabel}
         lastAssignmentLabel={t("dashboard.staffingCandidatesTooltipLastAssignment")}
         lastAssignmentOffsetLabel={lastAssignmentOffsetLabel}
+        lastAssignmentDurationLine={lastAssignmentDurationLine}
         nextAssignmentLabel={t("dashboard.staffingCandidatesTooltipNextAssignment")}
         nextAssignmentOffsetLabel={nextAssignmentOffsetLabel}
+        nextAssignmentDurationLine={nextAssignmentDurationLine}
         noAssignmentYetLabel={t("dashboard.staffingCandidatesTooltipNoAssignmentYet")}
         wishesLabel={t("dashboard.staffingCandidatesTooltipWishes")}
       />

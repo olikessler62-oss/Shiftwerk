@@ -15,6 +15,7 @@ type Props = {
   todayISO: string;
   qualifications: readonly Qualification[];
   weeklyHoursDisplay?: EmployeeWeeklyHoursDisplay | null;
+  weeklyHoursWeekDates?: readonly string[];
 };
 
 export function usePlanningEmployeeTooltipNode({
@@ -24,6 +25,7 @@ export function usePlanningEmployeeTooltipNode({
   todayISO,
   qualifications,
   weeklyHoursDisplay,
+  weeklyHoursWeekDates,
 }: Props): { activate: () => void; node: ReactNode } {
   const { activate, payload, loading, error } = usePlanningEmployeeTooltip(
     employeeId,
@@ -42,6 +44,7 @@ export function usePlanningEmployeeTooltipNode({
         error={error}
         qualifications={qualifications}
         weeklyHoursDisplay={weeklyHoursDisplay}
+        weeklyHoursWeekDates={weeklyHoursWeekDates}
       />
     ),
   };

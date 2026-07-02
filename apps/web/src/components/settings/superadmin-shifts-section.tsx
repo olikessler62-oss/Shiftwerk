@@ -21,6 +21,7 @@ import {
 } from "@schichtwerk/database";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 import {
+  SETTINGS_LIST_HEADER_BG_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
   settingsConfirmDialogClass,
   settingsModalFooterClass,
@@ -335,7 +336,7 @@ export function SuperadminShiftsSection({ disabled = false }: Props) {
           )}
         >
           <table className="w-full min-w-[52rem] text-left text-sm">
-            <thead className="sticky top-0 z-[1] bg-surface text-xs uppercase tracking-wide text-muted">
+            <thead className={cn("sticky top-0 z-[1] text-xs uppercase tracking-wide text-muted", SETTINGS_LIST_HEADER_BG_CLASS)}>
               <tr className="border-b border-border">
                 <th className="px-2 py-2 font-semibold">
                   {t("nav.superadminShiftColumnLocationArea")}

@@ -31,6 +31,7 @@ export async function loadManagerOrganization(
     industry: null,
     allow_retroactive_compensation_entries: true,
     show_compensation_in_planning_ui: true,
+    allow_past_shift_changes: false,
     shift_confirmation_enabled: false,
     auto_approve_sick_absence: true,
     shift_confirmation_disclaimer: null,

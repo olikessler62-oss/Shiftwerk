@@ -114,6 +114,8 @@ import {
   SHIFT_DISMISS_NOT_CANCELED_ERROR,
   shiftCancelBlockedActionError,
 } from "./shift-cancellation";
+import { shouldSuppressEmployeeShiftNotificationNow, isPlanningShiftMomentInPast } from "./past-shift-planning-policy";
+import { resolveOrganizationTimeZone } from "./organization-timezone";
 import { assertCanConfirmPastShiftAsManager } from "./shift-past-cleanup";
 import { buildSuperadminConfirmationStatusPatch } from "./superadmin-shift-confirmation";
 import type { SuperadminShiftRecord } from "./superadmin-shifts";
@@ -448,7 +450,7 @@ function mapEffectiveProfileCompensationSurcharge(
 const ORGANIZATION_SELECT_BASE =
   "id, name, timezone, country_code, planning_mode, industry, allow_retroactive_compensation_entries, shift_confirmation_enabled, auto_approve_sick_absence, shift_confirmation_disclaimer, shift_confirmation_pending_after_minutes, created_at";
 
-const ORGANIZATION_SELECT_WITH_COMPENSATION_UI = `${ORGANIZATION_SELECT_BASE}, show_compensation_in_planning_ui`;
+const ORGANIZATION_SELECT_WITH_COMPENSATION_UI = `${ORGANIZATION_SELECT_BASE}, show_compensation_in_planning_ui, allow_past_shift_changes`;
 
 export const ORGANIZATION_MIGRATION_SHOW_COMPENSATION_IN_PLANNING_UI =
   "ORGANIZATION_MIGRATION_SHOW_COMPENSATION_IN_PLANNING_UI";
@@ -473,6 +475,9 @@ function mapOrganizationRow(
     show_compensation_in_planning_ui: hasCompensationUiColumn
       ? ((data.show_compensation_in_planning_ui as boolean | null) ?? true)
       : true,
+    allow_past_shift_changes: hasCompensationUiColumn
+      ? ((data.allow_past_shift_changes as boolean | null) ?? false)
+      : false,
     shift_confirmation_enabled:
       (data.shift_confirmation_enabled as boolean | null) ?? false,
     auto_approve_sick_absence:
@@ -722,6 +727,17 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       }
       throw new Error(error.message);
     }
+  }
+
+  async updateOrganizationAllowPastShiftChanges(
+    organizationId: string,
+    allowed: boolean
+  ) {
+    const { error } = await this.client
+      .from(T.organizations)
+      .update({ allow_past_shift_changes: allowed })
+      .eq("id", organizationId);
+    if (error) throw new Error(error.message);
   }
 
   async updateOrganizationName(organizationId: string, name: string) {
@@ -5191,24 +5207,37 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     );
 
     if (!input.skipNotificationOutbox) {
-      const { error: outboxError } = await this.client
-        .from(T.notificationOutbox)
-        .insert({
-          organization_id: input.organizationId,
-          recipient_profile_id: input.employeeId,
-          channel,
-          template_key: templateKey,
-          payload: {
-            batch_id: batchId,
-            scope: input.scope,
-            week_start: input.weekStart,
-            week_end: input.weekEnd,
-            shift_count: sendable.length,
-            is_delta: isDelta,
+      const organization = await this.getOrganization(input.organizationId);
+      const timeZone = resolveOrganizationTimeZone(organization);
+      const suppressPastNotifications = sendable.some((shift) =>
+        shouldSuppressEmployeeShiftNotificationNow(
+          {
+            shiftDateISO: shift.shift_date,
+            startsAt: shift.starts_at,
           },
-          simulated: true,
-        });
-      if (outboxError) throw new Error(outboxError.message);
+          timeZone
+        )
+      );
+      if (!suppressPastNotifications) {
+        const { error: outboxError } = await this.client
+          .from(T.notificationOutbox)
+          .insert({
+            organization_id: input.organizationId,
+            recipient_profile_id: input.employeeId,
+            channel,
+            template_key: templateKey,
+            payload: {
+              batch_id: batchId,
+              scope: input.scope,
+              week_start: input.weekStart,
+              week_end: input.weekEnd,
+              shift_count: sendable.length,
+              is_delta: isDelta,
+            },
+            simulated: true,
+          });
+        if (outboxError) throw new Error(outboxError.message);
+      }
     }
 
     return {
@@ -5230,6 +5259,8 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
     const resendableStatuses = new Set(["requested", "pending", "rejected"]);
     let sentCount = 0;
     const failed: Array<{ shiftId: string; error: string }> = [];
+    const organization = await this.getOrganization(input.organizationId);
+    const timeZone = resolveOrganizationTimeZone(organization);
 
     for (const shiftId of input.shiftIds) {
       try {
@@ -5298,23 +5329,33 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         }
 
         const channel = resolveConfirmationNotificationChannel(profile);
-        const { error: outboxError } = await this.client
-          .from(T.notificationOutbox)
-          .insert({
-            organization_id: input.organizationId,
-            recipient_profile_id: shift.employee_id,
-            channel,
-            template_key: "confirmation_request_delta",
-            payload: {
-              shift_id: shiftId,
-              shift_date: shift.shift_date,
-              resend: true,
+        if (
+          !shouldSuppressEmployeeShiftNotificationNow(
+            {
+              shiftDateISO: shift.shift_date,
+              startsAt: shift.starts_at,
             },
-            simulated: true,
-          });
-        if (outboxError) {
-          failed.push({ shiftId, error: outboxError.message });
-          continue;
+            timeZone
+          )
+        ) {
+          const { error: outboxError } = await this.client
+            .from(T.notificationOutbox)
+            .insert({
+              organization_id: input.organizationId,
+              recipient_profile_id: shift.employee_id,
+              channel,
+              template_key: "confirmation_request_delta",
+              payload: {
+                shift_id: shiftId,
+                shift_date: shift.shift_date,
+                resend: true,
+              },
+              simulated: true,
+            });
+          if (outboxError) {
+            failed.push({ shiftId, error: outboxError.message });
+            continue;
+          }
         }
 
         sentCount += 1;
@@ -6275,8 +6316,19 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error("Schicht nicht gefunden.");
     }
 
-    if (isShiftDateInPast(shift.shift_date)) {
-      throw new Error(SHIFT_CANCEL_PAST_ERROR);
+    const organization = await this.getOrganization(input.organizationId);
+    const timeZone = resolveOrganizationTimeZone(organization);
+    const shiftInPast = isPlanningShiftMomentInPast(
+      { shiftDateISO: shift.shift_date, startsAt: shift.starts_at },
+      timeZone
+    );
+
+    if (shiftInPast) {
+      const allowPast =
+        input.actorRole === "manager" && input.allowPastShiftChanges === true;
+      if (!allowPast) {
+        throw new Error(SHIFT_CANCEL_PAST_ERROR);
+      }
     }
 
     const storedStatus = shift.confirmation_status ?? "confirmed";
@@ -6333,21 +6385,31 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
         const channel = resolveConfirmationNotificationChannel(
           employeeProfile ?? { email_fallback_mode: false }
         );
-        const { error: outboxError } = await this.client
-          .from(T.notificationOutbox)
-          .insert({
-            organization_id: input.organizationId,
-            recipient_profile_id: shift.employee_id,
-            channel,
-            template_key: notification.templateKey,
-            payload: {
-              ...notification.payload,
-              title: notification.title,
-              body: notification.body,
+        if (
+          !shouldSuppressEmployeeShiftNotificationNow(
+            {
+              shiftDateISO: shift.shift_date,
+              startsAt: shift.starts_at,
             },
-            simulated: employeeProfile?.app_registered_at == null,
-          });
-        if (outboxError) throw new Error(outboxError.message);
+            timeZone
+          )
+        ) {
+          const { error: outboxError } = await this.client
+            .from(T.notificationOutbox)
+            .insert({
+              organization_id: input.organizationId,
+              recipient_profile_id: shift.employee_id,
+              channel,
+              template_key: notification.templateKey,
+              payload: {
+                ...notification.payload,
+                title: notification.title,
+                body: notification.body,
+              },
+              simulated: employeeProfile?.app_registered_at == null,
+            });
+          if (outboxError) throw new Error(outboxError.message);
+        }
 
         const { error: eventError } = await this.client
           .from(T.shiftConfirmationEvents)
@@ -6459,8 +6521,19 @@ export class SupabaseSchichtwerkDatabase implements SchichtwerkDatabase {
       throw new Error("Schicht nicht gefunden.");
     }
 
-    if (isShiftDateInPast(shift.shift_date)) {
-      throw new Error(SHIFT_CANCEL_PAST_ERROR);
+    const organization = await this.getOrganization(input.organizationId);
+    const timeZone = resolveOrganizationTimeZone(organization);
+    const shiftInPast = isPlanningShiftMomentInPast(
+      { shiftDateISO: shift.shift_date, startsAt: shift.starts_at },
+      timeZone
+    );
+
+    if (shiftInPast) {
+      const allowPast =
+        input.actorRole === "manager" && input.allowPastShiftChanges === true;
+      if (!allowPast) {
+        throw new Error(SHIFT_CANCEL_PAST_ERROR);
+      }
     }
 
     const { data: openRequest, error: requestError } = await this.client

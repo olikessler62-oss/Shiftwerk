@@ -949,6 +949,9 @@ export const de = {
     showCompensationInPlanningLabel: "Entgelt & Zuschläge anzeigen",
     showCompensationInPlanningHint:
       "In Mitarbeiter-Kalender, Einsatzbereich-Kalender und Dashboard (Statuszeilen und Tooltips).",
+    allowPastShiftChangesLabel: "Schicht-Änderungen in Vergangenheit zulassen",
+    allowPastShiftChangesHint:
+      "Erlaubt Zuweisungen und Änderungen vergangener Schichten in den Planungs-Kalendern. Mitarbeiter erhalten dabei keine Benachrichtigungen.",
     absences: {
       title: "Abwesenheiten",
       column: "Abwesenheiten",
@@ -1268,6 +1271,11 @@ export const de = {
     ampelUnplannedShiftHint: "Sonder-einsatz (siehe Kalender)",
     ampelStaffingCandidatesButtonLabel: "Passende Mitarbeiter anzeigen",
     ampelStaffingAssignEmployeeTooltip: "Mitarbeiter zuweisen",
+    pastDayChangeConfirmTitle: "Vergangener Tag",
+    pastDayChangeConfirmMessage:
+      "Der Tag liegt in der Vergangenheit! Soll trotzdem eine Änderung vorgenommen werden?",
+    pastDayPlanningChangeBlocked:
+      "Keine Änderung zulässig, da Zeit in Vergangenheit liegt",
     staffingCandidatesModalTitle: "Personal vorschlagen",
     staffingCandidatesAssign: "Zuweisen",
     staffingCandidatesEmpty: "Kein passendes Personal für {qualification}.",
@@ -1300,6 +1308,8 @@ export const de = {
     staffingCandidatesTooltipNextAssignmentToday: "heute",
     staffingCandidatesTooltipNextAssignmentInOne: "in 1 Tag",
     staffingCandidatesTooltipNextAssignmentInDays: "in {days} Tagen",
+    staffingCandidatesTooltipAssignmentProjectedWeeklyHours:
+      "(anschl. {projected}/{target})",
     staffingCandidatesTooltipNoAssignmentYet: "noch kein Einsatz",
     staffingCandidatesTooltipWishTime: "Wunschzeit",
     staffingCandidatesTooltipWishLocation: "Wunschort",

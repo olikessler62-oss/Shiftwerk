@@ -1,6 +1,8 @@
 import { areaCalendarAssignmentPresetsForArea } from "@/lib/areacalendar-assignment-presets";
 import {
   computeBulkStaffingHeaderEntries,
+  computeBulkStaffingHeaderEntriesForShiftPriorityDay,
+  isShiftPriorityServiceHourId,
   staffingAssignmentsForAreaDay,
 } from "@/lib/bulk-staffing-header";
 import { personalbedarfDemandTimesForEntry } from "@/lib/bulk-shift-staffing";
@@ -88,6 +90,8 @@ export type DashboardStaffingWindowRow = {
   confirmationCounts?: DashboardStaffingWindowConfirmationCounts;
   /** Schichten trotz fehlender Servicezeit (nur `no_service_hours`). */
   hasUnplannedShifts?: boolean;
+  /** Tag ohne Servicezeit, aber mit Schichten — normale Zeilen + graue Markierung. */
+  noServiceHoursDay?: boolean;
 };
 
 export type DashboardStaffingIssueKind =
@@ -723,28 +727,14 @@ export function computeDashboardAreaWeekStats(
         area.id,
         dateISO
       );
-      const entries = computeBulkStaffingHeaderEntries({
-        staffingRules: rulesForDay,
-        areaId: area.id,
-        dateISO,
-        serviceHours,
-        assignments: staffingAssignmentsForAreaDay(areaShifts, dateISO, area.id),
-        assignmentPresets,
-        qualifications,
-        profileQualificationIds,
-        employeeNameById,
-        formatTimeLabel,
-        weekdayLabel,
-        formatCalendarTimeLabel,
-      });
-
       const weekdayLabelForRow = formatWeekdayLabel?.(dateISO) ?? dateISO;
+      const shiftsOnDay = areaShifts.filter(
+        (shift) => shift.shift_date === dateISO
+      );
+      const areaOpenOnDate = isAreaOpenOnDate(serviceHours, area.id, dateISO);
+      const noServiceHoursDay = !areaOpenOnDate && shiftsOnDay.length > 0;
 
-      if (!isAreaOpenOnDate(serviceHours, area.id, dateISO)) {
-        const shiftsOnDay = areaShifts.filter(
-          (shift) => shift.shift_date === dateISO
-        );
-        const hasUnplannedShifts = shiftsOnDay.length > 0;
+      if (!areaOpenOnDate && shiftsOnDay.length === 0) {
         staffingWindowRows.push({
           rowKind: "no_service_hours",
           dateISO,
@@ -753,13 +743,48 @@ export function computeDashboardAreaWeekStats(
           timeFrom: "",
           timeTo: "",
           shiftName: "",
-          assigned: hasUnplannedShifts ? shiftsOnDay.length : 0,
-          required: hasUnplannedShifts ? shiftsOnDay.length : 0,
+          assigned: 0,
+          required: 0,
           status: "met",
-          hasUnplannedShifts,
+          hasUnplannedShifts: false,
         });
         continue;
       }
+
+      const dayAssignments = staffingAssignmentsForAreaDay(
+        areaShifts,
+        dateISO,
+        area.id
+      );
+      const entries = noServiceHoursDay
+        ? computeBulkStaffingHeaderEntriesForShiftPriorityDay({
+            staffingRules: rulesForDay,
+            areaId: area.id,
+            dateISO,
+            serviceHours,
+            assignments: dayAssignments,
+            assignmentPresets,
+            qualifications,
+            profileQualificationIds,
+            employeeNameById,
+            formatTimeLabel,
+            weekdayLabel,
+            formatCalendarTimeLabel,
+          })
+        : computeBulkStaffingHeaderEntries({
+            staffingRules: rulesForDay,
+            areaId: area.id,
+            dateISO,
+            serviceHours,
+            assignments: dayAssignments,
+            assignmentPresets,
+            qualifications,
+            profileQualificationIds,
+            employeeNameById,
+            formatTimeLabel,
+            weekdayLabel,
+            formatCalendarTimeLabel,
+          });
 
       for (const entry of entries) {
         assignedTotal += entry.assigned;
@@ -809,6 +834,12 @@ export function computeDashboardAreaWeekStats(
 
         if (entry.required > 0) {
           const hour = serviceHours.find((item) => item.id === entry.serviceHourId);
+          const shiftPriorityPreset = isShiftPriorityServiceHourId(entry.serviceHourId)
+            ? assignmentPresets.find(
+                (preset) =>
+                  preset.id === entry.serviceHourId.slice("shift-priority:".length)
+              )
+            : null;
           const demandTimes =
             personalbedarfDemandTimesForEntry(
               entry.serviceHourId,
@@ -817,6 +848,13 @@ export function computeDashboardAreaWeekStats(
               rulesForDay,
               area.id
             ) ??
+            (shiftPriorityPreset
+              ? {
+                  startTime: shiftPriorityPreset.start_time.slice(0, 5),
+                  endTime: shiftPriorityPreset.end_time.slice(0, 5),
+                  serviceHourId: entry.serviceHourId,
+                }
+              : null) ??
             (hour?.start_time && hour?.end_time
               ? {
                   startTime: hour.start_time.slice(0, 5),
@@ -865,6 +903,7 @@ export function computeDashboardAreaWeekStats(
                 ? rowAssignmentIssues.hints
                 : undefined,
             confirmationCounts,
+            noServiceHoursDay: noServiceHoursDay || undefined,
           });
 
           if (rowAssignmentIssues.conflicts.length > 0) {

@@ -13,13 +13,17 @@ import {
   shiftDeleteBlockedActionError,
 } from "@/lib/shift-deletion-policy";
 import { shiftsOverlapIso } from "@/lib/shift-overlap";
+import type { Organization } from "@schichtwerk/types";
 import {
   DEFAULT_COUNTRY_CODE,
   getOrgFeaturesFromPlanningMode,
+  organizationTodayISO,
   resolveConfirmationAssignPatch,
   resolveEffectiveConfirmationStatus,
   resolveOrganizationShiftConfirmationPendingAfterMinutes,
   resolveOrganizationTimeZone,
+  shouldBlockPastPlanningShiftEdit,
+  type PlanningShiftMomentInput,
   validateEmployeeNotAbsentOnDate,
   validateProfileForShiftConfirmationAssign,
   validateRestPeriodForCountry,
@@ -659,7 +663,21 @@ async function persistShiftWithTimes(
   undoBatch.createdIds.push(id);
 }
 
+function isPlanningShiftMomentBlockedForOrg(
+  input: PlanningShiftMomentInput,
+  organization: Organization,
+  now: Date = new Date()
+): boolean {
+  return shouldBlockPastPlanningShiftEdit(
+    input,
+    resolveOrganizationTimeZone(organization),
+    organization.allow_past_shift_changes ?? false,
+    now
+  );
+}
+
 async function validateAssignContext(
+  organization: Organization,
   organizationId: string,
   employeeId: string,
   shiftDate: string,
@@ -667,10 +685,19 @@ async function validateAssignContext(
   locationAreaId: string | null,
   requireArea: boolean,
   shiftConfirmationEnabled: boolean,
-  relaxAppRegistrationGate = false
+  relaxAppRegistrationGate = false,
+  startTime?: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (isPastShiftDate(shiftDate)) {
-    return { ok: false, error: "Vergangene Tage können nicht mehr geplant werden." };
+  if (
+    isPlanningShiftMomentBlockedForOrg(
+      { shiftDateISO: shiftDate, startTime },
+      organization
+    )
+  ) {
+    return {
+      ok: false,
+      error: "Vergangene Schichten können nicht mehr geplant werden.",
+    };
   }
 
   const db = await getDatabase();
@@ -757,6 +784,7 @@ export async function assignShiftWithTimes(
       managerEmail: profile.email,
     });
     const context = await validateAssignContext(
+      organization,
       organizationId,
       input.employeeId,
       input.shiftDate,
@@ -764,7 +792,8 @@ export async function assignShiftWithTimes(
       input.locationAreaId,
       orgFeatures.areas,
       assignMode.shiftConfirmationEnabled,
-      assignMode.relaxAppRegistrationGate
+      assignMode.relaxAppRegistrationGate,
+      input.startTime
     );
     if (!context.ok) return context;
 
@@ -913,8 +942,16 @@ export async function assignShiftBatch(input: {
     const timeZone = resolveOrganizationTimeZone(organization);
     const db = await getDatabase();
 
-    if (isPastShiftDate(input.shiftDate)) {
-      return { ok: false, error: "Vergangene Tage können nicht mehr geplant werden." };
+    if (
+      isPlanningShiftMomentBlockedForOrg(
+        { shiftDateISO: input.shiftDate, startTime: input.rows[0]?.startTime },
+        organization
+      )
+    ) {
+      return {
+        ok: false,
+        error: "Vergangene Schichten können nicht mehr geplant werden.",
+      };
     }
 
     const locations = await db.listLocations(organizationId);
@@ -940,7 +977,15 @@ export async function assignShiftBatch(input: {
       if (shift.shift_date !== input.shiftDate) {
         return { ok: false, error: "Schicht gehört nicht zu diesem Tag" };
       }
-      if (isPastShiftDate(shift.shift_date)) {
+      if (
+        isPlanningShiftMomentBlockedForOrg(
+          {
+            shiftDateISO: shift.shift_date,
+            startsAt: shift.starts_at,
+          },
+          organization
+        )
+      ) {
         return {
           ok: false,
           error: "Vergangene Schichten können nicht mehr entfernt werden.",
@@ -999,6 +1044,7 @@ export async function assignShiftBatch(input: {
       }
 
       const context = await validateAssignContext(
+        organization,
         organizationId,
         row.employeeId,
         input.shiftDate,
@@ -1006,7 +1052,8 @@ export async function assignShiftBatch(input: {
         input.locationAreaId,
         true,
         assignMode.shiftConfirmationEnabled,
-        assignMode.relaxAppRegistrationGate
+        assignMode.relaxAppRegistrationGate,
+        row.startTime
       );
       if (!context.ok) {
         results.push({ rowIndex, ok: false, error: context.error });
@@ -1217,6 +1264,7 @@ export async function assignShiftBatch(input: {
       if (!snapshot) continue;
       const blockReason = resolveShiftDeletionBlockReason(
         snapshot,
+        organization,
         resolveOrganizationShiftConfirmationPendingAfterMinutes(organization)
       );
       if (blockReason) {
@@ -1377,24 +1425,40 @@ export async function undoLastShiftAssignBatch(): Promise<ShiftActionResult> {
 function resolveShiftDeletionBlockReason(
   shift: {
   shift_date: string;
+  starts_at?: string | null;
   confirmation_status?: import("@schichtwerk/types").ShiftConfirmationStatus;
   requested_at?: string | null;
 },
+  organization: Organization,
   pendingAfterMinutes?: number
 ): string | null {
+  const timeZone = resolveOrganizationTimeZone(organization);
+  const wallClock = shift.starts_at
+    ? shiftTimeFromTimestamp(shift.starts_at, timeZone)
+    : null;
+  const isPastShiftDateForOrg = (shiftDate: string, startTime?: string | null) =>
+    isPlanningShiftMomentBlockedForOrg(
+      {
+        shiftDateISO: shiftDate,
+        startTime: startTime ?? wallClock?.startTime,
+        startsAt: shift.starts_at,
+      },
+      organization
+    );
+
   if (
     canDeleteShift({
       shiftDate: shift.shift_date,
       confirmationStatus: shift.confirmation_status,
       requestedAt: shift.requested_at ?? null,
-      isPastShiftDate,
+      isPastShiftDate: isPastShiftDateForOrg,
       pendingAfterMinutes,
     })
   ) {
     return null;
   }
 
-  if (isPastShiftDate(shift.shift_date)) {
+  if (isPastShiftDateForOrg(shift.shift_date)) {
     return "Vergangene Schichten können nicht mehr entfernt werden.";
   }
 
@@ -1420,6 +1484,7 @@ export async function removeShift(shiftId: string): Promise<ShiftActionResult> {
     }
     const blockReason = resolveShiftDeletionBlockReason(
       shift,
+      organization,
       pendingAfterMinutes
     );
     if (blockReason) {
@@ -1478,6 +1543,7 @@ export async function removeShiftsAsManager(shiftIds: string[]): Promise<
       }
       const blockReason = resolveShiftDeletionBlockReason(
         shift,
+        organization,
         pendingAfterMinutes
       );
       if (blockReason) {

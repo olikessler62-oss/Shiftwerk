@@ -8,6 +8,7 @@ import {
 } from "@/lib/available-employees-for-shift";
 import {
   computeBulkStaffingHeaderEntries,
+  computeBulkStaffingHeaderEntriesForShiftPriorityDay,
   staffingAssignmentsForAreaDay,
 } from "@/lib/bulk-staffing-header";
 import { resolveRemainingQualificationNeed, resolveRemainingStaffingNeed } from "@/lib/bulk-shift-staffing";
@@ -177,7 +178,30 @@ function findStaffingEntryForRow(
     formatCalendarTimeLabel: input.formatCalendarTimeLabel,
   });
 
-  return entries.find((entry) => entry.serviceHourId === input.serviceHourId) ?? null;
+  const matched =
+    entries.find((entry) => entry.serviceHourId === input.serviceHourId) ?? null;
+  if (matched) return matched;
+
+  const shiftPriorityEntries = computeBulkStaffingHeaderEntriesForShiftPriorityDay({
+    staffingRules: rulesForDay,
+    areaId: input.areaId,
+    dateISO: input.dateISO,
+    serviceHours: input.serviceHours,
+    assignments: staffingAssignmentsForAreaDay(areaShifts, input.dateISO, input.areaId),
+    assignmentPresets: input.assignmentPresets,
+    qualifications: input.qualifications,
+    profileQualificationIds: input.profileQualificationIds,
+    employeeNameById: input.employeeNameById,
+    formatTimeLabel: input.formatTimeLabel,
+    weekdayLabel: input.weekdayLabel,
+    formatCalendarTimeLabel: input.formatCalendarTimeLabel,
+  });
+
+  return (
+    shiftPriorityEntries.find(
+      (entry) => entry.serviceHourId === input.serviceHourId
+    ) ?? null
+  );
 }
 
 export function computeDashboardStaffingCandidateSlots(

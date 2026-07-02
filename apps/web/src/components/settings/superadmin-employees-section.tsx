@@ -10,6 +10,7 @@ import { Alert } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
+  SETTINGS_LIST_HEADER_BG_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
   settingsResponsiveTableWrapClass,
 } from "./settings-list-ui";
@@ -146,7 +147,7 @@ export function SuperadminEmployeesSection({ disabled = false }: Props) {
       {profiles.length > 0 ? (
         <div className={cn(settingsResponsiveTableWrapClass(), SETTINGS_PROFILES_LIST_SCROLL_CLASS, "overflow-auto")}>
           <table className="w-full min-w-[36rem] text-left text-sm">
-            <thead className="sticky top-0 z-[1] bg-surface text-xs uppercase tracking-wide text-muted">
+            <thead className={cn("sticky top-0 z-[1] text-xs uppercase tracking-wide text-muted", SETTINGS_LIST_HEADER_BG_CLASS)}>
               <tr className="border-b border-border">
                 <th className="px-2 py-2 font-semibold">{t("nav.superadminEmployeeColumnName")}</th>
                 <th className="px-2 py-2 font-semibold">{t("nav.superadminEmployeeColumnRole")}</th>

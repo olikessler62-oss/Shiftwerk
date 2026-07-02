@@ -90,6 +90,22 @@ export async function updateOrganizationAllowRetroactiveCompensationEntries(
   }
 }
 
+export async function updateOrganizationAllowPastShiftChanges(
+  allowed: boolean
+): Promise<OrganizationActionResult> {
+  try {
+    const { organizationId } = await requireManager();
+    const db = await getDatabase();
+    await db.updateOrganizationAllowPastShiftChanges(organizationId, allowed);
+
+    revalidateOrganizationDependentPaths();
+
+    return { ok: true };
+  } catch {
+    return { ok: false, errorKey: "organization.errors.saveFailed" };
+  }
+}
+
 export async function updateOrganizationShowCompensationInPlanningUi(
   enabled: boolean
 ): Promise<OrganizationActionResult> {

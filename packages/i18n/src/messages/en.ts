@@ -947,6 +947,9 @@ export const en = {
     showCompensationInPlanningLabel: "Show pay & surcharges",
     showCompensationInPlanningHint:
       "In employee calendar, site calendar, and dashboard (status lines and tooltips).",
+    allowPastShiftChangesLabel: "Allow past shift changes",
+    allowPastShiftChangesHint:
+      "Allows assigning and editing past shifts in planning calendars. Employees will not receive notifications for these changes.",
     absences: {
       title: "Absences",
       column: "Absences",
@@ -1236,6 +1239,11 @@ export const en = {
     ampelUnplannedShiftHint: "Special assignment (see calendar)",
     ampelStaffingCandidatesButtonLabel: "Show suitable employees",
     ampelStaffingAssignEmployeeTooltip: "Assign employee",
+    pastDayChangeConfirmTitle: "Past day",
+    pastDayChangeConfirmMessage:
+      "This day is in the past. Proceed with the change anyway?",
+    pastDayPlanningChangeBlocked:
+      "No changes allowed because the time is in the past",
     staffingCandidatesModalTitle: "Suggest staff",
     staffingCandidatesAssign: "Assign",
     staffingCandidatesEmpty: "No suitable staff for {qualification}.",
@@ -1268,6 +1276,8 @@ export const en = {
     staffingCandidatesTooltipNextAssignmentToday: "today",
     staffingCandidatesTooltipNextAssignmentInOne: "in 1 day",
     staffingCandidatesTooltipNextAssignmentInDays: "in {days} days",
+    staffingCandidatesTooltipAssignmentProjectedWeeklyHours:
+      "(after {projected}/{target})",
     staffingCandidatesTooltipNoAssignmentYet: "No assignment yet",
     staffingCandidatesTooltipWishTime: "Preferred time",
     staffingCandidatesTooltipWishLocation: "Preferred location",

@@ -19,6 +19,7 @@ type Props = {
   ariaLabel: string;
   onClick?: () => void;
   className?: string;
+  disabled?: boolean;
 };
 
 function StaffingRowActionIcon({
@@ -42,20 +43,27 @@ export function DashboardStaffingRowCandidatesButton({
   ariaLabel,
   onClick,
   className,
+  disabled = false,
 }: Props) {
   return (
     <button
       type="button"
+      disabled={disabled}
       className={cn(
         DASHBOARD_STAFFING_ROW_ACTION_SLOT_CLASS,
-        "cursor-pointer rounded-md transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1",
-        variant === "candidates"
-          ? cn(DASHBOARD_STAFFING_VACANCY_SILHOUETTE_CLASS, "hover:opacity-80")
-          : "text-foreground/80 hover:text-foreground",
+        "rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1",
+        disabled
+          ? "cursor-not-allowed opacity-45"
+          : "cursor-pointer hover:bg-muted/35",
+        !disabled &&
+          (variant === "candidates"
+            ? cn(DASHBOARD_STAFFING_VACANCY_SILHOUETTE_CLASS, "hover:opacity-80")
+            : "text-foreground/80 hover:text-foreground"),
         className
       )}
       aria-label={ariaLabel}
       onClick={(event) => {
+        if (disabled) return;
         event.preventDefault();
         event.stopPropagation();
         onClick?.();

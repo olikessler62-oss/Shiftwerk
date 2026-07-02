@@ -73,12 +73,15 @@ import {
 import { staffingRulesWithOverridesForAreaDate } from "@/lib/staffing-rules-with-overrides";
 import { presetQualificationForServiceHour } from "@/lib/bulk-shift-qualification";
 import { resolveOpenDemandShiftPrefill } from "@/lib/bulk-shift-staffing";
-import { isPastShiftDate } from "@/lib/planning-readonly";
+import {
+  isPlanningReadOnlyWeek,
+} from "@/lib/planning-readonly";
+import { createPlanningPastShiftChecker } from "@/lib/planning-past-shift-time";
 import { clearDocumentTextSelection } from "@/lib/calendar-interaction-ui";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures, useOrganization, useShiftConfirmationPendingAfterMinutes, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
-import { organizationTodayISO } from "@schichtwerk/database";
+import { useAllowPastShiftChanges, useOrgFeatures, useOrganization, useShiftConfirmationPendingAfterMinutes, useShowCompensationInPlanningUi } from "@/lib/org-features-provider";
+import { organizationTodayISO, resolveOrganizationTimeZone } from "@schichtwerk/database";
 import {
   weeklyHoursByEmployeeIdFromEmployees,
   weeklyHoursCheckShiftFromPlanningShift,
@@ -448,6 +451,19 @@ export function DashboardView({
   const features = useOrgFeatures();
   const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const organization = useOrganization();
+  const allowPastShiftChanges = useAllowPastShiftChanges();
+  const planningIsPastShiftDate = useMemo(
+    () =>
+      createPlanningPastShiftChecker(
+        allowPastShiftChanges,
+        resolveOrganizationTimeZone(organization)
+      ).isPastShiftDate,
+    [allowPastShiftChanges, organization]
+  );
+  const planningReadOnlyWeek = isPlanningReadOnlyWeek(
+    readOnlyWeek,
+    allowPastShiftChanges
+  );
   const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
@@ -1351,16 +1367,22 @@ export function DashboardView({
 
   const getShiftCardMenuOptions = useCallback(
     (
-      shift: { id: string; shift_date: string; displayState?: PlanningShift["displayState"] },
+      shift: {
+        id: string;
+        shift_date: string;
+        startTime?: string;
+        displayState?: PlanningShift["displayState"];
+      },
       cellDate?: string
     ) => ({
       shiftDate: shift.shift_date,
       cellDate: cellDate ?? shift.shift_date,
-      isPastShiftDate,
+      isPastShiftDate: planningIsPastShiftDate,
+      shiftStartTime: shift.startTime,
       displayState: shift.displayState,
       hasAbsenceConflict: absenceConflictShiftIds.has(shift.id),
     }),
-    [absenceConflictShiftIds]
+    [absenceConflictShiftIds, planningIsPastShiftDate]
   );
 
   const communicationItemCount = useMemo(
@@ -1454,7 +1476,7 @@ export function DashboardView({
   });
 
   function isDayReadOnly(date: string) {
-    return readOnlyWeek || isPastShiftDate(date);
+    return planningReadOnlyWeek || planningIsPastShiftDate(date);
   }
 
   function applyPreset(preset: AreaCalendarAssignmentPreset) {
@@ -1489,7 +1511,7 @@ export function DashboardView({
           displayState: existing.displayState,
         },
         date,
-        isPastShiftDate,
+        planningIsPastShiftDate,
         {
           shiftConfirmationEnabled,
           hasAbsenceConflict: absenceConflictShiftIds.has(existing.id),
@@ -1795,7 +1817,7 @@ export function DashboardView({
         shiftDate: shift.shift_date,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
-        isPastShiftDate,
+        isPastShiftDate: planningIsPastShiftDate,
         pendingAfterMinutes,
       });
     if (picker && isDayReadOnly(picker.date) && !canDelete) {
@@ -1922,7 +1944,7 @@ export function DashboardView({
 
   const canOpenCellAssignContextMenu = useCallback(
     (employeeId: string, date: string) => {
-      if (!assignAreaId || isPastShiftDate(date)) return false;
+      if (!assignAreaId || planningIsPastShiftDate(date)) return false;
       const cellSegments =
         shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
       if (
@@ -1978,7 +2000,7 @@ export function DashboardView({
 
   const canOpenDayAssignContextMenu = useCallback(
     (date: string) => {
-      if (!assignAreaId || isPastShiftDate(date)) return false;
+      if (!assignAreaId || planningIsPastShiftDate(date)) return false;
       const isDayExpanded = layoutActiveDayDates.has(date);
       const shiftCountInArea = countShiftsInAreaOnDate(date);
       const isAssignDayActive = isAreaCalendarAssignDayActive(
@@ -2056,7 +2078,7 @@ export function DashboardView({
 
   const handleDayAssignClick = useCallback(
     (date: string, clientX: number, clientY: number) => {
-      if (!assignAreaId || isPastShiftDate(date)) return;
+      if (!assignAreaId || planningIsPastShiftDate(date)) return;
       ensureAssignDayActive(date);
 
       const shiftCountInArea = countShiftsInAreaOnDate(date);
@@ -2168,7 +2190,7 @@ export function DashboardView({
 
   const handleCellContextMenu = useCallback(
     (employeeId: string, date: string, clientX: number, clientY: number) => {
-      if (isPastShiftDate(date)) return;
+      if (planningIsPastShiftDate(date)) return;
       if (
         isEmployeeAbsentOnDate(employeeId, absences, date) &&
         (shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? []).length === 0
@@ -2202,7 +2224,7 @@ export function DashboardView({
 
   const handleStaffingHeaderContextMenu = useCallback(
     (date: string, clientX: number, clientY: number) => {
-      if (!selectedAreaId || readOnlyWeek || isPastShiftDate(date)) return;
+      if (!selectedAreaId || planningReadOnlyWeek || planningIsPastShiftDate(date)) return;
       const entries = dailyStaffingByDate.get(date) ?? [];
       if (entries.length === 0) return;
       setCellContextMenu(null);
@@ -2523,7 +2545,7 @@ export function DashboardView({
       shiftDate: shift.shift_date,
       confirmationStatus: shift.confirmationStatus,
       requestedAt: shift.requestedAt,
-      isPastShiftDate,
+      isPastShiftDate: planningIsPastShiftDate,
       pendingAfterMinutes,
     });
     if (isDayReadOnly(cellContextMenu.date) && !canDelete) return;
@@ -2593,10 +2615,10 @@ export function DashboardView({
         shiftDate: shift.shift_date,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
-        isPastShiftDate,
+        isPastShiftDate: planningIsPastShiftDate,
       })
     ) {
-      if (isPastShiftDate(shift.shift_date)) {
+      if (planningIsPastShiftDate(shift.shift_date)) {
         setCancelShiftError(translateShiftCancelError(SHIFT_CANCEL_PAST_ERROR, t));
       } else {
         setCancelShiftError(
@@ -2925,6 +2947,7 @@ export function DashboardView({
             absenceConflictShiftIds={absenceConflictShiftIds}
             swapRequestShiftIds={swapRequestShiftIds}
             shiftConfirmationEnabled={shiftConfirmationEnabled}
+            isPastShiftDate={planningIsPastShiftDate}
           />
           </div>
         </div>
@@ -2997,7 +3020,7 @@ export function DashboardView({
                             shiftDate: contextMenuShift.shift_date,
                             confirmationStatus: contextMenuShift.confirmationStatus,
                             requestedAt: contextMenuShift.requestedAt,
-                            isPastShiftDate,
+                            isPastShiftDate: planningIsPastShiftDate,
                             pendingAfterMinutes,
                           })
                         ))) ||

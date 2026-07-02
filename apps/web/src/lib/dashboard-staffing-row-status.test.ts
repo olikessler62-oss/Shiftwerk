@@ -7,9 +7,11 @@ import {
   resolveStaffingWindowDisplayLineActions,
   resolveStaffingWindowDisplayLinePrimaryAction,
   resolveStaffingWindowRowCompactPrimaryAction,
+  resolveStaffingWindowTableRowAction,
   resolveStaffingWindowRowDisplayLines,
   staffingWindowRowsHaveDetailsPerStatusSplit,
   staffingWindowDisplayLineCountClassName,
+  staffingWindowRowShowsCandidatesButton,
   staffingWindowRowShowsOnlyOpenSlots,
   staffingWindowRowStatusLabelKey,
 } from "./dashboard-staffing-row-status";
@@ -29,6 +31,64 @@ const baseRow: DashboardStaffingWindowRow = {
 };
 
 describe("dashboard-staffing-row-status", () => {
+  it("shows candidates button for any open slot on a future day", () => {
+    expect(
+      staffingWindowRowShowsCandidatesButton(
+        { ...baseRow, status: "planned", assigned: 1, required: 2 },
+        "2026-06-17"
+      )
+    ).toBe(true);
+    expect(
+      staffingWindowRowShowsCandidatesButton(
+        { ...baseRow, assigned: 2, required: 2, status: "met" },
+        "2026-06-17"
+      )
+    ).toBe(false);
+  });
+
+  it("shows candidates button on past days when open slots exist", () => {
+    expect(
+      staffingWindowRowShowsCandidatesButton(
+        { ...baseRow, dateISO: "2026-06-15", assigned: 0, required: 1 },
+        "2026-06-17"
+      )
+    ).toBe(true);
+  });
+
+  it("falls back to candidates for past-day display lines with open gaps", () => {
+    const row: DashboardStaffingWindowRow = {
+      ...baseRow,
+      dateISO: "2026-06-15",
+      assigned: 0,
+      required: 1,
+      status: "understaffed",
+    };
+
+    expect(
+      resolveStaffingWindowTableRowAction(
+        row,
+        { kind: "single", assigned: 0, required: 1 },
+        "2026-06-17",
+        true,
+        true
+      )
+    ).toBe("candidates");
+  });
+
+  it("falls back to candidates when the display line shows an open gap", () => {
+    const row: DashboardStaffingWindowRow = {
+      ...baseRow,
+      assigned: 2,
+      required: 2,
+      status: "met",
+    };
+    const line = { kind: "single" as const, assigned: 0, required: 1 };
+
+    expect(
+      resolveStaffingWindowTableRowAction(row, line, "2026-06-17", true, true)
+    ).toBe("candidates");
+  });
+
   it("maps staffing window status to existing i18n keys", () => {
     expect(staffingWindowRowStatusLabelKey("understaffed")).toBe(
       "dashboard.areaAssignmentOverviewWindowStatusUnderstaffed"
@@ -422,6 +482,21 @@ describe("dashboard-staffing-row-status", () => {
         t
       )
     ).toBe("areaCalendar.staffingTooltipTotalPlanned:1/2");
+  });
+
+  it("shows candidates for understaffed shift-priority day rows", () => {
+    const row: DashboardStaffingWindowRow = {
+      ...baseRow,
+      noServiceHoursDay: true,
+      assigned: 0,
+      required: 1,
+      status: "understaffed",
+      confirmedAssigned: 0,
+    };
+
+    expect(
+      resolveStaffingWindowRowCompactPrimaryAction(row, "2026-06-17", true, true)
+    ).toBe("candidates");
   });
 
   it("uses candidates in single-row mode for any understaffed open gap", () => {

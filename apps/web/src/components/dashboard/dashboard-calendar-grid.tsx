@@ -9,7 +9,6 @@ import { DashboardDayColumnWidthReporter } from "@/components/dashboard/dashboar
 import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
 import { Tooltip, employeeAvailabilityTooltipContentClassName, employeeAvailabilityTooltipPlacement, EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS } from "@/components/ui/tooltip";
 import { isPastCalendarDate } from "@/lib/dates";
-import { isPastShiftDate } from "@/lib/planning-readonly";
 import { canOpenShiftCardContextMenu } from "@/lib/shift-card-context-menu-actions";
 import { cn } from "@/lib/cn";
 import {
@@ -98,6 +97,7 @@ function DashboardCalendarEmployeeNameCell({
   referenceDateISO,
   qualifications,
   weeklyHoursTooltipDisplay,
+  weeklyHoursWeekDates,
   weeklyHoursCardLabel,
   overHours,
   isLastEmployee,
@@ -111,6 +111,7 @@ function DashboardCalendarEmployeeNameCell({
   referenceDateISO: string;
   qualifications: readonly Qualification[];
   weeklyHoursTooltipDisplay: EmployeeWeeklyHoursDisplay | null;
+  weeklyHoursWeekDates: readonly string[];
   weeklyHoursCardLabel: string;
   overHours: boolean;
   isLastEmployee: boolean;
@@ -131,6 +132,7 @@ function DashboardCalendarEmployeeNameCell({
     todayISO: referenceDateISO,
     qualifications,
     weeklyHoursDisplay: weeklyHoursTooltipDisplay,
+    weeklyHoursWeekDates,
   });
   const employeeColor = employee.color?.trim() || EMPLOYEE_COLOR_FALLBACK;
 
@@ -314,6 +316,7 @@ type Props = {
   weeklyHoursTooltipDisplayByEmployeeId?: ReadonlyMap<string, EmployeeWeeklyHoursDisplay>;
   weeklyHoursCardLabelsByEmployeeId?: ReadonlyMap<string, string>;
   weeklyHoursOverLimitByEmployeeId?: ReadonlyMap<string, boolean>;
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean;
 };
 
 function dayHeaderColumnDivider(dayIndex: number, totalDays: number) {
@@ -392,6 +395,7 @@ export function DashboardCalendarGrid({
   weeklyHoursTooltipDisplayByEmployeeId,
   weeklyHoursCardLabelsByEmployeeId,
   weeklyHoursOverLimitByEmployeeId,
+  isPastShiftDate,
 }: Props) {
   const [dayColumnInnerWidthPxByDate, setDayColumnInnerWidthPxByDate] =
     useState<Map<string, number>>(() => new Map());
@@ -755,6 +759,7 @@ export function DashboardCalendarGrid({
                 referenceDateISO={todayISO}
                 qualifications={qualifications}
                 weeklyHoursTooltipDisplay={weeklyHoursTooltipDisplay}
+                weeklyHoursWeekDates={dates}
                 weeklyHoursCardLabel={weeklyHoursCardLabel}
                 overHours={overHours}
                 isLastEmployee={isLastEmployee}
@@ -831,6 +836,7 @@ export function DashboardCalendarGrid({
                         isDayReadOnly,
                         pastUnconfirmedMenu: {
                           shiftDate: overnightSpanOnCell.shift.shift_date,
+                          shiftStartTime: overnightSpanOnCell.shift.startTime,
                           isPastShiftDate,
                           displayState: overnightSpanOnCell.shift.displayState,
                         },
@@ -969,6 +975,7 @@ export function DashboardCalendarGrid({
                                   {
                                     shiftDate: segment.shift.shift_date,
                                     cellDate: date,
+                                    shiftStartTime: segment.shift.startTime,
                                     isPastShiftDate,
                                     displayState: segment.shift.displayState,
                                   }
@@ -1175,8 +1182,9 @@ export function DashboardCalendarGrid({
                     );
                   }}
                   highlightedEmployeeId={highlightedEmployeeId}
-                  shiftConfirmationEnabled={shiftConfirmationEnabled}
-                />
+                      shiftConfirmationEnabled={shiftConfirmationEnabled}
+                      isPastShiftDate={isPastShiftDate}
+                    />
               ) : null}
             </div>
           );

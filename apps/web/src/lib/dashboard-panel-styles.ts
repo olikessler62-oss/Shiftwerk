@@ -13,7 +13,7 @@ export const DASHBOARD_MODAL_ROUNDED_CLASS = cn(
 );
 
 /** Drilldown-Bereichskarten + Wochenübersicht-Tagkarten — einheitlicher Kopf. */
-export const DASHBOARD_AREA_CARD_HEADER_SURFACE_CLASS = "bg-[#c7d4e5]";
+export const DASHBOARD_AREA_CARD_HEADER_SURFACE_CLASS = "panel-surface-header-bg";
 export const DASHBOARD_AREA_CARD_HEADER_BORDER_CLASS = "border-b border-[#5c6678]";
 /** Typo auf Drilldown-Kopfzeilen — Modal-Slot-Titel. */
 export const DASHBOARD_AREA_CARD_HEADER_FOREGROUND = "#273b55";

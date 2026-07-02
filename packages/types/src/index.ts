@@ -114,6 +114,8 @@ export interface Organization {
   allow_retroactive_compensation_entries: boolean;
   /** Entgelt/Zuschläge in Kalendern und Dashboard anzeigen. */
   show_compensation_in_planning_ui: boolean;
+  /** Vergangene Schichten in Planungs-UI bearbeiten (ohne MA-Benachrichtigung). */
+  allow_past_shift_changes: boolean;
   /** Schichtbestätigung durch Mitarbeiter (Default aus). */
   shift_confirmation_enabled: boolean;
   /** MA-Krankmeldung wird sofort genehmigt (Default an). */

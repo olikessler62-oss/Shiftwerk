@@ -79,7 +79,9 @@ import {
   translatePastConfirmError,
   translateShiftCancelError,
 } from "@/lib/shift-cancellation-policy";
-import { isPastShiftDate } from "@/lib/planning-readonly";
+import { createPlanningPastShiftChecker, planningMomentFromStaffingRow } from "@/lib/planning-past-shift-time";
+import { useAllowPastShiftChanges, useOrganization } from "@/lib/org-features-provider";
+import { resolveOrganizationTimeZone } from "@schichtwerk/database";
 import { resolveSingleActiveAreaIds } from "@/lib/resolve-areacalendar-location";
 import { resolveAreaCalendarLocationServiceDayTimeline } from "@/lib/areacalendar-service-day-timeline";
 import {
@@ -454,6 +456,16 @@ export function AreaCalendar({
   onActiveDayDatesChange,
 }: Props) {
   const router = useRouter();
+  const organization = useOrganization();
+  const allowPastShiftChanges = useAllowPastShiftChanges();
+  const planningIsPastShiftDate = useMemo(
+    () =>
+      createPlanningPastShiftChecker(
+        allowPastShiftChanges,
+        resolveOrganizationTimeZone(organization)
+      ).isPastShiftDate,
+    [allowPastShiftChanges, organization]
+  );
   const { locale } = useLocale();
   const localeKey = locale === "en" ? "en" : "de";
   const t = useTranslations();
@@ -1027,7 +1039,7 @@ export function AreaCalendar({
         const menuOptions = {
           shiftDate: shift.shift_date,
           cellDate: openContext.date,
-          isPastShiftDate,
+          isPastShiftDate: planningIsPastShiftDate,
           displayState: shift.displayState,
         };
         if (
@@ -1077,7 +1089,7 @@ export function AreaCalendar({
         shiftDate: shift.shift_date,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
-        isPastShiftDate,
+        isPastShiftDate: planningIsPastShiftDate,
         pendingAfterMinutes,
       })
     ) {
@@ -1117,10 +1129,10 @@ export function AreaCalendar({
         shiftDate: shift.shift_date,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
-        isPastShiftDate,
+        isPastShiftDate: planningIsPastShiftDate,
       })
     ) {
-      if (isPastShiftDate(shift.shift_date)) {
+      if (planningIsPastShiftDate(shift.shift_date)) {
         setCancelShiftError(
           translateShiftCancelError(SHIFT_CANCEL_PAST_ERROR, t)
         );
@@ -1495,7 +1507,7 @@ export function AreaCalendar({
           displayState: shift.displayState,
         },
         date,
-        isPastShiftDate,
+        planningIsPastShiftDate,
         {
           shiftConfirmationEnabled,
           hasSwapRequest: swapRequestShiftIds?.has(shift.id),
@@ -1513,7 +1525,7 @@ export function AreaCalendar({
             displayState: shift.displayState,
           },
           date,
-          isPastShiftDate,
+          planningIsPastShiftDate,
           {
             shiftConfirmationEnabled,
             hasSwapRequest: swapRequestShiftIds?.has(shift.id),
@@ -2379,6 +2391,7 @@ export function AreaCalendar({
                         measureOverflowFallback={isDayExpanded}
                         clipVerticalOverflow={false}
                         shiftConfirmationEnabled={shiftConfirmationEnabled}
+                        isPastShiftDate={planningIsPastShiftDate}
                         highlightedEmployeeId={highlightedEmployeeId}
                         onShiftContextMenu={bindShiftContextMenu({
                           areaId: "",
@@ -2714,7 +2727,7 @@ export function AreaCalendar({
                               onStaffingHeaderMenu={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
-                                if (isPastShiftDate(date)) return;
+                                if (planningIsPastShiftDate(date)) return;
                                 if (headerStaffing.length === 0) return;
                                 setContextMenu(null);
                                 setShiftContextMenu(null);
@@ -2838,6 +2851,7 @@ export function AreaCalendar({
                                       )
                                     }
                                     shiftConfirmationEnabled={shiftConfirmationEnabled}
+                                    isPastShiftDate={planningIsPastShiftDate}
                                     highlightedEmployeeId={highlightedEmployeeId}
                                     onShiftContextMenu={bindShiftContextMenu({
                                       areaId: area.id,
@@ -3081,7 +3095,7 @@ export function AreaCalendar({
                 {
                   shiftDate: shiftContextMenu.shift.shift_date,
                   cellDate: shiftContextMenu.date,
-                  isPastShiftDate,
+                  isPastShiftDate: planningIsPastShiftDate,
                 }
               ).map((action) => (
                 <button
@@ -3097,7 +3111,7 @@ export function AreaCalendar({
                           confirmationStatus:
                             shiftContextMenu.shift.confirmationStatus,
                           requestedAt: shiftContextMenu.shift.requestedAt,
-                          isPastShiftDate,
+                          isPastShiftDate: planningIsPastShiftDate,
                           pendingAfterMinutes,
                         }))) ||
                     (action === "cancel" && cancelShiftPending) ||
@@ -3121,7 +3135,7 @@ export function AreaCalendar({
                     shiftDate: shiftContextMenu.shift.shift_date,
                     confirmationStatus: shiftContextMenu.shift.confirmationStatus,
                     requestedAt: shiftContextMenu.shift.requestedAt,
-                    isPastShiftDate,
+                    isPastShiftDate: planningIsPastShiftDate,
                     pendingAfterMinutes,
                   })
                 }

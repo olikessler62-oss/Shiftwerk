@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import {
   buildStaffingWindowIssueListItems,
@@ -14,6 +14,21 @@ import {
 import type { DashboardStaffingWindowRow } from "@/lib/dashboard-area-week-stats";
 
 const todayISO = "2026-06-25";
+
+const planningContext = {
+  todayISO,
+  allowPastShiftChanges: false,
+  timeZone: "Europe/Berlin",
+} as const;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-06-25T12:00:00+02:00"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const baseRow: DashboardStaffingWindowRow = {
   rowKind: "staffing_window",
@@ -55,6 +70,8 @@ const context = {
   shiftConfirmationEnabled: true,
   readOnlyWeek: false,
   todayISO: "2026-06-25",
+  timeZone: "Europe/Berlin",
+  allowPastShiftChanges: false,
 };
 
 function shift(
@@ -221,7 +238,12 @@ describe("listConfirmationShiftsForStaffingWindow", () => {
 describe("confirmationActionsForShift", () => {
   it("maps pending to cancel and requestConfirmation", () => {
     const actions = confirmationActionsForShift(
-      shift({ id: "s-1", employee_id: "emp-1", confirmationStatus: "pending" }),
+      shift({
+        id: "s-1",
+        employee_id: "emp-1",
+        shift_date: "2026-06-26",
+        confirmationStatus: "pending",
+      }),
       context
     );
     expect(actions).toEqual(["cancel", "requestConfirmation"]);
@@ -229,7 +251,12 @@ describe("confirmationActionsForShift", () => {
 
   it("maps rejected to delete only", () => {
     const actions = confirmationActionsForShift(
-      shift({ id: "s-1", employee_id: "emp-1", confirmationStatus: "rejected" }),
+      shift({
+        id: "s-1",
+        employee_id: "emp-1",
+        shift_date: "2026-06-26",
+        confirmationStatus: "rejected",
+      }),
       context
     );
     expect(actions).toEqual(["delete"]);
@@ -270,48 +297,62 @@ describe("buildStaffingWindowIssueListItems", () => {
 });
 
 describe("findFirstStaffingCandidatesRow", () => {
-  it("returns the first future understaffed staffing window", () => {
+  it("returns the first staffing window with open slots", () => {
     const found = findFirstStaffingCandidatesRow(
       [
-        { ...baseRow, dateISO: "2026-06-20", status: "understaffed" },
-        { ...baseRow, dateISO: "2026-06-26", status: "understaffed" },
+        {
+          ...baseRow,
+          dateISO: "2026-06-20",
+          assigned: 0,
+          required: 1,
+          status: "understaffed",
+        },
+        {
+          ...baseRow,
+          dateISO: "2026-06-26",
+          assigned: 0,
+          required: 1,
+          status: "understaffed",
+        },
       ],
-      todayISO
+      planningContext
     );
 
     expect(found?.dateISO).toBe("2026-06-26");
   });
 
-  it("skips past days and met rows", () => {
+  it("skips fully staffed rows", () => {
     expect(
       findFirstStaffingCandidatesRow(
-        [
-          { ...baseRow, dateISO: "2026-06-20", status: "understaffed" },
-          { ...baseRow, status: "met" },
-        ],
-        todayISO
+        [{ ...baseRow, status: "met", assigned: 2, required: 2 }],
+        planningContext
       )
     ).toBeNull();
   });
 
-  it("skips planned rows", () => {
+  it("skips fully staffed planned rows", () => {
     expect(
       findFirstStaffingCandidatesRow(
         [{ ...baseRow, status: "planned" }],
-        todayISO
+        planningContext
       )
     ).toBeNull();
   });
 });
 
 describe("findFirstPlannedStaffingWindowRow", () => {
+  const pastContext = {
+    allowPastShiftChanges: false,
+    timeZone: "Europe/Berlin",
+  };
+
   it("returns the first future planned staffing window", () => {
     const found = findFirstPlannedStaffingWindowRow(
       [
         { ...baseRow, dateISO: "2026-06-20", status: "planned" },
         { ...baseRow, dateISO: "2026-06-26", status: "planned" },
       ],
-      todayISO
+      pastContext
     );
 
     expect(found?.dateISO).toBe("2026-06-26");
@@ -324,7 +365,7 @@ describe("findFirstPlannedStaffingWindowRow", () => {
           { ...baseRow, status: "understaffed" },
           { ...baseRow, status: "met" },
         ],
-        todayISO
+        pastContext
       )
     ).toBeNull();
   });

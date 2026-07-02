@@ -28,7 +28,7 @@ import {
   settingsNestedModalDialogClass,
   MODAL_SCROLLBAR_CLASS,
 } from "@/components/settings/settings-modal-shell";
-import { SettingsModalHeader } from "@/components/settings/settings-list-ui";
+import { SettingsModalHeader, SETTINGS_LIST_HEADER_BG_CLASS } from "@/components/settings/settings-list-ui";
 import { Alert, Button, CloseIcon } from "@/components/ui";
 import { useTranslations, useLocale } from "@/i18n/locale-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
@@ -146,6 +146,8 @@ type Props = {
   onAssigned?: () => void | Promise<void>;
   /** Bestehende Schicht ersetzen (Neu zuweisen). */
   existingShiftId?: string | null;
+  /** Nach Bestätigung für vergangene Tage — Zuweisung trotz read-only-Woche erlauben. */
+  allowPastDayChange?: boolean;
 };
 
 export function DashboardStaffingRowCandidatesModal({
@@ -154,6 +156,7 @@ export function DashboardStaffingRowCandidatesModal({
   onClose,
   onAssigned,
   existingShiftId = null,
+  allowPastDayChange = false,
 }: Props) {
   const t = useTranslations();
   const { locale } = useLocale();
@@ -418,9 +421,11 @@ export function DashboardStaffingRowCandidatesModal({
     return areaShiftTemplateIdForAssign(presetId);
   }, [planning.simplePlanning, row.timeFrom, row.timeTo, assignmentPresets]);
 
+  const readOnlyBlocked = planning.readOnlyWeek && !allowPastDayChange;
+
   const handleAssign = useCallback(
     async (employeeId: string) => {
-      if (planning.readOnlyWeek || pendingEmployeeId) return;
+      if (readOnlyBlocked || pendingEmployeeId) return;
 
       if (!areAreaCalendarShiftTimesComplete(row.timeFrom, row.timeTo)) {
         setAssignError(t("shiftAssign.invalidShiftTimes"));
@@ -460,6 +465,7 @@ export function DashboardStaffingRowCandidatesModal({
       }
     },
     [
+      readOnlyBlocked,
       planning,
       pendingEmployeeId,
       row,
@@ -534,7 +540,7 @@ export function DashboardStaffingRowCandidatesModal({
     [slots, slotCandidates]
   );
 
-  const assignDisabled = planning.readOnlyWeek || pendingEmployeeId !== null;
+  const assignDisabled = readOnlyBlocked || pendingEmployeeId !== null;
 
   if (typeof document === "undefined") {
     return null;
@@ -624,7 +630,7 @@ export function DashboardStaffingRowCandidatesModal({
             settingsModalBodyPaddingClass()
           )}
         >
-          {planning.readOnlyWeek ? (
+          {readOnlyBlocked ? (
             <Alert variant="info" className="mb-3">
               {t("dashboard.readOnlyWeek")}
             </Alert>
@@ -659,6 +665,7 @@ export function DashboardStaffingRowCandidatesModal({
                   dateISO={row.dateISO}
                   qualifications={planning.qualifications}
                   weeklyHoursDisplayByEmployeeId={weeklyHoursDisplayByEmployeeId}
+                  weeklyHoursWeekDates={weeklyHoursWeekDates}
                   employeeColorById={employeeColorById}
                   t={t}
                 />
@@ -757,6 +764,7 @@ function CandidateList({
   dateISO,
   qualifications,
   weeklyHoursDisplayByEmployeeId,
+  weeklyHoursWeekDates,
   employeeColorById,
   t,
 }: {
@@ -767,6 +775,7 @@ function CandidateList({
   dateISO: string;
   qualifications: readonly Qualification[];
   weeklyHoursDisplayByEmployeeId: ReadonlyMap<string, EmployeeWeeklyHoursDisplay>;
+  weeklyHoursWeekDates: readonly string[];
   employeeColorById: ReadonlyMap<string, string | null>;
   t: ReturnType<typeof useTranslations>;
 }) {
@@ -814,7 +823,7 @@ function CandidateList({
       <div className="space-y-3">
         {groups.map((group) => (
           <div key={group.slotKey} className="overflow-hidden border border-border/40">
-            <p className="bg-[#c7d4e5] px-2.5 py-1.5 text-sm font-semibold leading-tight text-[#273b55]">
+            <p className={cn(SETTINGS_LIST_HEADER_BG_CLASS, "px-2.5 py-1.5 text-sm font-semibold leading-tight text-[#273b55]")}>
               {group.qualificationName}
             </p>
             <ul className="flex flex-col gap-0.5 px-2 pb-2 pt-0.5" role="list">
@@ -865,6 +874,7 @@ function CandidateList({
                                 error={cacheEntry?.status === "error"}
                                 qualifications={qualifications}
                                 weeklyHoursDisplay={weeklyHoursDisplay}
+                                weeklyHoursWeekDates={weeklyHoursWeekDates}
                               />
                             }
                           >

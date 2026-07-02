@@ -54,6 +54,12 @@ export function useOrganization(): Organization {
   return ctx.organization;
 }
 
+/** Org-Einstellung: Vergangene Schichten in Planungs-UI bearbeiten. */
+export function useAllowPastShiftChanges(): boolean {
+  const organization = useOrganization();
+  return organization.allow_past_shift_changes ?? false;
+}
+
 /** Org-Einstellung: Entgelt/Zuschläge in Planungs-UI (Kalender, Dashboard). */
 export function useShowCompensationInPlanningUi(): boolean {
   const organization = useOrganization();

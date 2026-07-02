@@ -34,7 +34,8 @@ export type ShiftCardContextMenuOptions = {
   shiftDate: string;
   /** Kalenderzelle — falls abweichend von {@link shiftDate} (z. B. Nachtschicht). */
   cellDate?: string;
-  isPastShiftDate: (shiftDate: string) => boolean;
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean;
+  shiftStartTime?: string | null;
   displayState?: ShiftCardDisplayState;
   hasAbsenceConflict?: boolean;
   pendingAfterMinutes?: number;
@@ -95,7 +96,7 @@ export function isPastUnconfirmedShift(
 
 ): boolean {
   const pastReferenceDate = options.cellDate ?? options.shiftDate;
-  if (!options.isPastShiftDate(pastReferenceDate)) return false;
+  if (!options.isPastShiftDate(pastReferenceDate, options.shiftStartTime)) return false;
 
   const status = resolveShiftCardContextMenuStatus(
     confirmationStatus,
@@ -151,9 +152,11 @@ export function isPastConfirmedPlanningShift(
 
   },
 
-  isPastShiftDate: (shiftDate: string) => boolean,
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean,
 
   cellDate?: string,
+
+  shiftStartTime?: string | null,
 
   pendingAfterMinutes?: number
 
@@ -161,7 +164,7 @@ export function isPastConfirmedPlanningShift(
 
   const pastReferenceDate = cellDate ?? shift.shift_date;
 
-  if (!isPastShiftDate(pastReferenceDate)) return false;
+  if (!isPastShiftDate(pastReferenceDate, shiftStartTime)) return false;
 
   const status = resolveShiftCardContextMenuStatus(
     shift.confirmationStatus,
@@ -261,7 +264,10 @@ export function canOpenShiftCardContextMenu(
     return (
 
       !!options &&
-      !options.isPastShiftDate(options.cellDate ?? options.shiftDate) &&
+      !options.isPastShiftDate(
+        options.cellDate ?? options.shiftDate,
+        options.shiftStartTime
+      ) &&
 
       shiftCardContextMenuActions(confirmationStatus, requestedAt, options)
 
@@ -342,7 +348,10 @@ export function shiftCardContextMenuActions(
   if (status === "confirmed") {
     if (
       options &&
-      options.isPastShiftDate(options.cellDate ?? options.shiftDate)
+      options.isPastShiftDate(
+        options.cellDate ?? options.shiftDate,
+        options.shiftStartTime
+      )
     ) {
       return [];
     }

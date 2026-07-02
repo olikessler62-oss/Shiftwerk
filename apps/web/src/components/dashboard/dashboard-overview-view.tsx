@@ -49,7 +49,7 @@ import { dayCardMinHeightRem, weekTrayEmptyDayCardMinHeightRem } from "@/lib/das
 //   DAY_CARD_WEEKDAY_BODY_SURFACE_CLASS,
 //   resolveDayCardWeekdaySurfaces,
 // } from "@/lib/dashboard-day-card-weekday-colors";
-import { useOrgFeatures, useOrganization, useShiftConfirmationPendingAfterMinutes } from "@/lib/org-features-provider";
+import { useOrgFeatures, useAllowPastShiftChanges, useOrganization, useShiftConfirmationPendingAfterMinutes } from "@/lib/org-features-provider";
 import { buildPlanningPageUrl, planningWeekStartFromParam } from "@/lib/planning-week";
 import { APP_SHELL_CONTENT_OFFSET_CLASS } from "@/lib/app-shell-layout";
 import { DashboardAreaStatusFooterLines } from "@/components/dashboard/dashboard-area-status-footer-lines";
@@ -100,7 +100,7 @@ import {
 import type { AreaServiceHourRef } from "@/lib/location-staffing-client";
 import { getAreaCalendarWeekHeaderParts } from "@/lib/planning-utils";
 import type { DashboardExtDaySnapshot } from "@/lib/dashboard-ext-panel-data";
-import { organizationTodayISO } from "@schichtwerk/database";
+import { organizationTodayISO, resolveOrganizationTimeZone } from "@schichtwerk/database";
 import { isPastWeek } from "@/lib/planning-readonly";
 import {
   STATUS_SPHERE_DOT_FRAME_CLASS,
@@ -845,6 +845,11 @@ export function DashboardOverviewView({
   const intlLocale = toIntlLocale(locale);
   const features = useOrgFeatures();
   const organization = useOrganization();
+  const allowPastShiftChanges = useAllowPastShiftChanges();
+  const organizationTimeZone = useMemo(
+    () => resolveOrganizationTimeZone(organization),
+    [organization]
+  );
   const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const simplePlanning = !features.areas;
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
@@ -1383,7 +1388,7 @@ export function DashboardOverviewView({
           "areaId" | "areaName" | "areaCalendarHref"
         >
       | null => {
-      if (!selectedLocationId || !snapshot.staffingEnabled || !drilldownDateISO) {
+      if (!selectedLocationId || !snapshot.staffingEnabled) {
         return null;
       }
 
@@ -1460,6 +1465,8 @@ export function DashboardOverviewView({
         pendingAfterMinutes,
         readOnlyWeek: snapshot.readOnlyWeek,
         todayISO,
+        timeZone: organizationTimeZone,
+        allowPastShiftChanges,
       };
     },
     [
@@ -1474,6 +1481,8 @@ export function DashboardOverviewView({
       employeeColorById,
       snapshot.readOnlyWeek,
       todayISO,
+      organizationTimeZone,
+      allowPastShiftChanges,
     ]
   );
 
@@ -1552,6 +1561,8 @@ export function DashboardOverviewView({
         shiftConfirmationEnabled,
         pendingAfterMinutes,
         todayISO,
+        timeZone: organizationTimeZone,
+        allowPastShiftChanges,
       };
     },
     [
@@ -1565,6 +1576,8 @@ export function DashboardOverviewView({
       shiftConfirmationEnabled,
       pendingAfterMinutes,
       todayISO,
+      organizationTimeZone,
+      allowPastShiftChanges,
     ]
   );
 

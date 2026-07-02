@@ -38,8 +38,13 @@ import {
   DASHBOARD_PANEL_ROUNDED_CLASS,
 } from "@/lib/dashboard-panel-styles";
 import { DASHBOARD_UI_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
-import { isPastCalendarDate } from "@/lib/dates";
-import type { PlanningShift } from "@/lib/planning-shift-card";
+import { isPlanningReadOnlyWeek } from "@/lib/planning-readonly";
+import {
+  createPlanningPastShiftChecker,
+  planningMomentFromShift,
+  type PlanningPastShiftChecker,
+} from "@/lib/planning-past-shift-time";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   shiftCardContextMenuActionLabelKey,
   type ShiftCardContextMenuAction,
@@ -58,6 +63,7 @@ import {
 import { getShiftConfirmationSimulationSendBlockedResult } from "@/lib/shift-confirmation-simulation-send-guard";
 import { translateActionError } from "@/lib/translate-action-error";
 import { useAppShellModalLockActive } from "@/lib/app-shell-modal-lock";
+import type { PlanningShift } from "@/lib/planning-shift-card";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 
 type Props = {
@@ -67,6 +73,7 @@ type Props = {
   /** Öffnet das Personalvorschlags-Modal für diese Zeile (statt Bereich-Kalender). */
   onOpenCandidates?: (row: DashboardStaffingWindowRow) => void;
   onClose: () => void;
+  allowPastDayChange?: boolean;
 };
 
 type PendingConfirm =
@@ -89,14 +96,28 @@ function isShiftActionDisabled(
   action: ShiftCardContextMenuAction,
   shift: PlanningShift,
   context: DashboardStaffingWindowIssuesContext,
-  pending: boolean
+  planningPastShiftChecker: PlanningPastShiftChecker,
+  pending: boolean,
+  allowPastDayChange: boolean
 ): boolean {
-  if (pending || context.readOnlyWeek) return true;
+  if (pending) return true;
+  if (
+    isPlanningReadOnlyWeek(context.readOnlyWeek, context.allowPastShiftChanges) &&
+    !allowPastDayChange
+  ) {
+    return true;
+  }
 
   const menuOptions = {
     shiftDate: shift.shift_date,
-    isPastShiftDate: (shiftDate: string) =>
-      isPastCalendarDate(shiftDate, context.todayISO),
+    shiftStartTime: shift.startTime,
+    isPastShiftDate: (shiftDate: string, startTime?: string | null) => {
+      if (allowPastDayChange && context.allowPastShiftChanges) return false;
+      return planningPastShiftChecker.isBlockedForPlanning({
+        shiftDateISO: shiftDate,
+        startTime: startTime ?? shift.startTime,
+      });
+    },
     displayState: shift.displayState,
   };
 
@@ -104,6 +125,7 @@ function isShiftActionDisabled(
     case "delete":
       return !canDeleteShift({
         shiftDate: shift.shift_date,
+        shiftStartTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate: menuOptions.isPastShiftDate,
@@ -112,6 +134,7 @@ function isShiftActionDisabled(
     case "cancel":
       return !canCancelShift({
         shiftDate: shift.shift_date,
+        shiftStartTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate: menuOptions.isPastShiftDate,
@@ -119,47 +142,104 @@ function isShiftActionDisabled(
     case "requestConfirmation":
     case "setConfirmed":
     case "reassign":
-      return false;
+      if (allowPastDayChange && context.allowPastShiftChanges) return false;
+      return planningPastShiftChecker.isBlockedForPlanning(
+        planningMomentFromShift(shift)
+      );
   }
+}
+
+function PastBlockedActionButton({
+  disabled,
+  pastMomentBlocked,
+  pastMomentBlockedTooltip,
+  className,
+  onClick,
+  children,
+}: {
+  disabled: boolean;
+  pastMomentBlocked: boolean;
+  pastMomentBlockedTooltip: string;
+  className?: string;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  const button = (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={className}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+
+  if (!pastMomentBlocked) return button;
+
+  return (
+    <Tooltip content={pastMomentBlockedTooltip}>
+      <span className="inline-flex">{button}</span>
+    </Tooltip>
+  );
 }
 
 function IssueRowActions({
   actions,
   shift,
   context,
+  planningPastShiftChecker,
   pending,
   pendingAction,
   onAction,
+  allowPastDayChange,
 }: {
   actions: readonly ShiftCardContextMenuAction[];
   shift: PlanningShift;
   context: DashboardStaffingWindowIssuesContext;
+  planningPastShiftChecker: PlanningPastShiftChecker;
   pending: boolean;
   pendingAction: string | null;
   onAction: (action: ShiftCardContextMenuAction, shift: PlanningShift) => void;
+  allowPastDayChange: boolean;
 }) {
   const t = useTranslations();
 
   if (actions.length === 0) return null;
 
+  const pastMomentBlocked =
+    !allowPastDayChange &&
+    planningPastShiftChecker.isBlockedForPlanning(planningMomentFromShift(shift));
+  const pastMomentBlockedTooltip = t("dashboard.pastDayPlanningChangeBlocked");
+
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-      {actions.map((action) => (
-        <Button
-          key={action}
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 whitespace-nowrap px-2 text-xs"
-          disabled={
-            isShiftActionDisabled(action, shift, context, pending) ||
-            pendingAction === `${shift.id}:${action}`
-          }
-          onClick={() => onAction(action, shift)}
-        >
-          {t(shiftCardContextMenuActionLabelKey(action))}
-        </Button>
-      ))}
+      {actions.map((action) => {
+        const disabled =
+          isShiftActionDisabled(
+            action,
+            shift,
+            context,
+            planningPastShiftChecker,
+            pending,
+            allowPastDayChange
+          ) || pendingAction === `${shift.id}:${action}`;
+
+        return (
+          <PastBlockedActionButton
+            key={action}
+            disabled={disabled}
+            pastMomentBlocked={pastMomentBlocked}
+            pastMomentBlockedTooltip={pastMomentBlockedTooltip}
+            className="h-7 whitespace-nowrap px-2 text-xs"
+            onClick={() => onAction(action, shift)}
+          >
+            {t(shiftCardContextMenuActionLabelKey(action))}
+          </PastBlockedActionButton>
+        );
+      })}
     </div>
   );
 }
@@ -197,15 +277,19 @@ function StaffingIssueRow({
 function ConfirmationIssueRow({
   item,
   context,
+  planningPastShiftChecker,
   pending,
   pendingAction,
   onAction,
+  allowPastDayChange,
 }: {
   item: DashboardStaffingWindowIssueListItem & { kind: "confirmation" };
   context: DashboardStaffingWindowIssuesContext;
+  planningPastShiftChecker: PlanningPastShiftChecker;
   pending: boolean;
   pendingAction: string | null;
   onAction: (action: ShiftCardContextMenuAction, shift: PlanningShift) => void;
+  allowPastDayChange: boolean;
 }) {
   const t = useTranslations();
 
@@ -233,9 +317,11 @@ function ConfirmationIssueRow({
         actions={item.actions}
         shift={item.shift}
         context={context}
+        planningPastShiftChecker={planningPastShiftChecker}
         pending={pending}
         pendingAction={pendingAction}
         onAction={onAction}
+        allowPastDayChange={allowPastDayChange}
       />
     </li>
   );
@@ -247,6 +333,7 @@ export function DashboardStaffingWindowIssuesModal({
   confirmationStatusFilter = null,
   onOpenCandidates,
   onClose,
+  allowPastDayChange = false,
 }: Props) {
   const t = useTranslations();
   const router = useRouter();
@@ -260,6 +347,15 @@ export function DashboardStaffingWindowIssuesModal({
     useSimulatedProposedOnAssignRequest();
 
   useAppShellModalLockActive(true);
+
+  const planningPastShiftChecker = useMemo(
+    () =>
+      createPlanningPastShiftChecker(
+        context.allowPastShiftChanges,
+        context.timeZone
+      ),
+    [context.allowPastShiftChanges, context.timeZone]
+  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -487,9 +583,11 @@ export function DashboardStaffingWindowIssuesModal({
                       key={item.id}
                       item={item}
                       context={context}
+                      planningPastShiftChecker={planningPastShiftChecker}
                       pending={pending}
                       pendingAction={pendingAction}
                       onAction={handleAction}
+                      allowPastDayChange={allowPastDayChange}
                     />
                   )
                 )}

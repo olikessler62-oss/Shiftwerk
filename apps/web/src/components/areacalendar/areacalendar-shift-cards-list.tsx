@@ -30,7 +30,6 @@ import {
   canOpenShiftCardContextMenu,
   handleShiftCardContextMenuPointerEvent,
 } from "@/lib/shift-card-context-menu-actions";
-import { isPastShiftDate } from "@/lib/planning-readonly";
 import { useTranslations } from "@/i18n/locale-provider";
 import { buildAreaCalendarCellShiftRows } from "@/lib/areacalendar-overnight-shift-display";
 
@@ -67,6 +66,7 @@ type Props = {
   className?: string;
   onShiftClick?: (shift: AreaCalendarShiftCard) => void;
   onShiftContextMenu?: (shift: AreaCalendarShiftCard, event: React.MouseEvent) => void;
+  isPastShiftDate?: (shiftDate: string, startTime?: string | null) => boolean;
   shiftConfirmationEnabled?: boolean;
   /** Vergangene Tage: kein Scroll, Inhalt abschneiden. */
   clipVerticalOverflow?: boolean;
@@ -175,6 +175,7 @@ export function AreaCalendarShiftCardsList({
   className,
   onShiftClick,
   onShiftContextMenu,
+  isPastShiftDate = () => false,
   shiftConfirmationEnabled = false,
   clipVerticalOverflow = false,
   highlightedEmployeeId = null,
@@ -397,7 +398,7 @@ export function AreaCalendarShiftCardsList({
       canOpenShiftCardContextMenu(
         shift.confirmationStatus,
         shift.requestedAt,
-        { shiftDate: shift.shift_date, cellDate: dateISO, isPastShiftDate, displayState: shift.displayState }
+        { shiftDate: shift.shift_date, cellDate: dateISO, shiftStartTime: shift.startTime, isPastShiftDate, displayState: shift.displayState }
       ),
       () => onShiftContextMenu(shift, event)
     );
@@ -473,6 +474,7 @@ export function AreaCalendarShiftCardsList({
           marginLeftPx={cellWidthPx > 0 ? layout.marginLeftPx : undefined}
           onClick={onShiftClick ? () => onShiftClick(shift) : undefined}
           cellDateISO={dateISO}
+          isPastShiftDate={isPastShiftDate}
           onContextMenu={
             onShiftContextMenu
               ? (event) => onShiftContextMenu(shift, event)

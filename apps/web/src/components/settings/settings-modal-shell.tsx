@@ -1,8 +1,9 @@
 import { cn } from "@/lib/cn";
 import { MODAL_ROUNDED_CLASS } from "@/lib/dashboard-panel-styles";
 
-/** Einheitlicher Modal-/Slide-in-Kopf (Bereichskarten, Übersicht, Einstellungen). */
-export const SETTINGS_MODAL_HEADER_BG_CLASS = "bg-[#c7d4e5]";
+/** Einheitlicher Modal-/Slide-in-/Listen-Kopf (Bereichskarten, Übersicht, Einstellungen). */
+export const SETTINGS_MODAL_HEADER_BG_CLASS = "panel-surface-header-bg";
+export const SETTINGS_LIST_HEADER_BG_CLASS = SETTINGS_MODAL_HEADER_BG_CLASS;
 /** Scrollbar in Modals — inline, kein reservierter Gutter (kein weißer Rand rechts). */
 export const MODAL_SCROLLBAR_CLASS = "modal-scrollbar modal-scrollbar-inline";
 

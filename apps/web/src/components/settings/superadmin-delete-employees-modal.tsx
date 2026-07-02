@@ -12,6 +12,7 @@ import { Alert, Button, CloseIcon, IconButton } from "@/components/ui";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import {
+  SETTINGS_LIST_HEADER_BG_CLASS,
   SETTINGS_MODAL_TITLE_CLASS,
   SETTINGS_PROFILES_LIST_SCROLL_CLASS,
   settingsModalFooterClass,
@@ -159,7 +160,7 @@ export function SuperadminDeleteEmployeesModal({ onClose }: Props) {
                 )}
               >
                 <table className="w-full min-w-[28rem] text-left text-sm">
-                  <thead className="sticky top-0 z-[1] bg-surface text-xs uppercase tracking-wide text-muted">
+                  <thead className={cn("sticky top-0 z-[1] text-xs uppercase tracking-wide text-muted", SETTINGS_LIST_HEADER_BG_CLASS)}>
                     <tr className="border-b border-border">
                       <th className="px-2 py-2 font-semibold">
                         {t("nav.superadminEmployeeColumnName")}

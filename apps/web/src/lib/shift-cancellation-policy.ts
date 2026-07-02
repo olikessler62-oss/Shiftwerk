@@ -44,9 +44,10 @@ export function canCancelShift(input: {
   shiftDate: string;
   confirmationStatus?: ShiftConfirmationStatus | null;
   requestedAt?: string | null;
-  isPastShiftDate: (shiftDate: string) => boolean;
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean;
+  shiftStartTime?: string | null;
 }): boolean {
-  if (input.isPastShiftDate(input.shiftDate)) return false;
+  if (input.isPastShiftDate(input.shiftDate, input.shiftStartTime)) return false;
   return canCancelShiftByConfirmationStatus(
     input.confirmationStatus,
     input.requestedAt

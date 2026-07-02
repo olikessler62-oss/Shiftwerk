@@ -10,6 +10,7 @@ import {
 export type ShiftCardPlanningInput = {
   id?: string;
   shift_date: string;
+  startTime?: string | null;
   confirmationStatus?: ShiftConfirmationStatus | null;
   requestedAt?: string | null;
   displayState?: ShiftCardDisplayState;
@@ -18,7 +19,8 @@ export type ShiftCardPlanningInput = {
 export type ShiftCardInteractionContext = {
   shiftDate: string;
   cellDate: string;
-  isPastShiftDate: (shiftDate: string) => boolean;
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean;
+  shiftStartTime?: string | null;
   shiftConfirmationEnabled: boolean;
   hasAbsenceConflict?: boolean;
   hasSwapRequest?: boolean;
@@ -42,13 +44,14 @@ export type ShiftCardPrimaryClick =
 export function resolveShiftCardInteractionContext(
   shift: ShiftCardPlanningInput,
   cellDate: string,
-  isPastShiftDate: (shiftDate: string) => boolean,
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean,
   options?: ShiftCardInteractionOptions
 ): ShiftCardInteractionContext {
   return {
     shiftDate: shift.shift_date,
     cellDate,
     isPastShiftDate,
+    shiftStartTime: shift.startTime,
     shiftConfirmationEnabled: options?.shiftConfirmationEnabled ?? true,
     hasAbsenceConflict: options?.hasAbsenceConflict,
     hasSwapRequest: options?.hasSwapRequest,
@@ -129,7 +132,7 @@ export function shiftCardShowsPointerCursor(
 export function planningShiftCardShowsPointerCursor(
   shift: ShiftCardPlanningInput,
   cellDate: string,
-  isPastShiftDate: (shiftDate: string) => boolean,
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean,
   options?: ShiftCardInteractionOptions
 ): boolean {
   const context = resolveShiftCardInteractionContext(

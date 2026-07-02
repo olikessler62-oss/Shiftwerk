@@ -62,6 +62,7 @@ function AreaCalendarEmployeeLegendCardWithTooltip({
   referenceDateISO,
   qualifications,
   weeklyHoursTooltipDisplay,
+  weeklyHoursWeekDates,
   onEmployeeHover,
   onEmployeeContextMenu,
 }: {
@@ -71,6 +72,7 @@ function AreaCalendarEmployeeLegendCardWithTooltip({
   referenceDateISO: string;
   qualifications: readonly Qualification[];
   weeklyHoursTooltipDisplay: EmployeeWeeklyHoursDisplay | null;
+  weeklyHoursWeekDates: readonly string[];
   onEmployeeHover?: (employeeId: string | null) => void;
   onEmployeeContextMenu?: (
     employeeId: string,
@@ -85,6 +87,7 @@ function AreaCalendarEmployeeLegendCardWithTooltip({
     todayISO: referenceDateISO,
     qualifications,
     weeklyHoursDisplay: weeklyHoursTooltipDisplay,
+    weeklyHoursWeekDates,
   });
 
   return (
@@ -262,6 +265,7 @@ export function AreaCalendarEmployeeLegendSidebar({
                 referenceDateISO={referenceDateISO}
                 qualifications={qualifications}
                 weeklyHoursTooltipDisplay={weeklyHoursTooltipDisplay}
+                weeklyHoursWeekDates={weekDates}
                 onEmployeeHover={onEmployeeHover}
                 onEmployeeContextMenu={onEmployeeContextMenu}
               />

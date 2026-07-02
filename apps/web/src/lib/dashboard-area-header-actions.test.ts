@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardStaffingWindowRow } from "@/lib/dashboard-area-week-stats";
 import {
   canOpenConfirmationHeaderStatus,
@@ -15,6 +15,21 @@ import {
 } from "@/lib/dashboard-area-header-actions";
 
 const todayISO = "2026-06-25";
+
+const planningContext = {
+  todayISO,
+  allowPastShiftChanges: false,
+  timeZone: "Europe/Berlin",
+} as const;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-06-25T12:00:00+02:00"));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function row(
   overrides: Partial<DashboardStaffingWindowRow> = {}
@@ -203,8 +218,8 @@ describe("isStaffingHeaderStatusClickable", () => {
         ampelLevel: "critical",
         isPastScope: false,
         hasCandidatesPlanning: true,
-        staffingWindowRows: [row()],
-        todayISO,
+        staffingWindowRows: [row({ dateISO: "2026-06-26" })],
+        ...planningContext,
       })
     ).toBe(true);
   });
@@ -215,8 +230,8 @@ describe("isStaffingHeaderStatusClickable", () => {
         ampelLevel: "met",
         isPastScope: false,
         hasCandidatesPlanning: true,
-        staffingWindowRows: [row()],
-        todayISO,
+        staffingWindowRows: [row({ dateISO: "2026-06-26" })],
+        ...planningContext,
       })
     ).toBe(false);
   });
@@ -227,8 +242,8 @@ describe("isStaffingHeaderStatusClickable", () => {
         ampelLevel: "critical",
         isPastScope: true,
         hasCandidatesPlanning: true,
-        staffingWindowRows: [row()],
-        todayISO,
+        staffingWindowRows: [row({ dateISO: "2026-06-26" })],
+        ...planningContext,
       })
     ).toBe(false);
   });
@@ -239,8 +254,8 @@ describe("isStaffingHeaderStatusClickable", () => {
         ampelLevel: "critical",
         isPastScope: false,
         hasCandidatesPlanning: false,
-        staffingWindowRows: [row()],
-        todayISO,
+        staffingWindowRows: [row({ dateISO: "2026-06-26" })],
+        ...planningContext,
       })
     ).toBe(false);
   });
@@ -254,7 +269,7 @@ describe("isStaffingHeaderStatusClickable", () => {
         staffingWindowRows: [
           row({ dateISO: "2026-06-20", status: "understaffed" }),
         ],
-        todayISO,
+        ...planningContext,
       })
     ).toBe(false);
   });
@@ -265,8 +280,8 @@ describe("isStaffingHeaderStatusClickable", () => {
         ampelLevel: "partial",
         isPastScope: false,
         hasCandidatesPlanning: true,
-        staffingWindowRows: [row({ status: "planned", assigned: 2, required: 2 })],
-        todayISO,
+        staffingWindowRows: [row({ dateISO: "2026-06-26", status: "planned", assigned: 2, required: 2 })],
+        ...planningContext,
       })
     ).toBe(false);
   });
@@ -399,8 +414,9 @@ describe("isPlannedCoverageHeaderStatusClickable", () => {
         windowIssuesEnabled: true,
         isPastScope: false,
         showPlannedCoverageStatusLine: true,
-        staffingWindowRows: [row({ status: "planned" })],
-        todayISO,
+        staffingWindowRows: [row({ dateISO: "2026-06-26", status: "planned" })],
+        allowPastShiftChanges: false,
+        timeZone: "Europe/Berlin",
       })
     ).toBe(true);
   });
@@ -412,7 +428,8 @@ describe("isPlannedCoverageHeaderStatusClickable", () => {
         isPastScope: false,
         showPlannedCoverageStatusLine: true,
         staffingWindowRows: [row({ status: "planned" })],
-        todayISO,
+        allowPastShiftChanges: false,
+        timeZone: "Europe/Berlin",
       })
     ).toBe(false);
   });
@@ -426,7 +443,8 @@ describe("isPlannedCoverageHeaderStatusClickable", () => {
         staffingWindowRows: [
           row({ dateISO: "2026-06-20", status: "planned" }),
         ],
-        todayISO,
+        allowPastShiftChanges: false,
+        timeZone: "Europe/Berlin",
       })
     ).toBe(false);
   });

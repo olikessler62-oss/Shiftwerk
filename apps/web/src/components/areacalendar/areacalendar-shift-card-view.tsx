@@ -39,7 +39,6 @@ import {
 import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-calendar-confirmation-status";
 import { hasPendingEmployeeCancellation } from "@schichtwerk/database";
 import { ShiftPendingCancellationOverlay } from "@/components/dashboard/shift-pending-cancellation-overlay";
-import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
   canOpenShiftCardContextMenu,
   handleShiftCardContextMenuPointerEvent,
@@ -94,6 +93,7 @@ type Props = {
   onContextMenu?: (event: React.MouseEvent) => void;
   /** Kalendertag der Zelle — für Cursor auf vergangenen Tagen. */
   cellDateISO?: string;
+  isPastShiftDate?: (shiftDate: string, startTime?: string | null) => boolean;
   confirmationStatusLabel?: string;
   employeeHighlighted?: boolean;
 };
@@ -183,6 +183,7 @@ export function AreaCalendarShiftCardView({
   onClick,
   onContextMenu,
   cellDateISO,
+  isPastShiftDate = () => false,
   confirmationStatusLabel,
   employeeHighlighted = false,
 }: Props) {
@@ -222,7 +223,10 @@ export function AreaCalendarShiftCardView({
       ? t(shiftConfirmationTooltipStatusLabelKey(confirmationStatus))
       : undefined;
 
-  const isPastShift = isPastShiftDate(cellDateISO ?? shift.shift_date);
+  const isPastShift = isPastShiftDate(
+    cellDateISO ?? shift.shift_date,
+    shift.startTime
+  );
 
   const tooltipData = confirmationStatus
     ? {
@@ -262,6 +266,7 @@ export function AreaCalendarShiftCardView({
     planningShiftCardShowsPointerCursor(
       {
         shift_date: shift.shift_date,
+        startTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
       },
@@ -329,6 +334,7 @@ export function AreaCalendarShiftCardView({
                         {
                           shiftDate: shift.shift_date,
                           cellDate: cellDateISO ?? shift.shift_date,
+                          shiftStartTime: shift.startTime,
                           isPastShiftDate,
                           displayState: shift.displayState,
                         }

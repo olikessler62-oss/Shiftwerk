@@ -16,6 +16,7 @@ import {
   isShiftProposedForSend,
   profileEligibleForShiftConfirmationAssignment,
   resolveOrganizationTimeZone,
+  shouldSuppressEmployeeShiftNotificationNow,
   type ProposedShiftForSend,
 } from "@schichtwerk/database";
 import type { ConfirmationRequestScope, ShiftConfirmationStatus } from "@schichtwerk/types";
@@ -159,6 +160,17 @@ async function sendConfirmationForEmployee(input: {
     return { ok: false, error: "Keine offenen Schichten zum Senden." };
   }
 
+  const timeZone = resolveOrganizationTimeZone(organization);
+  const skipPastNotifications = sendable.some((shift) =>
+    shouldSuppressEmployeeShiftNotificationNow(
+      {
+        shiftDateISO: shift.shift_date,
+        startsAt: shift.starts_at,
+      },
+      timeZone
+    )
+  );
+
   const result = await db.sendConfirmationRequestForEmployee({
     organizationId,
     employeeId: input.employeeId,
@@ -168,7 +180,8 @@ async function sendConfirmationForEmployee(input: {
     weekEnd: batchWeekEnd,
     shifts: sendable,
     profile,
-    skipNotificationOutbox: assignMode.relaxAppRegistrationGate,
+    skipNotificationOutbox:
+      assignMode.relaxAppRegistrationGate || skipPastNotifications,
   });
 
   revalidateConfirmationPaths({
@@ -641,13 +654,14 @@ export async function cancelShiftAsManager(
   shiftId: string
 ): Promise<CancelShiftActionResult> {
   try {
-    const { organizationId, userId } = await requireManager();
+    const { organizationId, userId, organization } = await requireManager();
     const db = await getDatabase();
     const result = await db.cancelShift({
       organizationId,
       shiftId,
       actorId: userId,
       actorRole: "manager",
+      allowPastShiftChanges: organization.allow_past_shift_changes ?? false,
     });
 
     revalidateAreaCalendarShiftCacheTags({
@@ -707,7 +721,7 @@ export async function cancelShiftsAsManager(shiftIds: string[]): Promise<
       return { ok: false, error: "Keine Schichten ausgewählt." };
     }
 
-    const { organizationId, userId } = await requireManager();
+    const { organizationId, userId, organization } = await requireManager();
     const db = await getDatabase();
     let canceledCount = 0;
     const errors: string[] = [];
@@ -720,6 +734,7 @@ export async function cancelShiftsAsManager(shiftIds: string[]): Promise<
           shiftId,
           actorId: userId,
           actorRole: "manager",
+          allowPastShiftChanges: organization.allow_past_shift_changes ?? false,
         });
         canceledCount += 1;
         const dates = touchedDates.get(result.locationId) ?? new Set<string>();

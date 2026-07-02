@@ -805,6 +805,92 @@ function requiredQualificationNamesMissingForEmployee(
   return missing.length > 0 ? missing.join(", ") : undefined;
 }
 
+export function shiftPriorityServiceHourId(presetId: string): string {
+  return `shift-priority:${presetId}`;
+}
+
+export function isShiftPriorityServiceHourId(serviceHourId: string): boolean {
+  return serviceHourId.startsWith("shift-priority:");
+}
+
+function referenceServiceHourIdsForWindow(
+  serviceHours: readonly AreaServiceHourRef[],
+  areaId: string,
+  startTime: string,
+  endTime: string
+): string[] {
+  return serviceHours
+    .filter(
+      (hour) =>
+        hour.location_area_id === areaId &&
+        hour.start_time?.slice(0, 5) === startTime &&
+        hour.end_time?.slice(0, 5) === endTime &&
+        hour.id
+    )
+    .map((hour) => hour.id as string);
+}
+
+/** Personalbedarf an Tagen ohne Servicezeit, wenn Schichten existieren (Schichten haben Vorrang). */
+export function computeBulkStaffingHeaderEntriesForShiftPriorityDay(input: {
+  staffingRules: readonly LocationAreaStaffing[];
+  areaId: string;
+  dateISO: string;
+  serviceHours: readonly AreaServiceHourRef[];
+  assignments: readonly StaffingAssignmentRef[];
+  assignmentPresets: readonly AreaCalendarAssignmentPreset[];
+  qualifications: readonly Qualification[];
+  profileQualificationIds: ReadonlyMap<string, ReadonlySet<string>>;
+  employeeNameById?: ReadonlyMap<string, string>;
+  formatTimeLabel: (weekdayLabel: string, startTime: string, endTime: string) => string;
+  weekdayLabel: (weekday: number) => string;
+  formatCalendarTimeLabel?: (startTime: string, endTime: string) => string;
+}): TagAreaHeaderStaffingEntry[] {
+  const regular = computeBulkStaffingHeaderEntries(input);
+  if (regular.length > 0) return regular;
+  if (input.assignments.length === 0) return [];
+
+  const weekday = serviceWeekdayForDate(input.dateISO);
+  const syntheticHours: AreaServiceHourRef[] = input.assignmentPresets.map(
+    (preset) => ({
+      id: shiftPriorityServiceHourId(preset.id),
+      location_area_id: input.areaId,
+      weekday,
+      start_time: preset.start_time,
+      end_time: preset.end_time,
+    })
+  );
+
+  const syntheticRules: LocationAreaStaffing[] = [];
+  for (const preset of input.assignmentPresets) {
+    const startTime = preset.start_time.slice(0, 5);
+    const endTime = preset.end_time.slice(0, 5);
+    const referenceHourIds = referenceServiceHourIdsForWindow(
+      input.serviceHours,
+      input.areaId,
+      startTime,
+      endTime
+    );
+    for (const rule of input.staffingRules) {
+      if (
+        rule.location_area_id !== input.areaId ||
+        !referenceHourIds.includes(rule.service_hour_id)
+      ) {
+        continue;
+      }
+      syntheticRules.push({
+        ...rule,
+        service_hour_id: shiftPriorityServiceHourId(preset.id),
+      });
+    }
+  }
+
+  return computeBulkStaffingHeaderEntries({
+    ...input,
+    serviceHours: [...input.serviceHours, ...syntheticHours],
+    staffingRules: [...input.staffingRules, ...syntheticRules],
+  }).filter((entry) => entry.required > 0);
+}
+
 export function computeBulkStaffingHeaderEntries(input: {
   staffingRules: readonly LocationAreaStaffing[];
   areaId: string;

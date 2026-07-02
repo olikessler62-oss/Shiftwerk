@@ -727,7 +727,7 @@ describe("computeDashboardAreaWeekStats", () => {
     });
   });
 
-  it("flags unplanned shifts on days without service hours", () => {
+  it("builds staffing window rows when shifts exist on days without service hours", () => {
     const closedDate = "2026-06-14";
     const stats = computeDashboardAreaWeekStats({
       area: baseArea,
@@ -742,14 +742,41 @@ describe("computeDashboardAreaWeekStats", () => {
           startTime: "10:00",
           endTime: "14:00",
           location_area_id: "area-1",
-          area_shift_template_id: null,
+          area_shift_template_id: "tpl-frueh",
         },
       ],
-      staffingRules: [],
+      staffingRules: [
+        {
+          id: "rule-1",
+          location_area_id: "area-1",
+          service_hour_id: "hour-1",
+          qualification_id: "qual-1",
+          required_count: 1,
+        },
+      ],
       staffingOverrides: [],
-      serviceHours: [],
-      areaShiftTemplates: [],
-      qualifications: [],
+      serviceHours: [
+        {
+          id: "hour-1",
+          location_area_id: "area-1",
+          weekday: 1,
+          start_time: "10:00",
+          end_time: "14:00",
+        },
+      ],
+      areaShiftTemplates: [
+        {
+          id: "tpl-frueh",
+          location_area_id: "area-1",
+          name: "Früh",
+          start_time: "10:00",
+          end_time: "14:00",
+          color: "#000",
+          sort_order: 0,
+          breaks: [],
+        },
+      ],
+      qualifications: [{ id: "qual-1", name: "Koch", sort_order: 0 }],
       profileQualificationIds: new Map(),
       compensationByKey: {},
       staffingEnabled: true,
@@ -761,12 +788,12 @@ describe("computeDashboardAreaWeekStats", () => {
 
     expect(stats.staffingWindowRows).toHaveLength(1);
     expect(stats.staffingWindowRows[0]).toMatchObject({
-      rowKind: "no_service_hours",
+      rowKind: "staffing_window",
       dateISO: closedDate,
-      hasUnplannedShifts: true,
-      shiftName: "",
-      assigned: 1,
-      required: 1,
+      noServiceHoursDay: true,
+      shiftName: "Früh",
+      timeFrom: "10:00",
+      timeTo: "14:00",
     });
   });
 

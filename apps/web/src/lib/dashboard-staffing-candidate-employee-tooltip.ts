@@ -32,6 +32,7 @@ import {
   resolvePlanningEmployeeJobsTooltipLabel,
 } from "@/lib/planning-employee-availability-tooltip";
 import { parseISODate } from "@/lib/dates";
+import { planningHoursUnitLabel } from "@/lib/planning-utils";
 
 export type DashboardStaffingCandidateEmployeeTooltipPayload = {
   schedulable: boolean;
@@ -62,7 +63,120 @@ export type DashboardStaffingCandidateEmployeeTooltipLabels = {
 export type PlanningEmployeeAssignmentTooltipSection = {
   lines: string[];
   dayOffset: number;
+  shiftDate: string;
+  durationHours: number;
+  showProjectedWeeklyHours: boolean;
 };
+
+function roundTooltipHours(hours: number): number {
+  return Math.round(hours * 10) / 10;
+}
+
+function formatTooltipHoursValue(hours: number): string {
+  const rounded = roundTooltipHours(hours);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+export function assignmentDurationHoursFromTimestamps(
+  startsAt: string,
+  endsAt: string
+): number {
+  const startMs = new Date(startsAt).getTime();
+  const endMs = new Date(endsAt).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return 0;
+  }
+  return roundTooltipHours((endMs - startMs) / 3600000);
+}
+
+export function formatAssignmentDurationTooltipLine(
+  durationHours: number,
+  locale: "de" | "en"
+): string {
+  const unit = planningHoursUnitLabel(locale === "de" ? "de" : "en");
+  return `${formatTooltipHoursValue(durationHours)} ${unit}`;
+}
+
+export function projectedAssignmentWeeklyHours(
+  weeklyHoursTotal: number,
+  durationHours: number
+): number {
+  return roundTooltipHours(weeklyHoursTotal + durationHours);
+}
+
+export function formatAssignmentTimeWeeklyHoursSuffix(
+  durationHours: number,
+  weeklyHoursTotal: number | null | undefined,
+  weeklyHoursTarget: number | null | undefined
+): string | null {
+  if (
+    durationHours <= 0 ||
+    weeklyHoursTotal == null ||
+    weeklyHoursTarget == null
+  ) {
+    return null;
+  }
+
+  const projected = projectedAssignmentWeeklyHours(weeklyHoursTotal, durationHours);
+  return `(${formatTooltipHoursValue(projected)}/${formatTooltipHoursValue(weeklyHoursTarget)})`;
+}
+
+export function appendAssignmentTimeWeeklyHoursSuffix(
+  timeLine: string,
+  durationHours: number,
+  weeklyHoursTotal: number | null | undefined,
+  weeklyHoursTarget: number | null | undefined
+): string {
+  const suffix = formatAssignmentTimeWeeklyHoursSuffix(
+    durationHours,
+    weeklyHoursTotal,
+    weeklyHoursTarget
+  );
+  return suffix ? `${timeLine} ${suffix}` : timeLine;
+}
+
+export function formatAssignmentDurationProjectedWeeklyHoursSuffix(
+  durationHours: number,
+  weeklyHoursTotal: number | null | undefined,
+  weeklyHoursTarget: number | null | undefined,
+  options?: {
+    projectedLabel?: (projected: number, target: number) => string;
+  }
+): string | null {
+  if (
+    durationHours <= 0 ||
+    weeklyHoursTotal == null ||
+    weeklyHoursTarget == null
+  ) {
+    return null;
+  }
+
+  const projected = projectedAssignmentWeeklyHours(weeklyHoursTotal, durationHours);
+  if (options?.projectedLabel) {
+    return options.projectedLabel(projected, weeklyHoursTarget);
+  }
+
+  return `(anschl. ${formatTooltipHoursValue(projected)}/${formatTooltipHoursValue(weeklyHoursTarget)})`;
+}
+
+function assignmentSectionFromRow(
+  assignment: EmployeeLastShiftAssignment,
+  todayISO: string,
+  locale: "de" | "en",
+  dayOffset: number,
+  showProjectedWeeklyHours: boolean
+): PlanningEmployeeAssignmentTooltipSection {
+  return {
+    lines: formatAssignmentDetailLines(assignment, locale),
+    dayOffset,
+    shiftDate: assignment.shiftDate,
+    durationHours: assignmentDurationHoursFromTimestamps(
+      assignment.startsAt,
+      assignment.endsAt
+    ),
+    showProjectedWeeklyHours,
+  };
+}
 
 export type DashboardStaffingCandidateEmployeeTooltipSections = {
   absence: string;
@@ -154,29 +268,42 @@ function formatPastAssignmentSection(
 ): PlanningEmployeeAssignmentTooltipSection | null {
   if (!assignment) return null;
 
-  return {
-    lines: formatAssignmentDetailLines(assignment, locale),
-    dayOffset: calendarDaysBetween(assignment.shiftDate, todayISO),
-  };
+  return assignmentSectionFromRow(
+    assignment,
+    todayISO,
+    locale,
+    calendarDaysBetween(assignment.shiftDate, todayISO),
+    false
+  );
 }
 
 function formatFutureAssignmentSection(
   assignment: EmployeeLastShiftAssignment | null,
   todayISO: string,
-  locale: "de" | "en"
+  locale: "de" | "en",
+  weeklyHoursWeekDates?: readonly string[]
 ): PlanningEmployeeAssignmentTooltipSection | null {
   if (!assignment) return null;
 
-  return {
-    lines: formatAssignmentDetailLines(assignment, locale),
-    dayOffset: calendarDaysBetween(todayISO, assignment.shiftDate),
-  };
+  const showProjectedWeeklyHours =
+    weeklyHoursWeekDates != null &&
+    weeklyHoursWeekDates.length > 0 &&
+    weeklyHoursWeekDates.includes(assignment.shiftDate);
+
+  return assignmentSectionFromRow(
+    assignment,
+    todayISO,
+    locale,
+    calendarDaysBetween(todayISO, assignment.shiftDate),
+    showProjectedWeeklyHours
+  );
 }
 
 function formatAdjacentAssignmentSections(
   adjacentAssignments: EmployeeAdjacentShiftAssignments,
   todayISO: string,
-  locale: "de" | "en"
+  locale: "de" | "en",
+  weeklyHoursWeekDates?: readonly string[]
 ): {
   lastPastAssignment: PlanningEmployeeAssignmentTooltipSection | null;
   nextFutureAssignment: PlanningEmployeeAssignmentTooltipSection | null;
@@ -190,7 +317,8 @@ function formatAdjacentAssignmentSections(
     nextFutureAssignment: formatFutureAssignmentSection(
       adjacentAssignments.nextFuture,
       todayISO,
-      locale
+      locale,
+      weeklyHoursWeekDates
     ),
   };
 }
@@ -226,6 +354,7 @@ export function formatDashboardStaffingCandidateEmployeeTooltipSections(
     areas: readonly Pick<LocationArea, "id" | "name" | "location_id">[];
     labels: DashboardStaffingCandidateEmployeeTooltipLabels;
     todayISO: string;
+    weeklyHoursWeekDates?: readonly string[];
   }
 ): DashboardStaffingCandidateEmployeeTooltipSections {
   const qualificationNameById = new Map(
@@ -334,7 +463,8 @@ export function formatDashboardStaffingCandidateEmployeeTooltipSections(
     formatAdjacentAssignmentSections(
       payload.adjacentAssignments,
       input.todayISO,
-      input.locale
+      input.locale,
+      input.weeklyHoursWeekDates
     );
 
   return {

@@ -2,7 +2,7 @@
 
 import type { NotificationOutboxEntry } from "@schichtwerk/types";
 import { useTranslations } from "@/i18n/locale-provider";
-import { MODAL_SCROLLBAR_CLASS } from "@/components/settings/settings-list-ui";
+import { MODAL_SCROLLBAR_CLASS, SETTINGS_LIST_HEADER_BG_CLASS } from "@/components/settings/settings-list-ui";
 import { cn } from "@/lib/cn";
 
 type OutboxRow = NotificationOutboxEntry & {
@@ -46,7 +46,7 @@ export function NotificationOutboxView({ entries, embedded = false }: Props) {
     >
       <div className={cn("h-full overflow-auto", MODAL_SCROLLBAR_CLASS)}>
         <table className="min-w-full text-left text-sm">
-          <thead className="sticky top-0 z-10 border-b border-border bg-surface">
+          <thead className={cn("sticky top-0 z-10 border-b border-border", SETTINGS_LIST_HEADER_BG_CLASS)}>
             <tr>
               <th className="px-3 py-2 font-medium text-muted">
                 {t("shiftConfirmation.outbox.columns.createdAt")}

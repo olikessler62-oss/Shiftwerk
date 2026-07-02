@@ -184,6 +184,7 @@ export {
   settingsModalHeaderClass,
   settingsModalHeaderPaddingClass,
   SETTINGS_MODAL_HEADER_BG_CLASS,
+  SETTINGS_LIST_HEADER_BG_CLASS,
   settingsNestedModalDialogClass,
   settingsNestedModalOverlayClass,
   settingsResponsiveTableWrapClass,
@@ -289,14 +290,16 @@ export function settingsProfileEmbeddedListScrollClass(itemCount: number) {
 }
 
 export function settingsPanelHeaderClass() {
-  return "shrink-0 truncate border-b border-border bg-subtle px-3 py-2.5 text-sm font-medium text-foreground";
+  return cn(
+    "shrink-0 truncate border-b border-border panel-surface-header-bg px-3 py-2.5 text-sm font-medium text-foreground"
+  );
 }
 
 export function settingsColumnHeaderClass(
   align: "left" | "center" | "right" = "left"
 ) {
   return cn(
-    "px-2 py-1 pb-1 text-xs font-medium text-muted",
+    "panel-surface-header-bg px-2 py-1 pb-1 text-xs font-medium text-muted",
     align === "center"
       ? "text-center"
       : align === "right"
@@ -314,7 +317,7 @@ export function settingsScrollableTableListClass(className?: string) {
 }
 
 export function settingsStickyIndicatorHeaderClass(className?: string) {
-  return cn("sticky top-0 z-[2] w-1 bg-subtle p-0", className);
+  return cn("sticky top-0 z-[2] panel-surface-header-bg w-1 p-0", className);
 }
 
 export function settingsStickyColumnHeaderClass(
@@ -323,7 +326,7 @@ export function settingsStickyColumnHeaderClass(
 ) {
   return cn(
     settingsColumnHeaderClass(align),
-    "sticky top-0 z-[1] bg-subtle",
+    "sticky top-0 z-[1]",
     className
   );
 }

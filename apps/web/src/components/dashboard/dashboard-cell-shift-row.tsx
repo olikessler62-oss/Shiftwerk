@@ -50,7 +50,6 @@ import { resolveShiftCardConfirmationStatusForCalendar } from "@/lib/shift-card-
 import { hasPendingEmployeeCancellation } from "@schichtwerk/database";
 import { ShiftPendingCancellationOverlay } from "@/components/dashboard/shift-pending-cancellation-overlay";
 import { SHIFT_ABSENCE_CONFLICT_RING_CLASS } from "@/lib/shift-absence-conflict";
-import { isPastShiftDate } from "@/lib/planning-readonly";
 import {
   canOpenShiftCardContextMenu,
   handleShiftCardContextMenuPointerEvent,
@@ -98,6 +97,7 @@ type Props = {
   absenceConflictShiftIds?: ReadonlySet<string>;
   swapRequestShiftIds?: ReadonlySet<string>;
   shiftConfirmationEnabled?: boolean;
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean;
 };
 
 export function DashboardCellShiftRow({
@@ -119,6 +119,7 @@ export function DashboardCellShiftRow({
   absenceConflictShiftIds,
   swapRequestShiftIds,
   shiftConfirmationEnabled = true,
+  isPastShiftDate,
 }: Props) {
   const t = useTranslations();
   const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
@@ -192,7 +193,7 @@ export function DashboardCellShiftRow({
         const showTwoLineDetail = cardWidthPx >= MIN_WIDTH_FOR_TWO_LINE_DETAIL_PX;
         const stripWidthPx = resolveStripWidthPx(cardWidthPx);
         const showEmployeeStrip = planningShiftSegmentShowsEmployeeStrip(part);
-        const isPastShift = isPastShiftDate(cellDate);
+        const isPastShift = isPastShiftDate(cellDate, shift.startTime);
         const calendarConfirmationStatus =
           resolveShiftCardConfirmationStatusForCalendar(
             shift,
@@ -245,6 +246,7 @@ export function DashboardCellShiftRow({
           {
             id: shift.id,
             shift_date: shift.shift_date,
+            startTime: shift.startTime,
             confirmationStatus: shift.confirmationStatus,
             requestedAt: shift.requestedAt,
             displayState: shift.displayState,
@@ -309,6 +311,7 @@ export function DashboardCellShiftRow({
                       {
                         shiftDate: shift.shift_date,
                         cellDate,
+                        shiftStartTime: shift.startTime,
                         isPastShiftDate,
                         displayState: shift.displayState,
                         hasAbsenceConflict: absenceConflictShiftIds?.has(shift.id),

@@ -191,13 +191,18 @@ export function isStaffingHeaderStatusClickable(input: {
   hasCandidatesPlanning: boolean;
   staffingWindowRows: readonly DashboardStaffingWindowRow[];
   todayISO: string;
+  allowPastShiftChanges: boolean;
+  timeZone: string;
 }): boolean {
   return (
     isAreaStaffingUncovered(input.ampelLevel) &&
     !input.isPastScope &&
     input.hasCandidatesPlanning &&
-    findFirstStaffingCandidatesRow(input.staffingWindowRows, input.todayISO) !==
-      null
+    findFirstStaffingCandidatesRow(input.staffingWindowRows, {
+      todayISO: input.todayISO,
+      allowPastShiftChanges: input.allowPastShiftChanges,
+      timeZone: input.timeZone,
+    }) !== null
   );
 }
 
@@ -222,14 +227,17 @@ export function isPlannedCoverageHeaderStatusClickable(input: {
   isPastScope: boolean;
   showPlannedCoverageStatusLine: boolean;
   staffingWindowRows: readonly DashboardStaffingWindowRow[];
-  todayISO: string;
+  allowPastShiftChanges: boolean;
+  timeZone: string;
 }): boolean {
   return (
     input.showPlannedCoverageStatusLine &&
     input.windowIssuesEnabled &&
     !input.isPastScope &&
-    findFirstPlannedStaffingWindowRow(input.staffingWindowRows, input.todayISO) !==
-      null
+    findFirstPlannedStaffingWindowRow(input.staffingWindowRows, {
+      allowPastShiftChanges: input.allowPastShiftChanges,
+      timeZone: input.timeZone,
+    }) !== null
   );
 }
 

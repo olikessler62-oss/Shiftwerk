@@ -7,7 +7,7 @@ import { DashboardSummaryHeader } from "@/components/dashboard/dashboard-summary
 import { SettingsModalsLayer } from "@/components/settings/settings-modals-layer";
 import { SETTINGS_MODALS_ON_CURRENT_PAGE } from "@/lib/settings-modal-config";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
-import { useOrgFeatures, useShiftConfirmationPendingAfterMinutes } from "@/lib/org-features-provider";
+import { useOrgFeatures, useShiftConfirmationPendingAfterMinutes, useAllowPastShiftChanges, useOrganization } from "@/lib/org-features-provider";
 import { toIntlLocale } from "@/i18n/intl-locale";
 import { cn } from "@/lib/cn";
 import { formatDayHeader } from "@/lib/planning-utils";
@@ -25,6 +25,7 @@ import { shouldShowLocationInPlanningUi } from "@/lib/planning-location-ui";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import { weekdayLabelFromIndex } from "@/lib/location-staffing-client";
 import { useLazyShiftCompensation } from "@/lib/use-lazy-shift-compensation";
+import { resolveOrganizationTimeZone } from "@schichtwerk/database";
 import type {
   AreaShiftTemplateWithBreaks,
   CompensationSurchargeType,
@@ -97,6 +98,12 @@ export function DashboardSummaryView({
   const simplePlanning = !features.areas;
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
   const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
+  const allowPastShiftChanges = useAllowPastShiftChanges();
+  const organization = useOrganization();
+  const organizationTimeZone = useMemo(
+    () => resolveOrganizationTimeZone(organization),
+    [organization]
+  );
   const todayISO = toISODate(new Date());
 
   useClearMainNavPendingWhenReady(true);
@@ -292,6 +299,8 @@ export function DashboardSummaryView({
       pendingAfterMinutes,
       readOnlyWeek,
       todayISO,
+      timeZone: organizationTimeZone,
+      allowPastShiftChanges,
     };
   }, [
     selectedLocationId,
@@ -304,6 +313,8 @@ export function DashboardSummaryView({
     employeeColorById,
     readOnlyWeek,
     todayISO,
+    organizationTimeZone,
+    allowPastShiftChanges,
   ]);
 
   return (

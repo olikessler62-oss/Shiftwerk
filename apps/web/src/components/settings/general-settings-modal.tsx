@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   updateOrganizationName,
+  updateOrganizationAllowPastShiftChanges,
   updateOrganizationShiftConfirmationPendingAfterMinutes,
   updateOrganizationShowCompensationInPlanningUi,
 } from "@/app/actions/organization";
@@ -46,6 +47,9 @@ export function GeneralSettingsModal({ onClose }: Props) {
   const [showCompensation, setShowCompensation] = useState(
     organization.show_compensation_in_planning_ui
   );
+  const [allowPastShiftChanges, setAllowPastShiftChanges] = useState(
+    organization.allow_past_shift_changes ?? false
+  );
 
   useEffect(() => {
     setOrganizationName(organization.name);
@@ -59,6 +63,10 @@ export function GeneralSettingsModal({ onClose }: Props) {
     setShowCompensation(organization.show_compensation_in_planning_ui);
   }, [organization.show_compensation_in_planning_ui]);
 
+  useEffect(() => {
+    setAllowPastShiftChanges(organization.allow_past_shift_changes ?? false);
+  }, [organization.allow_past_shift_changes]);
+
   function persistCompensation(next: boolean) {
     setShowCompensation(next);
     setErrorMessage(null);
@@ -66,6 +74,20 @@ export function GeneralSettingsModal({ onClose }: Props) {
       const result = await updateOrganizationShowCompensationInPlanningUi(next);
       if (!result.ok) {
         setShowCompensation(organization.show_compensation_in_planning_ui);
+        setErrorMessage(t(result.errorKey));
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  function persistAllowPastShiftChanges(next: boolean) {
+    setAllowPastShiftChanges(next);
+    setErrorMessage(null);
+    startTransition(async () => {
+      const result = await updateOrganizationAllowPastShiftChanges(next);
+      if (!result.ok) {
+        setAllowPastShiftChanges(organization.allow_past_shift_changes ?? false);
         setErrorMessage(t(result.errorKey));
         return;
       }
@@ -181,6 +203,23 @@ export function GeneralSettingsModal({ onClose }: Props) {
             </span>
             <span className="mt-1 block text-sm leading-snug text-muted">
               {t("settings.showCompensationInPlanningHint")}
+            </span>
+          </span>
+        </label>
+
+        <label className={cn(checkboxCardClass, pending && "pointer-events-none opacity-60")}>
+          <Checkbox
+            checked={allowPastShiftChanges}
+            disabled={pending}
+            onChange={(event) => persistAllowPastShiftChanges(event.target.checked)}
+            className="mt-0.5 shrink-0"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-foreground">
+              {t("settings.allowPastShiftChangesLabel")}
+            </span>
+            <span className="mt-1 block text-sm leading-snug text-muted">
+              {t("settings.allowPastShiftChangesHint")}
             </span>
           </span>
         </label>

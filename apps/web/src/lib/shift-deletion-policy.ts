@@ -32,7 +32,9 @@ export function canDeleteShift(input: {
 
   requestedAt?: string | null;
 
-  isPastShiftDate: (shiftDate: string) => boolean;
+  isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean;
+
+  shiftStartTime?: string | null;
 
   pendingAfterMinutes?: number;
 
@@ -47,7 +49,7 @@ export function canDeleteShift(input: {
 
 
 
-  if (input.isPastShiftDate(input.shiftDate)) {
+  if (input.isPastShiftDate(input.shiftDate, input.shiftStartTime)) {
 
     return effectiveStatus !== undefined && effectiveStatus !== "confirmed";
 

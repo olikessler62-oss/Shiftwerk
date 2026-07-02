@@ -108,6 +108,41 @@ textarea,
 :root {
   --app-shell-sidebar-width: 15rem;
   --app-shell-header-panel-color: #14476e;
+  --app-shell-header-panel-color-light: color-mix(
+    in srgb,
+    var(--app-shell-header-panel-color) 100%,
+    white
+  );
+  --app-shell-header-panel-color-dark: color-mix(
+    in srgb,
+    var(--app-shell-header-panel-color) 0%,
+    black
+  );
+  --app-shell-header-panel-gradient-vertical: linear-gradient(
+    180deg,
+    var(--app-shell-header-panel-color-dark) 0%,
+    var(--app-shell-header-panel-color) 60%,
+    var(--app-shell-header-panel-color-light) 100%
+  );
+  --app-shell-header-panel-gradient-horizontal: linear-gradient(
+    90deg,
+    var(--app-shell-header-panel-color-dark) 0%,
+    var(--app-shell-header-panel-color) 60%,
+    var(--app-shell-header-panel-color-light) 100%
+  );
+
+  --panel-header-surface-light: #c7d4e5;
+  --panel-header-surface-dark: color-mix(in srgb, #c7d4e5 58%, #92a4b8);
+  --panel-header-surface-gradient: linear-gradient(
+    180deg,
+    var(--panel-header-surface-dark) 0%,
+    var(--panel-header-surface-light) 100%
+  );
+}
+
+/** Modal-, Slide-in- und Listen-Kopf — dezent, helles Ende #c7d4e5. */
+.panel-surface-header-bg {
+  background: var(--panel-header-surface-gradient);
 }
 
 .app-shell-root {
@@ -124,7 +159,7 @@ textarea,
   left: 0;
   right: 0;
   height: var(--app-shell-brand-band-height);
-  background: var(--app-shell-header-panel-color);
+  background: var(--app-shell-header-panel-gradient-horizontal);
   z-index: 5;
   pointer-events: none;
 }
@@ -267,10 +302,10 @@ textarea,
   -webkit-backdrop-filter: blur(1px);
 }
 
-/** Linke App-Sidebar — einfarbig wie Kopfband. */
+/** Linke App-Sidebar — Verlauf mit Panel-Farbe als Mittelwert. */
 .app-shell-sidebar {
-  --sidebar-scrollbar-thumb: #052830;
-  --sidebar-scrollbar-track: #256892;
+  --sidebar-scrollbar-thumb: color-mix(in srgb, var(--app-shell-header-panel-color) 82%, black);
+  --sidebar-scrollbar-track: color-mix(in srgb, var(--app-shell-header-panel-color) 28%, white);
   --sidebar-scrollbar-size: 12px;
   --color-foreground: #ffffff;
   --color-muted: rgb(255 255 255 / 0.78);
@@ -278,7 +313,7 @@ textarea,
   --color-subtle: rgb(255 255 255 / 0.16);
   --color-primary: #ffffff;
   --color-nav-active: rgb(255 255 255 / 0.18);
-  background: var(--app-shell-header-panel-color);
+  background: var(--app-shell-header-panel-gradient-vertical);
   color: var(--color-foreground);
   border-color: var(--color-border);
   position: relative;
@@ -364,7 +399,7 @@ textarea,
 }
 
 .app-page-toolbar-header.app-shell-top-panel-toolbar {
-  background: var(--app-shell-header-panel-color);
+  background: var(--app-shell-header-panel-gradient-horizontal);
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -865,7 +900,53 @@ body {
   font-family: var(--font-sans);
 }
 
-/** Scrollbars in Modals, Sub-Modals und Dashboard-Zellen (Thumb, Track, Pfeile). */
+/**
+ * App-weite Scrollbar-Farben — alle scrollbaren Flächen (Dashboard, Modals, Kalender).
+ * Sidebar und Toolbar überschreiben gezielt mit eigenen Tokens.
+ */
+:root {
+  --app-scrollbar-thumb: var(--modal-scrollbar-thumb);
+  --app-scrollbar-track: var(--modal-scrollbar-track);
+  --app-scrollbar-size: 12px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--app-scrollbar-size);
+  height: var(--app-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--app-scrollbar-thumb);
+  border: 2px solid var(--app-scrollbar-track);
+  border-radius: 6px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary-dark);
+}
+
+*::-webkit-scrollbar-button {
+  background-color: var(--app-scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-button:hover {
+  background-color: var(--color-primary-dark);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--app-scrollbar-track);
+}
+
+/** Scrollbar-Gutter — nur wo explizit gesetzt (Modals, einige Dashboard-Panels). */
 .modal-scrollbar {
   scrollbar-gutter: stable;
 }
@@ -873,48 +954,4 @@ body {
 /** Ohne reservierten Gutter — für Dialoge mit innerem Scroll (kein weißer Rand rechts). */
 .modal-scrollbar.modal-scrollbar-inline {
   scrollbar-gutter: auto;
-}
-
-.modal-scrollbar,
-.modal-scrollbar * {
-  scrollbar-width: thin;
-  scrollbar-color: var(--modal-scrollbar-thumb) var(--modal-scrollbar-track);
-}
-
-.modal-scrollbar::-webkit-scrollbar,
-.modal-scrollbar *::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-
-.modal-scrollbar::-webkit-scrollbar-track,
-.modal-scrollbar *::-webkit-scrollbar-track {
-  background: var(--modal-scrollbar-track);
-}
-
-.modal-scrollbar::-webkit-scrollbar-thumb,
-.modal-scrollbar *::-webkit-scrollbar-thumb {
-  background-color: var(--modal-scrollbar-thumb);
-  border: 2px solid var(--modal-scrollbar-track);
-  border-radius: 6px;
-}
-
-.modal-scrollbar::-webkit-scrollbar-thumb:hover,
-.modal-scrollbar *::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-primary-dark);
-}
-
-.modal-scrollbar::-webkit-scrollbar-button,
-.modal-scrollbar *::-webkit-scrollbar-button {
-  background-color: var(--modal-scrollbar-thumb);
-}
-
-.modal-scrollbar::-webkit-scrollbar-button:hover,
-.modal-scrollbar *::-webkit-scrollbar-button:hover {
-  background-color: var(--color-primary-dark);
-}
-
-.modal-scrollbar::-webkit-scrollbar-corner,
-.modal-scrollbar *::-webkit-scrollbar-corner {
-  background: var(--modal-scrollbar-track);
 }

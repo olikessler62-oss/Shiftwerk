@@ -331,6 +331,15 @@ export {
   type OrganizationShiftConfirmationPendingInput,
 } from "./organization-shift-confirmation-settings";
 export {
+  isOrganizationShiftDateInPast,
+  isPlanningShiftMomentInPast,
+  resolvePlanningShiftStartInstant,
+  shouldBlockPastPlanningShiftEdit,
+  shouldSuppressEmployeeShiftNotification,
+  shouldSuppressEmployeeShiftNotificationNow,
+  type PlanningShiftMomentInput,
+} from "./past-shift-planning-policy";
+export {
   areShiftAssignTimesComplete,
   employeeHasRecurringAvailabilityOnWeekday,
   employeeMatchesShiftAvailability,

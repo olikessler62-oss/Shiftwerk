@@ -9,6 +9,7 @@ import {
   type DashboardStaffingIssue,
   type DashboardStaffingWindowRow,
 } from "@/lib/dashboard-area-week-stats";
+import { staffingWindowRowShowsCandidatesButton } from "@/lib/dashboard-staffing-row-status";
 import { findServiceHourIdForShift, type AreaServiceHourRef } from "@/lib/location-staffing-client";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import {
@@ -17,7 +18,10 @@ import {
   type ShiftCardContextMenuOptions,
 } from "@/lib/shift-card-context-menu-actions";
 import { canDeleteShift } from "@/lib/shift-deletion-policy";
-import { isPastCalendarDate } from "@/lib/dates";
+import {
+  createPlanningPastShiftChecker,
+  planningMomentFromStaffingRow,
+} from "@/lib/planning-past-shift-time";
 import type { ShiftConfirmationStatus } from "@schichtwerk/types";
 
 export type DashboardStaffingWindowIssuesContext = {
@@ -34,6 +38,8 @@ export type DashboardStaffingWindowIssuesContext = {
   pendingAfterMinutes?: number;
   readOnlyWeek: boolean;
   todayISO: string;
+  timeZone: string;
+  allowPastShiftChanges: boolean;
 };
 
 export type DashboardStaffingWindowIssueListItem =
@@ -53,13 +59,20 @@ export type DashboardStaffingWindowIssueListItem =
 
 export function findFirstStaffingCandidatesRow(
   rows: readonly DashboardStaffingWindowRow[],
-  todayISO: string
+  context: Pick<
+    DashboardStaffingWindowIssuesContext,
+    "todayISO" | "allowPastShiftChanges" | "timeZone"
+  >
 ): DashboardStaffingWindowRow | null {
+  const checker = createPlanningPastShiftChecker(
+    context.allowPastShiftChanges,
+    context.timeZone
+  );
+
   for (const row of rows) {
     if (
-      !isPastCalendarDate(row.dateISO, todayISO) &&
-      row.rowKind === "staffing_window" &&
-      row.status === "understaffed"
+      staffingWindowRowShowsCandidatesButton(row, context.todayISO) &&
+      !checker.isBlockedForPlanning(planningMomentFromStaffingRow(row))
     ) {
       return row;
     }
@@ -70,11 +83,19 @@ export function findFirstStaffingCandidatesRow(
 
 export function findFirstPlannedStaffingWindowRow(
   rows: readonly DashboardStaffingWindowRow[],
-  todayISO: string
+  context: Pick<
+    DashboardStaffingWindowIssuesContext,
+    "allowPastShiftChanges" | "timeZone"
+  >
 ): DashboardStaffingWindowRow | null {
+  const checker = createPlanningPastShiftChecker(
+    context.allowPastShiftChanges,
+    context.timeZone
+  );
+
   for (const row of rows) {
     if (
-      !isPastCalendarDate(row.dateISO, todayISO) &&
+      !checker.isBlockedForPlanning(planningMomentFromStaffingRow(row)) &&
       row.rowKind === "staffing_window" &&
       row.status === "planned"
     ) {
@@ -142,10 +163,15 @@ function shiftCardMenuOptions(
   shift: PlanningShift,
   context: DashboardStaffingWindowIssuesContext
 ): ShiftCardContextMenuOptions {
+  const checker = createPlanningPastShiftChecker(
+    context.allowPastShiftChanges,
+    context.timeZone
+  );
+
   return {
     shiftDate: shift.shift_date,
-    isPastShiftDate: (shiftDate) =>
-      isPastCalendarDate(shiftDate, context.todayISO),
+    shiftStartTime: shift.startTime,
+    isPastShiftDate: checker.isPastShiftDate,
     displayState: shift.displayState,
     pendingAfterMinutes: context.pendingAfterMinutes,
   };

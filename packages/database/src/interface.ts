@@ -175,6 +175,10 @@ export interface SchichtwerkDatabase {
     organizationId: string,
     enabled: boolean
   ): Promise<void>;
+  updateOrganizationAllowPastShiftChanges(
+    organizationId: string,
+    allowed: boolean
+  ): Promise<void>;
   updateOrganizationName(organizationId: string, name: string): Promise<void>;
   updateOrganizationShiftConfirmationPendingAfterMinutes(
     organizationId: string,
@@ -966,6 +970,7 @@ export interface SchichtwerkDatabase {
     actorId: string;
     actorRole: "manager" | "employee";
     employeeName?: string;
+    allowPastShiftChanges?: boolean;
   }): Promise<{
     locationId: string | null;
     shiftDate: string;

@@ -9,13 +9,14 @@ import {
 } from "@/app/actions/shift-confirmations";
 import { removeShift } from "@/app/actions/shifts";
 import { AreaCalendarShiftDeleteConfirmModal } from "@/components/areacalendar/areacalendar-shift-delete-confirm-modal";
+import { DashboardPastDayChangeConfirmModal } from "@/components/dashboard/dashboard-past-day-change-confirm-modal";
 import { ShiftCancelConfirmModal } from "@/components/shifts/shift-cancel-confirm-modal";
 import {
   DashboardStaffingRowCandidatesModal,
   type DashboardStaffingCandidatesPlanningContext,
 } from "@/components/dashboard/dashboard-staffing-row-candidates-modal";
 import { createPortal } from "react-dom";
-import { SettingsModalHeader } from "@/components/settings/settings-list-ui";
+import { SettingsModalHeader, SETTINGS_MODAL_HEADER_BG_CLASS } from "@/components/settings/settings-list-ui";
 import {
   MODAL_SCROLLBAR_CLASS,
   settingsModalBodyPaddingClass,
@@ -23,6 +24,7 @@ import {
   settingsNestedModalDialogClass,
 } from "@/components/settings/settings-modal-shell";
 import { Alert, Button } from "@/components/ui";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useTranslations } from "@/i18n/locale-provider";
 import { cn } from "@/lib/cn";
 import { STAFFING_OCHER_TEXT_CLASS } from "@/lib/staffing-ocher-styles";
@@ -45,7 +47,14 @@ import {
 } from "@/lib/dashboard-panel-styles";
 import { DASHBOARD_UI_BUTTON_CLASS } from "@/lib/dashboard-toolbar-ui";
 import { areaCalendarAssignmentPresetsForArea } from "@/lib/areacalendar-assignment-presets";
-import { isPastCalendarDate, getISOWeek, parseISODate } from "@/lib/dates";
+import { getISOWeek, parseISODate } from "@/lib/dates";
+import { isPlanningReadOnlyWeek } from "@/lib/planning-readonly";
+import {
+  createPlanningPastShiftChecker,
+  planningMomentFromShift,
+  planningMomentFromStaffingRow,
+  type PlanningPastShiftChecker,
+} from "@/lib/planning-past-shift-time";
 import type { PlanningShift } from "@/lib/planning-shift-card";
 import {
   shiftCardContextMenuActionLabelKey,
@@ -74,6 +83,8 @@ export type DashboardAreaAssignmentOverviewContext =
     shiftConfirmationEnabled: boolean;
     pendingAfterMinutes?: number;
     todayISO: string;
+    timeZone: string;
+    allowPastShiftChanges: boolean;
   };
 
 type Props = {
@@ -91,18 +102,64 @@ type PendingConfirm =
   | { kind: "cancel"; shift: PlanningShift }
   | null;
 
+type PastDayOverviewActionPending =
+  | { kind: "assign"; row: DashboardStaffingWindowRow }
+  | { kind: "reassign"; row: DashboardStaffingWindowRow; shiftId: string };
+
+function isOverviewAssignRowDisabled(
+  row: DashboardStaffingWindowRow,
+  planningPastShiftChecker: PlanningPastShiftChecker,
+  context: DashboardAreaAssignmentOverviewContext,
+  allowPastDayStaffingEdits: boolean
+): boolean {
+  if (
+    isPlanningReadOnlyWeek(context.readOnlyWeek, context.allowPastShiftChanges) &&
+    !allowPastDayStaffingEdits
+  ) {
+    return true;
+  }
+  if (allowPastDayStaffingEdits) return false;
+  return planningPastShiftChecker.isBlockedForPlanning(
+    planningMomentFromStaffingRow(row)
+  );
+}
+
+function overviewActionPastMomentBlocked(
+  moment: ReturnType<typeof planningMomentFromStaffingRow>,
+  planningPastShiftChecker: PlanningPastShiftChecker,
+  allowPastDayStaffingEdits: boolean
+): boolean {
+  if (allowPastDayStaffingEdits) return false;
+  return planningPastShiftChecker.isBlockedForPlanning(moment);
+}
+
 function isShiftActionDisabled(
   action: ShiftCardContextMenuAction,
   shift: PlanningShift,
   context: DashboardAreaAssignmentOverviewContext,
-  pending: boolean
+  planningPastShiftChecker: PlanningPastShiftChecker,
+  pending: boolean,
+  allowPastDayStaffingEdits: boolean
 ): boolean {
-  if (pending || context.readOnlyWeek) return true;
+  if (pending) return true;
+  if (
+    isPlanningReadOnlyWeek(context.readOnlyWeek, context.allowPastShiftChanges) &&
+    !allowPastDayStaffingEdits
+  ) {
+    return true;
+  }
 
+  const shiftMoment = planningMomentFromShift(shift);
   const menuOptions = {
     shiftDate: shift.shift_date,
-    isPastShiftDate: (shiftDate: string) =>
-      isPastCalendarDate(shiftDate, context.todayISO),
+    isPastShiftDate: (shiftDate: string, startTime?: string | null) => {
+      if (allowPastDayStaffingEdits && context.allowPastShiftChanges) return false;
+      return planningPastShiftChecker.isBlockedForPlanning({
+        shiftDateISO: shiftDate,
+        startTime: startTime ?? shift.startTime,
+      });
+    },
+    shiftStartTime: shift.startTime,
     displayState: shift.displayState,
   };
 
@@ -110,6 +167,7 @@ function isShiftActionDisabled(
     case "delete":
       return !canDeleteShift({
         shiftDate: shift.shift_date,
+        shiftStartTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate: menuOptions.isPastShiftDate,
@@ -118,6 +176,7 @@ function isShiftActionDisabled(
     case "cancel":
       return !canCancelShift({
         shiftDate: shift.shift_date,
+        shiftStartTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
         isPastShiftDate: menuOptions.isPastShiftDate,
@@ -125,7 +184,11 @@ function isShiftActionDisabled(
     case "requestConfirmation":
     case "setConfirmed":
     case "reassign":
-      return false;
+      return overviewActionPastMomentBlocked(
+        shiftMoment,
+        planningPastShiftChecker,
+        allowPastDayStaffingEdits
+      );
   }
 }
 
@@ -172,42 +235,98 @@ function assignmentOverviewWindowStatusClassName(
   }
 }
 
+function OverviewPastBlockedButton({
+  disabled,
+  pastDayBlocked,
+  pastDayBlockedTooltip,
+  className,
+  onClick,
+  children,
+}: {
+  disabled: boolean;
+  pastDayBlocked: boolean;
+  pastDayBlockedTooltip: string;
+  className?: string;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  const button = (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className={className}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+
+  if (!pastDayBlocked) return button;
+
+  return (
+    <Tooltip content={pastDayBlockedTooltip}>
+      <span className="inline-flex">{button}</span>
+    </Tooltip>
+  );
+}
+
 function ShiftRowActions({
   actions,
   shift,
   context,
+  planningPastShiftChecker,
   pending,
   pendingAction,
   onAction,
+  allowPastDayStaffingEdits,
 }: {
   actions: readonly ShiftCardContextMenuAction[];
   shift: PlanningShift;
   context: DashboardAreaAssignmentOverviewContext;
+  planningPastShiftChecker: PlanningPastShiftChecker;
   pending: boolean;
   pendingAction: string | null;
   onAction: (action: ShiftCardContextMenuAction, shift: PlanningShift) => void;
+  allowPastDayStaffingEdits: boolean;
 }) {
   const t = useTranslations();
   if (actions.length === 0) return null;
 
+  const pastMomentBlocked = overviewActionPastMomentBlocked(
+    planningMomentFromShift(shift),
+    planningPastShiftChecker,
+    allowPastDayStaffingEdits
+  );
+  const pastDayBlockedTooltip = t("dashboard.pastDayPlanningChangeBlocked");
+
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-      {actions.map((action) => (
-        <Button
-          key={action}
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 whitespace-nowrap px-2 text-xs"
-          disabled={
-            isShiftActionDisabled(action, shift, context, pending) ||
-            pendingAction === `${shift.id}:${action}`
-          }
-          onClick={() => onAction(action, shift)}
-        >
-          {t(shiftCardContextMenuActionLabelKey(action))}
-        </Button>
-      ))}
+      {actions.map((action) => {
+        const disabled =
+            isShiftActionDisabled(
+              action,
+              shift,
+              context,
+              planningPastShiftChecker,
+              pending,
+              allowPastDayStaffingEdits
+            ) || pendingAction === `${shift.id}:${action}`;
+
+        return (
+          <OverviewPastBlockedButton
+            key={action}
+            disabled={disabled}
+            pastDayBlocked={pastMomentBlocked}
+            pastDayBlockedTooltip={pastDayBlockedTooltip}
+            className="h-7 whitespace-nowrap px-2 text-xs"
+            onClick={() => onAction(action, shift)}
+          >
+            {t(shiftCardContextMenuActionLabelKey(action))}
+          </OverviewPastBlockedButton>
+        );
+      })}
     </div>
   );
 }
@@ -223,6 +342,8 @@ function OverviewWindowSection({
   onAction,
   onAssignRow,
   showDayLabelInHeader,
+  allowPastDayStaffingEdits,
+  planningPastShiftChecker,
 }: {
   section: DashboardAssignmentOverviewDayGroup["windows"][number];
   context: DashboardAreaAssignmentOverviewContext;
@@ -231,6 +352,8 @@ function OverviewWindowSection({
   onAction: (action: ShiftCardContextMenuAction, shift: PlanningShift) => void;
   onAssignRow: (row: DashboardStaffingWindowRow) => void;
   showDayLabelInHeader: boolean;
+  allowPastDayStaffingEdits: boolean;
+  planningPastShiftChecker: PlanningPastShiftChecker;
 }) {
   const t = useTranslations();
   const { row, shifts, openSlots } = section;
@@ -259,7 +382,7 @@ function OverviewWindowSection({
         DASHBOARD_PANEL_ROUNDED_CLASS
       )}
     >
-      <header className="border-b border-border/60 bg-[#c7d4e5]/60 px-3 py-1.5">
+      <header className={cn("border-b border-border/60 px-3 py-1.5", SETTINGS_MODAL_HEADER_BG_CLASS)}>
         <div className="flex items-start justify-between gap-3">
           <p
             className="min-w-0 flex-1 text-sm leading-snug text-foreground"
@@ -350,9 +473,11 @@ function OverviewWindowSection({
               actions={actions}
               shift={shift}
               context={context}
+              planningPastShiftChecker={planningPastShiftChecker}
               pending={pending}
               pendingAction={pendingAction}
               onAction={onAction}
+              allowPastDayStaffingEdits={allowPastDayStaffingEdits}
             />
           </div>
         ))}
@@ -370,19 +495,24 @@ function OverviewWindowSection({
                 })}
               </p>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            <OverviewPastBlockedButton
+              disabled={isOverviewAssignRowDisabled(
+                row,
+                planningPastShiftChecker,
+                context,
+                allowPastDayStaffingEdits
+              )}
+              pastDayBlocked={overviewActionPastMomentBlocked(
+                planningMomentFromStaffingRow(row),
+                planningPastShiftChecker,
+                allowPastDayStaffingEdits
+              )}
+              pastDayBlockedTooltip={t("dashboard.pastDayPlanningChangeBlocked")}
               className="h-7 shrink-0 px-2 text-xs"
-              disabled={
-                context.readOnlyWeek ||
-                isPastCalendarDate(row.dateISO, context.todayISO)
-              }
               onClick={() => onAssignRow(row)}
             >
               {t("dashboard.areaAssignmentOverviewAssign")}
-            </Button>
+            </OverviewPastBlockedButton>
           </div>
         ))}
 
@@ -420,13 +550,29 @@ export function DashboardAreaAssignmentOverviewModal({
   const [candidatesRow, setCandidatesRow] =
     useState<DashboardStaffingWindowRow | null>(null);
   const [reassignShiftId, setReassignShiftId] = useState<string | null>(null);
+  const [pastDayChangeConfirm, setPastDayChangeConfirm] =
+    useState<PastDayOverviewActionPending | null>(null);
+  const [allowPastDayStaffingEdits, setAllowPastDayStaffingEdits] =
+    useState(false);
   const { blocksOutboundSend } = useShiftConfirmationSimulation();
   const { simulatedProposedOnAssign, relaxAppRegistrationGate } =
     useSimulatedProposedOnAssignRequest();
 
+  const planningPastShiftChecker = useMemo(
+    () =>
+      createPlanningPastShiftChecker(
+        context.allowPastShiftChanges,
+        context.timeZone
+      ),
+    [context.allowPastShiftChanges, context.timeZone]
+  );
+
   useAppShellModalLockActive(true);
 
-  const nestedDialogOpen = pendingConfirm !== null || candidatesRow !== null;
+  const nestedDialogOpen =
+    pendingConfirm !== null ||
+    candidatesRow !== null ||
+    pastDayChangeConfirm !== null;
 
   useEffect(() => {
     if (pending || nestedDialogOpen) return;
@@ -449,6 +595,37 @@ export function DashboardAreaAssignmentOverviewModal({
     setReassignShiftId(null);
   }, []);
 
+  const requestAssignRow = useCallback(
+    (row: DashboardStaffingWindowRow) => {
+      const rowMoment = planningMomentFromStaffingRow(row);
+      if (
+        context.allowPastShiftChanges &&
+        planningPastShiftChecker.isMomentInPast(rowMoment)
+      ) {
+        setPastDayChangeConfirm({ kind: "assign", row });
+        return;
+      }
+      openCandidatesForRow(row);
+    },
+    [context.allowPastShiftChanges, openCandidatesForRow, planningPastShiftChecker]
+  );
+
+  const confirmPastDayChange = useCallback(() => {
+    if (!pastDayChangeConfirm) return;
+    setAllowPastDayStaffingEdits(true);
+    if (pastDayChangeConfirm.kind === "assign") {
+      openCandidatesForRow(pastDayChangeConfirm.row);
+    } else {
+      setCandidatesRow(pastDayChangeConfirm.row);
+      setReassignShiftId(pastDayChangeConfirm.shiftId);
+    }
+    setPastDayChangeConfirm(null);
+  }, [openCandidatesForRow, pastDayChangeConfirm]);
+
+  const closePastDayChangeConfirm = useCallback(() => {
+    setPastDayChangeConfirm(null);
+  }, []);
+
   const handleAssignSuccess = useCallback(async () => {
     await router.refresh();
   }, [router]);
@@ -468,6 +645,8 @@ export function DashboardAreaAssignmentOverviewModal({
       pendingAfterMinutes: context.pendingAfterMinutes,
       readOnlyWeek: context.readOnlyWeek,
       todayISO: context.todayISO,
+      timeZone: context.timeZone,
+      allowPastShiftChanges: context.allowPastShiftChanges,
     }),
     [context]
   );
@@ -595,10 +774,21 @@ export function DashboardAreaAssignmentOverviewModal({
               (listedShift) => listedShift.id === shift.id
             )
           );
-          if (row) {
-            setCandidatesRow(row);
-            setReassignShiftId(shift.id);
+          if (!row) return;
+          const rowMoment = planningMomentFromStaffingRow(row);
+          if (
+            context.allowPastShiftChanges &&
+            planningPastShiftChecker.isMomentInPast(rowMoment)
+          ) {
+            setPastDayChangeConfirm({
+              kind: "reassign",
+              row,
+              shiftId: shift.id,
+            });
+            return;
           }
+          setCandidatesRow(row);
+          setReassignShiftId(shift.id);
           return;
         }
         case "requestConfirmation":
@@ -652,6 +842,7 @@ export function DashboardAreaAssignmentOverviewModal({
       blocksOutboundSend,
       context.locationId,
       context.weekStart,
+      context.allowPastShiftChanges,
       relaxAppRegistrationGate,
       router,
       rows,
@@ -735,8 +926,10 @@ export function DashboardAreaAssignmentOverviewModal({
                               pending={pending}
                               pendingAction={pendingAction}
                               onAction={handleAction}
-                              onAssignRow={openCandidatesForRow}
+                              onAssignRow={requestAssignRow}
                               showDayLabelInHeader={showDayHeaders}
+                              allowPastDayStaffingEdits={allowPastDayStaffingEdits}
+                              planningPastShiftChecker={planningPastShiftChecker}
                             />
                           ))}
                         </div>
@@ -796,12 +989,23 @@ export function DashboardAreaAssignmentOverviewModal({
         )
         : null}
 
+      {pastDayChangeConfirm && typeof document !== "undefined"
+        ? createPortal(
+          <DashboardPastDayChangeConfirmModal
+            onCancel={closePastDayChangeConfirm}
+            onConfirm={confirmPastDayChange}
+          />,
+          document.body
+        )
+        : null}
+
       {candidatesRow && typeof document !== "undefined"
         ? createPortal(
           <DashboardStaffingRowCandidatesModal
             row={candidatesRow}
             planning={context}
             existingShiftId={reassignShiftId}
+            allowPastDayChange={allowPastDayStaffingEdits}
             onAssigned={handleAssignSuccess}
             onClose={closeCandidatesModal}
           />,

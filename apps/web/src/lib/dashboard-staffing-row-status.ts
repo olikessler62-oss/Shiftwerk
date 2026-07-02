@@ -176,12 +176,11 @@ export function staffingWindowRowsHaveDetailsPerStatusSplit(
 
 export function staffingWindowRowShowsCandidatesButton(
   row: DashboardStaffingWindowRow,
-  todayISO: string
+  _todayISO: string
 ): boolean {
   return (
-    !isPastCalendarDate(row.dateISO, todayISO) &&
     row.rowKind === "staffing_window" &&
-    row.status === "understaffed"
+    staffingWindowRowOpenSlotCount(row) > 0
   );
 }
 
@@ -301,9 +300,60 @@ export function resolveStaffingWindowRowCompactPrimaryAction(
     windowIssuesEnabled &&
     staffingWindowRowShowsWindowIssuesAction(row, shiftConfirmationEnabled);
 
-  if (hasOpenSlots && hasWindowIssues) return "windowIssues";
+  if (hasOpenSlots && hasWindowIssues) {
+    if (
+      staffingWindowRowShowsOnlyOpenSlots(
+        row,
+        todayISO,
+        shiftConfirmationEnabled
+      )
+    ) {
+      return "candidates";
+    }
+    return "windowIssues";
+  }
   if (hasOpenSlots) return "candidates";
   if (hasWindowIssues) return "windowIssues";
+
+  return null;
+}
+
+export function staffingWindowDisplayLineHasOpenGap(
+  line: StaffingWindowRowDisplayLine
+): boolean {
+  return line.required > line.assigned;
+}
+
+/** Tabellenzeile: Primäraktion oder Zuweisen, wenn die Anzeigezeile eine offene Lücke hat. */
+export function resolveStaffingWindowTableRowAction(
+  row: DashboardStaffingWindowRow,
+  line: StaffingWindowRowDisplayLine,
+  todayISO: string,
+  shiftConfirmationEnabled: boolean,
+  windowIssuesEnabled: boolean,
+  options?: FlattenStaffingWindowTableLinesOptions
+): StaffingWindowDisplayLineAction | null {
+  const primary = resolveStaffingWindowDisplayLinePrimaryAction(
+    row,
+    line,
+    todayISO,
+    shiftConfirmationEnabled,
+    windowIssuesEnabled,
+    options
+  );
+  if (primary) return primary;
+
+  const staffingIssues =
+    (row.staffingConflicts?.length ?? 0) > 0 ||
+    (row.staffingHints?.length ?? 0) > 0;
+  if (staffingIssues) return null;
+
+  if (
+    row.rowKind === "staffing_window" &&
+    staffingWindowDisplayLineHasOpenGap(line)
+  ) {
+    return "candidates";
+  }
 
   return null;
 }
