@@ -223,6 +223,7 @@ export function AreaCalendarOvernightSpanCard({
       <Tooltip
         content={<ShiftCardTooltipContent data={tooltipData} />}
         contentClassName={shiftCardTooltipContentClassName}
+        interactive
         className="inline-flex h-full"
       >
         <button
@@ -269,6 +270,7 @@ export function AreaCalendarOvernightSpanCard({
     <Tooltip
       content={<ShiftCardTooltipContent data={tooltipData} />}
       contentClassName={shiftCardTooltipContentClassName}
+      interactive
       className="inline-flex h-full w-full min-w-0"
       placement={{
         anchorLeftToTriggerCenter: true,

@@ -150,6 +150,7 @@ function DashboardCalendarEmployeeNameCell({
         className="flex min-h-0 w-full self-stretch"
         contentClassName={employeeAvailabilityTooltipContentClassName}
         openDelayMs={EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS}
+        interactive
         content={node}
         placement={employeeAvailabilityTooltipPlacement}
       >
@@ -251,6 +252,7 @@ type Props = {
   staffColumnHeaderLabel: string;
   t: (key: string, params?: Record<string, string>) => string;
   isDayReadOnly: (date: string) => boolean;
+  isCellAssignHardBlocked?: (date: string) => boolean;
   getDayAssignBlockReason: (
     employeeId: string,
     date: string
@@ -367,6 +369,7 @@ export function DashboardCalendarGrid({
   staffColumnHeaderLabel,
   t,
   isDayReadOnly,
+  isCellAssignHardBlocked = () => false,
   getDayAssignBlockReason,
   onToggleDayActive,
   onOpenPicker,
@@ -794,6 +797,7 @@ export function DashboardCalendarGrid({
                   : blockReason;
                 const isPastDay = isPastCalendarDate(date, todayISO);
                 const dayReadOnly = isDayReadOnly(date);
+                const cellAssignHardBlocked = isCellAssignHardBlocked(date);
                 const isDayExpanded = layoutActiveDayDates.has(date);
                 const overnightSpanOnCell = employeeOvernightSpans.find(
                   (span) => span.startDate === date || span.endDate === date
@@ -813,7 +817,8 @@ export function DashboardCalendarGrid({
                   onOpenPicker(emp.id, date, shiftId);
                 const showCellFreePlus =
                   DASHBOARD_CELL_FREE_PLUS_ENABLED &&
-                  !isPastDay &&
+                  !cellAssignHardBlocked &&
+                  !dayReadOnly &&
                   !isNoServiceDayForArea;
                 const emptyAreaLabel = t("dashboard.addShiftTitle");
                 const handleCellAssignInteraction = (
@@ -873,7 +878,7 @@ export function DashboardCalendarGrid({
                     return;
                   }
 
-                  if (isPastDay) return;
+                  if (cellAssignHardBlocked) return;
                   if (effectiveBlockReason === "absent") return;
                   if (
                     !isNoServiceDayForArea &&
@@ -997,6 +1002,7 @@ export function DashboardCalendarGrid({
                       absenceConflictShiftIds={absenceConflictShiftIds}
                       swapRequestShiftIds={swapRequestShiftIds}
                       shiftConfirmationEnabled={shiftConfirmationEnabled}
+                      isPastShiftDate={isPastShiftDate}
                       emptyAreaLabel={emptyAreaLabel}
                     />
                   ) : null;
@@ -1182,9 +1188,8 @@ export function DashboardCalendarGrid({
                     );
                   }}
                   highlightedEmployeeId={highlightedEmployeeId}
-                      shiftConfirmationEnabled={shiftConfirmationEnabled}
-                      isPastShiftDate={isPastShiftDate}
-                    />
+                  shiftConfirmationEnabled={shiftConfirmationEnabled}
+                />
               ) : null}
             </div>
           );

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SHIFT_CANCEL_PAST_ERROR } from "@schichtwerk/database";
 import {
+  canCancelShift,
   shouldDisplayShiftOnPlanningCalendar,
   translateShiftCancelError,
 } from "@/lib/shift-cancellation-policy";
@@ -113,6 +114,30 @@ describe("shouldDisplayShiftOnPlanningCalendar", () => {
         confirmationStatus: "canceled",
         cancelledBy: "employee",
         now,
+      })
+    ).toBe(true);
+  });
+});
+
+describe("canCancelShift", () => {
+  it("blocks cancellation when the shift moment is in the past", () => {
+    expect(
+      canCancelShift({
+        shiftDate: "2026-06-25",
+        shiftStartTime: "08:00",
+        confirmationStatus: "confirmed",
+        isShiftMomentInPast: () => true,
+      })
+    ).toBe(false);
+  });
+
+  it("allows cancellation for future confirmed shifts", () => {
+    expect(
+      canCancelShift({
+        shiftDate: "2099-06-25",
+        shiftStartTime: "08:00",
+        confirmationStatus: "confirmed",
+        isShiftMomentInPast: () => false,
       })
     ).toBe(true);
   });

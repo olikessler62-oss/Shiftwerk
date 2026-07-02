@@ -17,6 +17,9 @@ export const TOOLTIP_Z_INDEX = 200;
 /** Standard-Verzögerung für Hover-Tooltips (Fokus öffnet weiterhin sofort). */
 export const HOVER_TOOLTIP_OPEN_DELAY_MS = 700;
 
+/** Tooltip bleibt nach Mausverlassen noch sichtbar (ms). */
+export const HOVER_TOOLTIP_CLOSE_DELAY_MS = 3000;
+
 /** Verfügbarkeits-Tooltips in Mitarbeiterlisten (Bereich- und Mitarbeiter-Kalender). */
 export const EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS = 1200;
 
@@ -57,7 +60,7 @@ export const employeeAvailabilityTooltipPlacement: TooltipPlacement = {
 
 /** Einheitliches helles Tooltip — kein natives `title` (Browser-Default ist dunkel). */
 export const tooltipContentClassName =
-  "pointer-events-none w-max max-w-[min(20rem,calc(100vw-1rem))] rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-snug text-foreground shadow-lg";
+  "w-max max-w-[min(20rem,calc(100vw-1rem))] rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-snug text-foreground shadow-lg";
 
 /** Schichtkarten: etwas breiter für längere Statuszeilen (z. B. „Bestätigung angefragt“). */
 export const shiftCardTooltipContentClassName = cn(
@@ -82,6 +85,10 @@ type TooltipProps = {
   placement?: TooltipPlacement;
   /** Verzögerung vor Anzeige bei Hover (Fokus öffnet sofort). */
   openDelayMs?: number;
+  /** Verzögerung nach Mausverlassen bis zum Schließen. */
+  closeDelayMs?: number;
+  /** Maus kann auf den Tooltip wechseln — bleibt offen, solange Trigger oder Tooltip hovered. */
+  interactive?: boolean;
 };
 
 function hasTooltipContent(content: ReactNode): boolean {
@@ -119,12 +126,15 @@ export function Tooltip({
   suppressOpen = false,
   placement,
   openDelayMs = HOVER_TOOLTIP_OPEN_DELAY_MS,
+  closeDelayMs = HOVER_TOOLTIP_CLOSE_DELAY_MS,
+  interactive = false,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const openDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeDelayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = useId();
   const show = !disabled && hasTooltipContent(content);
   const allowOpen = show && !suppressOpen;
@@ -136,29 +146,53 @@ export function Tooltip({
     }
   }, []);
 
+  const clearCloseDelay = useCallback(() => {
+    if (closeDelayTimeoutRef.current !== null) {
+      clearTimeout(closeDelayTimeoutRef.current);
+      closeDelayTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    clearCloseDelay();
+    if (closeDelayMs <= 0) {
+      setOpen(false);
+      return;
+    }
+    closeDelayTimeoutRef.current = setTimeout(() => setOpen(false), closeDelayMs);
+  }, [clearCloseDelay, closeDelayMs]);
+
   useEffect(() => {
     if (suppressOpen) {
       clearOpenDelay();
+      clearCloseDelay();
       setOpen(false);
     }
-  }, [suppressOpen, clearOpenDelay]);
+  }, [suppressOpen, clearOpenDelay, clearCloseDelay]);
 
-  useEffect(() => () => clearOpenDelay(), [clearOpenDelay]);
+  useEffect(
+    () => () => {
+      clearOpenDelay();
+      clearCloseDelay();
+    },
+    [clearOpenDelay, clearCloseDelay]
+  );
 
   const handleMouseEnter = useCallback(() => {
     if (!allowOpen) return;
     clearOpenDelay();
+    clearCloseDelay();
     if (openDelayMs <= 0) {
       setOpen(true);
       return;
     }
     openDelayTimeoutRef.current = setTimeout(() => setOpen(true), openDelayMs);
-  }, [allowOpen, clearOpenDelay, openDelayMs]);
+  }, [allowOpen, clearCloseDelay, clearOpenDelay, openDelayMs]);
 
   const handleMouseLeave = useCallback(() => {
     clearOpenDelay();
-    setOpen(false);
-  }, [clearOpenDelay]);
+    scheduleClose();
+  }, [clearOpenDelay, scheduleClose]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -236,9 +270,16 @@ export function Tooltip({
         className={cn("inline-flex max-w-full min-w-0", className)}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        onFocus={() => allowOpen && setOpen(true)}
+        onFocus={() => {
+          if (!allowOpen) return;
+          clearCloseDelay();
+          setOpen(true);
+        }}
         onBlur={handleMouseLeave}
-        onContextMenu={() => setOpen(false)}
+        onContextMenu={() => {
+          clearCloseDelay();
+          setOpen(false);
+        }}
         aria-describedby={open && allowOpen ? id : undefined}
       >
         {children}
@@ -252,6 +293,7 @@ export function Tooltip({
               className={cn(
                 tooltipContentClassName,
                 "fixed",
+                interactive ? "pointer-events-auto" : "pointer-events-none",
                 contentClassName
               )}
               style={{
@@ -259,6 +301,8 @@ export function Tooltip({
                 left: position.left,
                 zIndex: TOOLTIP_Z_INDEX,
               }}
+              onMouseEnter={interactive ? handleMouseEnter : undefined}
+              onMouseLeave={interactive ? handleMouseLeave : undefined}
             >
               {typeof content === "string" && content.includes("\n") ? (
                 <span className="block whitespace-pre-line">{content}</span>

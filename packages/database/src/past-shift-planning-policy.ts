@@ -79,3 +79,12 @@ export function shouldSuppressEmployeeShiftNotificationNow(
 ): boolean {
   return shouldSuppressEmployeeShiftNotification(input, timeZone, now);
 }
+
+/** Keine Bestätigungsanfragen, Resends oder Mitarbeiter-Benachrichtigungen. */
+export function shouldSkipEmployeeConfirmationFlow(
+  input: PlanningShiftMomentInput,
+  timeZone: string,
+  now: Date = new Date()
+): boolean {
+  return shouldSuppressEmployeeShiftNotification(input, timeZone, now);
+}

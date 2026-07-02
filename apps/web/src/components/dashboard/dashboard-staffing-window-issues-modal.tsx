@@ -137,9 +137,12 @@ function isShiftActionDisabled(
         shiftStartTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
-        isPastShiftDate: menuOptions.isPastShiftDate,
+        isShiftMomentInPast: planningPastShiftChecker.isShiftMomentInPast,
       });
     case "requestConfirmation":
+      return planningPastShiftChecker.isMomentInPast(
+        planningMomentFromShift(shift)
+      );
     case "setConfirmed":
     case "reassign":
       if (allowPastDayChange && context.allowPastShiftChanges) return false;

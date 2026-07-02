@@ -850,6 +850,7 @@ function CandidateList({
                       <div className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1">
                         <div className="min-w-0 flex-1">
                           <Tooltip
+                            interactive
                             openDelayMs={
                               DASHBOARD_STAFFING_CANDIDATE_TOOLTIP_OPEN_DELAY_MS
                             }

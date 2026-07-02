@@ -270,6 +270,7 @@ export function DashboardCellShiftRow({
             key={segmentKey}
             content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
             contentClassName={shiftCardTooltipContentClassName}
+            interactive
             className={cn(
               "inline-flex h-full min-h-0 min-w-0 shrink-0",
               employeeHighlighted && "relative z-10 overflow-visible"

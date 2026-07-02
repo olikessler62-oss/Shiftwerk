@@ -489,6 +489,7 @@ export function CollapsedShiftPreview({
               key={shift.id}
               content={<ShiftCardTooltipContent data={display.tooltip} />}
               contentClassName={shiftCardTooltipContentClassName}
+              interactive
               className="self-start max-w-full"
               placement={{
                 anchorLeftToTriggerCenter: true,
@@ -514,6 +515,7 @@ export function CollapsedShiftPreview({
             key={shift.id}
             content={<ShiftCardTooltipContent data={display.tooltip} />}
             contentClassName={shiftCardTooltipContentClassName}
+            interactive
             className="self-start max-w-full"
             placement={{
               anchorLeftToTriggerCenter: true,

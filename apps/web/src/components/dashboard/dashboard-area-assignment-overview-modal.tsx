@@ -179,9 +179,10 @@ function isShiftActionDisabled(
         shiftStartTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
-        isPastShiftDate: menuOptions.isPastShiftDate,
+        isShiftMomentInPast: planningPastShiftChecker.isShiftMomentInPast,
       });
     case "requestConfirmation":
+      return planningPastShiftChecker.isMomentInPast(shiftMoment);
     case "setConfirmed":
     case "reassign":
       return overviewActionPastMomentBlocked(

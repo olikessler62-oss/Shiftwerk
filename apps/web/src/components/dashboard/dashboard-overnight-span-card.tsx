@@ -197,6 +197,7 @@ export function DashboardOvernightSpanCard({
       <Tooltip
         content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
         contentClassName={shiftCardTooltipContentClassName}
+        interactive
         className="inline-flex h-full"
       >
         <button
@@ -244,6 +245,7 @@ export function DashboardOvernightSpanCard({
     <Tooltip
       content={<ShiftCardTooltipContent data={cardContent.tooltip} />}
       contentClassName={shiftCardTooltipContentClassName}
+      interactive
       className={cn(
         "inline-flex h-full w-full min-w-0",
         employeeHighlighted && displayMode === "expanded" && "relative z-10 overflow-visible"

@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import type { Qualification } from "@schichtwerk/types";
 import type {
   DashboardStaffingCandidateEmployeeTooltipPayload,
-  PlanningEmployeeAssignmentTooltipSection,
 } from "@/lib/dashboard-staffing-candidate-employee-tooltip";
 import {
   formatDashboardStaffingCandidateEmployeeTooltipSections,
@@ -195,6 +194,7 @@ function TooltipBody({
   nextAssignmentDurationLine,
   noAssignmentYetLabel,
   wishesLabel,
+  weeklyHoursDisplay,
 }: {
   sections: DashboardStaffingCandidateEmployeeTooltipSections & {
     absenceLabel: string;
@@ -210,6 +210,7 @@ function TooltipBody({
   nextAssignmentDurationLine: string | null;
   noAssignmentYetLabel: string;
   wishesLabel: string;
+  weeklyHoursDisplay?: EmployeeWeeklyHoursDisplay | null;
 }) {
   return (
     <div className="space-y-2.5">
@@ -399,6 +400,7 @@ export function PlanningEmployeeTooltipContent({
         nextAssignmentDurationLine={nextAssignmentDurationLine}
         noAssignmentYetLabel={t("dashboard.staffingCandidatesTooltipNoAssignmentYet")}
         wishesLabel={t("dashboard.staffingCandidatesTooltipWishes")}
+        weeklyHoursDisplay={weeklyHoursDisplay}
       />
     </div>
   );

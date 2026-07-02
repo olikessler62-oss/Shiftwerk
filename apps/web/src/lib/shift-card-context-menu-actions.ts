@@ -35,6 +35,8 @@ export type ShiftCardContextMenuOptions = {
   /** Kalenderzelle — falls abweichend von {@link shiftDate} (z. B. Nachtschicht). */
   cellDate?: string;
   isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean;
+  /** Vergangenheitsprüfung für Storno — ignoriert allowPastShiftChanges. */
+  isShiftMomentInPast?: (shiftDate: string, startTime?: string | null) => boolean;
   shiftStartTime?: string | null;
   displayState?: ShiftCardDisplayState;
   hasAbsenceConflict?: boolean;
@@ -50,6 +52,34 @@ const PAST_UNCONFIRMED_ACTIONS: readonly ShiftCardContextMenuAction[] = [
   "setConfirmed",
 
 ];
+
+const EMPLOYEE_OUTBOUND_CONFIRMATION_ACTIONS = new Set<ShiftCardContextMenuAction>([
+  "requestConfirmation",
+  "cancel",
+]);
+
+function isShiftMomentInPastForMenuOptions(
+  options: Pick<
+    ShiftCardContextMenuOptions,
+    "shiftDate" | "cellDate" | "shiftStartTime" | "isPastShiftDate" | "isShiftMomentInPast"
+  >
+): boolean {
+  const pastReferenceDate = options.cellDate ?? options.shiftDate;
+  return (
+    options.isShiftMomentInPast?.(pastReferenceDate, options.shiftStartTime) ??
+    options.isPastShiftDate(pastReferenceDate, options.shiftStartTime)
+  );
+}
+
+function withoutEmployeeOutboundConfirmationActions(
+  actions: readonly ShiftCardContextMenuAction[],
+  options?: ShiftCardContextMenuOptions
+): readonly ShiftCardContextMenuAction[] {
+  if (!options || !isShiftMomentInPastForMenuOptions(options)) return actions;
+  return actions.filter(
+    (action) => !EMPLOYEE_OUTBOUND_CONFIRMATION_ACTIONS.has(action)
+  );
+}
 
 
 
@@ -95,8 +125,7 @@ export function isPastUnconfirmedShift(
   options: ShiftCardContextMenuOptions
 
 ): boolean {
-  const pastReferenceDate = options.cellDate ?? options.shiftDate;
-  if (!options.isPastShiftDate(pastReferenceDate, options.shiftStartTime)) return false;
+  if (!isShiftMomentInPastForMenuOptions(options)) return false;
 
   const status = resolveShiftCardContextMenuStatus(
     confirmationStatus,
@@ -321,6 +350,18 @@ export function shiftCardContextMenuActions(
 
   ) {
 
+    if (
+      shiftHasDisplayableAbsenceConflict(confirmationStatus, requestedAt, {
+        displayState: options.displayState,
+        hasAbsenceConflict: options.hasAbsenceConflict,
+      })
+    ) {
+      return withoutEmployeeOutboundConfirmationActions(
+        communicationTabActions("conflicts") as readonly ShiftCardContextMenuAction[],
+        options
+      );
+    }
+
     return PAST_UNCONFIRMED_ACTIONS;
 
   }
@@ -340,19 +381,16 @@ export function shiftCardContextMenuActions(
       hasAbsenceConflict: options?.hasAbsenceConflict,
     })
   ) {
-    return communicationTabActions("conflicts") as readonly ShiftCardContextMenuAction[];
+    return withoutEmployeeOutboundConfirmationActions(
+      communicationTabActions("conflicts") as readonly ShiftCardContextMenuAction[],
+      options
+    );
   }
 
 
 
   if (status === "confirmed") {
-    if (
-      options &&
-      options.isPastShiftDate(
-        options.cellDate ?? options.shiftDate,
-        options.shiftStartTime
-      )
-    ) {
+    if (options && isShiftMomentInPastForMenuOptions(options)) {
       return [];
     }
 
@@ -372,7 +410,10 @@ export function shiftCardContextMenuActions(
 
 
 
-  return communicationTabActions(tab) as readonly ShiftCardContextMenuAction[];
+  return withoutEmployeeOutboundConfirmationActions(
+    communicationTabActions(tab) as readonly ShiftCardContextMenuAction[],
+    options
+  );
 
 }
 

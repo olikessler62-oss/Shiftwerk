@@ -54,6 +54,7 @@ export function AreaCalendarEmployeeLegendCard({
       contentClassName={employeeAvailabilityTooltipContentClassName}
       placement={employeeAvailabilityTooltipPlacement}
       openDelayMs={EMPLOYEE_AVAILABILITY_TOOLTIP_OPEN_DELAY_MS}
+      interactive
     >
       <div
         className="shrink-0 self-start"

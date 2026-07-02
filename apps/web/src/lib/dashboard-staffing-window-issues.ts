@@ -172,6 +172,7 @@ function shiftCardMenuOptions(
     shiftDate: shift.shift_date,
     shiftStartTime: shift.startTime,
     isPastShiftDate: checker.isPastShiftDate,
+    isShiftMomentInPast: checker.isShiftMomentInPast,
     displayState: shift.displayState,
     pendingAfterMinutes: context.pendingAfterMinutes,
   };

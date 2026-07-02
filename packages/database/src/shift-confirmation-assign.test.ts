@@ -146,4 +146,26 @@ describe("resolveConfirmationAssignPatch", () => {
     expect(patch.confirmation_status).toBe("confirmed");
     expect(patch.employee_dismissed_at).toBeNull();
   });
+
+  it("sets confirmed on new past shift when confirmation flow is skipped", () => {
+    const patch = resolveConfirmationAssignPatch({
+      shiftConfirmationEnabled: true,
+      skipEmployeeConfirmationFlow: true,
+      existing: null,
+      next: baseShift,
+    });
+    expect(patch.confirmation_status).toBe("confirmed");
+    expect(patch.requested_at).toBeNull();
+  });
+
+  it("resets requested to confirmed when times change and confirmation flow is skipped", () => {
+    const patch = resolveConfirmationAssignPatch({
+      shiftConfirmationEnabled: true,
+      skipEmployeeConfirmationFlow: true,
+      existing: { ...baseShift, confirmation_status: "requested" },
+      next: { ...baseShift, ends_at: "2026-06-10T18:00:00.000Z" },
+    });
+    expect(patch.confirmation_status).toBe("confirmed");
+    expect(patch.requested_at).toBeNull();
+  });
 });

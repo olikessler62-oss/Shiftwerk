@@ -1273,7 +1273,7 @@ export const de = {
     ampelStaffingAssignEmployeeTooltip: "Mitarbeiter zuweisen",
     pastDayChangeConfirmTitle: "Vergangener Tag",
     pastDayChangeConfirmMessage:
-      "Der Tag liegt in der Vergangenheit! Soll trotzdem eine Änderung vorgenommen werden?",
+      "Die Zeit liegt bereits in der Vergangenheit! Möchten Sie trotzdem eine Bearbeitung vornehmen?",
     pastDayPlanningChangeBlocked:
       "Keine Änderung zulässig, da Zeit in Vergangenheit liegt",
     staffingCandidatesModalTitle: "Personal vorschlagen",

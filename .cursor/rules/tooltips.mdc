@@ -29,7 +29,8 @@ Verwende **kein** natives HTML-Attribut `title` für Hover-Hinweise. Browser-Too
 - `title` als **React-Prop** für Panel-/Section-Überschriften (kein HTML-Tooltip)
 - `aria-label` für Screenreader bleibt unverändert
 - Mitarbeiter-Verfügbarkeit im Schicht-Modal: eigenes positioniertes Tooltip (`EmployeeAvailabilityHint`), Position über `resolveNameHoverTooltipPosition` — linker Rand am rechten Combobox-Rand, unterer Rand auf Höhe des oberen Combobox-Rands (siehe auch `.cursor/rules/comboboxes.mdc`)
-- Personal-Verfügbarkeits-Tooltip schließt automatisch nach **4 Sekunden** (`EMPLOYEE_AVAILABILITY_HINT_AUTO_CLOSE_MS`), zusätzlich bei Mausabstand/Scroll wie bisher
+- Personal-Verfügbarkeits-Tooltip schließt automatisch nach **6 Sekunden** (`EMPLOYEE_AVAILABILITY_HINT_AUTO_CLOSE_MS`), zusätzlich bei Mausabstand/Scroll wie bisher
+- Standard-`Tooltip`: bleibt **3 Sekunden** nach Mausverlassen sichtbar (`HOVER_TOOLTIP_CLOSE_DELAY_MS`)
 
 ## Stil
 

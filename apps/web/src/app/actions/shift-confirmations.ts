@@ -161,15 +161,20 @@ async function sendConfirmationForEmployee(input: {
   }
 
   const timeZone = resolveOrganizationTimeZone(organization);
-  const skipPastNotifications = sendable.some((shift) =>
-    shouldSuppressEmployeeShiftNotificationNow(
-      {
-        shiftDateISO: shift.shift_date,
-        startsAt: shift.starts_at,
-      },
-      timeZone
-    )
+  const sendableFuture = sendable.filter(
+    (shift) =>
+      !shouldSuppressEmployeeShiftNotificationNow(
+        {
+          shiftDateISO: shift.shift_date,
+          startsAt: shift.starts_at,
+        },
+        timeZone
+      )
   );
+
+  if (!sendableFuture.length) {
+    return { ok: false, error: "Keine offenen Schichten zum Senden." };
+  }
 
   const result = await db.sendConfirmationRequestForEmployee({
     organizationId,
@@ -178,10 +183,9 @@ async function sendConfirmationForEmployee(input: {
     scope: input.scope,
     weekStart: batchWeekStart,
     weekEnd: batchWeekEnd,
-    shifts: sendable,
+    shifts: sendableFuture,
     profile,
-    skipNotificationOutbox:
-      assignMode.relaxAppRegistrationGate || skipPastNotifications,
+    skipNotificationOutbox: assignMode.relaxAppRegistrationGate,
   });
 
   revalidateConfirmationPaths({
@@ -482,6 +486,16 @@ export async function listConfirmationSendShifts(input: {
         }
       }
 
+      if (
+        sendable &&
+        shouldSuppressEmployeeShiftNotificationNow(
+          { shiftDateISO: row.shift_date, startsAt: row.starts_at },
+          timeZone
+        )
+      ) {
+        sendable = false;
+      }
+
       shifts.push({
         shiftId: row.id,
         employeeId: row.employee_id,
@@ -661,7 +675,6 @@ export async function cancelShiftAsManager(
       shiftId,
       actorId: userId,
       actorRole: "manager",
-      allowPastShiftChanges: organization.allow_past_shift_changes ?? false,
     });
 
     revalidateAreaCalendarShiftCacheTags({
@@ -734,7 +747,6 @@ export async function cancelShiftsAsManager(shiftIds: string[]): Promise<
           shiftId,
           actorId: userId,
           actorRole: "manager",
-          allowPastShiftChanges: organization.allow_past_shift_changes ?? false,
         });
         canceledCount += 1;
         const dates = touchedDates.get(result.locationId) ?? new Set<string>();

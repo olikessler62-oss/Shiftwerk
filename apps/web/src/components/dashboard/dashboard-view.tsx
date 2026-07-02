@@ -15,6 +15,7 @@ import { cancelShiftAsManager, confirmPastShiftAsManager, submitCommunicationCon
 import { isPastCalendarDate, parseISODate, startOfWeek, toISODate } from "@/lib/dates";
 import { usePlanningEmployeeListContextMenu } from "@/lib/use-planning-employee-list-context-menu";
 import { useDelayedEmployeeHighlight } from "@/lib/use-delayed-employee-highlight";
+import { DashboardPastDayChangeConfirmModal } from "@/components/dashboard/dashboard-past-day-change-confirm-modal";
 import { DashboardCalendarGrid } from "@/components/dashboard/dashboard-calendar-grid";
 import { useDashboardCalendarLayer } from "@/components/dashboard/dashboard-calendar-context";
 import { CalendarStaffingEditModal } from "@/components/planning/calendar-staffing-edit-modal";
@@ -76,7 +77,8 @@ import { resolveOpenDemandShiftPrefill } from "@/lib/bulk-shift-staffing";
 import {
   isPlanningReadOnlyWeek,
 } from "@/lib/planning-readonly";
-import { createPlanningPastShiftChecker } from "@/lib/planning-past-shift-time";
+import { createPlanningPastShiftChecker, planningMomentFromShift } from "@/lib/planning-past-shift-time";
+import { usePastPlanningDayConfirm } from "@/lib/use-past-planning-day-confirm";
 import { clearDocumentTextSelection } from "@/lib/calendar-interaction-ui";
 import { buildHolidayNamesByDate } from "@/lib/german-public-holidays";
 import { useLocale, useTranslations } from "@/i18n/locale-provider";
@@ -452,17 +454,36 @@ export function DashboardView({
   const showCompensationInPlanningUi = useShowCompensationInPlanningUi();
   const organization = useOrganization();
   const allowPastShiftChanges = useAllowPastShiftChanges();
-  const planningIsPastShiftDate = useMemo(
+  const planningPastShiftChecker = useMemo(
     () =>
       createPlanningPastShiftChecker(
         allowPastShiftChanges,
         resolveOrganizationTimeZone(organization)
-      ).isPastShiftDate,
+      ),
     [allowPastShiftChanges, organization]
   );
+  const planningIsPastShiftDate = planningPastShiftChecker.isPastShiftDate;
+  const planningIsShiftMomentInPast = planningPastShiftChecker.isShiftMomentInPast;
   const planningReadOnlyWeek = isPlanningReadOnlyWeek(
     readOnlyWeek,
     allowPastShiftChanges
+  );
+  const {
+    pastDayChangeConfirmOpen,
+    guardPastPlanningAction,
+    confirmPastDayChange,
+    closePastDayChangeConfirm,
+    isDayEditLocked,
+    isCellAssignHardBlocked,
+    isDatePlanningBlockedForAssign,
+  } = usePastPlanningDayConfirm(
+    allowPastShiftChanges,
+    planningPastShiftChecker,
+    planningReadOnlyWeek
+  );
+  const areaDayAssignPolicy = useMemo(
+    () => ({ isDatePlanningBlocked: isDatePlanningBlockedForAssign }),
+    [isDatePlanningBlockedForAssign]
   );
   const pendingAfterMinutes = useShiftConfirmationPendingAfterMinutes();
   const shiftConfirmationEnabled = useEffectiveShiftConfirmationEnabled();
@@ -570,7 +591,8 @@ export function DashboardView({
       Boolean(shiftDeleteConfirmId) ||
       Boolean(shiftCancelConfirm) ||
       Boolean(staffingEditDialog) ||
-      communicationOpen
+      communicationOpen ||
+      pastDayChangeConfirmOpen
   );
   useAppShellWaitCursorActive(communicationBusy);
 
@@ -1378,11 +1400,12 @@ export function DashboardView({
       shiftDate: shift.shift_date,
       cellDate: cellDate ?? shift.shift_date,
       isPastShiftDate: planningIsPastShiftDate,
+      isShiftMomentInPast: planningIsShiftMomentInPast,
       shiftStartTime: shift.startTime,
       displayState: shift.displayState,
       hasAbsenceConflict: absenceConflictShiftIds.has(shift.id),
     }),
-    [absenceConflictShiftIds, planningIsPastShiftDate]
+    [absenceConflictShiftIds, planningIsPastShiftDate, planningIsShiftMomentInPast]
   );
 
   const communicationItemCount = useMemo(
@@ -1476,7 +1499,7 @@ export function DashboardView({
   });
 
   function isDayReadOnly(date: string) {
-    return planningReadOnlyWeek || planningIsPastShiftDate(date);
+    return isDayEditLocked(date);
   }
 
   function applyPreset(preset: AreaCalendarAssignmentPreset) {
@@ -1489,7 +1512,7 @@ export function DashboardView({
     employeeId: string,
     date: string,
     shiftId?: string,
-    options?: { withoutServiceHours?: boolean }
+    options?: { withoutServiceHours?: boolean; skipPastGuard?: boolean }
   ) {
     clearDocumentTextSelection();
 
@@ -1497,6 +1520,23 @@ export function DashboardView({
     const existing = shiftId
       ? cellShifts.find((shift) => shift.id === shiftId)
       : undefined;
+
+    if (!options?.skipPastGuard) {
+      const moment = existing
+        ? planningMomentFromShift({
+            shift_date: existing.shift_date,
+            startTime: existing.startTime,
+          })
+        : { shiftDateISO: date };
+      guardPastPlanningAction(moment, () =>
+        openPicker(employeeId, date, shiftId, {
+          ...options,
+          skipPastGuard: true,
+        })
+      );
+      return;
+    }
+
     let existingPrimaryClickKind: ReturnType<
       typeof resolveShiftCardPrimaryClick
     >["kind"] | null = null;
@@ -1861,8 +1901,15 @@ export function DashboardView({
   function requestPlanningDayAssign(
     employeeId: string,
     date: string,
-    mode: "picker" | "bulk"
+    mode: "picker" | "bulk",
+    skipPastGuard = false
   ) {
+    const run = () => requestPlanningDayAssign(employeeId, date, mode, true);
+    if (!skipPastGuard) {
+      guardPastPlanningAction({ shiftDateISO: date }, run);
+      return;
+    }
+
     const areaHasService =
       assignAreaId != null &&
       areaHasEffectiveServiceHoursOnDate(serviceHours, assignAreaId, date);
@@ -1874,7 +1921,8 @@ export function DashboardView({
         date,
         assignAreaId,
         shiftCountInArea,
-        serviceHours
+        serviceHours,
+        areaDayAssignPolicy
       )
     ) {
       setNoServiceHoursAssignConfirm({ employeeId, date, mode });
@@ -1896,8 +1944,15 @@ export function DashboardView({
 
   function requestPlanningDayAssignForArea(
     date: string,
-    mode: "picker" | "bulk"
+    mode: "picker" | "bulk",
+    skipPastGuard = false
   ) {
+    const run = () => requestPlanningDayAssignForArea(date, mode, true);
+    if (!skipPastGuard) {
+      guardPastPlanningAction({ shiftDateISO: date }, run);
+      return;
+    }
+
     if (!assignAreaId) return;
     const areaHasService = areaHasEffectiveServiceHoursOnDate(
       serviceHours,
@@ -1918,10 +1973,12 @@ export function DashboardView({
           isDayExpanded,
           assignAreaId,
           shiftCountInArea,
-          serviceHours
+          serviceHours,
+          areaDayAssignPolicy
         ),
         serviceHours,
-        shiftCountInArea
+        shiftCountInArea,
+        areaDayAssignPolicy
       )
     ) {
       setNoServiceHoursAssignConfirm({ employeeId: "", date, mode });
@@ -1944,7 +2001,7 @@ export function DashboardView({
 
   const canOpenCellAssignContextMenu = useCallback(
     (employeeId: string, date: string) => {
-      if (!assignAreaId || planningIsPastShiftDate(date)) return false;
+      if (!assignAreaId || isCellAssignHardBlocked(date)) return false;
       const cellSegments =
         shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
       if (
@@ -1982,7 +2039,8 @@ export function DashboardView({
         shiftCountInArea,
         effectiveBlockReason,
         serviceHours,
-        simplePlanning
+        simplePlanning,
+        areaDayAssignPolicy
       );
     },
     [
@@ -1995,12 +2053,14 @@ export function DashboardView({
       countShiftsInAreaOnDate,
       serviceHours,
       simplePlanning,
+      areaDayAssignPolicy,
+      isCellAssignHardBlocked,
     ]
   );
 
   const canOpenDayAssignContextMenu = useCallback(
     (date: string) => {
-      if (!assignAreaId || planningIsPastShiftDate(date)) return false;
+      if (!assignAreaId || isCellAssignHardBlocked(date)) return false;
       const isDayExpanded = layoutActiveDayDates.has(date);
       const shiftCountInArea = countShiftsInAreaOnDate(date);
       const isAssignDayActive = isAreaCalendarAssignDayActive(
@@ -2008,7 +2068,8 @@ export function DashboardView({
         isDayExpanded,
         assignAreaId,
         shiftCountInArea,
-        serviceHours
+        serviceHours,
+        areaDayAssignPolicy
       );
       return canShowAreaDayAssignContextMenu(
         assignAreaId,
@@ -2017,7 +2078,8 @@ export function DashboardView({
         isAssignDayActive,
         serviceHours,
         shiftCountInArea,
-        simplePlanning
+        simplePlanning,
+        areaDayAssignPolicy
       );
     },
     [
@@ -2026,6 +2088,8 @@ export function DashboardView({
       countShiftsInAreaOnDate,
       serviceHours,
       simplePlanning,
+      areaDayAssignPolicy,
+      isCellAssignHardBlocked,
     ]
   );
 
@@ -2054,7 +2118,8 @@ export function DashboardView({
           false,
           assignAreaId,
           shiftCountInArea,
-          serviceHours
+          serviceHours,
+          areaDayAssignPolicy
         )
       ) {
         toggleDayActive(date, true);
@@ -2078,56 +2143,63 @@ export function DashboardView({
 
   const handleDayAssignClick = useCallback(
     (date: string, clientX: number, clientY: number) => {
-      if (!assignAreaId || planningIsPastShiftDate(date)) return;
-      ensureAssignDayActive(date);
+      guardPastPlanningAction({ shiftDateISO: date }, () => {
+        if (!assignAreaId) return;
+        ensureAssignDayActive(date);
 
-      const shiftCountInArea = countShiftsInAreaOnDate(date);
-      const isAssignDayActive = isAreaCalendarAssignDayActive(
-        date,
-        activeDayDates.has(date),
-        assignAreaId,
-        shiftCountInArea,
-        serviceHours
-      );
-
-      if (
-        !simplePlanning &&
-        canPromptNoServiceHoursShiftAssign(
-          assignAreaId,
+        const shiftCountInArea = countShiftsInAreaOnDate(date);
+        const isAssignDayActive = isAreaCalendarAssignDayActive(
           date,
-          true,
-          isAssignDayActive,
-          serviceHours,
-          shiftCountInArea
-        )
-      ) {
-        clearDocumentTextSelection();
-        setNoServiceHoursAssignConfirm({ employeeId: "", date, mode: "bulk" });
-        return;
-      }
-
-      if (!canOpenDayAssignContextMenu(date)) return;
-
-      if (
-        canOpenAssignShiftContextMenu(
+          activeDayDates.has(date),
           assignAreaId,
-          date,
-          true,
-          isAssignDayActive,
+          shiftCountInArea,
           serviceHours,
-          shiftCountInArea
-        )
-      ) {
-        openDayAssignContextMenuAt(date, clientX, clientY);
-      }
+          areaDayAssignPolicy
+        );
+
+        if (
+          !simplePlanning &&
+          canPromptNoServiceHoursShiftAssign(
+            assignAreaId,
+            date,
+            true,
+            isAssignDayActive,
+            serviceHours,
+            shiftCountInArea,
+            areaDayAssignPolicy
+          )
+        ) {
+          clearDocumentTextSelection();
+          setNoServiceHoursAssignConfirm({ employeeId: "", date, mode: "bulk" });
+          return;
+        }
+
+        if (!canOpenDayAssignContextMenu(date)) return;
+
+        if (
+          canOpenAssignShiftContextMenu(
+            assignAreaId,
+            date,
+            true,
+            isAssignDayActive,
+            serviceHours,
+            shiftCountInArea,
+            areaDayAssignPolicy
+          )
+        ) {
+          openDayAssignContextMenuAt(date, clientX, clientY);
+        }
+      });
     },
     [
+      guardPastPlanningAction,
       assignAreaId,
       canOpenDayAssignContextMenu,
       ensureAssignDayActive,
       countShiftsInAreaOnDate,
       activeDayDates,
       serviceHours,
+      areaDayAssignPolicy,
       simplePlanning,
       openDayAssignContextMenuAt,
     ]
@@ -2190,27 +2262,31 @@ export function DashboardView({
 
   const handleCellContextMenu = useCallback(
     (employeeId: string, date: string, clientX: number, clientY: number) => {
-      if (planningIsPastShiftDate(date)) return;
-      if (
-        isEmployeeAbsentOnDate(employeeId, absences, date) &&
-        (shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? []).length === 0
-      ) {
-        return;
-      }
-      ensureAssignDayActive(date);
-      const cellSegments =
-        shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
-      const areaHasService =
-        assignAreaId != null &&
-        areaHasEffectiveServiceHoursOnDate(serviceHours, assignAreaId, date);
-      if (!areaHasService && cellSegments.length === 0) {
-        openDayAssignContextMenuAt(date, clientX, clientY);
-        return;
-      }
-      if (!canOpenCellAssignContextMenu(employeeId, date)) return;
-      openCellContextMenuAt(employeeId, date, clientX, clientY);
+      guardPastPlanningAction({ shiftDateISO: date }, () => {
+        if (isCellAssignHardBlocked(date)) return;
+        if (
+          isEmployeeAbsentOnDate(employeeId, absences, date) &&
+          (shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? []).length === 0
+        ) {
+          return;
+        }
+        ensureAssignDayActive(date);
+        const cellSegments =
+          shiftsByCellDisplay.get(`${employeeId}:${date}`) ?? [];
+        const areaHasService =
+          assignAreaId != null &&
+          areaHasEffectiveServiceHoursOnDate(serviceHours, assignAreaId, date);
+        if (!areaHasService && cellSegments.length === 0) {
+          openDayAssignContextMenuAt(date, clientX, clientY);
+          return;
+        }
+        if (!canOpenCellAssignContextMenu(employeeId, date)) return;
+        openCellContextMenuAt(employeeId, date, clientX, clientY);
+      });
     },
     [
+      guardPastPlanningAction,
+      isCellAssignHardBlocked,
       absences,
       shiftsByCellDisplay,
       ensureAssignDayActive,
@@ -2224,7 +2300,7 @@ export function DashboardView({
 
   const handleStaffingHeaderContextMenu = useCallback(
     (date: string, clientX: number, clientY: number) => {
-      if (!selectedAreaId || planningReadOnlyWeek || planningIsPastShiftDate(date)) return;
+      if (!selectedAreaId || planningReadOnlyWeek || isCellAssignHardBlocked(date)) return;
       const entries = dailyStaffingByDate.get(date) ?? [];
       if (entries.length === 0) return;
       setCellContextMenu(null);
@@ -2541,28 +2617,46 @@ export function DashboardView({
     const shift = shiftsById.get(shiftId);
     if (!shift) return;
 
-    const canDelete = canDeleteShift({
-      shiftDate: shift.shift_date,
-      confirmationStatus: shift.confirmationStatus,
-      requestedAt: shift.requestedAt,
-      isPastShiftDate: planningIsPastShiftDate,
-      pendingAfterMinutes,
-    });
-    if (isDayReadOnly(cellContextMenu.date) && !canDelete) return;
+    guardPastPlanningAction(
+      planningMomentFromShift({
+        shift_date: shift.shift_date,
+        startTime: shift.startTime,
+      }),
+      () => {
+        const canDelete = canDeleteShift({
+          shiftDate: shift.shift_date,
+          shiftStartTime: shift.startTime,
+          confirmationStatus: shift.confirmationStatus,
+          requestedAt: shift.requestedAt,
+          isPastShiftDate: planningIsPastShiftDate,
+          pendingAfterMinutes,
+        });
+        if (isCellAssignHardBlocked(cellContextMenu.date) && !canDelete) return;
 
-    skipCellContextMenuCloseRef.current = true;
-    setCellContextMenu(null);
-    setDeleteShiftError(null);
-    setShiftDeleteConfirmId(null);
+        skipCellContextMenuCloseRef.current = true;
+        setCellContextMenu(null);
+        setDeleteShiftError(null);
+        setShiftDeleteConfirmId(null);
 
-    if (!canDelete) {
-      const status = shift.confirmationStatus ?? "confirmed";
-      setDeleteShiftError(shiftDeleteBlockedMessage(status, t));
-      return;
-    }
+        if (!canDelete) {
+          const status = shift.confirmationStatus ?? "confirmed";
+          setDeleteShiftError(shiftDeleteBlockedMessage(status, t));
+          return;
+        }
 
-    setShiftDeleteConfirmId(shiftId);
-  }, [cellContextMenu, shiftsByCellDisplay, shiftsById, readOnlyWeek, t]);
+        setShiftDeleteConfirmId(shiftId);
+      }
+    );
+  }, [
+    cellContextMenu,
+    shiftsByCellDisplay,
+    shiftsById,
+    guardPastPlanningAction,
+    isCellAssignHardBlocked,
+    planningIsPastShiftDate,
+    pendingAfterMinutes,
+    t,
+  ]);
 
   const handleReassignFromPanel = useCallback(
     (shift: AreaCalendarShiftCard) => {
@@ -2613,12 +2707,13 @@ export function DashboardView({
     if (
       !canCancelShift({
         shiftDate: shift.shift_date,
+        shiftStartTime: shift.startTime,
         confirmationStatus: shift.confirmationStatus,
         requestedAt: shift.requestedAt,
-        isPastShiftDate: planningIsPastShiftDate,
+        isShiftMomentInPast: planningIsShiftMomentInPast,
       })
     ) {
-      if (planningIsPastShiftDate(shift.shift_date)) {
+      if (planningIsShiftMomentInPast(shift.shift_date, shift.startTime)) {
         setCancelShiftError(translateShiftCancelError(SHIFT_CANCEL_PAST_ERROR, t));
       } else {
         setCancelShiftError(
@@ -2695,19 +2790,30 @@ export function DashboardView({
 
   const handleContextSetConfirmed = useCallback(() => {
     if (!cellContextMenu?.shiftId) return;
+    const shift = shiftsById.get(cellContextMenu.shiftId);
+    if (!shift) return;
     const shiftId = cellContextMenu.shiftId;
-    skipCellContextMenuCloseRef.current = true;
-    setCellContextMenu(null);
-    setConfirmShiftError(null);
-    startConfirmShift(async () => {
-      const result = await confirmPastShiftAsManager(shiftId);
-      if (!result.ok) {
-        setConfirmShiftError(translatePastConfirmError(result.error, t));
-        return;
+
+    guardPastPlanningAction(
+      planningMomentFromShift({
+        shift_date: shift.shift_date,
+        startTime: shift.startTime,
+      }),
+      () => {
+        skipCellContextMenuCloseRef.current = true;
+        setCellContextMenu(null);
+        setConfirmShiftError(null);
+        startConfirmShift(async () => {
+          const result = await confirmPastShiftAsManager(shiftId);
+          if (!result.ok) {
+            setConfirmShiftError(translatePastConfirmError(result.error, t));
+            return;
+          }
+          router.refresh();
+        });
       }
-      router.refresh();
-    });
-  }, [cellContextMenu, router, t]);
+    );
+  }, [cellContextMenu, shiftsById, guardPastPlanningAction, router, t]);
 
   const handleContextShiftAction = useCallback(
     (action: ShiftCardContextMenuAction) => {
@@ -2922,6 +3028,7 @@ export function DashboardView({
             weeklySummary={summary}
             t={t}
             isDayReadOnly={isDayReadOnly}
+            isCellAssignHardBlocked={isCellAssignHardBlocked}
             getDayAssignBlockReason={getDayAssignBlockReasonForCell}
             onToggleDayActive={toggleDayActive}
             onOpenPicker={openPicker}
@@ -3024,7 +3131,18 @@ export function DashboardView({
                             pendingAfterMinutes,
                           })
                         ))) ||
-                    (action === "cancel" && cancelShiftPending) ||
+                    (action === "cancel" &&
+                      (cancelShiftPending ||
+                        !(
+                          contextMenuShift &&
+                          canCancelShift({
+                            shiftDate: contextMenuShift.shift_date,
+                            shiftStartTime: contextMenuShift.startTime,
+                            confirmationStatus: contextMenuShift.confirmationStatus,
+                            requestedAt: contextMenuShift.requestedAt,
+                            isShiftMomentInPast: planningIsShiftMomentInPast,
+                          })
+                        ))) ||
                     (action === "requestConfirmation" && sendConfirmationPending) ||
                     (action === "setConfirmed" && confirmShiftPending)
                   }
@@ -3215,6 +3333,13 @@ export function DashboardView({
             onClose={closeAssignModal}
           />
         ) : null}
+
+      {pastDayChangeConfirmOpen ? (
+        <DashboardPastDayChangeConfirmModal
+          onCancel={closePastDayChangeConfirm}
+          onConfirm={confirmPastDayChange}
+        />
+      ) : null}
 
       {noServiceHoursAssignConfirm ? (
         <NoServiceHoursShiftConfirmModal

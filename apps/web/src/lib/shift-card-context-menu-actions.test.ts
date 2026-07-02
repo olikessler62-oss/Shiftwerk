@@ -93,7 +93,10 @@ describe("shiftCardContextMenuActions", () => {
       "cancel",
       "requestConfirmation",
     ]);
-    expect(shiftCardContextMenuActions("canceled")).toEqual(["delete"]);
+    expect(shiftCardContextMenuActions("canceled")).toEqual([
+      "confirmCancellation",
+      "delete",
+    ]);
   });
 
   it("offers delete and setConfirmed for past unconfirmed shifts", () => {
@@ -117,6 +120,28 @@ describe("shiftCardContextMenuActions", () => {
         hasAbsenceConflict: true,
       })
     ).toEqual(["reassign", "cancel", "delete"]);
+  });
+
+  it("strips outbound confirmation actions for past moments when past edits are allowed", () => {
+    const options = {
+      shiftDate: "2026-06-10",
+      isPastShiftDate: () => false,
+      isShiftMomentInPast: () => true,
+    };
+    expect(shiftCardContextMenuActions("proposed", null, options)).toEqual([
+      "delete",
+      "setConfirmed",
+    ]);
+    expect(
+      shiftCardContextMenuActions("proposed", null, {
+        ...options,
+        hasAbsenceConflict: true,
+      })
+    ).toEqual(["reassign", "delete"]);
+    expect(shiftCardContextMenuActions("pending", null, options)).toEqual([
+      "delete",
+      "setConfirmed",
+    ]);
   });
 
   it("ignores absence conflict for confirmed shifts", () => {

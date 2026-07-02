@@ -1239,9 +1239,9 @@ export const en = {
     ampelUnplannedShiftHint: "Special assignment (see calendar)",
     ampelStaffingCandidatesButtonLabel: "Show suitable employees",
     ampelStaffingAssignEmployeeTooltip: "Assign employee",
-    pastDayChangeConfirmTitle: "Past day",
+    pastDayChangeConfirmTitle: "Past time",
     pastDayChangeConfirmMessage:
-      "This day is in the past. Proceed with the change anyway?",
+      "This time is already in the past! Do you still want to make a change?",
     pastDayPlanningChangeBlocked:
       "No changes allowed because the time is in the past",
     staffingCandidatesModalTitle: "Suggest staff",

@@ -291,6 +291,7 @@ export function AreaCalendarShiftCardView({
         content={<ShiftCardTooltipContent data={tooltipData} />}
         contentClassName={shiftCardTooltipContentClassName}
         className="inline-flex w-fit max-w-full"
+        interactive
         placement={{
           anchorLeftToTriggerCenter: true,
           gapPx: 2,

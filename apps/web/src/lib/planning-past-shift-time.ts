@@ -6,6 +6,8 @@ import {
 export type PlanningPastShiftChecker = {
   isMomentInPast: (input: PlanningShiftMomentInput) => boolean;
   isBlockedForPlanning: (input: PlanningShiftMomentInput) => boolean;
+  /** Kalender-Moment in der Vergangenheit — unabhängig von allowPastShiftChanges (z. B. Storno). */
+  isShiftMomentInPast: (shiftDate: string, startTime?: string | null) => boolean;
   isPastShiftDate: (shiftDate: string, startTime?: string | null) => boolean;
 };
 
@@ -23,7 +25,15 @@ export function createPlanningPastShiftChecker(
   const isPastShiftDate = (shiftDate: string, startTime?: string | null) =>
     isBlockedForPlanning({ shiftDateISO: shiftDate, startTime });
 
-  return { isMomentInPast, isBlockedForPlanning, isPastShiftDate };
+  const isShiftMomentInPast = (shiftDate: string, startTime?: string | null) =>
+    isMomentInPast({ shiftDateISO: shiftDate, startTime });
+
+  return {
+    isMomentInPast,
+    isBlockedForPlanning,
+    isShiftMomentInPast,
+    isPastShiftDate,
+  };
 }
 
 export function planningMomentFromStaffingRow(input: {

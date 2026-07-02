@@ -68,11 +68,14 @@ export function validateProfileForShiftConfirmationAssign(
 
 export function resolveConfirmationAssignPatch(input: {
   shiftConfirmationEnabled: boolean;
+  skipEmployeeConfirmationFlow?: boolean;
   existing: (ShiftConfirmationSnapshotSource & {
     confirmation_status?: ShiftConfirmationStatus;
   }) | null;
   next: ShiftConfirmationSnapshotSource;
 }): ShiftConfirmationAssignPatch {
+  const usesEmployeeConfirmationFlow =
+    input.shiftConfirmationEnabled && !input.skipEmployeeConfirmationFlow;
   const now = new Date().toISOString();
   const clearedPending: ShiftConfirmationAssignPatch = {
     requested_at: null,
@@ -81,7 +84,7 @@ export function resolveConfirmationAssignPatch(input: {
   };
 
   const reactivateCanceledShift = (): ShiftConfirmationAssignPatch =>
-    input.shiftConfirmationEnabled
+    usesEmployeeConfirmationFlow
       ? {
           confirmation_status: "proposed",
           confirmation_status_updated_at: now,
@@ -95,7 +98,7 @@ export function resolveConfirmationAssignPatch(input: {
           ...clearedPending,
         };
 
-  if (!input.shiftConfirmationEnabled) {
+  if (!usesEmployeeConfirmationFlow) {
     if (!input.existing) {
       return {
         confirmation_status: "confirmed",
@@ -106,6 +109,23 @@ export function resolveConfirmationAssignPatch(input: {
     if (input.existing.confirmation_status === "canceled") {
       return reactivateCanceledShift();
     }
+
+    const currentStatus = input.existing.confirmation_status ?? "confirmed";
+    const planChanged = isShiftConfirmationSnapshotStale(
+      buildShiftConfirmationSnapshot(input.existing),
+      input.next
+    );
+    if (
+      planChanged &&
+      shouldResetConfirmationToProposed(currentStatus)
+    ) {
+      return {
+        confirmation_status: "confirmed",
+        confirmation_status_updated_at: now,
+        ...clearedPending,
+      };
+    }
+
     return {};
   }
 

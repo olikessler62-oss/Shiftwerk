@@ -23,6 +23,7 @@ import {
   resolveOrganizationShiftConfirmationPendingAfterMinutes,
   resolveOrganizationTimeZone,
   shouldBlockPastPlanningShiftEdit,
+  shouldSuppressEmployeeShiftNotification,
   type PlanningShiftMomentInput,
   validateEmployeeNotAbsentOnDate,
   validateProfileForShiftConfirmationAssign,
@@ -578,6 +579,15 @@ async function persistShiftWithTimes(
     ends_at
   );
 
+  const skipEmployeeConfirmationFlow = shouldSuppressEmployeeShiftNotification(
+    {
+      shiftDateISO: input.shiftDate,
+      startTime: input.startTime,
+      startsAt: starts_at,
+    },
+    timeZone
+  );
+
   const payload = {
     area_shift_template_id: areaShiftTemplateId,
     location_id: input.locationId,
@@ -609,6 +619,7 @@ async function persistShiftWithTimes(
     undoBatch.replacements.push(toUndoSnapshot(snapshot));
     const confirmationPatch = resolveConfirmationAssignPatch({
       shiftConfirmationEnabled,
+      skipEmployeeConfirmationFlow,
       existing: snapshot,
       next: nextSnapshot,
     });
@@ -630,6 +641,7 @@ async function persistShiftWithTimes(
     }
     const confirmationPatch = resolveConfirmationAssignPatch({
       shiftConfirmationEnabled,
+      skipEmployeeConfirmationFlow,
       existing: snapshot,
       next: nextSnapshot,
     });
@@ -649,6 +661,7 @@ async function persistShiftWithTimes(
 
   const confirmationPatch = resolveConfirmationAssignPatch({
     shiftConfirmationEnabled,
+    skipEmployeeConfirmationFlow,
     existing: null,
     next: nextSnapshot,
   });
